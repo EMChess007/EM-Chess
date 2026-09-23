@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSaveGameOnEnd } from '../api/useSaveGameOnEnd';
 import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
+import GameControlBar from '../components/GameControlBar';
+import GameOptionsMenu from '../components/GameOptionsMenu';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
@@ -14,7 +16,7 @@ import { buildGamePayload } from '../logic/gamePayload';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { lookupOpening } from '../logic/openings';
 import { formatTime } from '../logic/time';
-import { parseUciMove } from '../logic/uciMove';
+import { parseUciMove, uciMoveToSan } from '../logic/uciMove';
 import { useChessClock } from '../logic/useChessClock';
 import { START_FEN } from '../types/chess';
 import type { Move, PieceColor } from '../types/chess';
@@ -56,6 +58,12 @@ export default function BotGameScreen({
   const [engineError, setEngineError] = useState<string | null>(null);
   const [resetCount, setResetCount] = useState(0);
   const [openingName, setOpeningName] = useState<string | null>(null);
+  const [flipped, setFlipped] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  const [resignedBy, setResignedBy] = useState<PieceColor | null>(null);
+  const [hintText, setHintText] = useState<string | null>(null);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [hintRequestKey, setHintRequestKey] = useState(0);
 
   // See LocalGameScreen's identical effect for why a miss here doesn't clear the name — it only
   // ever upgrades to a deeper/more specific match as the game continues.
@@ -76,7 +84,7 @@ export default function BotGameScreen({
   // matching however long it actually "thought"), not by the once-a-second auto-tick — a fast
   // bullet-speed bot move can take well under 1s, which the auto-tick alone would under-count.
   const clock = useChessClock(timeControl, turn, engine.isGameOver(), { autoTick: turn === USER_COLOR });
-  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null;
+  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null;
 
   const savePayload = useMemo(
     () =>
@@ -84,6 +92,7 @@ export default function BotGameScreen({
         chessStatus,
         turn,
         timeoutWinner: clock.timeoutWinner,
+        resignedBy,
         history,
         initialFen,
         chess960,
@@ -91,7 +100,7 @@ export default function BotGameScreen({
         opponentType: 'bot',
         opponentElo: bot.elo,
       }),
-    [chessStatus, turn, clock.timeoutWinner, history, initialFen, chess960, timeControl, bot.elo]
+    [chessStatus, turn, clock.timeoutWinner, resignedBy, history, initialFen, chess960, timeControl, bot.elo]
   );
   useSaveGameOnEnd(authToken, resetCount, savePayload);
 
@@ -114,6 +123,32 @@ export default function BotGameScreen({
   );
   const handleEngineLine = useCallback((line: string) => engineRuntime.engine.handleLine(line), [engineRuntime]);
 
+  // Hint reuses the SAME engine instance/bridge already mounted for the bot's own moves — no
+  // second scratch engine needed here (unlike LocalGameScreen, which has none wired in at all).
+  // This is safe because Hint only ever runs on the user's turn while the bot-move effect below
+  // only ever runs on the bot's turn, so the two never talk to the engine at the same time.
+  useEffect(() => {
+    if (hintRequestKey === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await engineRuntime.engine.initEngine();
+        engineRuntime.engine.setPosition(fen);
+        const uci = await engineRuntime.engine.getBestMove({ elo: bot.elo, movetimeMs: 800 });
+        if (cancelled) return;
+        setHintText(uciMoveToSan(uci, fen, { chess960, initialFen }));
+      } catch {
+        if (!cancelled) setHintText(null);
+      } finally {
+        if (!cancelled) setHintLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hintRequestKey]);
+
   // Whenever it becomes the bot's turn, ask the engine for a move and play it automatically.
   useEffect(() => {
     if (turn !== BOT_COLOR || gameOver) return;
@@ -121,6 +156,7 @@ export default function BotGameScreen({
     let cancelled = false;
     setBotThinking(true);
     setEngineError(null);
+    setHintText(null);
 
     (async () => {
       try {
@@ -191,12 +227,14 @@ export default function BotGameScreen({
   if (clock.timeoutWinner) {
     statusText = `Win on time: ${clock.timeoutWinner === USER_COLOR ? 'You' : bot.name}`;
   }
+  if (resignedBy) statusText = `You resigned — ${bot.name} wins`;
 
   const handleMove = (move: Move, newFen: string) => {
     clock.applyIncrement(USER_COLOR);
     setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
     setLastMove(move);
     setFen(newFen);
+    setHintText(null);
   };
 
   const handleReset = () => {
@@ -208,8 +246,54 @@ export default function BotGameScreen({
     setEngineError(null);
     setResetCount((c) => c + 1);
     setOpeningName(null);
+    setResignedBy(null);
+    setHintText(null);
+    setShowOptions(false);
     clock.reset();
   };
+
+  const handleResign = () => {
+    if (gameOver) return;
+    setShowOptions(false);
+    Alert.alert('Resign?', 'This ends the game as a loss.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Resign', style: 'destructive', onPress: () => setResignedBy(USER_COLOR) },
+    ]);
+  };
+
+  // Pops both the user's last move AND the bot's reply to it, so it's the user's turn again —
+  // only enabled on the user's turn (i.e. once the bot has already replied), which means
+  // `history` always has an even length here and this slice is always safe.
+  const handleUndo = () => {
+    if (gameOver || botThinking || turn !== USER_COLOR || history.length < 2) return;
+    const target = history[history.length - 2];
+    setHistory((h) => h.slice(0, -2));
+    setFen(target.fenBefore);
+    setLastMove(history.length >= 3 ? history[history.length - 3].move : null);
+    setOpeningName(null);
+    setHintText(null);
+  };
+
+  const handleHintPress = () => {
+    if (gameOver || hintLoading || botThinking || turn !== USER_COLOR) return;
+    setHintText(null);
+    setHintLoading(true);
+    setHintRequestKey((k) => k + 1);
+  };
+
+  // Flipping the board also swaps which row (You / the bot) sits on top vs bottom, so each row
+  // always stays next to "its own" side of the board.
+  const topColor: PieceColor = flipped ? USER_COLOR : BOT_COLOR;
+  const bottomColor: PieceColor = flipped ? BOT_COLOR : USER_COLOR;
+  const playerInfo = (color: PieceColor) => ({
+    label: color === USER_COLOR ? 'You' : bot.name,
+    seconds: color === 'w' ? clock.whiteSeconds : clock.blackSeconds,
+    captured: color === 'w' ? whiteCaptured : blackCaptured,
+    iconColor: (color === 'w' ? 'b' : 'w') as PieceColor,
+    advantage: color === 'w' ? (materialDiff > 0 ? materialDiff : 0) : materialDiff < 0 ? -materialDiff : 0,
+  });
+  const top = playerInfo(topColor);
+  const bottom = playerInfo(bottomColor);
 
   return (
     <View style={styles.container}>
@@ -219,7 +303,7 @@ export default function BotGameScreen({
       <Text style={styles.subtitle}>
         {getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
       </Text>
-      <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner) && styles.statusOver]}>
+      <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner || resignedBy) && styles.statusOver]}>
         {statusText}
       </Text>
       {botThinking && (
@@ -231,10 +315,10 @@ export default function BotGameScreen({
       {engineError && <Text style={styles.errorText}>Engine error: {engineError}</Text>}
 
       <View style={styles.playerRow}>
-        <Text style={[styles.clock, turn === BOT_COLOR && !gameOver && styles.clockActive]}>
-          {bot.name}{clock.hasClock ? `: ${formatTime(clock.blackSeconds)}` : ''}
+        <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
+          {top.label}{clock.hasClock ? `: ${formatTime(top.seconds)}` : ''}
         </Text>
-        <CapturedPieces pieces={blackCaptured} color="w" advantage={materialDiff < 0 ? -materialDiff : 0} />
+        <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
       </View>
 
       {!chess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
@@ -246,13 +330,42 @@ export default function BotGameScreen({
         disabled={gameOver || turn !== USER_COLOR || botThinking}
         chess960={chess960}
         initialFen={initialFen}
+        orientation={flipped ? 'b' : 'w'}
       />
 
       <View style={styles.playerRow}>
-        <Text style={[styles.clock, turn === USER_COLOR && !gameOver && styles.clockActive]}>
-          You{clock.hasClock ? `: ${formatTime(clock.whiteSeconds)}` : ''}
+        <Text style={[styles.clock, turn === bottomColor && !gameOver && styles.clockActive]}>
+          {bottom.label}{clock.hasClock ? `: ${formatTime(bottom.seconds)}` : ''}
         </Text>
-        <CapturedPieces pieces={whiteCaptured} color="b" advantage={materialDiff > 0 ? materialDiff : 0} />
+        <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
+      </View>
+
+      {hintLoading && <Text style={styles.hintText}>Thinking of a hint...</Text>}
+      {!hintLoading && hintText && <Text style={styles.hintText}>Hint: {hintText}</Text>}
+
+      <View style={styles.controlsWrap}>
+        <GameControlBar
+          items={[
+            { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
+            { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver },
+            {
+              key: 'hint',
+              label: 'Hint',
+              onPress: handleHintPress,
+              disabled: gameOver || hintLoading || botThinking || turn !== USER_COLOR,
+            },
+            {
+              key: 'undo',
+              label: 'Undo',
+              onPress: handleUndo,
+              disabled: gameOver || botThinking || turn !== USER_COLOR || history.length < 2,
+            },
+          ]}
+        />
+        <GameOptionsMenu
+          visible={showOptions}
+          items={[{ label: 'Flip Board', onPress: () => setFlipped((v) => !v) }]}
+        />
       </View>
 
       <View style={styles.footer}>
@@ -324,6 +437,15 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     color: '#b00020',
+  },
+  hintText: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    color: '#2e6f4f',
+  },
+  controlsWrap: {
+    alignItems: 'center',
+    gap: 8,
   },
   clock: {
     fontSize: 20,

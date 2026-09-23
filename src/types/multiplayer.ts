@@ -9,7 +9,7 @@ export interface OnlineTimeControl {
   incrementSeconds: number;
 }
 
-export type GameOverReason = 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'abandonment';
+export type GameOverReason = 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'abandonment' | 'resignation';
 
 export interface JoinQueuePayload {
   timeControl: OnlineTimeControl;
@@ -26,6 +26,24 @@ export interface MakeMovePayload {
 export interface RejoinGamePayload {
   roomId: string;
   playerToken: string;
+}
+
+export interface ResignPayload {
+  roomId: string;
+}
+
+export interface OfferDrawPayload {
+  roomId: string;
+}
+
+export interface RespondDrawPayload {
+  roomId: string;
+  accept: boolean;
+}
+
+export interface SendChatPayload {
+  roomId: string;
+  text: string;
 }
 
 export interface MatchFoundPayload {
@@ -54,6 +72,16 @@ export interface OpponentMovePayload {
 export interface GameOverPayload {
   reason: GameOverReason;
   winner: PieceColor | null;
+}
+
+export interface DrawOfferedPayload {
+  by: PieceColor;
+}
+
+export interface ChatMessagePayload {
+  from: PieceColor;
+  text: string;
+  sentAt: number;
 }
 
 export interface RejoinStatePayload {

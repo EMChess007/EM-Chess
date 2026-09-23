@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
+import GameControlBar from '../components/GameControlBar';
+import GameOptionsMenu from '../components/GameOptionsMenu';
 import ScreenHeader from '../components/ScreenHeader';
 import { ChessEngine } from '../logic/ChessEngine';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
@@ -11,6 +13,8 @@ import { formatTime } from '../logic/time';
 import type { Move, PieceColor, PieceType } from '../types/chess';
 import type {
   Ack,
+  ChatMessagePayload,
+  DrawOfferedPayload,
   GameOverPayload,
   MatchFoundPayload,
   OpponentMovePayload,
@@ -27,6 +31,12 @@ interface MoveRecord {
   san: string;
   mover: PieceColor;
   captured?: PieceType;
+  fenAfter: string;
+}
+
+interface ChatEntry {
+  from: 'me' | 'opponent';
+  text: string;
 }
 
 const GAME_OVER_REASON_LABELS: Record<GameOverPayload['reason'], string> = {
@@ -35,6 +45,7 @@ const GAME_OVER_REASON_LABELS: Record<GameOverPayload['reason'], string> = {
   draw: 'draw',
   timeout: 'time out',
   abandonment: 'opponent abandoned',
+  resignation: 'resignation',
 };
 
 function describeGameOver(payload: GameOverPayload, myColor: PieceColor): string {
@@ -59,6 +70,19 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
   const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting'>('connected');
   const [opponentGraceSeconds, setOpponentGraceSeconds] = useState<number | null>(null);
   const [openingName, setOpeningName] = useState<string | null>(null);
+  const [showOptions, setShowOptions] = useState(false);
+  const [viewIndex, setViewIndex] = useState<number | null>(null); // null = live position
+  const [drawOfferPending, setDrawOfferPending] = useState(false);
+  const [incomingDrawOffer, setIncomingDrawOffer] = useState(false);
+  const [drawNotice, setDrawNotice] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatEntry[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatUnread, setChatUnread] = useState(0);
+
+  useEffect(() => {
+    if (chatOpen) setChatUnread(0);
+  }, [chatOpen]);
 
   // Lets the socket-event effect below (stable deps, set up once) read the *current* fen when an
   // opponent_move arrives, without needing `fen` in its dependency array (which would tear down
@@ -93,11 +117,30 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
       setWhiteMs(payload.whiteMs);
       setBlackMs(payload.blackMs);
       setLastMoveSan(payload.san);
-      setMoveList((list) => [...list, { san: payload.san, mover: opponentColor, captured: replayed?.captured }]);
+      setMoveList((list) => [
+        ...list,
+        { san: payload.san, mover: opponentColor, captured: replayed?.captured, fenAfter: payload.fen },
+      ]);
     };
 
     const handleGameOver = (payload: GameOverPayload) => {
       setGameOver(payload);
+      setDrawOfferPending(false);
+      setIncomingDrawOffer(false);
+    };
+
+    const handleDrawOffered = (_payload: DrawOfferedPayload) => {
+      setIncomingDrawOffer(true);
+    };
+
+    const handleDrawDeclined = () => {
+      setDrawOfferPending(false);
+      setDrawNotice('Your draw offer was declined.');
+    };
+
+    const handleChatMessage = (payload: ChatMessagePayload) => {
+      setChatMessages((msgs) => [...msgs, { from: 'opponent', text: payload.text }]);
+      setChatUnread((n) => n + 1);
     };
 
     const handleOpponentDisconnected = (payload: { graceSeconds: number }) => {
@@ -123,6 +166,7 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
             setWhiteMs(ack.state.whiteMs);
             setBlackMs(ack.state.blackMs);
             setConnectionState('connected');
+            setViewIndex(null);
 
             // Rebuild the full move list (and with it, captured pieces) from scratch — we may
             // have missed one or more opponent_move events entirely while disconnected, so
@@ -131,7 +175,14 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
             const rebuilt: MoveRecord[] = [];
             ack.state.moves.forEach((m, i) => {
               const result = replayEngine.move(m.from, m.to, m.promotion as Move['promotion']);
-              if (result) rebuilt.push({ san: result.san, mover: i % 2 === 0 ? 'w' : 'b', captured: result.captured });
+              if (result) {
+                rebuilt.push({
+                  san: result.san,
+                  mover: i % 2 === 0 ? 'w' : 'b',
+                  captured: result.captured,
+                  fenAfter: replayEngine.getFen(),
+                });
+              }
             });
             setMoveList(rebuilt);
             if (rebuilt.length > 0) setLastMoveSan(rebuilt[rebuilt.length - 1].san);
@@ -149,6 +200,9 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
     socket.on('opponent_reconnected', handleOpponentReconnected);
     socket.on('disconnect', handleDisconnect);
     socket.io.on('reconnect', handleReconnect);
+    socket.on('draw_offered', handleDrawOffered);
+    socket.on('draw_declined', handleDrawDeclined);
+    socket.on('chat_message', handleChatMessage);
 
     return () => {
       socket.off('opponent_move', handleOpponentMove);
@@ -157,6 +211,9 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
       socket.off('opponent_reconnected', handleOpponentReconnected);
       socket.off('disconnect', handleDisconnect);
       socket.io.off('reconnect', handleReconnect);
+      socket.off('draw_offered', handleDrawOffered);
+      socket.off('draw_declined', handleDrawDeclined);
+      socket.off('chat_message', handleChatMessage);
     };
   }, [authToken, match.roomId, match.playerToken, opponentColor]);
 
@@ -171,14 +228,14 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
   const isMyTurn = turn === myColor && !gameOver;
 
   const handleMove = (move: Move, newFen: string) => {
-    if (gameOver || turn !== myColor || connectionState !== 'connected') return;
+    if (gameOver || turn !== myColor || connectionState !== 'connected' || viewIndex !== null) return;
 
     const fenBeforeMove = fen; // closure snapshot, for reverting if the server disagrees
     setMoveError(null);
     setFen(newFen);
     setTurn(opponentColor); // optimistic — the ack below confirms/corrects this
     setLastMoveSan(move.san);
-    setMoveList((list) => [...list, { san: move.san, mover: myColor, captured: move.captured }]);
+    setMoveList((list) => [...list, { san: move.san, mover: myColor, captured: move.captured, fenAfter: newFen }]);
 
     const socket = connectSocket(authToken);
     socket
@@ -209,6 +266,78 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
   const handleExit = () => {
     disconnectSocket();
     onExit();
+  };
+
+  const handleResign = () => {
+    if (gameOver) return;
+    setShowOptions(false);
+    Alert.alert('Resign?', 'This ends the game as a loss.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Resign',
+        style: 'destructive',
+        onPress: () => {
+          const socket = connectSocket(authToken);
+          socket.emit('resign', { roomId: match.roomId }, (ack: Ack) => {
+            if (!ack.ok) setMoveError(ack.error);
+          });
+        },
+      },
+    ]);
+  };
+
+  const handleRequestDraw = () => {
+    if (gameOver || drawOfferPending) return;
+    setShowOptions(false);
+    setDrawNotice(null);
+    const socket = connectSocket(authToken);
+    socket.emit('offer_draw', { roomId: match.roomId }, (ack: Ack) => {
+      if (!ack.ok) {
+        setDrawNotice(ack.error);
+        return;
+      }
+      setDrawOfferPending(true);
+    });
+  };
+
+  const handleRespondDraw = (accept: boolean) => {
+    setIncomingDrawOffer(false);
+    const socket = connectSocket(authToken);
+    socket.emit('respond_draw', { roomId: match.roomId, accept }, (ack: Ack) => {
+      if (!ack.ok) setDrawNotice(ack.error);
+    });
+  };
+
+  const handleSendChat = () => {
+    const text = chatInput.trim();
+    if (!text) return;
+    setChatInput('');
+    setChatMessages((msgs) => [...msgs, { from: 'me', text }]);
+    const socket = connectSocket(authToken);
+    socket.emit('send_chat', { roomId: match.roomId, text }, (ack: Ack) => {
+      if (!ack.ok) console.log('[OnlineGame] chat send failed:', ack.error);
+    });
+  };
+
+  // Back/Forward step through past positions purely for local review — they never touch `fen`
+  // (the live/authoritative position) or emit anything to the server. `positions[0]` is the
+  // starting position, `positions[i]` is the position right after the i-th played move.
+  const positions = useMemo(() => [match.fen, ...moveList.map((m) => m.fenAfter)], [match.fen, moveList]);
+  const isReviewing = viewIndex !== null;
+  const displayFen = isReviewing ? positions[viewIndex as number] : fen;
+  const canGoBack = (isReviewing ? (viewIndex as number) : positions.length - 1) > 0;
+  const canGoForward = isReviewing;
+
+  const handleBack = () => {
+    const current = isReviewing ? (viewIndex as number) : positions.length - 1;
+    if (current <= 0) return;
+    setViewIndex(current - 1);
+  };
+
+  const handleForward = () => {
+    if (!isReviewing) return;
+    const next = (viewIndex as number) + 1;
+    setViewIndex(next >= positions.length - 1 ? null : next);
   };
 
   const { whiteCaptured, blackCaptured } = useMemo(
@@ -244,8 +373,26 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
         </Text>
       )}
       {moveError && <Text style={styles.errorBanner}>{moveError}</Text>}
+      {drawNotice && <Text style={styles.errorBanner}>{drawNotice}</Text>}
+      {drawOfferPending && !gameOver && (
+        <Text style={styles.warningBanner}>Draw offer sent — waiting for opponent...</Text>
+      )}
+      {incomingDrawOffer && !gameOver && (
+        <View style={styles.drawOfferRow}>
+          <Text style={styles.warningBanner}>Your opponent offers a draw.</Text>
+          <View style={styles.drawOfferButtons}>
+            <Pressable style={styles.drawAcceptButton} onPress={() => handleRespondDraw(true)}>
+              <Text style={styles.drawButtonText}>Accept</Text>
+            </Pressable>
+            <Pressable style={styles.drawDeclineButton} onPress={() => handleRespondDraw(false)}>
+              <Text style={styles.drawButtonText}>Decline</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       <Text style={[styles.status, gameOver && styles.statusOver]}>{statusText}</Text>
+      {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
 
       <View style={styles.playerRow}>
         <Text style={[styles.clock, turn === opponentColor && !gameOver && styles.clockActive]}>
@@ -258,9 +405,9 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
 
       <ChessBoard
         key={boardKey}
-        fen={fen}
+        fen={displayFen}
         onMove={handleMove}
-        disabled={!isMyTurn || connectionState !== 'connected'}
+        disabled={!isMyTurn || connectionState !== 'connected' || isReviewing}
         chess960={match.isChess960}
         initialFen={match.fen}
         orientation={myColor}
@@ -272,6 +419,55 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
         </Text>
         <CapturedPieces pieces={myCaptured} color={opponentColor} advantage={myAdvantage} />
       </View>
+
+      <View style={styles.controlsWrap}>
+        <GameControlBar
+          items={[
+            { key: 'options', label: 'More', onPress: () => setShowOptions((v) => !v), active: showOptions },
+            {
+              key: 'chat',
+              label: chatUnread > 0 ? `Chat (${chatUnread})` : 'Chat',
+              onPress: () => setChatOpen((v) => !v),
+              active: chatOpen,
+            },
+            { key: 'back', label: '‹ Back', onPress: handleBack, disabled: !canGoBack },
+            { key: 'forward', label: 'Forward ›', onPress: handleForward, disabled: !canGoForward },
+          ]}
+        />
+        <GameOptionsMenu
+          visible={showOptions}
+          items={[
+            { label: 'Request Draw', onPress: handleRequestDraw, disabled: !!gameOver || drawOfferPending },
+            { label: 'Resign', onPress: handleResign, destructive: true, disabled: !!gameOver },
+          ]}
+        />
+      </View>
+
+      {chatOpen && (
+        <View style={styles.chatPanel}>
+          <ScrollView style={styles.chatMessages} contentContainerStyle={styles.chatMessagesContent}>
+            {chatMessages.length === 0 && <Text style={styles.chatEmptyText}>No messages yet.</Text>}
+            {chatMessages.map((m, i) => (
+              <Text key={i} style={[styles.chatMessage, m.from === 'me' && styles.chatMessageMine]}>
+                {m.from === 'me' ? 'You' : opponentName}: {m.text}
+              </Text>
+            ))}
+          </ScrollView>
+          <View style={styles.chatInputRow}>
+            <TextInput
+              style={styles.chatInput}
+              value={chatInput}
+              onChangeText={setChatInput}
+              placeholder="Message opponent..."
+              onSubmitEditing={handleSendChat}
+              returnKeyType="send"
+            />
+            <Pressable style={styles.chatSendButton} onPress={handleSendChat}>
+              <Text style={styles.chatButtonText}>Send</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       <View style={styles.footer}>
         {lastMoveSan && <Text style={styles.lastMove}>Last move: {lastMoveSan}</Text>}
@@ -382,5 +578,92 @@ const styles = StyleSheet.create({
   moveListText: {
     fontSize: 13,
     color: '#777',
+  },
+  reviewingText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    color: '#8d6e00',
+  },
+  controlsWrap: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  drawOfferRow: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  drawOfferButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  drawAcceptButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    backgroundColor: '#2e6f4f',
+    borderRadius: 6,
+  },
+  drawDeclineButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    backgroundColor: '#b00020',
+    borderRadius: 6,
+  },
+  drawButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  chatPanel: {
+    width: '90%',
+    maxWidth: 340,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 8,
+    gap: 8,
+  },
+  chatMessages: {
+    maxHeight: 140,
+  },
+  chatMessagesContent: {
+    gap: 4,
+  },
+  chatEmptyText: {
+    fontSize: 13,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+  chatMessage: {
+    fontSize: 13,
+    color: '#333',
+  },
+  chatMessageMine: {
+    color: '#3a2618',
+    fontWeight: '600',
+  },
+  chatInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  chatInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    fontSize: 13,
+  },
+  chatSendButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    backgroundColor: '#3a2618',
+    borderRadius: 6,
+    justifyContent: 'center',
+  },
+  chatButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

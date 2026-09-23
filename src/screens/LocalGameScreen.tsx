@@ -1,18 +1,24 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSaveGameOnEnd } from '../api/useSaveGameOnEnd';
 import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
+import GameControlBar from '../components/GameControlBar';
+import GameOptionsMenu from '../components/GameOptionsMenu';
 import ScreenHeader from '../components/ScreenHeader';
+import { getEngineRuntime } from '../engine/engineRegistry';
+import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
+import { DEFAULT_ENGINE_ID } from '../logic/engines';
 import { buildGamePayload } from '../logic/gamePayload';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { lookupOpening } from '../logic/openings';
 import { formatTime } from '../logic/time';
+import { uciMoveToSan } from '../logic/uciMove';
 import { useChessClock } from '../logic/useChessClock';
 import { START_FEN } from '../types/chess';
-import type { Move } from '../types/chess';
+import type { Move, PieceColor } from '../types/chess';
 import type { AnalyzeParams, GameHistoryEntry } from '../types/history';
 import type { TimeControl } from '../types/timeControl';
 
@@ -31,6 +37,50 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   const [history, setHistory] = useState<GameHistoryEntry[]>([]);
   const [resetCount, setResetCount] = useState(0);
   const [openingName, setOpeningName] = useState<string | null>(null);
+  const [flipped, setFlipped] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  const [resignedBy, setResignedBy] = useState<PieceColor | null>(null);
+  const [hintText, setHintText] = useState<string | null>(null);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [hintActive, setHintActive] = useState(false);
+  const [hintRequestKey, setHintRequestKey] = useState(0);
+
+  // A scratch engine used only for on-demand hints — unlike BotGameScreen, a local 2-player game
+  // has no engine wired in already, so this mounts its own (the strongest available one, same as
+  // Analysis) lazily on the first hint request rather than paying WASM-load cost upfront for
+  // players who never use it.
+  const hintRuntime = useMemo(() => getEngineRuntime(DEFAULT_ENGINE_ID), []);
+  const hintBridgeRef = useRef<StockfishBridgeHandle>(null);
+  const handleHintBridgeRef = useCallback(
+    (handle: StockfishBridgeHandle | null) => {
+      hintBridgeRef.current = handle;
+      hintRuntime.engine.attachBridge(handle);
+    },
+    [hintRuntime]
+  );
+  const handleHintBridgeLine = useCallback((line: string) => hintRuntime.engine.handleLine(line), [hintRuntime]);
+
+  useEffect(() => {
+    if (!hintActive || hintRequestKey === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await hintRuntime.engine.initEngine();
+        hintRuntime.engine.setPosition(fen);
+        const uci = await hintRuntime.engine.getBestMove({ movetimeMs: 800 });
+        if (cancelled) return;
+        setHintText(uciMoveToSan(uci, fen, { chess960, initialFen }));
+      } catch {
+        if (!cancelled) setHintText(null);
+      } finally {
+        if (!cancelled) setHintLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hintRequestKey]);
 
   // Opening names don't apply to Chess960 (the shuffled starting position makes the whole
   // concept meaningless), and only ever *upgrade* to a deeper/more specific name — the book
@@ -51,7 +101,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   const chessStatus = engine.getStatus();
 
   const clock = useChessClock(timeControl, turn, engine.isGameOver());
-  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null;
+  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null;
 
   const savePayload = useMemo(
     () =>
@@ -59,6 +109,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
         chessStatus,
         turn,
         timeoutWinner: clock.timeoutWinner,
+        resignedBy,
         history,
         initialFen,
         chess960,
@@ -66,7 +117,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
         opponentType: 'human',
         opponentElo: null,
       }),
-    [chessStatus, turn, clock.timeoutWinner, history, initialFen, chess960, timeControl]
+    [chessStatus, turn, clock.timeoutWinner, resignedBy, history, initialFen, chess960, timeControl]
   );
   useSaveGameOnEnd(authToken, resetCount, savePayload);
 
@@ -85,12 +136,14 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   if (chessStatus === 'stalemate') statusText = 'Draw (Stalemate)';
   if (chessStatus === 'draw') statusText = 'Draw';
   if (clock.timeoutWinner) statusText = `Win on time: ${clock.timeoutWinner === 'w' ? 'White' : 'Black'}`;
+  if (resignedBy) statusText = `${resignedBy === 'w' ? 'White' : 'Black'} resigned — ${resignedBy === 'w' ? 'Black' : 'White'} wins`;
 
   const handleMove = (move: Move, newFen: string) => {
     clock.applyIncrement(turn);
     setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
     setLastMove(move);
     setFen(newFen);
+    setHintText(null);
   };
 
   const handleReset = () => {
@@ -101,23 +154,70 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
     setHistory([]);
     setResetCount((c) => c + 1);
     setOpeningName(null);
+    setResignedBy(null);
+    setHintText(null);
+    setShowOptions(false);
     clock.reset();
   };
+
+  const handleResign = () => {
+    if (gameOver) return;
+    setShowOptions(false);
+    Alert.alert(`${turnLabel} resigns?`, 'This ends the game as a loss.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Resign', style: 'destructive', onPress: () => setResignedBy(turn) },
+    ]);
+  };
+
+  const handleUndo = () => {
+    if (gameOver || history.length === 0) return;
+    const previous = history[history.length - 1];
+    setHistory((h) => h.slice(0, -1));
+    setFen(previous.fenBefore);
+    setLastMove(history.length >= 2 ? history[history.length - 2].move : null);
+    setOpeningName(null);
+    setHintText(null);
+  };
+
+  const handleHintPress = () => {
+    if (gameOver || hintLoading) return;
+    setHintText(null);
+    setHintLoading(true);
+    setHintActive(true);
+    setHintRequestKey((k) => k + 1);
+  };
+
+  // Flipping the board also swaps which player's clock/captured-pieces row sits on top vs
+  // bottom, so each row always stays next to "its own" side of the board.
+  const topColor: PieceColor = flipped ? 'w' : 'b';
+  const bottomColor: PieceColor = flipped ? 'b' : 'w';
+  const playerInfo = (color: PieceColor) => ({
+    captured: color === 'w' ? whiteCaptured : blackCaptured,
+    iconColor: (color === 'w' ? 'b' : 'w') as PieceColor,
+    advantage: color === 'w' ? (materialDiff > 0 ? materialDiff : 0) : materialDiff < 0 ? -materialDiff : 0,
+  });
+  const top = playerInfo(topColor);
+  const bottom = playerInfo(bottomColor);
 
   return (
     <View style={styles.container}>
       <ScreenHeader title={`Chess${chess960 ? ' — Chess960' : ' — Local Game'}`} onBack={onExit} backLabel="‹ Menu" />
       <View style={styles.body}>
       <Text style={styles.timeControlLabel}>{timeControl.label}</Text>
-      <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner) && styles.statusOver]}>
+      <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner || resignedBy) && styles.statusOver]}>
         {statusText}
       </Text>
 
+      {hintActive && (
+        <StockfishBridge ref={handleHintBridgeRef} onLine={handleHintBridgeLine} html={hintRuntime.buildHtml()} />
+      )}
+
       <View style={styles.playerRow}>
-        <Text style={[styles.clock, turn === 'b' && !gameOver && styles.clockActive]}>
-          Black{clock.hasClock ? `: ${formatTime(clock.blackSeconds)}` : ''}
+        <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
+          {topColor === 'w' ? 'White' : 'Black'}
+          {clock.hasClock ? `: ${formatTime(topColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
         </Text>
-        <CapturedPieces pieces={blackCaptured} color="w" advantage={materialDiff < 0 ? -materialDiff : 0} />
+        <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
       </View>
 
       {!chess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
@@ -129,13 +229,33 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
         disabled={gameOver}
         chess960={chess960}
         initialFen={initialFen}
+        orientation={flipped ? 'b' : 'w'}
       />
 
       <View style={styles.playerRow}>
-        <Text style={[styles.clock, turn === 'w' && !gameOver && styles.clockActive]}>
-          White{clock.hasClock ? `: ${formatTime(clock.whiteSeconds)}` : ''}
+        <Text style={[styles.clock, turn === bottomColor && !gameOver && styles.clockActive]}>
+          {bottomColor === 'w' ? 'White' : 'Black'}
+          {clock.hasClock ? `: ${formatTime(bottomColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
         </Text>
-        <CapturedPieces pieces={whiteCaptured} color="b" advantage={materialDiff > 0 ? materialDiff : 0} />
+        <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
+      </View>
+
+      {hintLoading && <Text style={styles.hintText}>Thinking of a hint...</Text>}
+      {!hintLoading && hintText && <Text style={styles.hintText}>Hint: {hintText}</Text>}
+
+      <View style={styles.controlsWrap}>
+        <GameControlBar
+          items={[
+            { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
+            { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver },
+            { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading },
+            { key: 'undo', label: 'Undo', onPress: handleUndo, disabled: gameOver || history.length === 0 },
+          ]}
+        />
+        <GameOptionsMenu
+          visible={showOptions}
+          items={[{ label: 'Flip Board', onPress: () => setFlipped((v) => !v) }]}
+        />
       </View>
 
       <View style={styles.footer}>
@@ -191,6 +311,15 @@ const styles = StyleSheet.create({
   },
   playerRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hintText: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    color: '#2e6f4f',
+  },
+  controlsWrap: {
     alignItems: 'center',
     gap: 8,
   },

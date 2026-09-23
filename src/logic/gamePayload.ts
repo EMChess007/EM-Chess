@@ -9,6 +9,7 @@ interface BuildGamePayloadArgs {
   chessStatus: GameStatus;
   turn: PieceColor;
   timeoutWinner: PieceColor | null;
+  resignedBy?: PieceColor | null;
   history: GameHistoryEntry[];
   initialFen: string;
   chess960: boolean;
@@ -23,7 +24,7 @@ interface BuildGamePayloadArgs {
  * result" is computed the same way everywhere.
  */
 export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null {
-  const outcome = getGameOutcome(args.chessStatus, args.turn, args.timeoutWinner);
+  const outcome = getGameOutcome(args.chessStatus, args.turn, args.timeoutWinner, args.resignedBy ?? null);
   if (!outcome.over || args.history.length === 0) return null;
 
   return {
