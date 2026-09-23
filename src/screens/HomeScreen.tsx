@@ -25,7 +25,21 @@ function formatOpponent(game: StoredGame): string {
   if (game.opponentType === 'bot') {
     return game.opponentElo != null ? `Bot (ELO ${game.opponentElo})` : 'Bot';
   }
+  if (game.opponentType === 'online') {
+    return `vs ${game.opponentUsername ?? 'Opponent'}`;
+  }
   return 'Local game';
+}
+
+// See GameHistoryScreen's identical helper for why online games need this instead of the
+// absolute "White won"/"Black won" wording — local/bot games have no fixed "you".
+function formatResult(game: StoredGame): string {
+  if (game.opponentType === 'online' && game.color) {
+    if (game.result === '1/2-1/2') return 'Draw';
+    const won = (game.color === 'w' && game.result === '1-0') || (game.color === 'b' && game.result === '0-1');
+    return won ? 'You won' : 'You lost';
+  }
+  return RESULT_LABELS[game.result] ?? game.result;
 }
 
 export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onAnalyzeGame, authToken }: HomeScreenProps) {
@@ -142,7 +156,7 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onAn
                     {formatOpponent(game)}
                     {game.isChess960 ? ' · Chess960' : ''}
                   </Text>
-                  <Text style={styles.recentGameResult}>{RESULT_LABELS[game.result] ?? game.result}</Text>
+                  <Text style={styles.recentGameResult}>{formatResult(game)}</Text>
                 </Pressable>
               ))}
             </View>

@@ -5,6 +5,7 @@ import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
+import MoveListStrip from '../components/MoveListStrip';
 import ScreenHeader from '../components/ScreenHeader';
 import { ChessEngine } from '../logic/ChessEngine';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
@@ -340,6 +341,15 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
     setViewIndex(next >= positions.length - 1 ? null : next);
   };
 
+  const selectedMoveIndex = isReviewing ? (viewIndex as number) - 1 : moveList.length - 1;
+
+  // Tapping a move in the strip drives the exact same viewIndex the Back/Forward buttons do —
+  // no separate navigation mechanism.
+  const handleSelectMove = (index: number) => {
+    const next = index + 1;
+    setViewIndex(next >= positions.length - 1 ? null : next);
+  };
+
   const { whiteCaptured, blackCaptured } = useMemo(
     () => computeCapturedMaterial(moveList.map((m) => ({ captured: m.captured, moverColor: m.mover }))),
     [moveList]
@@ -362,6 +372,12 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
   return (
     <View style={styles.container}>
       <ScreenHeader title={`Online Game${match.isChess960 ? ' (Chess960)' : ''}`} onBack={handleExit} backLabel="‹ Menu" />
+      <MoveListStrip
+        moves={moveList.map((m) => ({ san: m.san }))}
+        selectedIndex={selectedMoveIndex}
+        autoScroll={!isReviewing}
+        onSelectMove={handleSelectMove}
+      />
       <View style={styles.body}>
 
       {connectionState === 'reconnecting' && (
@@ -477,12 +493,6 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
           </Pressable>
         )}
       </View>
-
-      <ScrollView style={styles.moveList} contentContainerStyle={styles.moveListContent} horizontal>
-        <Text style={styles.moveListText}>
-          {moveList.map((m, i) => (i % 2 === 0 ? `${i / 2 + 1}.${m.san} ` : `${m.san} `)).join('')}
-        </Text>
-      </ScrollView>
       </View>
     </View>
   );
@@ -567,17 +577,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-  },
-  moveList: {
-    marginTop: 4,
-    maxWidth: '90%',
-  },
-  moveListContent: {
-    paddingHorizontal: 12,
-  },
-  moveListText: {
-    fontSize: 13,
-    color: '#777',
   },
   reviewingText: {
     fontSize: 12,

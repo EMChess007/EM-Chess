@@ -27,7 +27,11 @@ export default function MatchmakingScreen({ authToken, timeControl, chess960, on
       if (!stillQueuedRef.current) return;
       socket.emit(
         'join_queue',
-        { timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds }, isChess960: chess960 },
+        {
+          timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
+          timeControlLabel: timeControl.label,
+          isChess960: chess960,
+        },
         (ack: Ack) => {
           if (!ack.ok) setError(ack.error);
         }
@@ -47,7 +51,11 @@ export default function MatchmakingScreen({ authToken, timeControl, chess960, on
 
     socket.emit(
       'join_queue',
-      { timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds }, isChess960: chess960 },
+      {
+        timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
+        timeControlLabel: timeControl.label,
+        isChess960: chess960,
+      },
       (ack: Ack) => {
         if (!ack.ok) setError(ack.error);
       }

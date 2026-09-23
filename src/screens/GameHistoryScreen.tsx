@@ -21,7 +21,23 @@ function formatOpponent(game: StoredGame): string {
   if (game.opponentType === 'bot') {
     return game.opponentElo != null ? `Bot (ELO ${game.opponentElo})` : 'Bot';
   }
+  if (game.opponentType === 'online') {
+    return `vs ${game.opponentUsername ?? 'Opponent'}`;
+  }
   return 'Local game';
+}
+
+/** Local/Bot games have no fixed "you" (local is symmetric White/Black, and RESULT_LABELS'
+ * absolute wording already reads fine there), but online games do — so for those specifically,
+ * show the result from this row's own player's perspective instead of an ambiguous "White won".
+ */
+function formatResult(game: StoredGame): string {
+  if (game.opponentType === 'online' && game.color) {
+    if (game.result === '1/2-1/2') return 'Draw';
+    const won = (game.color === 'w' && game.result === '1-0') || (game.color === 'b' && game.result === '0-1');
+    return won ? 'You won' : 'You lost';
+  }
+  return RESULT_LABELS[game.result] ?? game.result;
 }
 
 function formatDate(iso: string): string {
@@ -111,7 +127,7 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
                   {formatOpponent(item)}
                   {item.isChess960 ? ' · Chess960' : ''}
                 </Text>
-                <Text style={styles.rowResult}>{RESULT_LABELS[item.result] ?? item.result}</Text>
+                <Text style={styles.rowResult}>{formatResult(item)}</Text>
               </View>
               <View style={styles.rowBottom}>
                 <Text style={styles.rowMeta}>{formatDate(item.playedAt)}</Text>

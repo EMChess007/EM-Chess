@@ -5,6 +5,7 @@ import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
+import MoveListStrip from '../components/MoveListStrip';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
@@ -44,6 +45,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   const [hintLoading, setHintLoading] = useState(false);
   const [hintActive, setHintActive] = useState(false);
   const [hintRequestKey, setHintRequestKey] = useState(0);
+  const [viewIndex, setViewIndex] = useState<number | null>(null); // null = live position
 
   // A scratch engine used only for on-demand hints — unlike BotGameScreen, a local 2-player game
   // has no engine wired in already, so this mounts its own (the strongest available one, same as
@@ -139,6 +141,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   if (resignedBy) statusText = `${resignedBy === 'w' ? 'White' : 'Black'} resigned — ${resignedBy === 'w' ? 'Black' : 'White'} wins`;
 
   const handleMove = (move: Move, newFen: string) => {
+    if (viewIndex !== null) return;
     clock.applyIncrement(turn);
     setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
     setLastMove(move);
@@ -157,6 +160,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
     setResignedBy(null);
     setHintText(null);
     setShowOptions(false);
+    setViewIndex(null);
     clock.reset();
   };
 
@@ -170,7 +174,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   };
 
   const handleUndo = () => {
-    if (gameOver || history.length === 0) return;
+    if (gameOver || history.length === 0 || isReviewing) return;
     const previous = history[history.length - 1];
     setHistory((h) => h.slice(0, -1));
     setFen(previous.fenBefore);
@@ -180,11 +184,25 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   };
 
   const handleHintPress = () => {
-    if (gameOver || hintLoading) return;
+    if (gameOver || hintLoading || isReviewing) return;
     setHintText(null);
     setHintLoading(true);
     setHintActive(true);
     setHintRequestKey((k) => k + 1);
+  };
+
+  // Back/forward-style review purely for local display — tapping a move in the strip never
+  // touches `fen`/`history` (the live game), it only changes which position is shown. Tapping
+  // the most recent move (or any move once it's the newest) snaps back to live, mirroring
+  // OnlineGameScreen's identical Forward-to-live behavior.
+  const positions = useMemo(() => [initialFen, ...history.map((h) => h.fenAfter)], [initialFen, history]);
+  const isReviewing = viewIndex !== null;
+  const displayFen = isReviewing ? positions[viewIndex as number] : fen;
+  const selectedMoveIndex = isReviewing ? (viewIndex as number) - 1 : history.length - 1;
+
+  const handleSelectMove = (index: number) => {
+    const next = index + 1;
+    setViewIndex(next >= positions.length - 1 ? null : next);
   };
 
   // Flipping the board also swaps which player's clock/captured-pieces row sits on top vs
@@ -202,11 +220,18 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   return (
     <View style={styles.container}>
       <ScreenHeader title={`Chess${chess960 ? ' — Chess960' : ' — Local Game'}`} onBack={onExit} backLabel="‹ Menu" />
+      <MoveListStrip
+        moves={history.map((h) => ({ san: h.move.san }))}
+        selectedIndex={selectedMoveIndex}
+        autoScroll={!isReviewing}
+        onSelectMove={handleSelectMove}
+      />
       <View style={styles.body}>
       <Text style={styles.timeControlLabel}>{timeControl.label}</Text>
       <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner || resignedBy) && styles.statusOver]}>
         {statusText}
       </Text>
+      {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
 
       {hintActive && (
         <StockfishBridge ref={handleHintBridgeRef} onLine={handleHintBridgeLine} html={hintRuntime.buildHtml()} />
@@ -224,9 +249,9 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
 
       <ChessBoard
         key={resetCount}
-        fen={fen}
+        fen={displayFen}
         onMove={handleMove}
-        disabled={gameOver}
+        disabled={gameOver || isReviewing}
         chess960={chess960}
         initialFen={initialFen}
         orientation={flipped ? 'b' : 'w'}
@@ -248,8 +273,8 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
           items={[
             { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
             { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver },
-            { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading },
-            { key: 'undo', label: 'Undo', onPress: handleUndo, disabled: gameOver || history.length === 0 },
+            { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing },
+            { key: 'undo', label: 'Undo', onPress: handleUndo, disabled: gameOver || history.length === 0 || isReviewing },
           ]}
         />
         <GameOptionsMenu
@@ -308,6 +333,11 @@ const styles = StyleSheet.create({
     color: '#8a7a63',
     textAlign: 'center',
     maxWidth: 320,
+  },
+  reviewingText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    color: '#8d6e00',
   },
   playerRow: {
     flexDirection: 'row',

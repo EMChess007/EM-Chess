@@ -5,6 +5,7 @@ import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
+import MoveListStrip from '../components/MoveListStrip';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
@@ -64,6 +65,7 @@ export default function BotGameScreen({
   const [hintText, setHintText] = useState<string | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
   const [hintRequestKey, setHintRequestKey] = useState(0);
+  const [viewIndex, setViewIndex] = useState<number | null>(null); // null = live position
 
   // See LocalGameScreen's identical effect for why a miss here doesn't clear the name — it only
   // ever upgrades to a deeper/more specific match as the game continues.
@@ -230,6 +232,7 @@ export default function BotGameScreen({
   if (resignedBy) statusText = `You resigned — ${bot.name} wins`;
 
   const handleMove = (move: Move, newFen: string) => {
+    if (viewIndex !== null) return;
     clock.applyIncrement(USER_COLOR);
     setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
     setLastMove(move);
@@ -249,6 +252,7 @@ export default function BotGameScreen({
     setResignedBy(null);
     setHintText(null);
     setShowOptions(false);
+    setViewIndex(null);
     clock.reset();
   };
 
@@ -265,7 +269,7 @@ export default function BotGameScreen({
   // only enabled on the user's turn (i.e. once the bot has already replied), which means
   // `history` always has an even length here and this slice is always safe.
   const handleUndo = () => {
-    if (gameOver || botThinking || turn !== USER_COLOR || history.length < 2) return;
+    if (gameOver || botThinking || turn !== USER_COLOR || history.length < 2 || isReviewing) return;
     const target = history[history.length - 2];
     setHistory((h) => h.slice(0, -2));
     setFen(target.fenBefore);
@@ -275,10 +279,23 @@ export default function BotGameScreen({
   };
 
   const handleHintPress = () => {
-    if (gameOver || hintLoading || botThinking || turn !== USER_COLOR) return;
+    if (gameOver || hintLoading || botThinking || turn !== USER_COLOR || isReviewing) return;
     setHintText(null);
     setHintLoading(true);
     setHintRequestKey((k) => k + 1);
+  };
+
+  // Same local-only review mechanism as LocalGameScreen/OnlineGameScreen — tapping a move in the
+  // strip never touches `fen`/`history` (the live game the bot keeps playing against), it only
+  // changes which position is displayed.
+  const positions = useMemo(() => [initialFen, ...history.map((h) => h.fenAfter)], [initialFen, history]);
+  const isReviewing = viewIndex !== null;
+  const displayFen = isReviewing ? positions[viewIndex as number] : fen;
+  const selectedMoveIndex = isReviewing ? (viewIndex as number) - 1 : history.length - 1;
+
+  const handleSelectMove = (index: number) => {
+    const next = index + 1;
+    setViewIndex(next >= positions.length - 1 ? null : next);
   };
 
   // Flipping the board also swaps which row (You / the bot) sits on top vs bottom, so each row
@@ -299,6 +316,12 @@ export default function BotGameScreen({
     <View style={styles.container}>
       <StockfishBridge ref={handleBridgeRef} onLine={handleEngineLine} html={engineRuntime.buildHtml()} />
       <ScreenHeader title={`Chess — vs Bot${chess960 ? ' (Chess960)' : ''}`} onBack={onExit} backLabel="‹ Menu" />
+      <MoveListStrip
+        moves={history.map((h) => ({ san: h.move.san }))}
+        selectedIndex={selectedMoveIndex}
+        autoScroll={!isReviewing}
+        onSelectMove={handleSelectMove}
+      />
       <View style={styles.body}>
       <Text style={styles.subtitle}>
         {getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
@@ -306,6 +329,7 @@ export default function BotGameScreen({
       <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner || resignedBy) && styles.statusOver]}>
         {statusText}
       </Text>
+      {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
       {botThinking && (
         <View style={styles.thinkingRow}>
           <ActivityIndicator size="small" color="#3a2618" />
@@ -325,9 +349,9 @@ export default function BotGameScreen({
 
       <ChessBoard
         key={resetCount}
-        fen={fen}
+        fen={displayFen}
         onMove={handleMove}
-        disabled={gameOver || turn !== USER_COLOR || botThinking}
+        disabled={gameOver || turn !== USER_COLOR || botThinking || isReviewing}
         chess960={chess960}
         initialFen={initialFen}
         orientation={flipped ? 'b' : 'w'}
@@ -352,13 +376,13 @@ export default function BotGameScreen({
               key: 'hint',
               label: 'Hint',
               onPress: handleHintPress,
-              disabled: gameOver || hintLoading || botThinking || turn !== USER_COLOR,
+              disabled: gameOver || hintLoading || botThinking || turn !== USER_COLOR || isReviewing,
             },
             {
               key: 'undo',
               label: 'Undo',
               onPress: handleUndo,
-              disabled: gameOver || botThinking || turn !== USER_COLOR || history.length < 2,
+              disabled: gameOver || botThinking || turn !== USER_COLOR || history.length < 2 || isReviewing,
             },
           ]}
         />
@@ -418,6 +442,11 @@ const styles = StyleSheet.create({
     color: '#8a7a63',
     textAlign: 'center',
     maxWidth: 320,
+  },
+  reviewingText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    color: '#8d6e00',
   },
   playerRow: {
     flexDirection: 'row',

@@ -124,8 +124,13 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 export interface GamePayload {
-  opponentType: 'bot' | 'human';
+  opponentType: 'bot' | 'human' | 'online';
   opponentElo?: number | null;
+  /** Online games only — the other player's username at the time the game was saved. */
+  opponentUsername?: string | null;
+  /** Online games only — which color this row's own user played, so history can say "You won"
+   * instead of an ambiguous absolute "White won" (local/bot games have no fixed "you"). */
+  color?: 'w' | 'b' | null;
   result: string;
   pgn: string;
   timeControl: string;
