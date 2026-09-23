@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { connectSocket, disconnectSocket } from '../api/socket';
+import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import ScreenHeader from '../components/ScreenHeader';
+import { ChessEngine } from '../logic/ChessEngine';
+import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { lookupOpening } from '../logic/openings';
 import { formatTime } from '../logic/time';
-import type { Move, PieceColor } from '../types/chess';
+import type { Move, PieceColor, PieceType } from '../types/chess';
 import type {
   Ack,
   GameOverPayload,
@@ -23,6 +26,7 @@ interface OnlineGameScreenProps {
 interface MoveRecord {
   san: string;
   mover: PieceColor;
+  captured?: PieceType;
 }
 
 const GAME_OVER_REASON_LABELS: Record<GameOverPayload['reason'], string> = {
@@ -56,6 +60,14 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
   const [opponentGraceSeconds, setOpponentGraceSeconds] = useState<number | null>(null);
   const [openingName, setOpeningName] = useState<string | null>(null);
 
+  // Lets the socket-event effect below (stable deps, set up once) read the *current* fen when an
+  // opponent_move arrives, without needing `fen` in its dependency array (which would tear down
+  // and re-subscribe every socket listener on every move).
+  const fenRef = useRef(fen);
+  useEffect(() => {
+    fenRef.current = fen;
+  }, [fen]);
+
   // Reacts to `fen` changing for any reason (our own move, the opponent's move, or a rejoin
   // state sync after reconnecting) rather than being threaded through each individual handler
   // below. See LocalGameScreen's identical effect for why a miss here doesn't clear the name.
@@ -70,12 +82,18 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
     const socket = connectSocket(authToken);
 
     const handleOpponentMove = (payload: OpponentMovePayload) => {
+      // Replayed locally purely to learn what piece type (if any) this move captured — the
+      // resulting position itself always comes from `payload.fen` below, never from this replay,
+      // keeping the server as the sole authority on the actual game state.
+      const replayEngine = new ChessEngine(fenRef.current, { chess960: match.isChess960, initialFen: match.fen });
+      const replayed = replayEngine.move(payload.from, payload.to, payload.promotion);
+
       setFen(payload.fen);
       setTurn(payload.turn);
       setWhiteMs(payload.whiteMs);
       setBlackMs(payload.blackMs);
       setLastMoveSan(payload.san);
-      setMoveList((list) => [...list, { san: payload.san, mover: opponentColor }]);
+      setMoveList((list) => [...list, { san: payload.san, mover: opponentColor, captured: replayed?.captured }]);
     };
 
     const handleGameOver = (payload: GameOverPayload) => {
@@ -105,6 +123,18 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
             setWhiteMs(ack.state.whiteMs);
             setBlackMs(ack.state.blackMs);
             setConnectionState('connected');
+
+            // Rebuild the full move list (and with it, captured pieces) from scratch — we may
+            // have missed one or more opponent_move events entirely while disconnected, so
+            // patching the existing list wouldn't be reliable.
+            const replayEngine = new ChessEngine(match.fen, { chess960: match.isChess960, initialFen: match.fen });
+            const rebuilt: MoveRecord[] = [];
+            ack.state.moves.forEach((m, i) => {
+              const result = replayEngine.move(m.from, m.to, m.promotion as Move['promotion']);
+              if (result) rebuilt.push({ san: result.san, mover: i % 2 === 0 ? 'w' : 'b', captured: result.captured });
+            });
+            setMoveList(rebuilt);
+            if (rebuilt.length > 0) setLastMoveSan(rebuilt[rebuilt.length - 1].san);
           }
           // If it failed (e.g. the game already ended while we were offline), leave
           // connectionState as "reconnecting" — a game_over we missed would already be
@@ -148,7 +178,7 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
     setFen(newFen);
     setTurn(opponentColor); // optimistic — the ack below confirms/corrects this
     setLastMoveSan(move.san);
-    setMoveList((list) => [...list, { san: move.san, mover: myColor }]);
+    setMoveList((list) => [...list, { san: move.san, mover: myColor, captured: move.captured }]);
 
     const socket = connectSocket(authToken);
     socket
@@ -181,6 +211,16 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
     onExit();
   };
 
+  const { whiteCaptured, blackCaptured } = useMemo(
+    () => computeCapturedMaterial(moveList.map((m) => ({ captured: m.captured, moverColor: m.mover }))),
+    [moveList]
+  );
+  const materialDiff = materialValue(whiteCaptured) - materialValue(blackCaptured);
+  const myCaptured = myColor === 'w' ? whiteCaptured : blackCaptured;
+  const opponentCaptured = myColor === 'w' ? blackCaptured : whiteCaptured;
+  const myAdvantage = myColor === 'w' ? (materialDiff > 0 ? materialDiff : 0) : (materialDiff < 0 ? -materialDiff : 0);
+  const opponentAdvantage = myColor === 'w' ? (materialDiff < 0 ? -materialDiff : 0) : (materialDiff > 0 ? materialDiff : 0);
+
   const myName = 'You';
   const opponentName = 'Opponent';
   const myMs = myColor === 'w' ? whiteMs : blackMs;
@@ -207,9 +247,12 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
 
       <Text style={[styles.status, gameOver && styles.statusOver]}>{statusText}</Text>
 
-      <Text style={[styles.clock, turn === opponentColor && !gameOver && styles.clockActive]}>
-        {opponentName}: {formatTime(opponentMs / 1000)}
-      </Text>
+      <View style={styles.playerRow}>
+        <Text style={[styles.clock, turn === opponentColor && !gameOver && styles.clockActive]}>
+          {opponentName}: {formatTime(opponentMs / 1000)}
+        </Text>
+        <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
+      </View>
 
       {!match.isChess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
@@ -223,9 +266,12 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
         orientation={myColor}
       />
 
-      <Text style={[styles.clock, turn === myColor && !gameOver && styles.clockActive]}>
-        {myName}: {formatTime(myMs / 1000)}
-      </Text>
+      <View style={styles.playerRow}>
+        <Text style={[styles.clock, turn === myColor && !gameOver && styles.clockActive]}>
+          {myName}: {formatTime(myMs / 1000)}
+        </Text>
+        <CapturedPieces pieces={myCaptured} color={opponentColor} advantage={myAdvantage} />
+      </View>
 
       <View style={styles.footer}>
         {lastMoveSan && <Text style={styles.lastMove}>Last move: {lastMoveSan}</Text>}
@@ -287,6 +333,11 @@ const styles = StyleSheet.create({
     color: '#8a7a63',
     textAlign: 'center',
     maxWidth: 320,
+  },
+  playerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   clock: {
     fontSize: 20,

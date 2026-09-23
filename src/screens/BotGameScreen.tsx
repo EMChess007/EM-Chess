@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSaveGameOnEnd } from '../api/useSaveGameOnEnd';
+import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
@@ -10,6 +11,7 @@ import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
 import { getEngineIdForElo, getEngineName } from '../logic/engines';
 import { buildGamePayload } from '../logic/gamePayload';
+import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { lookupOpening } from '../logic/openings';
 import { formatTime } from '../logic/time';
 import { parseUciMove } from '../logic/uciMove';
@@ -172,6 +174,12 @@ export default function BotGameScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fen, gameOver]);
 
+  const { whiteCaptured, blackCaptured } = useMemo(
+    () => computeCapturedMaterial(history.map((h, i) => ({ captured: h.move.captured, moverColor: i % 2 === 0 ? 'w' : 'b' }))),
+    [history]
+  );
+  const materialDiff = materialValue(whiteCaptured) - materialValue(blackCaptured);
+
   const turnLabel = turn === USER_COLOR ? 'You' : bot.name;
   const winnerLabel = turn === USER_COLOR ? bot.name : 'You';
 
@@ -222,11 +230,12 @@ export default function BotGameScreen({
       )}
       {engineError && <Text style={styles.errorText}>Engine error: {engineError}</Text>}
 
-      {clock.hasClock && (
+      <View style={styles.playerRow}>
         <Text style={[styles.clock, turn === BOT_COLOR && !gameOver && styles.clockActive]}>
-          {bot.name}: {formatTime(clock.blackSeconds)}
+          {bot.name}{clock.hasClock ? `: ${formatTime(clock.blackSeconds)}` : ''}
         </Text>
-      )}
+        <CapturedPieces pieces={blackCaptured} color="w" advantage={materialDiff < 0 ? -materialDiff : 0} />
+      </View>
 
       {!chess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
@@ -239,11 +248,12 @@ export default function BotGameScreen({
         initialFen={initialFen}
       />
 
-      {clock.hasClock && (
+      <View style={styles.playerRow}>
         <Text style={[styles.clock, turn === USER_COLOR && !gameOver && styles.clockActive]}>
-          You: {formatTime(clock.whiteSeconds)}
+          You{clock.hasClock ? `: ${formatTime(clock.whiteSeconds)}` : ''}
         </Text>
-      )}
+        <CapturedPieces pieces={whiteCaptured} color="b" advantage={materialDiff > 0 ? materialDiff : 0} />
+      </View>
 
       <View style={styles.footer}>
         {lastMove && <Text style={styles.lastMove}>Last move: {lastMove.san}</Text>}
@@ -295,6 +305,11 @@ const styles = StyleSheet.create({
     color: '#8a7a63',
     textAlign: 'center',
     maxWidth: 320,
+  },
+  playerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   thinkingRow: {
     flexDirection: 'row',

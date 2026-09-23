@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSaveGameOnEnd } from '../api/useSaveGameOnEnd';
+import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import ScreenHeader from '../components/ScreenHeader';
 import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
 import { buildGamePayload } from '../logic/gamePayload';
+import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { lookupOpening } from '../logic/openings';
 import { formatTime } from '../logic/time';
 import { useChessClock } from '../logic/useChessClock';
@@ -68,6 +70,12 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   );
   useSaveGameOnEnd(authToken, resetCount, savePayload);
 
+  const { whiteCaptured, blackCaptured } = useMemo(
+    () => computeCapturedMaterial(history.map((h, i) => ({ captured: h.move.captured, moverColor: i % 2 === 0 ? 'w' : 'b' }))),
+    [history]
+  );
+  const materialDiff = materialValue(whiteCaptured) - materialValue(blackCaptured);
+
   const turnLabel = turn === 'w' ? 'White' : 'Black';
   const winnerLabel = turn === 'w' ? 'Black' : 'White';
 
@@ -105,11 +113,12 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
         {statusText}
       </Text>
 
-      {clock.hasClock && (
+      <View style={styles.playerRow}>
         <Text style={[styles.clock, turn === 'b' && !gameOver && styles.clockActive]}>
-          Black: {formatTime(clock.blackSeconds)}
+          Black{clock.hasClock ? `: ${formatTime(clock.blackSeconds)}` : ''}
         </Text>
-      )}
+        <CapturedPieces pieces={blackCaptured} color="w" advantage={materialDiff < 0 ? -materialDiff : 0} />
+      </View>
 
       {!chess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
@@ -122,11 +131,12 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
         initialFen={initialFen}
       />
 
-      {clock.hasClock && (
+      <View style={styles.playerRow}>
         <Text style={[styles.clock, turn === 'w' && !gameOver && styles.clockActive]}>
-          White: {formatTime(clock.whiteSeconds)}
+          White{clock.hasClock ? `: ${formatTime(clock.whiteSeconds)}` : ''}
         </Text>
-      )}
+        <CapturedPieces pieces={whiteCaptured} color="b" advantage={materialDiff > 0 ? materialDiff : 0} />
+      </View>
 
       <View style={styles.footer}>
         {lastMove && <Text style={styles.lastMove}>Last move: {lastMove.san}</Text>}
@@ -178,6 +188,11 @@ const styles = StyleSheet.create({
     color: '#8a7a63',
     textAlign: 'center',
     maxWidth: 320,
+  },
+  playerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   clock: {
     fontSize: 20,

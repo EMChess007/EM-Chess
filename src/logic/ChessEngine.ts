@@ -76,7 +76,13 @@ export class ChessEngine {
       // would tag every ordinary move as if it ended in a promotion. A real promotion is
       // always to n/b/r/q (chess.js's PieceSymbol type is just broader than that in practice).
       const actualPromotion = result.promotion as 'n' | 'b' | 'r' | 'q' | undefined;
-      return { from: result.from, to: result.to, promotion: actualPromotion, san: result.san };
+      return {
+        from: result.from,
+        to: result.to,
+        promotion: actualPromotion,
+        san: result.san,
+        captured: result.captured as Move['captured'],
+      };
     } catch {
       return null;
     }

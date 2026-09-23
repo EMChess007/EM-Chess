@@ -19,6 +19,8 @@ export interface Move {
   to: Square;
   promotion?: 'n' | 'b' | 'r' | 'q';
   san: string;
+  /** The type of piece captured by this move (regular capture or en passant), if any. */
+  captured?: PieceType;
 }
 
 export type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'check';
