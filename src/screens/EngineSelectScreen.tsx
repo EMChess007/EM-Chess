@@ -76,6 +76,11 @@ export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) 
   const [phase, setPhase] = useState<Phase>('idle');
   const [pendingWasmBase64, setPendingWasmBase64] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState('');
+  // Alert.alert is a documented no-op on react-native-web (established elsewhere in this app) —
+  // every failure/success message below is ALSO surfaced here so the feature is actually usable
+  // when tested or used through a browser, not just on native. `Alert.alert` itself is left in
+  // place too (harmless no-op on web, still the right UX on native).
+  const [feedback, setFeedback] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
 
   const refreshEngines = useCallback(() => setEngines([...AVAILABLE_ENGINES]), []);
 
@@ -86,15 +91,25 @@ export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) 
   }, []);
 
   const handlePickFile = async () => {
+    setFeedback(null);
+    console.log('[EngineSelectScreen] handlePickFile: opening picker...');
     let result: DocumentPicker.DocumentPickerResult;
     try {
       result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+      console.log('[EngineSelectScreen] getDocumentAsync resolved:', result);
     } catch (err) {
       console.warn('[EngineSelectScreen] getDocumentAsync threw:', describeError(err));
+      setFeedback({ kind: 'error', text: 'Could not pick a file.' });
       Alert.alert('Error', 'Could not pick a file.');
       return;
     }
-    if (result.canceled || result.assets.length === 0) return;
+    if (result.canceled || result.assets.length === 0) {
+      console.log('[EngineSelectScreen] picker returned canceled/empty — stopping here.', {
+        canceled: result.canceled,
+        assetCount: result.canceled ? 'n/a' : result.assets.length,
+      });
+      return;
+    }
 
     const asset = result.assets[0];
     console.log('[EngineSelectScreen] picked asset:', {
@@ -105,18 +120,21 @@ export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) 
     });
 
     if (!asset.name.toLowerCase().endsWith('.wasm')) {
+      console.warn('[EngineSelectScreen] rejected: name does not end in .wasm ->', JSON.stringify(asset.name));
+      setFeedback({ kind: 'error', text: 'This file is not a valid chess engine — pick a file with a .wasm extension.' });
       Alert.alert('Invalid file', 'This file is not a valid chess engine — pick a file with a .wasm extension.');
       return;
     }
 
     try {
       const base64 = await readAsBase64(asset.uri);
-      console.log('[EngineSelectScreen] read base64, length =', base64.length);
+      console.log('[EngineSelectScreen] read base64, length =', base64.length, '-> entering validating phase');
       setNameInput(asset.name.replace(/\.wasm$/i, ''));
       setPendingWasmBase64(base64);
       setPhase('validating');
     } catch (err) {
       console.warn('[EngineSelectScreen] reading picked file failed:', describeError(err));
+      setFeedback({ kind: 'error', text: 'Could not read the file.' });
       Alert.alert('Failed to load', 'Could not read the file.');
     }
   };
@@ -154,11 +172,18 @@ export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) 
     if (!scratchEngine) return;
     let settled = false;
 
+    console.log('[EngineSelectScreen] validating: scratch engine mounted, calling initEngine()...');
+
     const fail = (message: string) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutHandle);
+      // NOTE: Alert.alert is a documented no-op on react-native-web — on web this message only
+      // ever reaches here, the console, never the screen. Logged as an error (not warn) so it's
+      // impossible to miss while diagnosing "nothing visibly happens" reports on web.
+      console.error('[EngineSelectScreen] validation failed:', message);
       resetPending();
+      setFeedback({ kind: 'error', text: message });
       Alert.alert('This file is not a valid chess engine', message);
     };
 
@@ -175,11 +200,14 @@ export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) 
         if (settled) return;
         settled = true;
         clearTimeout(timeoutHandle);
+        console.log('[EngineSelectScreen] validation succeeded -> naming phase');
+        setFeedback(null);
         setPhase('naming');
       })
-      .catch(() =>
-        fail('Could not initialize — the file may not be valid WebAssembly, or it may not support the UCI protocol.')
-      );
+      .catch((err) => {
+        console.warn('[EngineSelectScreen] scratchEngine.initEngine() rejected:', describeError(err));
+        fail('Could not initialize — the file may not be valid WebAssembly, or it may not support the UCI protocol.');
+      });
 
     return () => {
       settled = true;
@@ -196,7 +224,9 @@ export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) 
       await saveCustomEngine(name, pendingWasmBase64);
       refreshEngines();
       resetPending();
+      setFeedback({ kind: 'success', text: `"${name}" was added — you can now pick it as a bot opponent.` });
     } catch {
+      setFeedback({ kind: 'error', text: 'Could not save the engine on this device.' });
       Alert.alert('Save failed', 'Could not save the engine on this device.');
     }
   };
@@ -222,6 +252,12 @@ export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) 
   return (
     <View style={styles.container}>
       <ScreenHeader title="Engines" onBack={onBack} backLabel="‹ Menu" />
+
+      {feedback && (
+        <Text style={[styles.feedbackBanner, feedback.kind === 'error' ? styles.feedbackError : styles.feedbackSuccess]}>
+          {feedback.text}
+        </Text>
+      )}
 
       {phase === 'validating' && pendingWasmBase64 && (
         <StockfishBridge ref={handleScratchBridgeRef} onLine={handleScratchBridgeLine} html={buildCustomEngineHtml(pendingWasmBase64)} />
@@ -294,6 +330,22 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 32,
     gap: 12,
+  },
+  feedbackBanner: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  feedbackError: {
+    backgroundColor: '#fdecea',
+    color: '#b00020',
+  },
+  feedbackSuccess: {
+    backgroundColor: '#e8f5e9',
+    color: '#1a7a1a',
   },
   engineRow: {
     flexDirection: 'row',

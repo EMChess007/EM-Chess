@@ -6,9 +6,10 @@ interface MoreScreenProps {
   authUser: AuthUser | null;
   onAuthPress: () => void;
   onLogout: () => void;
+  onOpenEngines: () => void;
 }
 
-export default function MoreScreen({ authUser, onAuthPress, onLogout }: MoreScreenProps) {
+export default function MoreScreen({ authUser, onAuthPress, onLogout, onOpenEngines }: MoreScreenProps) {
   // react-native's own <SafeAreaView> only actually applies an inset on iOS — see ScreenHeader
   // for the shared version of this fix used by every sub-screen; this tab-root screen has a
   // different (bigger, no-back-button) title style so it applies the same insets.top read directly
@@ -33,6 +34,13 @@ export default function MoreScreen({ authUser, onAuthPress, onLogout }: MoreScre
             <Text style={styles.rowButtonText}>Log in / Sign up</Text>
           </Pressable>
         )}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Engines</Text>
+        <Pressable style={styles.rowButton} onPress={onOpenEngines}>
+          <Text style={styles.rowButtonText}>Manage Custom Engines</Text>
+        </Pressable>
       </View>
     </View>
   );

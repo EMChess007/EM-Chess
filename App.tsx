@@ -8,6 +8,7 @@ import AnalysisScreen from './src/screens/AnalysisScreen';
 import BotGameScreen from './src/screens/BotGameScreen';
 import BotSelectScreen from './src/screens/BotSelectScreen';
 import DailyPuzzleScreen from './src/screens/DailyPuzzleScreen';
+import EngineSelectScreen from './src/screens/EngineSelectScreen';
 import GameHistoryScreen from './src/screens/GameHistoryScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import LocalGameScreen from './src/screens/LocalGameScreen';
@@ -41,7 +42,8 @@ type Screen =
   | { name: 'register' }
   | { name: 'onlineTimeControlSelect'; token: string }
   | { name: 'matchmaking'; token: string; timeControl: TimeControl; chess960: boolean }
-  | { name: 'onlineGame'; token: string; match: MatchFoundPayload };
+  | { name: 'onlineGame'; token: string; match: MatchFoundPayload }
+  | { name: 'engineSelect' };
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>({ name: 'main' });
@@ -83,7 +85,12 @@ export default function App() {
       );
     } else {
       tabContent = (
-        <MoreScreen authUser={authSession?.user ?? null} onAuthPress={() => setScreen({ name: 'login' })} onLogout={handleLogout} />
+        <MoreScreen
+          authUser={authSession?.user ?? null}
+          onAuthPress={() => setScreen({ name: 'login' })}
+          onLogout={handleLogout}
+          onOpenEngines={() => setScreen({ name: 'engineSelect' })}
+        />
       );
     }
     content = (
@@ -185,6 +192,8 @@ export default function App() {
     );
   } else if (screen.name === 'analysis') {
     content = <AnalysisScreen {...screen.params} onExit={() => setScreen({ name: 'main' })} />;
+  } else if (screen.name === 'engineSelect') {
+    content = <EngineSelectScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'botGame') {
     content = (
       <BotGameScreen
