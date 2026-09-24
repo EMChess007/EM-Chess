@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
 import ChessBoard from '../components/ChessBoard';
+import GameScreenBody from '../components/GameScreenBody';
 import ScreenHeader from '../components/ScreenHeader';
 import { ChessEngine } from '../logic/ChessEngine';
 import { getDailyPuzzle, getDailyPuzzleDateKey } from '../logic/puzzles';
@@ -178,61 +179,62 @@ export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps)
   return (
     <View style={styles.container}>
       <ScreenHeader title="Daily Puzzle" />
-      <View style={styles.body}>
-
-      <Text style={styles.subtitle}>Puzzle rating: {puzzle.rating}</Text>
-
-      {!checkingStorage && alreadySolvedToday && status === 'playing' && (
-        <View style={styles.alreadyBanner}>
-          <Text style={styles.alreadyBannerText}>You've already solved today's puzzle — you can try again.</Text>
-        </View>
-      )}
-
-      <Text
-        style={[
-          styles.status,
-          status === 'solved' && styles.statusSolved,
-          status === 'revealed' && styles.statusRevealed,
-        ]}
+      <GameScreenBody
+        bottomBar={
+          <View style={styles.footer}>
+            {lastMoveSan && <Text style={styles.lastMove}>Last move: {lastMoveSan}</Text>}
+            <View style={styles.footerButtons}>
+              {status === 'playing' && (
+                <Pressable style={[styles.button, styles.revealButton]} onPress={handleReveal}>
+                  <Text style={styles.buttonText}>Show solution</Text>
+                </Pressable>
+              )}
+              {status !== 'playing' && (
+                <Pressable style={styles.button} onPress={handleRetryToday}>
+                  <Text style={styles.buttonText}>Try again</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        }
       >
-        {statusText}
-      </Text>
-      {wrongCount > 0 && status === 'playing' && (
-        <Text style={styles.wrongText}>Wrong move — try again ({wrongCount}).</Text>
-      )}
+        <Text style={styles.subtitle}>Puzzle rating: {puzzle.rating}</Text>
 
-      <View style={[styles.boardWrapper, showWrongFlash && styles.boardWrapperWrong]}>
-        <ChessBoard
-          key={attemptKey}
-          fen={fen}
-          onMove={handleMove}
-          disabled={status !== 'playing' || botReplying}
-          orientation={solverColor}
-        />
-      </View>
+        {!checkingStorage && alreadySolvedToday && status === 'playing' && (
+          <View style={styles.alreadyBanner}>
+            <Text style={styles.alreadyBannerText}>You've already solved today's puzzle — you can try again.</Text>
+          </View>
+        )}
 
-      <View style={styles.footer}>
-        {lastMoveSan && <Text style={styles.lastMove}>Last move: {lastMoveSan}</Text>}
-        <View style={styles.footerButtons}>
-          {status === 'playing' && (
-            <Pressable style={[styles.button, styles.revealButton]} onPress={handleReveal}>
-              <Text style={styles.buttonText}>Show solution</Text>
-            </Pressable>
-          )}
-          {status !== 'playing' && (
-            <Pressable style={styles.button} onPress={handleRetryToday}>
-              <Text style={styles.buttonText}>Try again</Text>
-            </Pressable>
-          )}
+        <Text
+          style={[
+            styles.status,
+            status === 'solved' && styles.statusSolved,
+            status === 'revealed' && styles.statusRevealed,
+          ]}
+        >
+          {statusText}
+        </Text>
+        {wrongCount > 0 && status === 'playing' && (
+          <Text style={styles.wrongText}>Wrong move — try again ({wrongCount}).</Text>
+        )}
+
+        <View style={[styles.boardWrapper, showWrongFlash && styles.boardWrapperWrong]}>
+          <ChessBoard
+            key={attemptKey}
+            fen={fen}
+            onMove={handleMove}
+            disabled={status !== 'playing' || botReplying}
+            orientation={solverColor}
+          />
         </View>
-      </View>
 
-      {checkingStorage && (
-        <View style={styles.loadingRow}>
-          <ActivityIndicator size="small" color="#999" />
-        </View>
-      )}
-      </View>
+        {checkingStorage && (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator size="small" color="#999" />
+          </View>
+        )}
+      </GameScreenBody>
     </View>
   );
 }
@@ -241,13 +243,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-  },
-  body: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
   },
   subtitle: {
     fontSize: 13,
