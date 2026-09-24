@@ -35,6 +35,24 @@ export default function ChessBoard({ fen, onMove, disabled, chess960, initialFen
   );
   const turn = engine.getTurn();
   const gameOver = engine.isGameOver();
+  const status = engine.getStatus();
+
+  // Reuses the same check/checkmate detection already driving status text and game-end logic
+  // elsewhere (ChessEngine.getStatus(), itself chess.js's own isCheck()/isCheckmate()) rather
+  // than a second detector — isCheck()/isCheckmate() are always about the side TO MOVE, so this
+  // naturally covers "my king" or "the opponent's king" depending on whose turn it now is, in
+  // every mode (including Chess960, since it's derived from the same board/turn everything else
+  // already uses). Checkmate intentionally keeps this highlighted (status stays 'checkmate'),
+  // same as check.
+  const checkedKingSquare = useMemo(() => {
+    if (status !== 'check' && status !== 'checkmate') return null;
+    for (const row of board) {
+      for (const square of row) {
+        if (square.piece?.type === 'k' && square.piece.color === turn) return square.square;
+      }
+    }
+    return null;
+  }, [board, turn, status]);
 
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
 
@@ -89,6 +107,7 @@ export default function ChessBoard({ fen, onMove, disabled, chess960, initialFen
               isLight={(rowIndex + colIndex) % 2 === 0}
               isSelected={square.square === selectedSquare}
               isLegalTarget={legalTargets.includes(square.square)}
+              isChecked={square.square === checkedKingSquare}
               size={squareSize}
               onPress={handleSquarePress}
             />
