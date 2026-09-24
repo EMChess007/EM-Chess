@@ -5,6 +5,7 @@ import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
+import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
@@ -322,93 +323,97 @@ export default function BotGameScreen({
         autoScroll={!isReviewing}
         onSelectMove={handleSelectMove}
       />
-      <View style={styles.body}>
-      <Text style={styles.subtitle}>
-        {getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
-      </Text>
-      <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner || resignedBy) && styles.statusOver]}>
-        {statusText}
-      </Text>
-      {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
-      {botThinking && (
-        <View style={styles.thinkingRow}>
-          <ActivityIndicator size="small" color="#3a2618" />
-          <Text style={styles.thinkingText}>The bot is thinking...</Text>
-        </View>
-      )}
-      {engineError && <Text style={styles.errorText}>Engine error: {engineError}</Text>}
+      <GameScreenBody
+        bottomBar={
+          <>
+            <View style={styles.controlsWrap}>
+              <GameControlBar
+                items={[
+                  { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
+                  { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver },
+                  {
+                    key: 'hint',
+                    label: 'Hint',
+                    onPress: handleHintPress,
+                    disabled: gameOver || hintLoading || botThinking || turn !== USER_COLOR || isReviewing,
+                  },
+                  {
+                    key: 'undo',
+                    label: 'Undo',
+                    onPress: handleUndo,
+                    disabled: gameOver || botThinking || turn !== USER_COLOR || history.length < 2 || isReviewing,
+                  },
+                ]}
+              />
+              <GameOptionsMenu
+                visible={showOptions}
+                items={[{ label: 'Flip Board', onPress: () => setFlipped((v) => !v) }]}
+              />
+            </View>
 
-      <View style={styles.playerRow}>
-        <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
-          {top.label}{clock.hasClock ? `: ${formatTime(top.seconds)}` : ''}
+            <View style={styles.footer}>
+              {lastMove && <Text style={styles.lastMove}>Last move: {lastMove.san}</Text>}
+              <View style={styles.footerButtons}>
+                <Pressable style={styles.resetButton} onPress={handleReset}>
+                  <Text style={styles.resetButtonText}>New Game</Text>
+                </Pressable>
+                {gameOver && history.length > 0 && (
+                  <Pressable
+                    style={[styles.resetButton, styles.analyzeButton]}
+                    onPress={() => onAnalyze({ initialFen, chess960, history })}
+                  >
+                    <Text style={styles.resetButtonText}>Analyze Game</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          </>
+        }
+      >
+        <Text style={styles.subtitle}>
+          {getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
         </Text>
-        <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
-      </View>
-
-      {!chess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
-
-      <ChessBoard
-        key={resetCount}
-        fen={displayFen}
-        onMove={handleMove}
-        disabled={gameOver || turn !== USER_COLOR || botThinking || isReviewing}
-        chess960={chess960}
-        initialFen={initialFen}
-        orientation={flipped ? 'b' : 'w'}
-      />
-
-      <View style={styles.playerRow}>
-        <Text style={[styles.clock, turn === bottomColor && !gameOver && styles.clockActive]}>
-          {bottom.label}{clock.hasClock ? `: ${formatTime(bottom.seconds)}` : ''}
+        <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner || resignedBy) && styles.statusOver]}>
+          {statusText}
         </Text>
-        <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
-      </View>
+        {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
+        {botThinking && (
+          <View style={styles.thinkingRow}>
+            <ActivityIndicator size="small" color="#3a2618" />
+            <Text style={styles.thinkingText}>The bot is thinking...</Text>
+          </View>
+        )}
+        {engineError && <Text style={styles.errorText}>Engine error: {engineError}</Text>}
 
-      {hintLoading && <Text style={styles.hintText}>Thinking of a hint...</Text>}
-      {!hintLoading && hintText && <Text style={styles.hintText}>Hint: {hintText}</Text>}
-
-      <View style={styles.controlsWrap}>
-        <GameControlBar
-          items={[
-            { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
-            { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver },
-            {
-              key: 'hint',
-              label: 'Hint',
-              onPress: handleHintPress,
-              disabled: gameOver || hintLoading || botThinking || turn !== USER_COLOR || isReviewing,
-            },
-            {
-              key: 'undo',
-              label: 'Undo',
-              onPress: handleUndo,
-              disabled: gameOver || botThinking || turn !== USER_COLOR || history.length < 2 || isReviewing,
-            },
-          ]}
-        />
-        <GameOptionsMenu
-          visible={showOptions}
-          items={[{ label: 'Flip Board', onPress: () => setFlipped((v) => !v) }]}
-        />
-      </View>
-
-      <View style={styles.footer}>
-        {lastMove && <Text style={styles.lastMove}>Last move: {lastMove.san}</Text>}
-        <View style={styles.footerButtons}>
-          <Pressable style={styles.resetButton} onPress={handleReset}>
-            <Text style={styles.resetButtonText}>New Game</Text>
-          </Pressable>
-          {gameOver && history.length > 0 && (
-            <Pressable
-              style={[styles.resetButton, styles.analyzeButton]}
-              onPress={() => onAnalyze({ initialFen, chess960, history })}
-            >
-              <Text style={styles.resetButtonText}>Analyze Game</Text>
-            </Pressable>
-          )}
+        <View style={styles.playerRow}>
+          <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
+            {top.label}{clock.hasClock ? `: ${formatTime(top.seconds)}` : ''}
+          </Text>
+          <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
-      </View>
-      </View>
+
+        {!chess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+
+        <ChessBoard
+          key={resetCount}
+          fen={displayFen}
+          onMove={handleMove}
+          disabled={gameOver || turn !== USER_COLOR || botThinking || isReviewing}
+          chess960={chess960}
+          initialFen={initialFen}
+          orientation={flipped ? 'b' : 'w'}
+        />
+
+        <View style={styles.playerRow}>
+          <Text style={[styles.clock, turn === bottomColor && !gameOver && styles.clockActive]}>
+            {bottom.label}{clock.hasClock ? `: ${formatTime(bottom.seconds)}` : ''}
+          </Text>
+          <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
+        </View>
+
+        {hintLoading && <Text style={styles.hintText}>Thinking of a hint...</Text>}
+        {!hintLoading && hintText && <Text style={styles.hintText}>Hint: {hintText}</Text>}
+      </GameScreenBody>
     </View>
   );
 }
@@ -417,12 +422,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-  },
-  body: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
   },
   subtitle: {
     fontSize: 13,

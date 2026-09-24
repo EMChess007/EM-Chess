@@ -5,6 +5,7 @@ import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
+import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
 import ScreenHeader from '../components/ScreenHeader';
 import { ChessEngine } from '../logic/ChessEngine';
@@ -378,122 +379,125 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
         autoScroll={!isReviewing}
         onSelectMove={handleSelectMove}
       />
-      <View style={styles.body}>
+      <GameScreenBody
+        bottomBar={
+          <>
+            <View style={styles.controlsWrap}>
+              <GameControlBar
+                items={[
+                  { key: 'options', label: 'More', onPress: () => setShowOptions((v) => !v), active: showOptions },
+                  {
+                    key: 'chat',
+                    label: chatUnread > 0 ? `Chat (${chatUnread})` : 'Chat',
+                    onPress: () => setChatOpen((v) => !v),
+                    active: chatOpen,
+                  },
+                  { key: 'back', label: '‹ Back', onPress: handleBack, disabled: !canGoBack },
+                  { key: 'forward', label: 'Forward ›', onPress: handleForward, disabled: !canGoForward },
+                ]}
+              />
+              <GameOptionsMenu
+                visible={showOptions}
+                items={[
+                  { label: 'Request Draw', onPress: handleRequestDraw, disabled: !!gameOver || drawOfferPending },
+                  { label: 'Resign', onPress: handleResign, destructive: true, disabled: !!gameOver },
+                ]}
+              />
+            </View>
 
-      {connectionState === 'reconnecting' && (
-        <Text style={styles.warningBanner}>Connection lost — trying to reconnect...</Text>
-      )}
-      {opponentGraceSeconds !== null && (
-        <Text style={styles.warningBanner}>
-          Your opponent disconnected — if they don't reconnect in {opponentGraceSeconds}s you'll win automatically.
-        </Text>
-      )}
-      {moveError && <Text style={styles.errorBanner}>{moveError}</Text>}
-      {drawNotice && <Text style={styles.errorBanner}>{drawNotice}</Text>}
-      {drawOfferPending && !gameOver && (
-        <Text style={styles.warningBanner}>Draw offer sent — waiting for opponent...</Text>
-      )}
-      {incomingDrawOffer && !gameOver && (
-        <View style={styles.drawOfferRow}>
-          <Text style={styles.warningBanner}>Your opponent offers a draw.</Text>
-          <View style={styles.drawOfferButtons}>
-            <Pressable style={styles.drawAcceptButton} onPress={() => handleRespondDraw(true)}>
-              <Text style={styles.drawButtonText}>Accept</Text>
-            </Pressable>
-            <Pressable style={styles.drawDeclineButton} onPress={() => handleRespondDraw(false)}>
-              <Text style={styles.drawButtonText}>Decline</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
-
-      <Text style={[styles.status, gameOver && styles.statusOver]}>{statusText}</Text>
-      {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
-
-      <View style={styles.playerRow}>
-        <Text style={[styles.clock, turn === opponentColor && !gameOver && styles.clockActive]}>
-          {opponentName}: {formatTime(opponentMs / 1000)}
-        </Text>
-        <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
-      </View>
-
-      {!match.isChess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
-
-      <ChessBoard
-        key={boardKey}
-        fen={displayFen}
-        onMove={handleMove}
-        disabled={!isMyTurn || connectionState !== 'connected' || isReviewing}
-        chess960={match.isChess960}
-        initialFen={match.fen}
-        orientation={myColor}
-      />
-
-      <View style={styles.playerRow}>
-        <Text style={[styles.clock, turn === myColor && !gameOver && styles.clockActive]}>
-          {myName}: {formatTime(myMs / 1000)}
-        </Text>
-        <CapturedPieces pieces={myCaptured} color={opponentColor} advantage={myAdvantage} />
-      </View>
-
-      <View style={styles.controlsWrap}>
-        <GameControlBar
-          items={[
-            { key: 'options', label: 'More', onPress: () => setShowOptions((v) => !v), active: showOptions },
-            {
-              key: 'chat',
-              label: chatUnread > 0 ? `Chat (${chatUnread})` : 'Chat',
-              onPress: () => setChatOpen((v) => !v),
-              active: chatOpen,
-            },
-            { key: 'back', label: '‹ Back', onPress: handleBack, disabled: !canGoBack },
-            { key: 'forward', label: 'Forward ›', onPress: handleForward, disabled: !canGoForward },
-          ]}
-        />
-        <GameOptionsMenu
-          visible={showOptions}
-          items={[
-            { label: 'Request Draw', onPress: handleRequestDraw, disabled: !!gameOver || drawOfferPending },
-            { label: 'Resign', onPress: handleResign, destructive: true, disabled: !!gameOver },
-          ]}
-        />
-      </View>
-
-      {chatOpen && (
-        <View style={styles.chatPanel}>
-          <ScrollView style={styles.chatMessages} contentContainerStyle={styles.chatMessagesContent}>
-            {chatMessages.length === 0 && <Text style={styles.chatEmptyText}>No messages yet.</Text>}
-            {chatMessages.map((m, i) => (
-              <Text key={i} style={[styles.chatMessage, m.from === 'me' && styles.chatMessageMine]}>
-                {m.from === 'me' ? 'You' : opponentName}: {m.text}
-              </Text>
-            ))}
-          </ScrollView>
-          <View style={styles.chatInputRow}>
-            <TextInput
-              style={styles.chatInput}
-              value={chatInput}
-              onChangeText={setChatInput}
-              placeholder="Message opponent..."
-              onSubmitEditing={handleSendChat}
-              returnKeyType="send"
-            />
-            <Pressable style={styles.chatSendButton} onPress={handleSendChat}>
-              <Text style={styles.chatButtonText}>Send</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
-
-      <View style={styles.footer}>
-        {lastMoveSan && <Text style={styles.lastMove}>Last move: {lastMoveSan}</Text>}
-        {gameOver && (
-          <Pressable style={styles.exitButton} onPress={handleExit}>
-            <Text style={styles.exitButtonText}>Back to menu</Text>
-          </Pressable>
+            <View style={styles.footer}>
+              {lastMoveSan && <Text style={styles.lastMove}>Last move: {lastMoveSan}</Text>}
+              {gameOver && (
+                <Pressable style={styles.exitButton} onPress={handleExit}>
+                  <Text style={styles.exitButtonText}>Back to menu</Text>
+                </Pressable>
+              )}
+            </View>
+          </>
+        }
+      >
+        {connectionState === 'reconnecting' && (
+          <Text style={styles.warningBanner}>Connection lost — trying to reconnect...</Text>
         )}
-      </View>
-      </View>
+        {opponentGraceSeconds !== null && (
+          <Text style={styles.warningBanner}>
+            Your opponent disconnected — if they don't reconnect in {opponentGraceSeconds}s you'll win automatically.
+          </Text>
+        )}
+        {moveError && <Text style={styles.errorBanner}>{moveError}</Text>}
+        {drawNotice && <Text style={styles.errorBanner}>{drawNotice}</Text>}
+        {drawOfferPending && !gameOver && (
+          <Text style={styles.warningBanner}>Draw offer sent — waiting for opponent...</Text>
+        )}
+        {incomingDrawOffer && !gameOver && (
+          <View style={styles.drawOfferRow}>
+            <Text style={styles.warningBanner}>Your opponent offers a draw.</Text>
+            <View style={styles.drawOfferButtons}>
+              <Pressable style={styles.drawAcceptButton} onPress={() => handleRespondDraw(true)}>
+                <Text style={styles.drawButtonText}>Accept</Text>
+              </Pressable>
+              <Pressable style={styles.drawDeclineButton} onPress={() => handleRespondDraw(false)}>
+                <Text style={styles.drawButtonText}>Decline</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        <Text style={[styles.status, gameOver && styles.statusOver]}>{statusText}</Text>
+        {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
+
+        <View style={styles.playerRow}>
+          <Text style={[styles.clock, turn === opponentColor && !gameOver && styles.clockActive]}>
+            {opponentName}: {formatTime(opponentMs / 1000)}
+          </Text>
+          <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
+        </View>
+
+        {!match.isChess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+
+        <ChessBoard
+          key={boardKey}
+          fen={displayFen}
+          onMove={handleMove}
+          disabled={!isMyTurn || connectionState !== 'connected' || isReviewing}
+          chess960={match.isChess960}
+          initialFen={match.fen}
+          orientation={myColor}
+        />
+
+        <View style={styles.playerRow}>
+          <Text style={[styles.clock, turn === myColor && !gameOver && styles.clockActive]}>
+            {myName}: {formatTime(myMs / 1000)}
+          </Text>
+          <CapturedPieces pieces={myCaptured} color={opponentColor} advantage={myAdvantage} />
+        </View>
+
+        {chatOpen && (
+          <View style={styles.chatPanel}>
+            <ScrollView style={styles.chatMessages} contentContainerStyle={styles.chatMessagesContent}>
+              {chatMessages.length === 0 && <Text style={styles.chatEmptyText}>No messages yet.</Text>}
+              {chatMessages.map((m, i) => (
+                <Text key={i} style={[styles.chatMessage, m.from === 'me' && styles.chatMessageMine]}>
+                  {m.from === 'me' ? 'You' : opponentName}: {m.text}
+                </Text>
+              ))}
+            </ScrollView>
+            <View style={styles.chatInputRow}>
+              <TextInput
+                style={styles.chatInput}
+                value={chatInput}
+                onChangeText={setChatInput}
+                placeholder="Message opponent..."
+                onSubmitEditing={handleSendChat}
+                returnKeyType="send"
+              />
+              <Pressable style={styles.chatSendButton} onPress={handleSendChat}>
+                <Text style={styles.chatButtonText}>Send</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+      </GameScreenBody>
     </View>
   );
 }
@@ -502,12 +506,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-  },
-  body: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
   },
   warningBanner: {
     fontSize: 13,

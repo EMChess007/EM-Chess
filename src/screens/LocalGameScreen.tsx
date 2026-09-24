@@ -5,6 +5,7 @@ import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
+import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
@@ -226,80 +227,84 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
         autoScroll={!isReviewing}
         onSelectMove={handleSelectMove}
       />
-      <View style={styles.body}>
-      <Text style={styles.timeControlLabel}>{timeControl.label}</Text>
-      <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner || resignedBy) && styles.statusOver]}>
-        {statusText}
-      </Text>
-      {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
+      <GameScreenBody
+        bottomBar={
+          <>
+            <View style={styles.controlsWrap}>
+              <GameControlBar
+                items={[
+                  { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
+                  { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver },
+                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing },
+                  { key: 'undo', label: 'Undo', onPress: handleUndo, disabled: gameOver || history.length === 0 || isReviewing },
+                ]}
+              />
+              <GameOptionsMenu
+                visible={showOptions}
+                items={[{ label: 'Flip Board', onPress: () => setFlipped((v) => !v) }]}
+              />
+            </View>
 
-      {hintActive && (
-        <StockfishBridge ref={handleHintBridgeRef} onLine={handleHintBridgeLine} html={hintRuntime.buildHtml()} />
-      )}
-
-      <View style={styles.playerRow}>
-        <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
-          {topColor === 'w' ? 'White' : 'Black'}
-          {clock.hasClock ? `: ${formatTime(topColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
+            <View style={styles.footer}>
+              {lastMove && <Text style={styles.lastMove}>Last move: {lastMove.san}</Text>}
+              <View style={styles.footerButtons}>
+                <Pressable style={styles.resetButton} onPress={handleReset}>
+                  <Text style={styles.resetButtonText}>New Game</Text>
+                </Pressable>
+                {gameOver && history.length > 0 && (
+                  <Pressable
+                    style={[styles.resetButton, styles.analyzeButton]}
+                    onPress={() => onAnalyze({ initialFen, chess960, history })}
+                  >
+                    <Text style={styles.resetButtonText}>Analyze Game</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          </>
+        }
+      >
+        <Text style={styles.timeControlLabel}>{timeControl.label}</Text>
+        <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner || resignedBy) && styles.statusOver]}>
+          {statusText}
         </Text>
-        <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
-      </View>
+        {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
 
-      {!chess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {hintActive && (
+          <StockfishBridge ref={handleHintBridgeRef} onLine={handleHintBridgeLine} html={hintRuntime.buildHtml()} />
+        )}
 
-      <ChessBoard
-        key={resetCount}
-        fen={displayFen}
-        onMove={handleMove}
-        disabled={gameOver || isReviewing}
-        chess960={chess960}
-        initialFen={initialFen}
-        orientation={flipped ? 'b' : 'w'}
-      />
-
-      <View style={styles.playerRow}>
-        <Text style={[styles.clock, turn === bottomColor && !gameOver && styles.clockActive]}>
-          {bottomColor === 'w' ? 'White' : 'Black'}
-          {clock.hasClock ? `: ${formatTime(bottomColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
-        </Text>
-        <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
-      </View>
-
-      {hintLoading && <Text style={styles.hintText}>Thinking of a hint...</Text>}
-      {!hintLoading && hintText && <Text style={styles.hintText}>Hint: {hintText}</Text>}
-
-      <View style={styles.controlsWrap}>
-        <GameControlBar
-          items={[
-            { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
-            { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver },
-            { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing },
-            { key: 'undo', label: 'Undo', onPress: handleUndo, disabled: gameOver || history.length === 0 || isReviewing },
-          ]}
-        />
-        <GameOptionsMenu
-          visible={showOptions}
-          items={[{ label: 'Flip Board', onPress: () => setFlipped((v) => !v) }]}
-        />
-      </View>
-
-      <View style={styles.footer}>
-        {lastMove && <Text style={styles.lastMove}>Last move: {lastMove.san}</Text>}
-        <View style={styles.footerButtons}>
-          <Pressable style={styles.resetButton} onPress={handleReset}>
-            <Text style={styles.resetButtonText}>New Game</Text>
-          </Pressable>
-          {gameOver && history.length > 0 && (
-            <Pressable
-              style={[styles.resetButton, styles.analyzeButton]}
-              onPress={() => onAnalyze({ initialFen, chess960, history })}
-            >
-              <Text style={styles.resetButtonText}>Analyze Game</Text>
-            </Pressable>
-          )}
+        <View style={styles.playerRow}>
+          <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
+            {topColor === 'w' ? 'White' : 'Black'}
+            {clock.hasClock ? `: ${formatTime(topColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
+          </Text>
+          <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
-      </View>
-      </View>
+
+        {!chess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+
+        <ChessBoard
+          key={resetCount}
+          fen={displayFen}
+          onMove={handleMove}
+          disabled={gameOver || isReviewing}
+          chess960={chess960}
+          initialFen={initialFen}
+          orientation={flipped ? 'b' : 'w'}
+        />
+
+        <View style={styles.playerRow}>
+          <Text style={[styles.clock, turn === bottomColor && !gameOver && styles.clockActive]}>
+            {bottomColor === 'w' ? 'White' : 'Black'}
+            {clock.hasClock ? `: ${formatTime(bottomColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
+          </Text>
+          <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
+        </View>
+
+        {hintLoading && <Text style={styles.hintText}>Thinking of a hint...</Text>}
+        {!hintLoading && hintText && <Text style={styles.hintText}>Hint: {hintText}</Text>}
+      </GameScreenBody>
     </View>
   );
 }
@@ -308,12 +313,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-  },
-  body: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
   },
   timeControlLabel: {
     fontSize: 13,
