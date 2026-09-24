@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, type StoredGame } from '../api/client';
+import { appAlert } from '../components/AppAlert';
 import { getDailyPuzzle } from '../logic/puzzles';
 import { isTodayPuzzleSolved } from '../logic/puzzleStorage';
 import { replayPgn } from '../logic/pgnReplay';
@@ -90,7 +91,7 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onAn
   const handleSelectGame = (game: StoredGame) => {
     const replayed = replayPgn(game.pgn, game.isChess960);
     if (!replayed || replayed.history.length === 0) {
-      Alert.alert('Analysis unavailable', 'This game could not be replayed for analysis.');
+      appAlert('Analysis unavailable', 'This game could not be replayed for analysis.');
       return;
     }
     onAnalyzeGame({ initialFen: replayed.initialFen, chess960: game.isChess960, history: replayed.history });

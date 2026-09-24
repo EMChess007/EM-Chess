@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSaveGameOnEnd } from '../api/useSaveGameOnEnd';
+import { appAlert } from '../components/AppAlert';
 import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
@@ -260,7 +261,7 @@ export default function BotGameScreen({
   const handleResign = () => {
     if (gameOver) return;
     setShowOptions(false);
-    Alert.alert('Resign?', 'This ends the game as a loss.', [
+    appAlert('Resign?', 'This ends the game as a loss.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Resign', style: 'destructive', onPress: () => setResignedBy(USER_COLOR) },
     ]);

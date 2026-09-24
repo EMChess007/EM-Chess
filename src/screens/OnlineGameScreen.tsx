@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { connectSocket, disconnectSocket } from '../api/socket';
+import { appAlert } from '../components/AppAlert';
 import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
@@ -273,7 +274,7 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
   const handleResign = () => {
     if (gameOver) return;
     setShowOptions(false);
-    Alert.alert('Resign?', 'This ends the game as a loss.', [
+    appAlert('Resign?', 'This ends the game as a loss.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Resign',

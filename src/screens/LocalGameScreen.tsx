@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSaveGameOnEnd } from '../api/useSaveGameOnEnd';
+import { appAlert } from '../components/AppAlert';
 import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
@@ -168,7 +169,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   const handleResign = () => {
     if (gameOver) return;
     setShowOptions(false);
-    Alert.alert(`${turnLabel} resigns?`, 'This ends the game as a loss.', [
+    appAlert(`${turnLabel} resigns?`, 'This ends the game as a loss.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Resign', style: 'destructive', onPress: () => setResignedBy(turn) },
     ]);

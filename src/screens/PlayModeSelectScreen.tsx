@@ -1,4 +1,5 @@
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { appAlert } from '../components/AppAlert';
 import ScreenHeader from '../components/ScreenHeader';
 import type { AuthUser } from '../types/auth';
 
@@ -28,7 +29,7 @@ export default function PlayModeSelectScreen({
   // other mode on this screen.
   const handleOnline = () => {
     if (!authUser) {
-      Alert.alert('Login required', 'You need to log in to play online.', [
+      appAlert('Login required', 'You need to log in to play online.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Log in / Sign up', onPress: onAuthPress },
       ]);

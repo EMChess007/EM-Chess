@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { clearAuthSession, loadAuthSession, type AuthSession } from './src/api/authStorage';
+import AppAlertHost from './src/components/AppAlert';
 import BottomTabBar, { type MainTab } from './src/components/BottomTabBar';
 import AnalysisScreen from './src/screens/AnalysisScreen';
 import BotGameScreen from './src/screens/BotGameScreen';
@@ -220,6 +221,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       {content}
+      <AppAlertHost />
       <StatusBar style="auto" />
     </SafeAreaProvider>
   );
