@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { StockfishEngineAdapter } from '../engine/StockfishEngineAdapter';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { buildStockfishHtml } from '../engine/stockfishHtml';
+import MoveQualityBadge from './MoveQualityBadge';
 import { MOVE_QUALITY_LABELS, type MoveQuality } from '../logic/analysis';
 import { computeGameSummary, type GameAnalysisSummary, type PlayerGameStats } from '../logic/gameSummary';
 import type { PieceColor } from '../types/chess';
@@ -128,9 +129,11 @@ export default function PostGameSummaryModal({
                     <Text style={styles.accuracyCaption}>Accuracy</Text>
                     <View style={styles.qualityList}>
                       {topQualities(stats.qualityCounts).map(([quality, count]) => (
-                        <Text key={quality} style={styles.qualityRow}>
-                          {count} {shortQualityLabel(quality)}
-                        </Text>
+                        <View key={quality} style={styles.qualityItem}>
+                          <MoveQualityBadge quality={quality} size={28} />
+                          <Text style={styles.qualityCount}>{count}</Text>
+                          <Text style={styles.qualityRow}>{shortQualityLabel(quality)}</Text>
+                        </View>
                       ))}
                     </View>
                   </View>
@@ -236,11 +239,23 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   qualityList: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 4,
+  },
+  qualityItem: {
     alignItems: 'center',
     gap: 2,
   },
+  qualityCount: {
+    fontSize: 14,
+    color: '#3a2618',
+    fontWeight: '700',
+    marginTop: 2,
+  },
   qualityRow: {
-    fontSize: 13,
+    fontSize: 11,
     color: '#3a2618',
     fontWeight: '600',
   },

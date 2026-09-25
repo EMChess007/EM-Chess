@@ -11,6 +11,7 @@ import {
 import ChessBoard from '../components/ChessBoard';
 import { getBoardSize } from '../components/boardSize';
 import EvalBar from '../components/EvalBar';
+import MoveQualityBadge from '../components/MoveQualityBadge';
 import ScreenHeader from '../components/ScreenHeader';
 import type { AnalysisResult } from '../engine/ChessEngine';
 import { getEngineRuntime } from '../engine/engineRegistry';
@@ -21,7 +22,6 @@ import {
   isBookMove,
   MOVE_QUALITY_COLORS,
   MOVE_QUALITY_LABELS,
-  MOVE_QUALITY_SYMBOLS,
   toWhitePerspective,
   type MoveQuality,
 } from '../logic/analysis';
@@ -259,12 +259,12 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
       <View style={styles.moveInfo}>
         {currentPlyAnalysis ? (
           <>
-            <Text
-              style={[styles.moveQualityBadge, { backgroundColor: MOVE_QUALITY_COLORS[currentPlyAnalysis.quality] }]}
-            >
-              {MOVE_QUALITY_SYMBOLS[currentPlyAnalysis.quality]} {currentPlyAnalysis.san} ·{' '}
-              {MOVE_QUALITY_LABELS[currentPlyAnalysis.quality]}
-            </Text>
+            <View style={styles.moveQualityBadgeRow}>
+              <MoveQualityBadge quality={currentPlyAnalysis.quality} size={24} />
+              <Text style={styles.moveQualityBadgeText}>
+                {currentPlyAnalysis.san} · {MOVE_QUALITY_LABELS[currentPlyAnalysis.quality]}
+              </Text>
+            </View>
             {currentPlyAnalysis.bestMoveSan && (
               <Text style={styles.bestMoveText}>Best move: {currentPlyAnalysis.bestMoveSan}</Text>
             )}
@@ -362,9 +362,7 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
               </Text>
               {analysis ? (
                 <View style={styles.moveRowBadgeWrap}>
-                  <Text style={[styles.moveRowSymbol, { color: MOVE_QUALITY_COLORS[analysis.quality] }]}>
-                    {MOVE_QUALITY_SYMBOLS[analysis.quality]}
-                  </Text>
+                  <MoveQualityBadge quality={analysis.quality} size={18} />
                   <Text style={[styles.moveRowBadge, { color: MOVE_QUALITY_COLORS[analysis.quality] }]}>
                     {MOVE_QUALITY_LABELS[analysis.quality]}
                   </Text>
@@ -435,14 +433,15 @@ const styles = StyleSheet.create({
     gap: 4,
     minHeight: 44,
   },
-  moveQualityBadge: {
+  moveQualityBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  moveQualityBadgeText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#fff',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-    overflow: 'hidden',
+    color: '#3a2618',
   },
   bestMoveText: {
     fontSize: 13,
@@ -557,10 +556,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-  },
-  moveRowSymbol: {
-    fontSize: 14,
-    fontWeight: '700',
   },
   moveRowBadge: {
     fontSize: 12,
