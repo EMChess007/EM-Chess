@@ -20,9 +20,12 @@ import OnlineGameScreen from './src/screens/OnlineGameScreen';
 import OnlineTimeControlSelectScreen from './src/screens/OnlineTimeControlSelectScreen';
 import PlayModeSelectScreen from './src/screens/PlayModeSelectScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import ThemeSelectScreen from './src/screens/ThemeSelectScreen';
 import TimeControlSelectScreen from './src/screens/TimeControlSelectScreen';
 import { restoreCustomEngines } from './src/logic/customEngines';
+import { restoreCustomThemes } from './src/logic/customThemes';
 import { restoreSoundSetting } from './src/logic/soundSettings';
+import { restoreActiveThemes } from './src/logic/themeSettings';
 import type { BotPersonality } from './src/types/bot';
 import type { ColorChoice } from './src/types/chess';
 import type { AnalyzeParams } from './src/types/history';
@@ -46,7 +49,8 @@ type Screen =
   | { name: 'onlineTimeControlSelect'; token: string }
   | { name: 'matchmaking'; token: string; timeControl: TimeControl; chess960: boolean }
   | { name: 'onlineGame'; token: string; match: MatchFoundPayload }
-  | { name: 'engineSelect' };
+  | { name: 'engineSelect' }
+  | { name: 'themeSelect' };
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>({ name: 'main' });
@@ -57,6 +61,8 @@ export default function App() {
     loadAuthSession().then(setAuthSession);
     restoreCustomEngines();
     restoreSoundSetting();
+    restoreCustomThemes();
+    restoreActiveThemes();
   }, []);
 
   const handleLogout = () => {
@@ -94,6 +100,7 @@ export default function App() {
           onAuthPress={() => setScreen({ name: 'login' })}
           onLogout={handleLogout}
           onOpenEngines={() => setScreen({ name: 'engineSelect' })}
+          onOpenThemes={() => setScreen({ name: 'themeSelect' })}
         />
       );
     }
@@ -205,6 +212,8 @@ export default function App() {
     content = <AnalysisScreen {...screen.params} onExit={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'engineSelect') {
     content = <EngineSelectScreen onBack={() => setScreen({ name: 'main' })} />;
+  } else if (screen.name === 'themeSelect') {
+    content = <ThemeSelectScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'botGame') {
     content = (
       <BotGameScreen

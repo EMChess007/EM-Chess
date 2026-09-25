@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet } from 'react-native';
 import type { BoardSquare } from '../types/chess';
+import type { PieceImageMap } from '../types/theme';
 import Piece from './Piece';
 
 interface SquareProps {
@@ -13,21 +14,36 @@ interface SquareProps {
   isChecked: boolean;
   size: number;
   onPress: (square: string) => void;
+  /** The active board theme's colors and the active piece theme's images — see ChessBoard.tsx. */
+  lightColor: string;
+  darkColor: string;
+  pieceImages?: PieceImageMap;
 }
 
-export default function Square({ data, isLight, isSelected, isLegalTarget, isChecked, size, onPress }: SquareProps) {
+export default function Square({
+  data,
+  isLight,
+  isSelected,
+  isLegalTarget,
+  isChecked,
+  size,
+  onPress,
+  lightColor,
+  darkColor,
+  pieceImages,
+}: SquareProps) {
   return (
     <Pressable
       onPress={() => onPress(data.square)}
       style={[
         styles.square,
-        { width: size, height: size, backgroundColor: isLight ? '#f0d9b5' : '#b58863' },
+        { width: size, height: size, backgroundColor: isLight ? lightColor : darkColor },
         isSelected && styles.selected,
         isChecked && styles.checked,
       ]}
     >
       {isLegalTarget && <Pressable style={styles.legalDot} onPress={() => onPress(data.square)} />}
-      {data.piece && <Piece piece={data.piece} />}
+      {data.piece && <Piece piece={data.piece} images={pieceImages} />}
     </Pressable>
   );
 }

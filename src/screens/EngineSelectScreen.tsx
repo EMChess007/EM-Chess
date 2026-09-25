@@ -16,6 +16,7 @@ import StockfishBridge, { type StockfishBridgeHandle } from '../engine/Stockfish
 import { StockfishEngineAdapter } from '../engine/StockfishEngineAdapter';
 import { deleteCustomEngine, saveCustomEngine } from '../logic/customEngines';
 import { AVAILABLE_ENGINES } from '../logic/engines';
+import { readFileAsBase64 } from '../logic/fileReading';
 import type { EngineOption } from '../types/engine';
 
 interface EngineSelectScreenProps {
@@ -40,35 +41,6 @@ function describeError(err: unknown): unknown {
     return { name: err.name, message: err.message, code: (err as { code?: unknown }).code, stack: err.stack };
   }
   return err;
-}
-
-/**
- * Reads a picked file's bytes as base64, given its uri (a `file://` path on native, a `blob:`
- * URL on web). Deliberately goes through `fetch` + `Blob` + `FileReader` — React Native's own
- * built-in local-file-reading support — rather than expo-file-system: that module's File class
- * gates every read behind a FilePermissionService check, and Expo Go replaces that service with
- * a stricter, per-project-scoped implementation that does not recognize paths written by other
- * native modules (e.g. expo-document-picker's own cache subdirectory) as readable, even though
- * the file is perfectly real and belongs to the same app. `fetch`/`FileReader` never go through
- * that permission service at all, so this works the same in Expo Go and in a custom dev build.
- */
-async function readAsBase64(uri: string): Promise<string> {
-  const response = await fetch(uri);
-  const blob = await response.blob();
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') {
-        reject(new Error('Unexpected FileReader result type'));
-        return;
-      }
-      resolve(reader.result);
-    };
-    reader.readAsDataURL(blob);
-  });
-  // readAsDataURL always yields "data:<mime>;base64,<data>" — strip the prefix.
-  return dataUrl.slice(dataUrl.indexOf(',') + 1);
 }
 
 export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) {
@@ -119,7 +91,7 @@ export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) 
     }
 
     try {
-      const base64 = await readAsBase64(asset.uri);
+      const base64 = await readFileAsBase64(asset.uri);
       console.log('[EngineSelectScreen] read base64, length =', base64.length, '-> entering validating phase');
       setNameInput(asset.name.replace(/\.wasm$/i, ''));
       setPendingWasmBase64(base64);

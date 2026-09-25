@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { ChessEngine } from '../logic/ChessEngine';
+import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { Move, PieceColor } from '../types/chess';
 import { getBoardSize } from './boardSize';
 import Square from './Square';
@@ -19,6 +20,8 @@ export default function ChessBoard({ fen, onMove, disabled, chess960, initialFen
   const { width, height } = useWindowDimensions();
   const boardSize = getBoardSize(width, height);
   const squareSize = boardSize / 8;
+  const boardTheme = useActiveBoardTheme();
+  const pieceTheme = useActivePieceTheme();
 
   const engine = useMemo(
     () => new ChessEngine(fen, { chess960, initialFen }),
@@ -110,6 +113,9 @@ export default function ChessBoard({ fen, onMove, disabled, chess960, initialFen
               isChecked={square.square === checkedKingSquare}
               size={squareSize}
               onPress={handleSquarePress}
+              lightColor={boardTheme.lightColor}
+              darkColor={boardTheme.darkColor}
+              pieceImages={pieceTheme.images}
             />
           ))
         )}
