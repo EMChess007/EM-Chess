@@ -23,6 +23,7 @@ import RegisterScreen from './src/screens/RegisterScreen';
 import TimeControlSelectScreen from './src/screens/TimeControlSelectScreen';
 import { restoreCustomEngines } from './src/logic/customEngines';
 import type { BotPersonality } from './src/types/bot';
+import type { ColorChoice } from './src/types/chess';
 import type { AnalyzeParams } from './src/types/history';
 import type { MatchFoundPayload } from './src/types/multiplayer';
 import type { TimeControl } from './src/types/timeControl';
@@ -37,7 +38,7 @@ type Screen =
   | { name: 'botSelect'; chess960: boolean }
   | { name: 'timeControlSelect'; mode: TimeControlFlowMode }
   | { name: 'game'; timeControl: TimeControl; chess960: boolean }
-  | { name: 'botGame'; timeControl: TimeControl; bot: BotPersonality; chess960: boolean }
+  | { name: 'botGame'; timeControl: TimeControl; bot: BotPersonality; chess960: boolean; colorChoice: ColorChoice }
   | { name: 'analysis'; params: AnalyzeParams }
   | { name: 'login' }
   | { name: 'register' }
@@ -179,11 +180,18 @@ export default function App() {
     content = (
       <TimeControlSelectScreen
         subtitle={subtitle}
-        onSelect={(timeControl) =>
+        showColorPicker={mode.kind === 'bot'}
+        onSelect={(timeControl, colorChoice) =>
           setScreen(
             mode.kind === 'local'
               ? { name: 'game', timeControl, chess960: mode.chess960 }
-              : { name: 'botGame', timeControl, bot: mode.bot, chess960: mode.chess960 }
+              : {
+                  name: 'botGame',
+                  timeControl,
+                  bot: mode.bot,
+                  chess960: mode.chess960,
+                  colorChoice: colorChoice ?? 'random',
+                }
           )
         }
         onBack={() =>
@@ -201,6 +209,7 @@ export default function App() {
         bot={screen.bot}
         timeControl={screen.timeControl}
         chess960={screen.chess960}
+        colorChoice={screen.colorChoice}
         authToken={authSession?.token ?? null}
         onExit={() => setScreen({ name: 'main' })}
         onAnalyze={(params) => setScreen({ name: 'analysis', params })}

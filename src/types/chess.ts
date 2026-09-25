@@ -1,5 +1,9 @@
 export type PieceColor = 'w' | 'b';
 
+// A user's color preference before a bot game starts — 'random' is resolved to an actual
+// PieceColor once the game begins (see BotGameScreen).
+export type ColorChoice = PieceColor | 'random';
+
 export type PieceType = 'p' | 'n' | 'b' | 'r' | 'q' | 'k';
 
 export interface Piece {

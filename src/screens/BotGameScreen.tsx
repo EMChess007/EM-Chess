@@ -22,7 +22,7 @@ import { formatTime } from '../logic/time';
 import { parseUciMove, uciMoveToSan } from '../logic/uciMove';
 import { useChessClock } from '../logic/useChessClock';
 import { START_FEN } from '../types/chess';
-import type { Move, PieceColor } from '../types/chess';
+import type { ColorChoice, Move, PieceColor } from '../types/chess';
 import type { BotPersonality } from '../types/bot';
 import type { AnalyzeParams, GameHistoryEntry } from '../types/history';
 import type { TimeControl } from '../types/timeControl';
@@ -31,22 +31,28 @@ interface BotGameScreenProps {
   bot: BotPersonality;
   timeControl: TimeControl;
   chess960?: boolean;
+  colorChoice?: ColorChoice;
   authToken: string | null;
   onExit: () => void;
   onAnalyze: (params: AnalyzeParams) => void;
 }
 
-const USER_COLOR: PieceColor = 'w';
-const BOT_COLOR: PieceColor = 'b';
-
 export default function BotGameScreen({
   bot,
   timeControl,
   chess960 = false,
+  colorChoice = 'random',
   authToken,
   onExit,
   onAnalyze,
 }: BotGameScreenProps) {
+  // Resolved once per screen mount (a fixed value for this game's whole lifetime, including any
+  // "New Game" resets) — 'random' is a one-time coin flip made when the player enters the game,
+  // not re-rolled on every render.
+  const [userColor] = useState<PieceColor>(() =>
+    colorChoice === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : colorChoice
+  );
+  const botColor: PieceColor = userColor === 'w' ? 'b' : 'w';
   // Which engine plays this bot is decided automatically from its ELO (see getEngineIdForElo)
   // — not something the player picks — so weaker bots feel authentically weak (a genuinely
   // simpler classical engine) rather than a strong engine artificially dialed down. The one
@@ -87,7 +93,7 @@ export default function BotGameScreen({
   // The bot's own clock is driven precisely by consumeTime() below (an exact, sub-second amount
   // matching however long it actually "thought"), not by the once-a-second auto-tick — a fast
   // bullet-speed bot move can take well under 1s, which the auto-tick alone would under-count.
-  const clock = useChessClock(timeControl, turn, engine.isGameOver(), { autoTick: turn === USER_COLOR });
+  const clock = useChessClock(timeControl, turn, engine.isGameOver(), { autoTick: turn === userColor });
   const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null;
 
   const savePayload = useMemo(
@@ -155,7 +161,7 @@ export default function BotGameScreen({
 
   // Whenever it becomes the bot's turn, ask the engine for a move and play it automatically.
   useEffect(() => {
-    if (turn !== BOT_COLOR || gameOver) return;
+    if (turn !== botColor || gameOver) return;
 
     let cancelled = false;
     setBotThinking(true);
@@ -171,7 +177,7 @@ export default function BotGameScreen({
         // Chess960 — this is the only place BotGameScreen asks the engine for a move.
         const thinkTimeMs = getBotThinkTimeMs({
           timeControl,
-          remainingSeconds: clock.blackSeconds,
+          remainingSeconds: botColor === 'w' ? clock.whiteSeconds : clock.blackSeconds,
           legalMoveCount: engine.getLegalMoveCount(),
         });
 
@@ -190,8 +196,8 @@ export default function BotGameScreen({
         if (cancelled) return;
 
         // Actually charge the bot's clock for the time it "thought" — not just a UI effect.
-        clock.consumeTime(BOT_COLOR, thinkTimeMs);
-        clock.applyIncrement(BOT_COLOR);
+        clock.consumeTime(botColor, thinkTimeMs);
+        clock.applyIncrement(botColor);
         setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: moveEngine.getFen() }]);
         setLastMove(move);
         setFen(moveEngine.getFen());
@@ -220,8 +226,8 @@ export default function BotGameScreen({
   );
   const materialDiff = materialValue(whiteCaptured) - materialValue(blackCaptured);
 
-  const turnLabel = turn === USER_COLOR ? 'You' : bot.name;
-  const winnerLabel = turn === USER_COLOR ? bot.name : 'You';
+  const turnLabel = turn === userColor ? 'You' : bot.name;
+  const winnerLabel = turn === userColor ? bot.name : 'You';
 
   let statusText = `Turn: ${turnLabel}`;
   if (chessStatus === 'check') statusText = `Turn: ${turnLabel} — Check!`;
@@ -229,13 +235,13 @@ export default function BotGameScreen({
   if (chessStatus === 'stalemate') statusText = 'Draw (Stalemate)';
   if (chessStatus === 'draw') statusText = 'Draw';
   if (clock.timeoutWinner) {
-    statusText = `Win on time: ${clock.timeoutWinner === USER_COLOR ? 'You' : bot.name}`;
+    statusText = `Win on time: ${clock.timeoutWinner === userColor ? 'You' : bot.name}`;
   }
   if (resignedBy) statusText = `You resigned — ${bot.name} wins`;
 
   const handleMove = (move: Move, newFen: string) => {
     if (viewIndex !== null) return;
-    clock.applyIncrement(USER_COLOR);
+    clock.applyIncrement(userColor);
     setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
     setLastMove(move);
     setFen(newFen);
@@ -263,7 +269,7 @@ export default function BotGameScreen({
     setShowOptions(false);
     appAlert('Resign?', 'This ends the game as a loss.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Resign', style: 'destructive', onPress: () => setResignedBy(USER_COLOR) },
+      { text: 'Resign', style: 'destructive', onPress: () => setResignedBy(userColor) },
     ]);
   };
 
@@ -271,7 +277,7 @@ export default function BotGameScreen({
   // only enabled on the user's turn (i.e. once the bot has already replied), which means
   // `history` always has an even length here and this slice is always safe.
   const handleUndo = () => {
-    if (gameOver || botThinking || turn !== USER_COLOR || history.length < 2 || isReviewing) return;
+    if (gameOver || botThinking || turn !== userColor || history.length < 2 || isReviewing) return;
     const target = history[history.length - 2];
     setHistory((h) => h.slice(0, -2));
     setFen(target.fenBefore);
@@ -281,7 +287,7 @@ export default function BotGameScreen({
   };
 
   const handleHintPress = () => {
-    if (gameOver || hintLoading || botThinking || turn !== USER_COLOR || isReviewing) return;
+    if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing) return;
     setHintText(null);
     setHintLoading(true);
     setHintRequestKey((k) => k + 1);
@@ -302,10 +308,10 @@ export default function BotGameScreen({
 
   // Flipping the board also swaps which row (You / the bot) sits on top vs bottom, so each row
   // always stays next to "its own" side of the board.
-  const topColor: PieceColor = flipped ? USER_COLOR : BOT_COLOR;
-  const bottomColor: PieceColor = flipped ? BOT_COLOR : USER_COLOR;
+  const topColor: PieceColor = flipped ? userColor : botColor;
+  const bottomColor: PieceColor = flipped ? botColor : userColor;
   const playerInfo = (color: PieceColor) => ({
-    label: color === USER_COLOR ? 'You' : bot.name,
+    label: color === userColor ? 'You' : bot.name,
     seconds: color === 'w' ? clock.whiteSeconds : clock.blackSeconds,
     captured: color === 'w' ? whiteCaptured : blackCaptured,
     iconColor: (color === 'w' ? 'b' : 'w') as PieceColor,
@@ -336,13 +342,13 @@ export default function BotGameScreen({
                     key: 'hint',
                     label: 'Hint',
                     onPress: handleHintPress,
-                    disabled: gameOver || hintLoading || botThinking || turn !== USER_COLOR || isReviewing,
+                    disabled: gameOver || hintLoading || botThinking || turn !== userColor || isReviewing,
                   },
                   {
                     key: 'undo',
                     label: 'Undo',
                     onPress: handleUndo,
-                    disabled: gameOver || botThinking || turn !== USER_COLOR || history.length < 2 || isReviewing,
+                    disabled: gameOver || botThinking || turn !== userColor || history.length < 2 || isReviewing,
                   },
                 ]}
               />
@@ -399,10 +405,10 @@ export default function BotGameScreen({
           key={resetCount}
           fen={displayFen}
           onMove={handleMove}
-          disabled={gameOver || turn !== USER_COLOR || botThinking || isReviewing}
+          disabled={gameOver || turn !== userColor || botThinking || isReviewing}
           chess960={chess960}
           initialFen={initialFen}
-          orientation={flipped ? 'b' : 'w'}
+          orientation={flipped ? botColor : userColor}
         />
 
         <View style={styles.playerRow}>
