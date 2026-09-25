@@ -10,6 +10,8 @@ import BotGameScreen from './src/screens/BotGameScreen';
 import BotSelectScreen from './src/screens/BotSelectScreen';
 import DailyPuzzleScreen from './src/screens/DailyPuzzleScreen';
 import EngineSelectScreen from './src/screens/EngineSelectScreen';
+import EngineVsEngineGameScreen from './src/screens/EngineVsEngineGameScreen';
+import EngineVsEngineSetupScreen from './src/screens/EngineVsEngineSetupScreen';
 import GameHistoryScreen from './src/screens/GameHistoryScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import LocalGameScreen from './src/screens/LocalGameScreen';
@@ -34,7 +36,8 @@ import type { TimeControl } from './src/types/timeControl';
 
 type TimeControlFlowMode =
   | { kind: 'local'; chess960: boolean }
-  | { kind: 'bot'; bot: BotPersonality; chess960: boolean };
+  | { kind: 'bot'; bot: BotPersonality; chess960: boolean }
+  | { kind: 'engineVsEngine'; chess960: boolean };
 
 type Screen =
   | { name: 'main' }
@@ -50,7 +53,35 @@ type Screen =
   | { name: 'matchmaking'; token: string; timeControl: TimeControl; chess960: boolean }
   | { name: 'onlineGame'; token: string; match: MatchFoundPayload }
   | { name: 'engineSelect' }
-  | { name: 'themeSelect' };
+  | { name: 'themeSelect' }
+  | {
+      name: 'engineVsEngineSetup';
+      timeControl: TimeControl;
+      chess960: boolean;
+      engine1: BotPersonality | null;
+      engine2: BotPersonality | null;
+      color1: ColorChoice;
+      color2: ColorChoice;
+    }
+  | {
+      name: 'engineVsEngineBotSelect';
+      slot: 1 | 2;
+      timeControl: TimeControl;
+      chess960: boolean;
+      engine1: BotPersonality | null;
+      engine2: BotPersonality | null;
+      color1: ColorChoice;
+      color2: ColorChoice;
+    }
+  | {
+      name: 'engineVsEngineGame';
+      timeControl: TimeControl;
+      chess960: boolean;
+      engine1: BotPersonality;
+      engine2: BotPersonality;
+      color1: ColorChoice;
+      color2: ColorChoice;
+    };
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>({ name: 'main' });
@@ -119,6 +150,8 @@ export default function App() {
         onBotChess960={() => setScreen({ name: 'botSelect', chess960: true })}
         onLocalClassic={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'local', chess960: false } })}
         onLocalChess960={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'local', chess960: true } })}
+        onEngineVsEngineClassic={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'engineVsEngine', chess960: false } })}
+        onEngineVsEngineChess960={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'engineVsEngine', chess960: true } })}
         authUser={authSession?.user ?? null}
         onAuthPress={() => setScreen({ name: 'login' })}
       />
@@ -179,13 +212,17 @@ export default function App() {
   } else if (screen.name === 'timeControlSelect') {
     const { mode } = screen;
     const subtitle =
-      mode.kind === 'local'
+      mode.kind === 'bot'
         ? mode.chess960
-          ? 'Chess960'
-          : undefined
-        : mode.chess960
           ? `${mode.bot.name} · Chess960`
-          : mode.bot.name;
+          : mode.bot.name
+        : mode.kind === 'engineVsEngine'
+          ? mode.chess960
+            ? 'Engine vs Engine · Chess960'
+            : 'Engine vs Engine'
+          : mode.chess960
+            ? 'Chess960'
+            : undefined;
     content = (
       <TimeControlSelectScreen
         subtitle={subtitle}
@@ -194,13 +231,23 @@ export default function App() {
           setScreen(
             mode.kind === 'local'
               ? { name: 'game', timeControl, chess960: mode.chess960 }
-              : {
-                  name: 'botGame',
-                  timeControl,
-                  bot: mode.bot,
-                  chess960: mode.chess960,
-                  colorChoice: colorChoice ?? 'random',
-                }
+              : mode.kind === 'bot'
+                ? {
+                    name: 'botGame',
+                    timeControl,
+                    bot: mode.bot,
+                    chess960: mode.chess960,
+                    colorChoice: colorChoice ?? 'random',
+                  }
+                : {
+                    name: 'engineVsEngineSetup',
+                    timeControl,
+                    chess960: mode.chess960,
+                    engine1: null,
+                    engine2: null,
+                    color1: 'random',
+                    color2: 'random',
+                  }
           )
         }
         onBack={() =>
@@ -214,6 +261,60 @@ export default function App() {
     content = <EngineSelectScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'themeSelect') {
     content = <ThemeSelectScreen onBack={() => setScreen({ name: 'main' })} />;
+  } else if (screen.name === 'engineVsEngineSetup') {
+    content = (
+      <EngineVsEngineSetupScreen
+        engine1={screen.engine1}
+        engine2={screen.engine2}
+        color1={screen.color1}
+        color2={screen.color2}
+        onPickEngine1={() => setScreen({ ...screen, name: 'engineVsEngineBotSelect', slot: 1 })}
+        onPickEngine2={() => setScreen({ ...screen, name: 'engineVsEngineBotSelect', slot: 2 })}
+        onChangeColor1={(color1) => setScreen({ ...screen, color1 })}
+        onChangeColor2={(color2) => setScreen({ ...screen, color2 })}
+        onStart={() => {
+          if (!screen.engine1 || !screen.engine2) return;
+          setScreen({
+            name: 'engineVsEngineGame',
+            timeControl: screen.timeControl,
+            chess960: screen.chess960,
+            engine1: screen.engine1,
+            engine2: screen.engine2,
+            color1: screen.color1,
+            color2: screen.color2,
+          });
+        }}
+        onBack={() => setScreen({ name: 'playModeSelect' })}
+      />
+    );
+  } else if (screen.name === 'engineVsEngineBotSelect') {
+    content = (
+      <BotSelectScreen
+        chess960={screen.chess960}
+        onBack={() => setScreen({ ...screen, name: 'engineVsEngineSetup' })}
+        onSelect={(bot) =>
+          setScreen({
+            ...screen,
+            name: 'engineVsEngineSetup',
+            engine1: screen.slot === 1 ? bot : screen.engine1,
+            engine2: screen.slot === 2 ? bot : screen.engine2,
+          })
+        }
+      />
+    );
+  } else if (screen.name === 'engineVsEngineGame') {
+    content = (
+      <EngineVsEngineGameScreen
+        timeControl={screen.timeControl}
+        chess960={screen.chess960}
+        engine1={screen.engine1}
+        engine2={screen.engine2}
+        colorChoice1={screen.color1}
+        colorChoice2={screen.color2}
+        onExit={() => setScreen({ name: 'main' })}
+        onAnalyze={(params) => setScreen({ name: 'analysis', params })}
+      />
+    );
   } else if (screen.name === 'botGame') {
     content = (
       <BotGameScreen

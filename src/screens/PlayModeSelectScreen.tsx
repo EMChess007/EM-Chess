@@ -10,6 +10,8 @@ interface PlayModeSelectScreenProps {
   onBotChess960: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
+  onEngineVsEngineClassic: () => void;
+  onEngineVsEngineChess960: () => void;
   authUser: AuthUser | null;
   onAuthPress: () => void;
 }
@@ -21,6 +23,8 @@ export default function PlayModeSelectScreen({
   onBotChess960,
   onLocalClassic,
   onLocalChess960,
+  onEngineVsEngineClassic,
+  onEngineVsEngineChess960,
   authUser,
   onAuthPress,
 }: PlayModeSelectScreenProps) {
@@ -69,6 +73,19 @@ export default function PlayModeSelectScreen({
               <Text style={styles.subButtonText}>Classic</Text>
             </Pressable>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalChess960}>
+              <Text style={styles.subButtonText}>Chess960</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.categoryCard}>
+          <Text style={styles.categoryTitle}>Engine vs Engine</Text>
+          <Text style={styles.categorySubtitle}>Watch two engines play each other automatically</Text>
+          <View style={styles.subButtonRow}>
+            <Pressable style={[styles.subButton, styles.engineSubButton]} onPress={onEngineVsEngineClassic}>
+              <Text style={styles.subButtonText}>Classic</Text>
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.engineSubButton]} onPress={onEngineVsEngineChess960}>
               <Text style={styles.subButtonText}>Chess960</Text>
             </Pressable>
           </View>
@@ -126,6 +143,9 @@ const styles = StyleSheet.create({
   },
   localSubButton: {
     backgroundColor: '#3a2618',
+  },
+  engineSubButton: {
+    backgroundColor: '#8d6e00',
   },
   subButtonText: {
     color: '#fff',
