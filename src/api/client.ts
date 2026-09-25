@@ -81,6 +81,19 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Fires when an authenticated request (one that sent a token) comes back 401 — i.e. the stored
+ * JWT is invalid or expired (wrong JWT_SECRET after switching local/online backend, or the token
+ * simply aged out), not a login/register attempt rejected for wrong credentials (those send no
+ * token and are left for the caller to handle as before). Registered once by App.tsx so every
+ * screen/hook that calls `api.*` gets the same "log the user out and send them to Login" behavior
+ * for free, without each call site handling it individually.
+ */
+let sessionExpiredHandler: (() => void) | null = null;
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  sessionExpiredHandler = handler;
+}
+
 interface RequestOptions {
   method?: 'GET' | 'POST';
   body?: unknown;
@@ -117,6 +130,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
         ? data.error
         : `Request failed (${response.status})`;
+    if (response.status === 401 && options.token) sessionExpiredHandler?.();
     throw new ApiError(response.status, message);
   }
 

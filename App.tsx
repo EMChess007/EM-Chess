@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { setSessionExpiredHandler } from './src/api/client';
 import { clearAuthSession, loadAuthSession, type AuthSession } from './src/api/authStorage';
-import AppAlertHost from './src/components/AppAlert';
+import AppAlertHost, { appAlert } from './src/components/AppAlert';
 import BottomTabBar, { type MainTab } from './src/components/BottomTabBar';
 import AnalysisScreen from './src/screens/AnalysisScreen';
 import BotGameScreen from './src/screens/BotGameScreen';
@@ -94,6 +95,16 @@ export default function App() {
     restoreSoundSetting();
     restoreCustomThemes();
     restoreActiveThemes();
+  }, []);
+
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      clearAuthSession();
+      setAuthSession(null);
+      setScreen({ name: 'login' });
+      appAlert('Session Expired', 'Your session has expired. Please log in again.');
+    });
+    return () => setSessionExpiredHandler(null);
   }, []);
 
   const handleLogout = () => {
