@@ -118,7 +118,7 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
   const handlePickPieceImage = async (key: string) => {
     let result: DocumentPicker.DocumentPickerResult;
     try {
-      result = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
+      result = await DocumentPicker.getDocumentAsync({ type: ['image/png', 'image/webp'], copyToCacheDirectory: true });
     } catch {
       appAlert('Error', 'Could not pick a file.');
       return;
@@ -126,8 +126,11 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
     if (result.canceled || result.assets.length === 0) return;
 
     const asset = result.assets[0];
-    if (!/\.(png|jpe?g|gif|webp)$/i.test(asset.name)) {
-      appAlert('Invalid file', 'Please pick an image file (PNG, JPG, GIF or WEBP).');
+    // PNG and WebP only — both support transparency (and React Native's Image component reads
+    // both natively, no extra dependency needed); JPEG doesn't support transparency, which a
+    // piece icon needs to look right over any board square color.
+    if (!/\.(png|webp)$/i.test(asset.name)) {
+      appAlert('Invalid file', 'Please pick a PNG or WebP image with a transparent background.');
       return;
     }
     if (asset.size != null && asset.size > MAX_IMAGE_BYTES) {
@@ -314,8 +317,8 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
         )}
 
         <Text style={styles.hint}>
-          A custom piece set needs all 12 images (white and black — pawn, knight, bishop, rook, queen, king), each
-          under {Math.round(MAX_IMAGE_BYTES / 1024)}KB.
+          A custom piece set needs all 12 images (white and black — pawn, knight, bishop, rook, queen, king), each a
+          PNG or WebP with a transparent background, under {Math.round(MAX_IMAGE_BYTES / 1024)}KB.
         </Text>
       </ScrollView>
     </View>
