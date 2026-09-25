@@ -8,6 +8,7 @@ import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
+import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
@@ -15,6 +16,8 @@ import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
 import { DEFAULT_ENGINE_ID } from '../logic/engines';
 import { buildGamePayload } from '../logic/gamePayload';
+import { getGameOutcome } from '../logic/gameResult';
+import { describeEndReason } from '../logic/gameOutcomeText';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
@@ -143,6 +146,12 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   if (clock.timeoutWinner) statusText = `Win on time: ${clock.timeoutWinner === 'w' ? 'White' : 'Black'}`;
   if (resignedBy) statusText = `${resignedBy === 'w' ? 'White' : 'Black'} resigned — ${resignedBy === 'w' ? 'Black' : 'White'} wins`;
 
+  // No personal point of view here (two players share one device) — matches the plain
+  // White/Black wording `statusText` above already uses.
+  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy);
+  const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : outcome.result === '1-0' ? 'White Won' : 'Black Won';
+  const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';
+
   const handleMove = (move: Move, newFen: string) => {
     if (viewIndex !== null) return;
     clock.applyIncrement(turn);
@@ -254,23 +263,13 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
                 <Pressable style={styles.resetButton} onPress={handleReset}>
                   <Text style={styles.resetButtonText}>New Game</Text>
                 </Pressable>
-                {gameOver && history.length > 0 && (
-                  <Pressable
-                    style={[styles.resetButton, styles.analyzeButton]}
-                    onPress={() => onAnalyze({ initialFen, chess960, history })}
-                  >
-                    <Text style={styles.resetButtonText}>Analyze Game</Text>
-                  </Pressable>
-                )}
               </View>
             </View>
           </>
         }
       >
         <Text style={styles.timeControlLabel}>{timeControl.label}</Text>
-        <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner || resignedBy) && styles.statusOver]}>
-          {statusText}
-        </Text>
+        {!gameOver && <Text style={styles.status}>{statusText}</Text>}
         {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
 
         {hintActive && (
@@ -308,6 +307,22 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
         {hintLoading && <Text style={styles.hintText}>Thinking of a hint...</Text>}
         {!hintLoading && hintText && <Text style={styles.hintText}>Hint: {hintText}</Text>}
       </GameScreenBody>
+
+      <PostGameSummaryModal
+        visible={gameOver}
+        title={summaryTitle}
+        subtitle={summarySubtitle}
+        initialFen={initialFen}
+        chess960={chess960}
+        history={history}
+        players={[
+          { label: 'White', color: 'w' },
+          { label: 'Black', color: 'b' },
+        ]}
+        onGameReview={() => onAnalyze({ initialFen, chess960, history })}
+        onRematch={handleReset}
+        onNewGame={onExit}
+      />
     </View>
   );
 }
@@ -324,10 +339,6 @@ const styles = StyleSheet.create({
   status: {
     fontSize: 16,
     color: '#333',
-  },
-  statusOver: {
-    fontWeight: '700',
-    color: '#b00020',
   },
   openingName: {
     fontSize: 12,
@@ -386,9 +397,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     backgroundColor: '#3a2618',
     borderRadius: 8,
-  },
-  analyzeButton: {
-    backgroundColor: '#2e6f4f',
   },
   resetButtonText: {
     color: '#fff',

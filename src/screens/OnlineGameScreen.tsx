@@ -8,13 +8,16 @@ import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
+import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { ChessEngine } from '../logic/ChessEngine';
+import { describeEndReason } from '../logic/gameOutcomeText';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
 import { formatTime } from '../logic/time';
-import type { Move, PieceColor, PieceType } from '../types/chess';
+import type { Move, PieceColor } from '../types/chess';
+import type { AnalyzeParams, GameHistoryEntry } from '../types/history';
 import type {
   Ack,
   ChatMessagePayload,
@@ -29,13 +32,14 @@ interface OnlineGameScreenProps {
   authToken: string;
   match: MatchFoundPayload;
   onExit: () => void;
+  onAnalyze: (params: AnalyzeParams) => void;
 }
 
-interface MoveRecord {
-  san: string;
+// Extends the shared GameHistoryEntry shape (move/fenBefore/fenAfter — what analysis/summary
+// code needs) with `mover`, which the move-list rendering and captured-material computation
+// already relied on.
+interface MoveRecord extends GameHistoryEntry {
   mover: PieceColor;
-  captured?: PieceType;
-  fenAfter: string;
 }
 
 interface ChatEntry {
@@ -43,22 +47,7 @@ interface ChatEntry {
   text: string;
 }
 
-const GAME_OVER_REASON_LABELS: Record<GameOverPayload['reason'], string> = {
-  checkmate: 'checkmate',
-  stalemate: 'stalemate',
-  draw: 'draw',
-  timeout: 'time out',
-  abandonment: 'opponent abandoned',
-  resignation: 'resignation',
-};
-
-function describeGameOver(payload: GameOverPayload, myColor: PieceColor): string {
-  const reasonLabel = GAME_OVER_REASON_LABELS[payload.reason];
-  if (payload.winner === null) return `Draw (${reasonLabel}).`;
-  return payload.winner === myColor ? `You won! (${reasonLabel})` : `You lost. (${reasonLabel})`;
-}
-
-export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGameScreenProps) {
+export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }: OnlineGameScreenProps) {
   const myColor = match.color;
   const opponentColor: PieceColor = myColor === 'w' ? 'b' : 'w';
 
@@ -124,7 +113,15 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
       playMoveSound(replayed);
       setMoveList((list) => [
         ...list,
-        { san: payload.san, mover: opponentColor, captured: replayed?.captured, fenAfter: payload.fen },
+        {
+          // Falls back to a minimal synthetic Move if the local replay itself failed (an
+          // extremely rare desync) — still enough to show the SAN in the move list; classifyMove
+          // just won't be able to match it against the engine's best line for that one ply.
+          move: replayed ?? { from: '', to: '', san: payload.san },
+          mover: opponentColor,
+          fenBefore: fenRef.current,
+          fenAfter: payload.fen,
+        },
       ]);
     };
 
@@ -179,18 +176,19 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
             const replayEngine = new ChessEngine(match.fen, { chess960: match.isChess960, initialFen: match.fen });
             const rebuilt: MoveRecord[] = [];
             ack.state.moves.forEach((m, i) => {
+              const fenBefore = replayEngine.getFen();
               const result = replayEngine.move(m.from, m.to, m.promotion as Move['promotion']);
               if (result) {
                 rebuilt.push({
-                  san: result.san,
+                  move: result,
                   mover: i % 2 === 0 ? 'w' : 'b',
-                  captured: result.captured,
+                  fenBefore,
                   fenAfter: replayEngine.getFen(),
                 });
               }
             });
             setMoveList(rebuilt);
-            if (rebuilt.length > 0) setLastMoveSan(rebuilt[rebuilt.length - 1].san);
+            if (rebuilt.length > 0) setLastMoveSan(rebuilt[rebuilt.length - 1].move.san);
           }
           // If it failed (e.g. the game already ended while we were offline), leave
           // connectionState as "reconnecting" — a game_over we missed would already be
@@ -241,7 +239,7 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
     setTurn(opponentColor); // optimistic — the ack below confirms/corrects this
     setLastMoveSan(move.san);
     playMoveSound(move);
-    setMoveList((list) => [...list, { san: move.san, mover: myColor, captured: move.captured, fenAfter: newFen }]);
+    setMoveList((list) => [...list, { move, mover: myColor, fenBefore: fenBeforeMove, fenAfter: newFen }]);
 
     const socket = connectSocket(authToken);
     socket
@@ -356,7 +354,7 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
   };
 
   const { whiteCaptured, blackCaptured } = useMemo(
-    () => computeCapturedMaterial(moveList.map((m) => ({ captured: m.captured, moverColor: m.mover }))),
+    () => computeCapturedMaterial(moveList.map((m) => ({ captured: m.move.captured, moverColor: m.mover }))),
     [moveList]
   );
   const materialDiff = materialValue(whiteCaptured) - materialValue(blackCaptured);
@@ -372,13 +370,15 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
 
   let statusText = isMyTurn ? 'Your turn' : `${opponentName}'s turn`;
   if (connectionState === 'reconnecting') statusText = 'Reconnecting...';
-  if (gameOver) statusText = describeGameOver(gameOver, myColor);
+
+  const summaryTitle = !gameOver ? '' : gameOver.winner === null ? 'Draw' : gameOver.winner === myColor ? 'You Won' : 'You Lost';
+  const summarySubtitle = gameOver ? describeEndReason(gameOver.reason) : '';
 
   return (
     <View style={styles.container}>
       <ScreenHeader title={`Online Game${match.isChess960 ? ' (Chess960)' : ''}`} onBack={handleExit} backLabel="‹ Menu" />
       <MoveListStrip
-        moves={moveList.map((m) => ({ san: m.san }))}
+        moves={moveList.map((m) => ({ san: m.move.san }))}
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
         onSelectMove={handleSelectMove}
@@ -411,11 +411,6 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
 
             <View style={styles.footer}>
               {lastMoveSan && <Text style={styles.lastMove}>Last move: {lastMoveSan}</Text>}
-              {gameOver && (
-                <Pressable style={styles.exitButton} onPress={handleExit}>
-                  <Text style={styles.exitButtonText}>Back to menu</Text>
-                </Pressable>
-              )}
             </View>
           </>
         }
@@ -447,7 +442,7 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
           </View>
         )}
 
-        <Text style={[styles.status, gameOver && styles.statusOver]}>{statusText}</Text>
+        {!gameOver && <Text style={styles.status}>{statusText}</Text>}
         {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
 
         <View style={styles.playerRow}>
@@ -502,6 +497,18 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
           </View>
         )}
       </GameScreenBody>
+
+      <PostGameSummaryModal
+        visible={!!gameOver}
+        title={summaryTitle}
+        subtitle={summarySubtitle}
+        initialFen={match.fen}
+        chess960={match.isChess960}
+        history={moveList}
+        players={[{ label: 'You', color: myColor }]}
+        onGameReview={() => onAnalyze({ initialFen: match.fen, chess960: match.isChess960, history: moveList })}
+        onNewGame={handleExit}
+      />
     </View>
   );
 }
@@ -531,9 +538,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     fontWeight: '600',
-  },
-  statusOver: {
-    color: '#1a7a1a',
   },
   openingName: {
     fontSize: 12,
@@ -568,17 +572,6 @@ const styles = StyleSheet.create({
   lastMove: {
     fontSize: 14,
     color: '#555',
-  },
-  exitButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    backgroundColor: '#3a2618',
-    borderRadius: 8,
-  },
-  exitButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   reviewingText: {
     fontSize: 12,

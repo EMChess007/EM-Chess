@@ -8,6 +8,7 @@ import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
+import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
@@ -16,6 +17,8 @@ import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
 import { getEngineIdForElo, getEngineName } from '../logic/engines';
 import { buildGamePayload } from '../logic/gamePayload';
+import { getGameOutcome } from '../logic/gameResult';
+import { describeEndReason } from '../logic/gameOutcomeText';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
@@ -241,6 +244,12 @@ export default function BotGameScreen({
   }
   if (resignedBy) statusText = `You resigned — ${bot.name} wins`;
 
+  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy);
+  const winnerColor: PieceColor | null =
+    outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
+  const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : winnerColor === userColor ? 'You Won' : 'Bot Won';
+  const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';
+
   const handleMove = (move: Move, newFen: string) => {
     if (viewIndex !== null) return;
     clock.applyIncrement(userColor);
@@ -367,14 +376,6 @@ export default function BotGameScreen({
                 <Pressable style={styles.resetButton} onPress={handleReset}>
                   <Text style={styles.resetButtonText}>New Game</Text>
                 </Pressable>
-                {gameOver && history.length > 0 && (
-                  <Pressable
-                    style={[styles.resetButton, styles.analyzeButton]}
-                    onPress={() => onAnalyze({ initialFen, chess960, history })}
-                  >
-                    <Text style={styles.resetButtonText}>Analyze Game</Text>
-                  </Pressable>
-                )}
               </View>
             </View>
           </>
@@ -383,9 +384,7 @@ export default function BotGameScreen({
         <Text style={styles.subtitle}>
           {getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
         </Text>
-        <Text style={[styles.status, (chessStatus === 'checkmate' || clock.timeoutWinner || resignedBy) && styles.statusOver]}>
-          {statusText}
-        </Text>
+        {!gameOver && <Text style={styles.status}>{statusText}</Text>}
         {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
         {botThinking && (
           <View style={styles.thinkingRow}>
@@ -424,6 +423,19 @@ export default function BotGameScreen({
         {hintLoading && <Text style={styles.hintText}>Thinking of a hint...</Text>}
         {!hintLoading && hintText && <Text style={styles.hintText}>Hint: {hintText}</Text>}
       </GameScreenBody>
+
+      <PostGameSummaryModal
+        visible={gameOver}
+        title={summaryTitle}
+        subtitle={summarySubtitle}
+        initialFen={initialFen}
+        chess960={chess960}
+        history={history}
+        players={[{ label: 'You', color: userColor }]}
+        onGameReview={() => onAnalyze({ initialFen, chess960, history })}
+        onRematch={handleReset}
+        onNewGame={onExit}
+      />
     </View>
   );
 }
@@ -440,10 +452,6 @@ const styles = StyleSheet.create({
   status: {
     fontSize: 16,
     color: '#333',
-  },
-  statusOver: {
-    fontWeight: '700',
-    color: '#b00020',
   },
   openingName: {
     fontSize: 12,
@@ -510,9 +518,6 @@ const styles = StyleSheet.create({
   footerButtons: {
     flexDirection: 'row',
     gap: 10,
-  },
-  analyzeButton: {
-    backgroundColor: '#2e6f4f',
   },
   resetButton: {
     paddingVertical: 10,

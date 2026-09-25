@@ -176,7 +176,12 @@ export default function App() {
     );
   } else if (screen.name === 'onlineGame') {
     content = (
-      <OnlineGameScreen authToken={screen.token} match={screen.match} onExit={() => setScreen({ name: 'main' })} />
+      <OnlineGameScreen
+        authToken={screen.token}
+        match={screen.match}
+        onExit={() => setScreen({ name: 'main' })}
+        onAnalyze={(params) => setScreen({ name: 'analysis', params })}
+      />
     );
   } else if (screen.name === 'login') {
     content = (
