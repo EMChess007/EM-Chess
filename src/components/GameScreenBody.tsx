@@ -31,7 +31,6 @@ export default function GameScreenBody({ children, bottomBar }: GameScreenBodyPr
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
       >
         {children}
       </ScrollView>

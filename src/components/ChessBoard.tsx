@@ -16,8 +16,8 @@ interface ChessBoardProps {
 }
 
 export default function ChessBoard({ fen, onMove, disabled, chess960, initialFen, orientation = 'w' }: ChessBoardProps) {
-  const { width } = useWindowDimensions();
-  const boardSize = getBoardSize(width);
+  const { width, height } = useWindowDimensions();
+  const boardSize = getBoardSize(width, height);
   const squareSize = boardSize / 8;
 
   const engine = useMemo(
