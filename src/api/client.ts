@@ -100,6 +100,14 @@ interface RequestOptions {
   token?: string;
 }
 
+// A network that's up but whose backend never responds (host reachable, process hung/unreachable
+// port with no RST) doesn't make fetch() reject on its own — without this, a caller's .catch()
+// (Home's stats/recent games, GameHistoryScreen, ...) would simply never run and its loading
+// spinner would spin forever. This aborts the request after a generous grace period so every
+// caller's existing error handling kicks in instead. Deliberately NOT used to shorten the
+// "genuinely no network" path below, which already rejects immediately on its own.
+const REQUEST_TIMEOUT_MS = 12000;
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
@@ -108,18 +116,27 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const method = options.method ?? 'GET';
   console.log(`[api/client] ${method} ${url}`);
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetch(url, {
       method,
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new ApiError(0, 'Request timed out. The server took too long to respond.');
+    }
     throw new ApiError(
       0,
       'Could not connect to the server. Make sure the backend is running and your phone is on the same network as your computer.'
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const isJson = response.headers.get('content-type')?.includes('application/json');
