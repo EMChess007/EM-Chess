@@ -1,5 +1,7 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { isSoundEnabled, setSoundEnabled, subscribeSoundEnabled } from '../logic/soundSettings';
 import type { AuthUser } from '../types/auth';
 
 interface MoreScreenProps {
@@ -15,6 +17,11 @@ export default function MoreScreen({ authUser, onAuthPress, onLogout, onOpenEngi
   // different (bigger, no-back-button) title style so it applies the same insets.top read directly
   // instead of going through that component.
   const insets = useSafeAreaInsets();
+
+  // Mirrors the module-level soundSettings cache (see soundSettings.ts) so this toggle reflects
+  // the current value even if it was restored from storage after this screen already mounted.
+  const [soundOn, setSoundOn] = useState(isSoundEnabled);
+  useEffect(() => subscribeSoundEnabled(setSoundOn), []);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 20 }]}>
@@ -41,6 +48,14 @@ export default function MoreScreen({ authUser, onAuthPress, onLogout, onOpenEngi
         <Pressable style={styles.rowButton} onPress={onOpenEngines}>
           <Text style={styles.rowButtonText}>Manage Custom Engines</Text>
         </Pressable>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Sound</Text>
+        <View style={styles.switchRow}>
+          <Text style={styles.switchLabel}>Move sounds</Text>
+          <Switch value={soundOn} onValueChange={(value) => setSoundEnabled(value)} />
+        </View>
       </View>
     </View>
   );
@@ -89,6 +104,20 @@ const styles = StyleSheet.create({
   rowButtonText: {
     color: '#fff',
     fontSize: 15,
+    fontWeight: '600',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f7f2ea',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  switchLabel: {
+    fontSize: 15,
+    color: '#3a2618',
     fontWeight: '600',
   },
 });

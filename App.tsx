@@ -22,6 +22,7 @@ import PlayModeSelectScreen from './src/screens/PlayModeSelectScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import TimeControlSelectScreen from './src/screens/TimeControlSelectScreen';
 import { restoreCustomEngines } from './src/logic/customEngines';
+import { restoreSoundSetting } from './src/logic/soundSettings';
 import type { BotPersonality } from './src/types/bot';
 import type { ColorChoice } from './src/types/chess';
 import type { AnalyzeParams } from './src/types/history';
@@ -55,6 +56,7 @@ export default function App() {
   useEffect(() => {
     loadAuthSession().then(setAuthSession);
     restoreCustomEngines();
+    restoreSoundSetting();
   }, []);
 
   const handleLogout = () => {

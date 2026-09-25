@@ -16,6 +16,7 @@ import { ChessEngine } from '../logic/ChessEngine';
 import { DEFAULT_ENGINE_ID } from '../logic/engines';
 import { buildGamePayload } from '../logic/gamePayload';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
+import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
 import { formatTime } from '../logic/time';
 import { uciMoveToSan } from '../logic/uciMove';
@@ -145,6 +146,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   const handleMove = (move: Move, newFen: string) => {
     if (viewIndex !== null) return;
     clock.applyIncrement(turn);
+    playMoveSound(move);
     setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
     setLastMove(move);
     setFen(newFen);

@@ -17,6 +17,7 @@ import { ChessEngine } from '../logic/ChessEngine';
 import { getEngineIdForElo, getEngineName } from '../logic/engines';
 import { buildGamePayload } from '../logic/gamePayload';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
+import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
 import { formatTime } from '../logic/time';
 import { parseUciMove, uciMoveToSan } from '../logic/uciMove';
@@ -198,6 +199,7 @@ export default function BotGameScreen({
         // Actually charge the bot's clock for the time it "thought" — not just a UI effect.
         clock.consumeTime(botColor, thinkTimeMs);
         clock.applyIncrement(botColor);
+        playMoveSound(move);
         setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: moveEngine.getFen() }]);
         setLastMove(move);
         setFen(moveEngine.getFen());
@@ -242,6 +244,7 @@ export default function BotGameScreen({
   const handleMove = (move: Move, newFen: string) => {
     if (viewIndex !== null) return;
     clock.applyIncrement(userColor);
+    playMoveSound(move);
     setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
     setLastMove(move);
     setFen(newFen);

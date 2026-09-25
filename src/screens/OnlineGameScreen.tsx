@@ -11,6 +11,7 @@ import MoveListStrip from '../components/MoveListStrip';
 import ScreenHeader from '../components/ScreenHeader';
 import { ChessEngine } from '../logic/ChessEngine';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
+import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
 import { formatTime } from '../logic/time';
 import type { Move, PieceColor, PieceType } from '../types/chess';
@@ -120,6 +121,7 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
       setWhiteMs(payload.whiteMs);
       setBlackMs(payload.blackMs);
       setLastMoveSan(payload.san);
+      playMoveSound(replayed);
       setMoveList((list) => [
         ...list,
         { san: payload.san, mover: opponentColor, captured: replayed?.captured, fenAfter: payload.fen },
@@ -238,6 +240,7 @@ export default function OnlineGameScreen({ authToken, match, onExit }: OnlineGam
     setFen(newFen);
     setTurn(opponentColor); // optimistic — the ack below confirms/corrects this
     setLastMoveSan(move.san);
+    playMoveSound(move);
     setMoveList((list) => [...list, { san: move.san, mover: myColor, captured: move.captured, fenAfter: newFen }]);
 
     const socket = connectSocket(authToken);
