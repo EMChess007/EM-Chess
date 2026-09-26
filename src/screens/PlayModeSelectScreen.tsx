@@ -7,6 +7,8 @@ import type { AuthUser } from '../types/auth';
 interface PlayModeSelectScreenProps {
   onBack: () => void;
   onOnline: () => void;
+  onChallengeFriend: () => void;
+  onSpectate: () => void;
   onBotClassic: () => void;
   onBotChess960: () => void;
   onLocalClassic: () => void;
@@ -20,6 +22,8 @@ interface PlayModeSelectScreenProps {
 export default function PlayModeSelectScreen({
   onBack,
   onOnline,
+  onChallengeFriend,
+  onSpectate,
   onBotClassic,
   onBotChess960,
   onLocalClassic,
@@ -33,8 +37,9 @@ export default function PlayModeSelectScreen({
   const styles = createStyles(colors);
   // Same login gate that used to live on the old menu's "Play Online" button — online
   // multiplayer needs a real account (matchmaking/rooms key off the session), unlike every
-  // other mode on this screen.
-  const handleOnline = () => {
+  // other mode on this screen. Spectating deliberately isn't gated the same way — it's read-only
+  // and needs no account of its own.
+  const requireLogin = (action: () => void) => () => {
     if (!authUser) {
       appAlert('Login required', 'You need to log in to play online.', [
         { text: 'Cancel', style: 'cancel' },
@@ -42,18 +47,31 @@ export default function PlayModeSelectScreen({
       ]);
       return;
     }
-    onOnline();
+    action();
   };
+  const handleOnline = requireLogin(onOnline);
+  const handleChallengeFriend = requireLogin(onChallengeFriend);
 
   return (
     <View style={styles.container}>
       <ScreenHeader title="Play" onBack={onBack} backLabel="‹ Menu" />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Pressable style={[styles.categoryCard, styles.onlineCard]} onPress={handleOnline}>
+        <View style={[styles.categoryCard, styles.onlineCard]}>
           <Text style={styles.categoryTitle}>Online</Text>
           <Text style={styles.categorySubtitle}>Play live against another player</Text>
-        </Pressable>
+          <View style={styles.subButtonRow}>
+            <Pressable style={[styles.subButton, styles.onlineSubButton]} onPress={handleOnline}>
+              <Text style={styles.subButtonText}>Quick Match</Text>
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.onlineSubButton]} onPress={handleChallengeFriend}>
+              <Text style={styles.subButtonText}>Challenge Friend</Text>
+            </Pressable>
+          </View>
+          <Pressable style={styles.spectateLink} onPress={onSpectate}>
+            <Text style={styles.spectateLinkText}>Spectate a live game ›</Text>
+          </Pressable>
+        </View>
 
         <View style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>Bots</Text>
@@ -142,6 +160,19 @@ function createStyles(colors: AppColors) {
       paddingVertical: 14,
       borderRadius: 8,
       alignItems: 'center',
+    },
+    onlineSubButton: {
+      backgroundColor: isDark ? '#3a6ea5' : '#1a5fb4',
+    },
+    spectateLink: {
+      marginTop: 10,
+      alignSelf: 'center',
+    },
+    spectateLinkText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.text,
+      textDecorationLine: 'underline',
     },
     botSubButton: {
       backgroundColor: colors.accent,

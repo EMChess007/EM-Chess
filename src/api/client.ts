@@ -175,6 +175,18 @@ export interface StoredGame extends GamePayload {
   playedAt: string;
 }
 
+export interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  username: string;
+  rating: number;
+}
+
+export interface LeaderboardResponse {
+  entries: LeaderboardEntry[];
+  me: { rating: number; rank: number } | null;
+}
+
 export interface PuzzleProgress {
   userId: string;
   puzzleDate: string;
@@ -190,6 +202,12 @@ export const api = {
     request<AuthResponse>('/auth/login', { method: 'POST', body: { email, password } }),
 
   getMe: (token: string) => request<AuthUser>('/users/me', { token }),
+
+  updateRating: (token: string, category: 'bullet' | 'blitz' | 'rapid', rating: number) =>
+    request<{ ok: true }>('/users/me/rating', { method: 'POST', token, body: { category, rating } }),
+
+  getLeaderboard: (token: string, category: 'bullet' | 'blitz' | 'rapid') =>
+    request<LeaderboardResponse>(`/users/leaderboard?category=${category}`, { token }),
 
   createGame: (token: string, game: GamePayload) =>
     request<StoredGame>('/games', { method: 'POST', body: game, token }),

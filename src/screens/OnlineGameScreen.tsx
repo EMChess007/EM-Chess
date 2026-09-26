@@ -173,7 +173,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
       // doc comment) — a common simplifying assumption for a casual, non-competitive rating.
       const result = payload.winner === null ? 0.5 : payload.winner === myColor ? 1 : 0;
       const ratingCategory = toRatingCategory(categoryForInitialSeconds(match.timeControl.initialSeconds) ?? '');
-      if (ratingCategory) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result);
+      if (ratingCategory) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
 
       if (result === 1 && wasMaterialDownRef.current) unlockAchievement('comeback_win');
     };

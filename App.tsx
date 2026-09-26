@@ -11,12 +11,14 @@ import AchievementsScreen from './src/screens/AchievementsScreen';
 import AnalysisScreen from './src/screens/AnalysisScreen';
 import BotGameScreen from './src/screens/BotGameScreen';
 import BotSelectScreen from './src/screens/BotSelectScreen';
+import ChallengeScreen from './src/screens/ChallengeScreen';
 import DailyPuzzleScreen from './src/screens/DailyPuzzleScreen';
 import EngineSelectScreen from './src/screens/EngineSelectScreen';
 import EngineVsEngineGameScreen from './src/screens/EngineVsEngineGameScreen';
 import EngineVsEngineSetupScreen from './src/screens/EngineVsEngineSetupScreen';
 import GameHistoryScreen from './src/screens/GameHistoryScreen';
 import HomeScreen from './src/screens/HomeScreen';
+import LeaderboardScreen from './src/screens/LeaderboardScreen';
 import LocalGameScreen from './src/screens/LocalGameScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import MatchmakingScreen from './src/screens/MatchmakingScreen';
@@ -26,6 +28,8 @@ import OnlineTimeControlSelectScreen from './src/screens/OnlineTimeControlSelect
 import PlayModeSelectScreen from './src/screens/PlayModeSelectScreen';
 import PuzzleRushScreen from './src/screens/PuzzleRushScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import SpectateListScreen from './src/screens/SpectateListScreen';
+import SpectatorGameScreen from './src/screens/SpectatorGameScreen';
 import StreakScreen from './src/screens/StreakScreen';
 import ThemeSelectScreen from './src/screens/ThemeSelectScreen';
 import TimeControlSelectScreen from './src/screens/TimeControlSelectScreen';
@@ -41,7 +45,7 @@ import { restoreActiveThemes } from './src/logic/themeSettings';
 import type { BotPersonality } from './src/types/bot';
 import type { ColorChoice } from './src/types/chess';
 import type { AnalyzeParams } from './src/types/history';
-import type { MatchFoundPayload } from './src/types/multiplayer';
+import type { ActiveGameSummary, MatchFoundPayload } from './src/types/multiplayer';
 import type { TimeControl } from './src/types/timeControl';
 
 type TimeControlFlowMode =
@@ -61,12 +65,16 @@ type Screen =
   | { name: 'register' }
   | { name: 'onlineTimeControlSelect'; token: string }
   | { name: 'matchmaking'; token: string; timeControl: TimeControl; chess960: boolean }
+  | { name: 'challenge'; token: string }
+  | { name: 'spectateList'; token: string | null }
+  | { name: 'spectatorGame'; token: string | null; roomId: string; whiteUsername: string; blackUsername: string }
   | { name: 'onlineGame'; token: string; match: MatchFoundPayload }
   | { name: 'engineSelect' }
   | { name: 'themeSelect' }
   | { name: 'streak' }
   | { name: 'puzzleRush' }
   | { name: 'achievements' }
+  | { name: 'leaderboard'; token: string }
   | {
       name: 'engineVsEngineSetup';
       timeControl: TimeControl;
@@ -185,6 +193,7 @@ export default function App() {
           onOpenEngines={() => setScreen({ name: 'engineSelect' })}
           onOpenThemes={() => setScreen({ name: 'themeSelect' })}
           onOpenAchievements={() => setScreen({ name: 'achievements' })}
+          onOpenLeaderboard={() => authSession && setScreen({ name: 'leaderboard', token: authSession.token })}
         />
       );
     }
@@ -199,6 +208,8 @@ export default function App() {
       <PlayModeSelectScreen
         onBack={() => setScreen({ name: 'main' })}
         onOnline={() => authSession && setScreen({ name: 'onlineTimeControlSelect', token: authSession.token })}
+        onChallengeFriend={() => authSession && setScreen({ name: 'challenge', token: authSession.token })}
+        onSpectate={() => setScreen({ name: 'spectateList', token: authSession?.token ?? null })}
         onBotClassic={() => setScreen({ name: 'botSelect', chess960: false })}
         onBotChess960={() => setScreen({ name: 'botSelect', chess960: true })}
         onLocalClassic={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'local', chess960: false } })}
@@ -234,6 +245,42 @@ export default function App() {
         match={screen.match}
         onExit={() => setScreen({ name: 'main' })}
         onAnalyze={(params) => setScreen({ name: 'analysis', params })}
+      />
+    );
+  } else if (screen.name === 'challenge') {
+    const { token } = screen;
+    content = (
+      <ChallengeScreen
+        authToken={token}
+        onMatchFound={(match) => setScreen({ name: 'onlineGame', token, match })}
+        onBack={() => setScreen({ name: 'playModeSelect' })}
+      />
+    );
+  } else if (screen.name === 'spectateList') {
+    const { token } = screen;
+    content = (
+      <SpectateListScreen
+        authToken={token}
+        onWatch={(game: ActiveGameSummary) =>
+          setScreen({
+            name: 'spectatorGame',
+            token,
+            roomId: game.roomId,
+            whiteUsername: game.whiteUsername,
+            blackUsername: game.blackUsername,
+          })
+        }
+        onBack={() => setScreen({ name: 'playModeSelect' })}
+      />
+    );
+  } else if (screen.name === 'spectatorGame') {
+    content = (
+      <SpectatorGameScreen
+        authToken={screen.token}
+        roomId={screen.roomId}
+        whiteUsername={screen.whiteUsername}
+        blackUsername={screen.blackUsername}
+        onExit={() => setScreen({ name: 'spectateList', token: screen.token })}
       />
     );
   } else if (screen.name === 'login') {
@@ -325,6 +372,8 @@ export default function App() {
     content = <PuzzleRushScreen onExit={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'achievements') {
     content = <AchievementsScreen onBack={() => setScreen({ name: 'main' })} />;
+  } else if (screen.name === 'leaderboard') {
+    content = <LeaderboardScreen authToken={screen.token} onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'engineVsEngineSetup') {
     content = (
       <EngineVsEngineSetupScreen

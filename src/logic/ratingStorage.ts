@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../api/client';
 import { DEFAULT_RATING, RATING_CATEGORIES, updateRating, type GameResult, type RatingCategory } from './rating';
 
 const KEY_PREFIX = 'rating:';
@@ -46,10 +47,18 @@ export function subscribeRatings(listener: (ratings: Record<RatingCategory, numb
   };
 }
 
-/** Applies one game's result to `category`'s rating and persists the new value. Safe to call
- * before `restoreRatings()` resolves (falls back to DEFAULT_RATING, same as a fresh install) —
- * only relevant if a game somehow finishes within the first instant of app launch. */
-export async function recordRatedGame(category: RatingCategory, opponentRating: number, result: GameResult): Promise<number> {
+/** Applies one game's result to `category`'s rating and persists the new value — locally always,
+ * and (when `authToken` is given, i.e. the player is logged in) synced to the backend too, so it
+ * can appear on the global leaderboard. The client remains the sole source of truth for the Elo
+ * math itself (see rating.ts) — this just mirrors the resulting number. Safe to call before
+ * `restoreRatings()` resolves (falls back to DEFAULT_RATING, same as a fresh install) — only
+ * relevant if a game somehow finishes within the first instant of app launch. */
+export async function recordRatedGame(
+  category: RatingCategory,
+  opponentRating: number,
+  result: GameResult,
+  authToken?: string | null
+): Promise<number> {
   const next = updateRating(ratings[category], opponentRating, result);
   ratings = { ...ratings, [category]: next };
   notify();
@@ -57,6 +66,11 @@ export async function recordRatedGame(category: RatingCategory, opponentRating: 
     await AsyncStorage.setItem(KEY_PREFIX + category, String(next));
   } catch {
     // Non-critical: worst case this update isn't remembered next launch.
+  }
+  if (authToken) {
+    api.updateRating(authToken, category, next).catch((err) => {
+      console.warn('[ratingStorage] Failed to sync rating to backend:', err instanceof Error ? err.message : err);
+    });
   }
   return next;
 }

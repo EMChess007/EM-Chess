@@ -96,4 +96,30 @@ export interface RejoinStatePayload {
   opponentConnected: boolean;
 }
 
+/** Same live game state a rejoining player gets, minus the two fields that only make sense for
+ * an actual seated player — see the backend's identical type for why. */
+export type SpectateStatePayload = Omit<RejoinStatePayload, 'color' | 'opponentConnected'>;
+
+export interface SpectatorMovePayload extends OpponentMovePayload {
+  mover: PieceColor;
+}
+
+export interface ActiveGameSummary {
+  roomId: string;
+  timeControlLabel: string;
+  isChess960: boolean;
+  whiteUsername: string;
+  blackUsername: string;
+}
+
+export interface CreateChallengePayload {
+  timeControl: OnlineTimeControl;
+  isChess960?: boolean;
+  timeControlLabel?: string;
+}
+
+export interface JoinChallengePayload {
+  code: string;
+}
+
 export type Ack<T extends object = object> = ({ ok: true } & T) | { ok: false; error: string };

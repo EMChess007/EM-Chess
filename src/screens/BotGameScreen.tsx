@@ -292,7 +292,7 @@ export default function BotGameScreen({
     ratingRecordedRef.current = true;
     const result = outcome.result === '1/2-1/2' ? 0.5 : winnerColor === userColor ? 1 : 0;
     const ratingCategory = toRatingCategory(timeControl.category);
-    if (ratingCategory) recordRatedGame(ratingCategory, bot.elo, result);
+    if (ratingCategory) recordRatedGame(ratingCategory, bot.elo, result, authToken);
 
     if (result === 1) {
       if (bot.elo >= 2000) unlockAchievement('giant_slayer');

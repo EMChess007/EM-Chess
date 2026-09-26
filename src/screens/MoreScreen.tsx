@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { appAlert } from '../components/AppAlert';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getColorSchemeMode, setColorSchemeMode, subscribeColorSchemeMode } from '../logic/colorSchemeSettings';
 import { RATING_CATEGORIES } from '../logic/rating';
@@ -21,6 +22,7 @@ interface MoreScreenProps {
   onOpenEngines: () => void;
   onOpenThemes: () => void;
   onOpenAchievements: () => void;
+  onOpenLeaderboard: () => void;
 }
 
 export default function MoreScreen({
@@ -30,6 +32,7 @@ export default function MoreScreen({
   onOpenEngines,
   onOpenThemes,
   onOpenAchievements,
+  onOpenLeaderboard,
 }: MoreScreenProps) {
   // react-native's own <SafeAreaView> only actually applies an inset on iOS — see ScreenHeader
   // for the shared version of this fix used by every sub-screen; this tab-root screen has a
@@ -80,7 +83,25 @@ export default function MoreScreen({
             </View>
           ))}
         </View>
-        <Text style={styles.ratingHint}>Updates after each Bot or Online game. Local to this device.</Text>
+        <Text style={styles.ratingHint}>
+          Updates after each Bot or Online game.{' '}
+          {authUser ? 'Synced to your account for the leaderboard.' : 'Log in to sync and appear on the leaderboard.'}
+        </Text>
+        <Pressable
+          style={styles.rowButton}
+          onPress={() => {
+            if (!authUser) {
+              appAlert('Login required', 'You need to log in to view the leaderboard.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Log in / Sign up', onPress: onAuthPress },
+              ]);
+              return;
+            }
+            onOpenLeaderboard();
+          }}
+        >
+          <Text style={styles.rowButtonText}>View Leaderboard</Text>
+        </Pressable>
       </View>
 
       <View style={styles.section}>
