@@ -19,6 +19,7 @@ import { DEFAULT_ENGINE_ID } from '../logic/engines';
 import { buildGamePayload } from '../logic/gamePayload';
 import { getGameOutcome } from '../logic/gameResult';
 import { describeEndReason } from '../logic/gameOutcomeText';
+import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
@@ -50,6 +51,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   const [flipped, setFlipped] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [resignedBy, setResignedBy] = useState<PieceColor | null>(null);
+  const [drawAgreed, setDrawAgreed] = useState(false);
   const [hintText, setHintText] = useState<string | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
   const [hintActive, setHintActive] = useState(false);
@@ -112,7 +114,19 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   const chessStatus = engine.getStatus();
 
   const clock = useChessClock(timeControl, turn, engine.isGameOver());
-  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null;
+  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null || drawAgreed;
+
+  // See BotGameScreen's identical effect — fires once per game, resetting when gameOver next
+  // goes back to false (the next "New Game").
+  const gameEndHapticFired = useRef(false);
+  useEffect(() => {
+    if (gameOver && !gameEndHapticFired.current) {
+      gameEndHapticFired.current = true;
+      triggerGameEndHaptics();
+    } else if (!gameOver) {
+      gameEndHapticFired.current = false;
+    }
+  }, [gameOver]);
 
   const savePayload = useMemo(
     () =>
@@ -121,6 +135,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
         turn,
         timeoutWinner: clock.timeoutWinner,
         resignedBy,
+        drawnByAgreement: drawAgreed,
         history,
         initialFen,
         chess960,
@@ -128,7 +143,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
         opponentType: 'human',
         opponentElo: null,
       }),
-    [chessStatus, turn, clock.timeoutWinner, resignedBy, history, initialFen, chess960, timeControl]
+    [chessStatus, turn, clock.timeoutWinner, resignedBy, drawAgreed, history, initialFen, chess960, timeControl]
   );
   useSaveGameOnEnd(authToken, resetCount, savePayload);
 
@@ -148,10 +163,11 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   if (chessStatus === 'draw') statusText = 'Draw';
   if (clock.timeoutWinner) statusText = `Win on time: ${clock.timeoutWinner === 'w' ? 'White' : 'Black'}`;
   if (resignedBy) statusText = `${resignedBy === 'w' ? 'White' : 'Black'} resigned — ${resignedBy === 'w' ? 'Black' : 'White'} wins`;
+  if (drawAgreed) statusText = 'Draw by agreement';
 
   // No personal point of view here (two players share one device) — matches the plain
   // White/Black wording `statusText` above already uses.
-  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy);
+  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy, drawAgreed);
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : outcome.result === '1-0' ? 'White Won' : 'Black Won';
   const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';
 
@@ -159,6 +175,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
     if (viewIndex !== null) return;
     clock.applyIncrement(turn);
     playMoveSound(move);
+    triggerMoveHaptics(move);
     setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
     setLastMove(move);
     setFen(newFen);
@@ -174,6 +191,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
     setResetCount((c) => c + 1);
     setOpeningName(null);
     setResignedBy(null);
+    setDrawAgreed(false);
     setHintText(null);
     setShowOptions(false);
     setViewIndex(null);
@@ -186,6 +204,19 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
     appAlert(`${turnLabel} resigns?`, 'This ends the game as a loss.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Resign', style: 'destructive', onPress: () => setResignedBy(turn) },
+    ]);
+  };
+
+  // A hotseat "draw by agreement" doesn't need any handshake — both players are looking at the
+  // same screen, so a single confirmation (asked from whoever taps the button) stands in for
+  // both sides agreeing, the same way OnlineGameScreen's draw offer needs the other side's
+  // explicit accept but there's no "other side" to ask here.
+  const handleDrawOffer = () => {
+    if (gameOver) return;
+    setShowOptions(false);
+    appAlert('Draw by agreement?', 'Both players agree to end the game as a draw.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Agree to Draw', onPress: () => setDrawAgreed(true) },
     ]);
   };
 
@@ -251,6 +282,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
                 items={[
                   { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
                   { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver },
+                  { key: 'draw', label: 'Draw', onPress: handleDrawOffer, disabled: gameOver },
                   { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing },
                   { key: 'undo', label: 'Undo', onPress: handleUndo, disabled: gameOver || history.length === 0 || isReviewing },
                 ]}

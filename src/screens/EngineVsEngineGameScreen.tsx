@@ -6,6 +6,7 @@ import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
+import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
@@ -14,6 +15,8 @@ import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getBotStrengthOptions, getEngineIdForElo } from '../logic/engines';
+import { describeEndReason } from '../logic/gameOutcomeText';
+import { getGameOutcome } from '../logic/gameResult';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
@@ -215,6 +218,18 @@ export default function EngineVsEngineGameScreen({
   }
   if (stopped) statusText = 'Game stopped.';
 
+  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner);
+  const outcomeWinnerColor: PieceColor | null =
+    outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
+  const summaryTitle = stopped
+    ? 'Game Stopped'
+    : !outcome.over
+      ? ''
+      : outcome.result === '1/2-1/2'
+        ? 'Draw'
+        : `${outcomeWinnerColor === c1 ? engine1.name : engine2.name} Won`;
+  const summarySubtitle = stopped ? '' : outcome.over ? describeEndReason(outcome.reason) : '';
+
   const handleReset = () => {
     const nextInitialFen = chess960 ? generateChess960Position() : START_FEN;
     setInitialFen(nextInitialFen);
@@ -294,14 +309,6 @@ export default function EngineVsEngineGameScreen({
                 <Pressable style={styles.resetButton} onPress={handleReset}>
                   <Text style={styles.resetButtonText}>New Game</Text>
                 </Pressable>
-                {gameOver && history.length > 0 && (
-                  <Pressable
-                    style={[styles.resetButton, styles.analyzeButton]}
-                    onPress={() => onAnalyze({ initialFen, chess960, history })}
-                  >
-                    <Text style={styles.resetButtonText}>Analyze Game</Text>
-                  </Pressable>
-                )}
               </View>
             </View>
           </>
@@ -350,6 +357,22 @@ export default function EngineVsEngineGameScreen({
           <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
         </View>
       </GameScreenBody>
+
+      <PostGameSummaryModal
+        visible={gameOver}
+        title={summaryTitle}
+        subtitle={summarySubtitle}
+        initialFen={initialFen}
+        chess960={chess960}
+        history={history}
+        players={[
+          { label: engine1.name, color: c1 },
+          { label: engine2.name, color: c2 },
+        ]}
+        onGameReview={() => onAnalyze({ initialFen, chess960, history })}
+        onRematch={handleReset}
+        onNewGame={onExit}
+      />
     </View>
   );
 }
@@ -434,9 +457,6 @@ function createStyles(colors: AppColors) {
     footerButtons: {
       flexDirection: 'row',
       gap: 10,
-    },
-    analyzeButton: {
-      backgroundColor: colors.accent,
     },
     resetButton: {
       paddingVertical: 10,

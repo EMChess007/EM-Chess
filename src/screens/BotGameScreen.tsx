@@ -12,6 +12,7 @@ import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
+import { unlockAchievement } from '../logic/achievementStorage';
 import { getBotThinkTimeMs } from '../logic/bots';
 import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
@@ -20,9 +21,12 @@ import { getBotStrengthOptions, getEngineIdForElo, getEngineName } from '../logi
 import { buildGamePayload } from '../logic/gamePayload';
 import { getGameOutcome } from '../logic/gameResult';
 import { describeEndReason } from '../logic/gameOutcomeText';
+import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
+import { toRatingCategory } from '../logic/rating';
+import { recordRatedGame } from '../logic/ratingStorage';
 import { formatTime } from '../logic/time';
 import { parseUciMove, uciMoveToSan } from '../logic/uciMove';
 import { useChessClock } from '../logic/useChessClock';
@@ -102,6 +106,18 @@ export default function BotGameScreen({
   // does take approximately thinkTimeMs to respond), exactly like the human side already did.
   const clock = useChessClock(timeControl, turn, engine.isGameOver());
   const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null;
+
+  // Fires once per game (not once per re-render while gameOver stays true) — resets itself the
+  // moment `gameOver` next goes back to false, i.e. on the next "New Game"/rematch.
+  const gameEndHapticFired = useRef(false);
+  useEffect(() => {
+    if (gameOver && !gameEndHapticFired.current) {
+      gameEndHapticFired.current = true;
+      triggerGameEndHaptics();
+    } else if (!gameOver) {
+      gameEndHapticFired.current = false;
+    }
+  }, [gameOver]);
 
   const savePayload = useMemo(
     () =>
@@ -206,6 +222,7 @@ export default function BotGameScreen({
         // the useChessClock call above) — only the post-move increment still needs applying here.
         clock.applyIncrement(botColor);
         playMoveSound(move);
+        triggerMoveHaptics(move);
         setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: moveEngine.getFen() }]);
         setLastMove(move);
         setFen(moveEngine.getFen());
@@ -234,6 +251,15 @@ export default function BotGameScreen({
   );
   const materialDiff = materialValue(whiteCaptured) - materialValue(blackCaptured);
 
+  // Tracks (without re-rendering) whether the user was ever down 3+ points of material at any
+  // point this game, for the 'comeback_win' achievement — checked once the game actually ends,
+  // in the rating-update effect below.
+  const wasMaterialDownRef = useRef(false);
+  useEffect(() => {
+    const myAdvantage = userColor === 'w' ? materialDiff : -materialDiff;
+    if (myAdvantage <= -3) wasMaterialDownRef.current = true;
+  }, [materialDiff, userColor]);
+
   const turnLabel = turn === userColor ? 'You' : bot.name;
   const winnerLabel = turn === userColor ? bot.name : 'You';
 
@@ -253,10 +279,33 @@ export default function BotGameScreen({
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : winnerColor === userColor ? 'You Won' : 'Bot Won';
   const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';
 
+  // Updates this device's internal per-category rating exactly once per finished game — bullet/
+  // blitz/rapid only (daily/unlimited aren't rated, see RATING_CATEGORIES) — using the bot's real,
+  // fixed ELO as a genuinely calibrated opponent strength.
+  const ratingRecordedRef = useRef(false);
+  useEffect(() => {
+    if (!outcome.over) {
+      ratingRecordedRef.current = false;
+      return;
+    }
+    if (ratingRecordedRef.current) return;
+    ratingRecordedRef.current = true;
+    const result = outcome.result === '1/2-1/2' ? 0.5 : winnerColor === userColor ? 1 : 0;
+    const ratingCategory = toRatingCategory(timeControl.category);
+    if (ratingCategory) recordRatedGame(ratingCategory, bot.elo, result);
+
+    if (result === 1) {
+      if (bot.elo >= 2000) unlockAchievement('giant_slayer');
+      if (wasMaterialDownRef.current) unlockAchievement('comeback_win');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outcome.over]);
+
   const handleMove = (move: Move, newFen: string) => {
     if (viewIndex !== null) return;
     clock.applyIncrement(userColor);
     playMoveSound(move);
+    triggerMoveHaptics(move);
     setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
     setLastMove(move);
     setFen(newFen);
@@ -276,6 +325,7 @@ export default function BotGameScreen({
     setHintText(null);
     setShowOptions(false);
     setViewIndex(null);
+    wasMaterialDownRef.current = false;
     clock.reset();
   };
 

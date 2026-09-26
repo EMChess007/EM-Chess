@@ -2,7 +2,7 @@
 // see gameResult.ts) produces the first five; OnlineGameScreen's server-driven GameOverPayload
 // adds 'abandonment'. Purely a display formatter — no new end-detection logic, just labels what
 // engine.getStatus()/clock/resign/server state already told the caller.
-export type EndReason = 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'abandonment';
+export type EndReason = 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'abandonment' | 'agreement';
 
 export function describeEndReason(reason: EndReason): string {
   switch (reason) {
@@ -16,6 +16,8 @@ export function describeEndReason(reason: EndReason): string {
       return 'by Stalemate';
     case 'abandonment':
       return 'by Abandonment';
+    case 'agreement':
+      return 'by Agreement';
     case 'draw':
       // Chess.js's isDraw() (repetition / insufficient material / 50-move rule) doesn't expose
       // which of those it was, so this is as specific as it gets without new detection logic.

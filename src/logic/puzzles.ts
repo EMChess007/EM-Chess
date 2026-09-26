@@ -36,3 +36,14 @@ export function getDailyPuzzle(date: Date = new Date()): PuzzleData {
 export function getPuzzleCount(): number {
   return PUZZLES.length;
 }
+
+/**
+ * Picks a random puzzle from the same bundled dataset the Daily Puzzle uses, for modes (Puzzle
+ * Rush) that need a fresh one each time rather than one fixed puzzle per day. Avoids repeating any
+ * id in `excludeIds` (the puzzles already seen this run) when the dataset is large enough to make
+ * that possible, so a single run doesn't loop back onto a puzzle the player just solved.
+ */
+export function getRandomPuzzle(excludeIds: ReadonlySet<string> = new Set(), rng: () => number = Math.random): PuzzleData {
+  const pool = excludeIds.size < PUZZLES.length ? PUZZLES.filter((p) => !excludeIds.has(p.id)) : PUZZLES;
+  return pool[Math.floor(rng() * pool.length)];
+}

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
+import { NavigationBar } from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { AppState, Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { setSessionExpiredHandler } from './src/api/client';
 import { clearAuthSession, loadAuthSession, type AuthSession } from './src/api/authStorage';
 import AppAlertHost, { appAlert } from './src/components/AppAlert';
 import BottomTabBar, { type MainTab } from './src/components/BottomTabBar';
+import AchievementsScreen from './src/screens/AchievementsScreen';
 import AnalysisScreen from './src/screens/AnalysisScreen';
 import BotGameScreen from './src/screens/BotGameScreen';
 import BotSelectScreen from './src/screens/BotSelectScreen';
@@ -22,6 +24,7 @@ import MoreScreen from './src/screens/MoreScreen';
 import OnlineGameScreen from './src/screens/OnlineGameScreen';
 import OnlineTimeControlSelectScreen from './src/screens/OnlineTimeControlSelectScreen';
 import PlayModeSelectScreen from './src/screens/PlayModeSelectScreen';
+import PuzzleRushScreen from './src/screens/PuzzleRushScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import StreakScreen from './src/screens/StreakScreen';
 import ThemeSelectScreen from './src/screens/ThemeSelectScreen';
@@ -30,6 +33,8 @@ import { restoreColorSchemeMode } from './src/logic/colorSchemeSettings';
 import { useAppColors } from './src/logic/colorSchemeHooks';
 import { restoreCustomEngines } from './src/logic/customEngines';
 import { restoreCustomThemes } from './src/logic/customThemes';
+import { restoreAchievements } from './src/logic/achievementStorage';
+import { restoreRatings } from './src/logic/ratingStorage';
 import { restoreSoundSetting } from './src/logic/soundSettings';
 import { recordAppOpen } from './src/logic/streakStorage';
 import { restoreActiveThemes } from './src/logic/themeSettings';
@@ -60,6 +65,8 @@ type Screen =
   | { name: 'engineSelect' }
   | { name: 'themeSelect' }
   | { name: 'streak' }
+  | { name: 'puzzleRush' }
+  | { name: 'achievements' }
   | {
       name: 'engineVsEngineSetup';
       timeControl: TimeControl;
@@ -103,7 +110,26 @@ export default function App() {
     restoreCustomThemes();
     restoreActiveThemes();
     restoreColorSchemeMode();
+    restoreRatings();
+    restoreAchievements();
     recordAppOpen();
+  }, []);
+
+  // Immersive edge-to-edge on Android: the system nav bar starts hidden and only reappears as a
+  // temporary overlay when the user swipes up from the bottom edge (BEHAVIOR_SHOW_TRANSIENT_BARS_
+  // BY_SWIPE, hardcoded into expo-navigation-bar's native setHidden — see its NavigationBarModule.kt),
+  // then auto-hides again — the same "gesture-nav" feel as most modern Android apps. iOS has no
+  // equivalent concept (its home indicator isn't hideable the same way) and web has no navigation
+  // bar at all, so this is Android-only. Re-asserted on every foreground transition because some
+  // Android versions/launchers can reset a hidden nav bar back to visible while the app was
+  // backgrounded (e.g. after the recents/app-switcher UI was shown over it).
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    NavigationBar.setHidden(true);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') NavigationBar.setHidden(true);
+    });
+    return () => subscription.remove();
   }, []);
 
   useEffect(() => {
@@ -136,7 +162,12 @@ export default function App() {
         />
       );
     } else if (activeTab === 'puzzles') {
-      tabContent = <DailyPuzzleScreen authToken={authSession?.token ?? null} />;
+      tabContent = (
+        <DailyPuzzleScreen
+          authToken={authSession?.token ?? null}
+          onOpenPuzzleRush={() => setScreen({ name: 'puzzleRush' })}
+        />
+      );
     } else if (activeTab === 'analysis') {
       tabContent = (
         <GameHistoryScreen
@@ -153,6 +184,7 @@ export default function App() {
           onLogout={handleLogout}
           onOpenEngines={() => setScreen({ name: 'engineSelect' })}
           onOpenThemes={() => setScreen({ name: 'themeSelect' })}
+          onOpenAchievements={() => setScreen({ name: 'achievements' })}
         />
       );
     }
@@ -289,6 +321,10 @@ export default function App() {
     content = <ThemeSelectScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'streak') {
     content = <StreakScreen onBack={() => setScreen({ name: 'main' })} />;
+  } else if (screen.name === 'puzzleRush') {
+    content = <PuzzleRushScreen onExit={() => setScreen({ name: 'main' })} />;
+  } else if (screen.name === 'achievements') {
+    content = <AchievementsScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'engineVsEngineSetup') {
     content = (
       <EngineVsEngineSetupScreen

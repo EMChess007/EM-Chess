@@ -42,3 +42,14 @@ export const TIME_CONTROL_CATEGORIES: { category: TimeControlCategory; label: st
 export function getTimeControlsByCategory(category: TimeControlCategory): TimeControl[] {
   return TIME_CONTROLS.filter((tc) => tc.category === category);
 }
+
+/**
+ * Recovers a preset's category from just its `initialSeconds` — used for online games, where the
+ * server only ever gets/returns `{initialSeconds, incrementSeconds}` (see MatchFoundPayload), not
+ * the local preset's `category` field. Safe because no two categories in TIME_CONTROLS share an
+ * `initialSeconds` value (e.g. every "5 min"-based preset is 'blitz', every "10 min"-based one is
+ * 'rapid'), so matching on it alone is unambiguous for every preset this app actually offers.
+ */
+export function categoryForInitialSeconds(initialSeconds: number): TimeControlCategory | null {
+  return TIME_CONTROLS.find((tc) => tc.initialSeconds === initialSeconds)?.category ?? null;
+}

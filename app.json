@@ -34,7 +34,13 @@
           "enableBackgroundPlayback": false
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-navigation-bar",
+        {
+          "hidden": true
+        }
+      ]
     ],
     "extra": {
       "eas": {

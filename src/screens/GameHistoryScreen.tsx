@@ -4,7 +4,9 @@ import { appAlert } from '../components/AppAlert';
 import ScreenHeader from '../components/ScreenHeader';
 import { api, ApiError, type StoredGame } from '../api/client';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import { listLocalGames } from '../logic/localGameHistory';
 import { replayPgn } from '../logic/pgnReplay';
+import { sharePgn } from '../logic/pgnShare';
 import type { AnalyzeParams } from '../types/history';
 
 interface GameHistoryScreenProps {
@@ -51,17 +53,28 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
   const styles = createStyles(colors);
   const [games, setGames] = useState<StoredGame[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(!!authToken);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!authToken) {
-      setGames(null);
-      setLoading(false);
-      return;
-    }
     let cancelled = false;
     setLoading(true);
     setError(null);
+
+    if (!authToken) {
+      // Guest/offline play: history lives on-device only (see useSaveGameOnEnd/localGameHistory),
+      // never synced to an account — same games a login would instead show from the backend.
+      listLocalGames()
+        .then((data) => {
+          if (!cancelled) setGames(data);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     api
       .listGames(authToken)
       .then((data) => {
@@ -78,6 +91,12 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
     };
   }, [authToken]);
 
+  const handleSharePgn = async (game: StoredGame) => {
+    const outcome = await sharePgn(game.pgn);
+    if (outcome === 'copied') appAlert('Copied', 'PGN copied to clipboard.');
+    if (outcome === 'failed') appAlert('Could not share PGN', 'Please try again.');
+  };
+
   const handleSelectGame = (game: StoredGame) => {
     const replayed = replayPgn(game.pgn, game.isChess960);
     if (!replayed || replayed.history.length === 0) {
@@ -93,21 +112,21 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
       <Text style={styles.subtitle}>Tap a game to review it move by move.</Text>
 
       {!authToken && (
-        <View style={styles.centerRow}>
-          <Text style={styles.empty}>Log in to see your game history and analysis.</Text>
-          <Pressable style={styles.loginButton} onPress={onAuthPress}>
-            <Text style={styles.loginButtonText}>Log in / Sign up</Text>
+        <View style={styles.guestNotice}>
+          <Text style={styles.guestNoticeText}>Showing games saved on this device. Log in to sync across devices.</Text>
+          <Pressable onPress={onAuthPress}>
+            <Text style={styles.guestNoticeLink}>Log in / Sign up</Text>
           </Pressable>
         </View>
       )}
 
-      {authToken && loading && (
+      {loading && (
         <View style={styles.centerRow}>
           <ActivityIndicator size="small" color={colors.text} />
         </View>
       )}
 
-      {authToken && !loading && error && (
+      {!loading && error && (
         <View style={styles.centerRow}>
           <Text style={styles.error}>{error}</Text>
         </View>
@@ -115,7 +134,9 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
 
       {!loading && !error && games && games.length === 0 && (
         <View style={styles.centerRow}>
-          <Text style={styles.empty}>You don't have any saved games yet.</Text>
+          <Text style={styles.empty}>
+            {authToken ? "You don't have any saved games yet." : 'No games saved on this device yet.'}
+          </Text>
         </View>
       )}
 
@@ -125,19 +146,24 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
           data={games}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <Pressable style={styles.row} onPress={() => handleSelectGame(item)}>
-              <View style={styles.rowTop}>
-                <Text style={styles.rowOpponent}>
-                  {formatOpponent(item)}
-                  {item.isChess960 ? ' · Chess960' : ''}
-                </Text>
-                <Text style={styles.rowResult}>{formatResult(item)}</Text>
-              </View>
-              <View style={styles.rowBottom}>
-                <Text style={styles.rowMeta}>{formatDate(item.playedAt)}</Text>
-                <Text style={styles.rowMeta}>{item.timeControl}</Text>
-              </View>
-            </Pressable>
+            <View style={styles.row}>
+              <Pressable onPress={() => handleSelectGame(item)}>
+                <View style={styles.rowTop}>
+                  <Text style={styles.rowOpponent}>
+                    {formatOpponent(item)}
+                    {item.isChess960 ? ' · Chess960' : ''}
+                  </Text>
+                  <Text style={styles.rowResult}>{formatResult(item)}</Text>
+                </View>
+                <View style={styles.rowBottom}>
+                  <Text style={styles.rowMeta}>{formatDate(item.playedAt)}</Text>
+                  <Text style={styles.rowMeta}>{item.timeControl}</Text>
+                </View>
+              </Pressable>
+              <Pressable style={styles.shareButton} onPress={() => handleSharePgn(item)}>
+                <Text style={styles.shareButtonText}>Share PGN</Text>
+              </Pressable>
+            </View>
           )}
         />
       )}
@@ -165,15 +191,18 @@ function createStyles(colors: AppColors) {
       paddingHorizontal: 24,
       gap: 12,
     },
-    loginButton: {
-      paddingVertical: 12,
-      paddingHorizontal: 24,
-      backgroundColor: colors.buttonBackground,
-      borderRadius: 8,
+    guestNotice: {
+      paddingHorizontal: 16,
+      paddingBottom: 10,
+      gap: 2,
     },
-    loginButtonText: {
-      color: '#fff',
-      fontSize: 15,
+    guestNoticeText: {
+      fontSize: 12,
+      color: colors.textMuted,
+    },
+    guestNoticeLink: {
+      fontSize: 12,
+      color: colors.accent,
       fontWeight: '600',
     },
     error: {
@@ -218,6 +247,19 @@ function createStyles(colors: AppColors) {
     rowMeta: {
       fontSize: 12,
       color: colors.textMuted,
+    },
+    shareButton: {
+      alignSelf: 'flex-start',
+      marginTop: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+      borderRadius: 6,
+      backgroundColor: colors.surface,
+    },
+    shareButtonText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: colors.accent,
     },
   });
 }

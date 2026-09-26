@@ -13,13 +13,14 @@ import type { Move, PieceColor } from '../types/chess';
 
 interface DailyPuzzleScreenProps {
   authToken: string | null;
+  onOpenPuzzleRush: () => void;
 }
 
 type PuzzleStatus = 'playing' | 'solved' | 'revealed';
 
 const REPLY_DELAY_MS = 500;
 
-export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps) {
+export default function DailyPuzzleScreen({ authToken, onOpenPuzzleRush }: DailyPuzzleScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const puzzle = useMemo(() => getDailyPuzzle(), []);
@@ -201,7 +202,12 @@ export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps)
           </View>
         }
       >
-        <Text style={styles.subtitle}>Puzzle rating: {puzzle.rating}</Text>
+        <View style={styles.topRow}>
+          <Text style={styles.subtitle}>Puzzle rating: {puzzle.rating}</Text>
+          <Pressable style={styles.rushLink} onPress={onOpenPuzzleRush}>
+            <Text style={styles.rushLinkText}>Puzzle Rush ›</Text>
+          </Pressable>
+        </View>
 
         {!checkingStorage && alreadySolvedToday && status === 'playing' && (
           <View style={styles.alreadyBanner}>
@@ -253,6 +259,22 @@ function createStyles(colors: AppColors) {
     subtitle: {
       fontSize: 13,
       color: colors.textSecondary,
+    },
+    topRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      width: '100%',
+      maxWidth: 340,
+    },
+    rushLink: {
+      paddingVertical: 4,
+      paddingHorizontal: 8,
+    },
+    rushLinkText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.accent,
     },
     alreadyBanner: {
       backgroundColor: isDark ? '#3a3120' : '#f0d9b5',

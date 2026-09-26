@@ -3,8 +3,16 @@ import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getColorSchemeMode, setColorSchemeMode, subscribeColorSchemeMode } from '../logic/colorSchemeSettings';
+import { RATING_CATEGORIES } from '../logic/rating';
+import { useRatings } from '../logic/ratingStorage';
 import { isSoundEnabled, setSoundEnabled, subscribeSoundEnabled } from '../logic/soundSettings';
 import type { AuthUser } from '../types/auth';
+
+const RATING_CATEGORY_LABELS: Record<(typeof RATING_CATEGORIES)[number], string> = {
+  bullet: 'Bullet',
+  blitz: 'Blitz',
+  rapid: 'Rapid',
+};
 
 interface MoreScreenProps {
   authUser: AuthUser | null;
@@ -12,9 +20,17 @@ interface MoreScreenProps {
   onLogout: () => void;
   onOpenEngines: () => void;
   onOpenThemes: () => void;
+  onOpenAchievements: () => void;
 }
 
-export default function MoreScreen({ authUser, onAuthPress, onLogout, onOpenEngines, onOpenThemes }: MoreScreenProps) {
+export default function MoreScreen({
+  authUser,
+  onAuthPress,
+  onLogout,
+  onOpenEngines,
+  onOpenThemes,
+  onOpenAchievements,
+}: MoreScreenProps) {
   // react-native's own <SafeAreaView> only actually applies an inset on iOS — see ScreenHeader
   // for the shared version of this fix used by every sub-screen; this tab-root screen has a
   // different (bigger, no-back-button) title style so it applies the same insets.top read directly
@@ -31,6 +47,8 @@ export default function MoreScreen({ authUser, onAuthPress, onLogout, onOpenEngi
   // Same reactive-cache pattern as sound, for the app-wide Dark/Light mode (colorSchemeSettings.ts).
   const [darkMode, setDarkMode] = useState(() => getColorSchemeMode() === 'dark');
   useEffect(() => subscribeColorSchemeMode((mode) => setDarkMode(mode === 'dark')), []);
+
+  const ratings = useRatings();
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 20 }]}>
@@ -50,6 +68,26 @@ export default function MoreScreen({ authUser, onAuthPress, onLogout, onOpenEngi
             <Text style={styles.rowButtonText}>Log in / Sign up</Text>
           </Pressable>
         )}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Ratings</Text>
+        <View style={styles.ratingsBox}>
+          {RATING_CATEGORIES.map((category) => (
+            <View key={category} style={styles.ratingRow}>
+              <Text style={styles.ratingLabel}>{RATING_CATEGORY_LABELS[category]}</Text>
+              <Text style={styles.ratingValue}>{ratings[category]}</Text>
+            </View>
+          ))}
+        </View>
+        <Text style={styles.ratingHint}>Updates after each Bot or Online game. Local to this device.</Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Achievements</Text>
+        <Pressable style={styles.rowButton} onPress={onOpenAchievements}>
+          <Text style={styles.rowButtonText}>View Achievements</Text>
+        </Pressable>
       </View>
 
       <View style={styles.section}>
@@ -144,6 +182,33 @@ function createStyles(colors: AppColors) {
       fontSize: 15,
       color: colors.text,
       fontWeight: '600',
+    },
+    ratingsBox: {
+      flexDirection: 'row',
+      backgroundColor: colors.surface,
+      borderRadius: 10,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      justifyContent: 'space-between',
+    },
+    ratingRow: {
+      alignItems: 'center',
+      gap: 4,
+    },
+    ratingLabel: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: '600',
+      textTransform: 'uppercase',
+    },
+    ratingValue: {
+      fontSize: 22,
+      color: colors.text,
+      fontWeight: '800',
+    },
+    ratingHint: {
+      fontSize: 11,
+      color: colors.textMuted,
     },
   });
 }

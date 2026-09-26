@@ -4,7 +4,7 @@ export type PgnResult = '1-0' | '0-1' | '1/2-1/2';
 
 export type GameOutcome =
   | { over: false }
-  | { over: true; result: PgnResult; reason: 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' };
+  | { over: true; result: PgnResult; reason: 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'agreement' };
 
 /**
  * Whether a game just ended and, if so, its PGN-style result ("1-0"/"0-1"/"1/2-1/2") — shared
@@ -15,8 +15,12 @@ export function getGameOutcome(
   chessStatus: GameStatus,
   turn: PieceColor,
   timeoutWinner: PieceColor | null,
-  resignedBy: PieceColor | null = null
+  resignedBy: PieceColor | null = null,
+  drawnByAgreement = false
 ): GameOutcome {
+  if (drawnByAgreement) {
+    return { over: true, result: '1/2-1/2', reason: 'agreement' };
+  }
   if (resignedBy) {
     return { over: true, result: resignedBy === 'w' ? '0-1' : '1-0', reason: 'resignation' };
   }

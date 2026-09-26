@@ -11,11 +11,16 @@ import MoveListStrip from '../components/MoveListStrip';
 import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { ChessEngine } from '../logic/ChessEngine';
+import { unlockAchievement } from '../logic/achievementStorage';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { describeEndReason } from '../logic/gameOutcomeText';
+import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
+import { toRatingCategory } from '../logic/rating';
+import { getRatings, recordRatedGame } from '../logic/ratingStorage';
+import { categoryForInitialSeconds } from '../logic/timeControls';
 import { formatTime } from '../logic/time';
 import type { Move, PieceColor } from '../types/chess';
 import type { AnalyzeParams, GameHistoryEntry } from '../types/history';
@@ -81,6 +86,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
   const [chatMessages, setChatMessages] = useState<ChatEntry[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatUnread, setChatUnread] = useState(0);
+  const wasMaterialDownRef = useRef(false);
 
   useEffect(() => {
     if (chatOpen) setChatUnread(0);
@@ -140,6 +146,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
       setBlackMs(payload.blackMs);
       setLastMoveSan(payload.san);
       playMoveSound(replayed);
+      triggerMoveHaptics(replayed);
       setMoveList((list) => [
         ...list,
         {
@@ -158,6 +165,16 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
       setGameOver(payload);
       setDrawOfferPending(false);
       setIncomingDrawOffer(false);
+      triggerGameEndHaptics();
+
+      // Online opponents have no calibrated rating of their own to compare against, so this
+      // uses the player's own current rating as the "opponent strength" (see updateRating's
+      // doc comment) — a common simplifying assumption for a casual, non-competitive rating.
+      const result = payload.winner === null ? 0.5 : payload.winner === myColor ? 1 : 0;
+      const ratingCategory = toRatingCategory(categoryForInitialSeconds(match.timeControl.initialSeconds) ?? '');
+      if (ratingCategory) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result);
+
+      if (result === 1 && wasMaterialDownRef.current) unlockAchievement('comeback_win');
     };
 
     const handleDrawOffered = (_payload: DrawOfferedPayload) => {
@@ -268,6 +285,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
     setTurn(opponentColor); // optimistic — the ack below confirms/corrects this
     setLastMoveSan(move.san);
     playMoveSound(move);
+    triggerMoveHaptics(move);
     setMoveList((list) => [...list, { move, mover: myColor, fenBefore: fenBeforeMove, fenAfter: newFen }]);
 
     const socket = connectSocket(authToken);
@@ -392,6 +410,11 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
   const opponentCaptured = myColor === 'w' ? blackCaptured : whiteCaptured;
   const myAdvantage = myColor === 'w' ? (materialDiff > 0 ? materialDiff : 0) : (materialDiff < 0 ? -materialDiff : 0);
   const opponentAdvantage = myColor === 'w' ? (materialDiff < 0 ? -materialDiff : 0) : (materialDiff > 0 ? materialDiff : 0);
+
+  // For the 'comeback_win' achievement — checked in handleGameOver.
+  useEffect(() => {
+    if (opponentAdvantage >= 3) wasMaterialDownRef.current = true;
+  }, [opponentAdvantage]);
 
   const myName = 'You';
   const opponentName = 'Opponent';
