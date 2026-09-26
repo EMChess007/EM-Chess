@@ -1,10 +1,18 @@
 import type { StockfishBridgeHandle } from './StockfishBridge';
 
 export interface BestMoveOptions {
-  /** Approximate playing strength via UCI_LimitStrength/UCI_Elo (roughly 1320-3190). */
+  /** Approximate playing strength via UCI_LimitStrength/UCI_Elo (roughly 1320-3190). Only
+   * meaningful on an engine that actually supports this option — Stockfish 11 Classical does
+   * not (see getBotStrengthOptions in logic/engines.ts), use `skillLevel` for that one instead. */
   elo?: number;
   /** The engine's own 0-20-ish skill dial, used when `elo` isn't given. */
   skillLevel?: number;
+  /** Stockfish's "Skill Level Maximum Error" (centipawns) — the size of a deliberate blunder the
+   * engine may inject when `skillLevel` is set. Only meaningful alongside `skillLevel`. */
+  skillLevelMaximumError?: number;
+  /** Stockfish's "Skill Level Probability" (permille, 0-1000) — how likely such a blunder is on
+   * any given move. Only meaningful alongside `skillLevel`. */
+  skillLevelProbability?: number;
   /** Search a fixed depth instead of a fixed time. */
   depth?: number;
   /** Search time in milliseconds when `depth` isn't given. Defaults to 1000ms. */

@@ -15,7 +15,7 @@ import StockfishBridge, { type StockfishBridgeHandle } from '../engine/Stockfish
 import { getBotThinkTimeMs } from '../logic/bots';
 import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
-import { getEngineIdForElo, getEngineName } from '../logic/engines';
+import { getBotStrengthOptions, getEngineIdForElo, getEngineName } from '../logic/engines';
 import { buildGamePayload } from '../logic/gamePayload';
 import { getGameOutcome } from '../logic/gameResult';
 import { describeEndReason } from '../logic/gameOutcomeText';
@@ -148,7 +148,7 @@ export default function BotGameScreen({
       try {
         await engineRuntime.engine.initEngine();
         engineRuntime.engine.setPosition(fen);
-        const uci = await engineRuntime.engine.getBestMove({ elo: bot.elo, movetimeMs: 800 });
+        const uci = await engineRuntime.engine.getBestMove({ ...getBotStrengthOptions(bot.elo), movetimeMs: 800 });
         if (cancelled) return;
         setHintText(uciMoveToSan(uci, fen, { chess960, initialFen }));
       } catch {
@@ -186,7 +186,7 @@ export default function BotGameScreen({
         });
 
         const uciMove = await engineRuntime.engine.getBestMove({
-          elo: bot.elo,
+          ...getBotStrengthOptions(bot.elo),
           movetimeMs: thinkTimeMs,
         });
         if (cancelled) return;

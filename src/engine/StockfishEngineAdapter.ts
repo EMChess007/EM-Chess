@@ -129,6 +129,12 @@ export class StockfishEngineAdapter implements UciChessEngine {
     if (options.skillLevel !== undefined) {
       this.send(`setoption name Skill Level value ${Math.round(options.skillLevel)}`);
     }
+    if (options.skillLevelMaximumError !== undefined) {
+      this.send(`setoption name Skill Level Maximum Error value ${Math.round(options.skillLevelMaximumError)}`);
+    }
+    if (options.skillLevelProbability !== undefined) {
+      this.send(`setoption name Skill Level Probability value ${Math.round(options.skillLevelProbability)}`);
+    }
 
     const bestMove = this.waitForLine((line) => BEST_MOVE_RE.test(line), BEST_MOVE_TIMEOUT_MS);
 

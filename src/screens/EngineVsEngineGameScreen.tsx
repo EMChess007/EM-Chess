@@ -12,7 +12,7 @@ import StockfishBridge, { type StockfishBridgeHandle } from '../engine/Stockfish
 import { getBotThinkTimeMs } from '../logic/bots';
 import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
-import { getEngineIdForElo } from '../logic/engines';
+import { getBotStrengthOptions, getEngineIdForElo } from '../logic/engines';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
@@ -154,7 +154,7 @@ export default function EngineVsEngineGameScreen({
         });
 
         const uciMove = await activeRuntime.engine.getBestMove({
-          elo: activeBot.elo,
+          ...getBotStrengthOptions(activeBot.elo),
           movetimeMs: thinkTimeMs,
         });
         if (cancelled) return;
