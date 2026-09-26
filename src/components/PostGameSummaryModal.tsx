@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StockfishEngineAdapter } from '../engine/StockfishEngineAdapter';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { buildStockfishHtml } from '../engine/stockfishHtml';
@@ -110,6 +110,7 @@ export default function PostGameSummaryModal({
     <View style={styles.overlay}>
       {scratchEngine && <StockfishBridge ref={handleBridgeRef} onLine={handleEngineLine} html={buildStockfishHtml()} />}
       <View style={styles.card}>
+      <ScrollView contentContainerStyle={styles.cardScrollContent}>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.subtitle}>{subtitle}</Text>
 
@@ -158,6 +159,7 @@ export default function PostGameSummaryModal({
             <Text style={styles.secondaryButtonText}>New Game</Text>
           </Pressable>
         </View>
+      </ScrollView>
       </View>
     </View>
   );
@@ -181,8 +183,11 @@ function createStyles(colors: AppColors) {
     card: {
       width: '100%',
       maxWidth: 380,
+      maxHeight: '100%',
       backgroundColor: colors.background,
       borderRadius: 16,
+    },
+    cardScrollContent: {
       padding: 22,
       gap: 12,
     },

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { appAlert } from '../components/AppAlert';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
@@ -54,7 +54,11 @@ export default function MoreScreen({
   const ratings = useRatings();
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 20 }]}>
+    <View style={styles.container}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20 }]}
+      >
       <Text style={styles.title}>More</Text>
 
       <View style={styles.section}>
@@ -140,6 +144,7 @@ export default function MoreScreen({
           <Switch value={soundOn} onValueChange={(value) => setSoundEnabled(value)} />
         </View>
       </View>
+      </ScrollView>
     </View>
   );
 }
@@ -149,8 +154,13 @@ function createStyles(colors: AppColors) {
     container: {
       flex: 1,
       backgroundColor: colors.background,
+    },
+    scroll: {
+      flex: 1,
+    },
+    scrollContent: {
       paddingHorizontal: 20,
-      paddingTop: 20,
+      paddingBottom: 32,
       gap: 20,
     },
     title: {

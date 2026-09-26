@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import ScreenHeader from '../components/ScreenHeader';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
@@ -117,7 +117,7 @@ export default function ChallengeScreen({ authToken, onMatchFound, onBack }: Cha
       )}
 
       {phase === 'setup' && (
-        <View style={styles.centerColumn}>
+        <View style={styles.setupContainer}>
           <Pressable style={styles.chess960Row} onPress={() => setChess960((v) => !v)}>
             <View style={[styles.checkbox, chess960 && styles.checkboxChecked]}>
               {chess960 && <Text style={styles.checkboxMark}>✓</Text>}
@@ -125,18 +125,20 @@ export default function ChallengeScreen({ authToken, onMatchFound, onBack }: Cha
             <Text style={styles.chess960Label}>Chess960 (Fischer Random)</Text>
           </Pressable>
           {error && <Text style={styles.errorText}>{error}</Text>}
-          {CATEGORIES.map(({ category, label }) => (
-            <View key={category} style={styles.section}>
-              <Text style={styles.sectionTitle}>{label}</Text>
-              <View style={styles.presetGrid}>
-                {getTimeControlsByCategory(category).map((tc) => (
-                  <Pressable key={tc.id} style={styles.presetButton} onPress={() => handleCreate(tc)}>
-                    <Text style={styles.presetButtonText}>{tc.label}</Text>
-                  </Pressable>
-                ))}
+          <ScrollView contentContainerStyle={styles.setupScrollContent}>
+            {CATEGORIES.map(({ category, label }) => (
+              <View key={category} style={styles.section}>
+                <Text style={styles.sectionTitle}>{label}</Text>
+                <View style={styles.presetGrid}>
+                  {getTimeControlsByCategory(category).map((tc) => (
+                    <Pressable key={tc.id} style={styles.presetButton} onPress={() => handleCreate(tc)}>
+                      <Text style={styles.presetButtonText}>{tc.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
               </View>
-            </View>
-          ))}
+            ))}
+          </ScrollView>
         </View>
       )}
 
@@ -189,6 +191,16 @@ function createStyles(colors: AppColors) {
       justifyContent: 'center',
       paddingHorizontal: 24,
       gap: 14,
+    },
+    setupContainer: {
+      flex: 1,
+      paddingHorizontal: 24,
+      paddingTop: 20,
+      gap: 14,
+    },
+    setupScrollContent: {
+      gap: 18,
+      paddingBottom: 24,
     },
     bigButton: {
       width: '100%',
