@@ -246,19 +246,38 @@ export default function ChessBoard({
   // an arrow (or, released back on the same square, toggles a highlight there) when
   // `enableAnnotations` is on. One PanResponder on the board container (rather than a Pressable
   // per square) is what makes it possible to track the finger continuously after the long-press
-  // fires, which Pressable's onPress/onLongPress alone can't do. Every position below is read
-  // from `nativeEvent.locationX/locationY` — coordinates relative to the responder view itself —
-  // rather than page-absolute coordinates, so this stays correct even if the board sits inside a
-  // ScrollView that's scrolled away from its initial layout position (GameScreenBody is one).
+  // fires, which Pressable's onPress/onLongPress alone can't do.
+  //
+  // Positions are computed from `nativeEvent.pageX/pageY` (always relative to the app root) minus
+  // this board's own measured on-screen offset — NOT from `locationX/locationY`, which turned out
+  // to be relative to whichever of the 64 Square children the touch actually hit (a real, if
+  // poorly documented, React Native behavior for a responder with overlapping/nested children),
+  // not to this responder view itself. That made every tap resolve to a position within a single
+  // ~squareSize-sized child instead of across the whole board, which — since squareSize divides
+  // squareSize to a value under 1 — collapsed almost every tap to row/col (0, 0) regardless of
+  // where the board was actually touched. This is what made tap-to-select appear completely dead.
   const gestureRef = useRef<{
     startSquare: string;
     longPressTimer: ReturnType<typeof setTimeout> | null;
     armed: boolean;
   } | null>(null);
+  const boardContainerRef = useRef<View>(null);
+  const boardOffsetRef = useRef({ x: 0, y: 0 });
+
+  const handleBoardLayout = () => {
+    boardContainerRef.current?.measure((_x, _y, _width, _height, pageX, pageY) => {
+      boardOffsetRef.current = { x: pageX, y: pageY };
+    });
+  };
 
   const pixelToGrid = (localX: number, localY: number): GridPoint => ({
     row: Math.min(7, Math.max(0, Math.floor(localY / squareSize))),
     col: Math.min(7, Math.max(0, Math.floor(localX / squareSize))),
+  });
+
+  const toBoardLocal = (pageX: number, pageY: number) => ({
+    x: pageX - boardOffsetRef.current.x,
+    y: pageY - boardOffsetRef.current.y,
   });
 
   const clearGesture = () => {
@@ -276,20 +295,20 @@ export default function ChessBoard({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
-        const { locationX, locationY } = evt.nativeEvent;
-        const { row, col } = pixelToGrid(locationX, locationY);
+        const { x: localX, y: localY } = toBoardLocal(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
+        const { row, col } = pixelToGrid(localX, localY);
         const startSquare = rowColToSquare(row, col, orientation);
 
         const timer = enableAnnotations
           ? setTimeout(() => {
               if (!gestureRef.current) return;
               gestureRef.current.armed = true;
-              setLiveArrow({ from: { row, col }, toX: locationX, toY: locationY });
+              setLiveArrow({ from: { row, col }, toX: localX, toY: localY });
             }, LONG_PRESS_MS)
           : null;
         gestureRef.current = { startSquare, longPressTimer: timer, armed: false };
       },
-      onPanResponderMove: (evt, gestureState) => {
+      onPanResponderMove: (_evt, gestureState) => {
         const state = gestureRef.current;
         if (!state) return;
 
@@ -304,14 +323,21 @@ export default function ChessBoard({
         }
 
         const startGrid = squareToRowCol(state.startSquare, orientation);
-        setLiveArrow({ from: startGrid, toX: evt.nativeEvent.locationX, toY: evt.nativeEvent.locationY });
+        const { x: localX, y: localY } = toBoardLocal(gestureState.moveX, gestureState.moveY);
+        setLiveArrow({ from: startGrid, toX: localX, toY: localY });
       },
-      onPanResponderRelease: (evt) => {
+      onPanResponderRelease: (evt, gestureState) => {
         const state = gestureRef.current;
         if (!state) return;
 
-        const { locationX, locationY } = evt.nativeEvent;
-        const { row, col } = pixelToGrid(locationX, locationY);
+        // moveX/moveY isn't updated until the first move event fires — for a gesture that never
+        // moved at all (the common case for a plain tap), it's still 0, so fall back to the
+        // release event's own pageX/pageY, which is always populated.
+        const hasMoved = gestureState.moveX !== 0 || gestureState.moveY !== 0;
+        const pageX = hasMoved ? gestureState.moveX : evt.nativeEvent.pageX;
+        const pageY = hasMoved ? gestureState.moveY : evt.nativeEvent.pageY;
+        const { x: localX, y: localY } = toBoardLocal(pageX, pageY);
+        const { row, col } = pixelToGrid(localX, localY);
 
         if (state.armed) {
           const endSquare = rowColToSquare(row, col, orientation);
@@ -337,7 +363,12 @@ export default function ChessBoard({
 
   return (
     <View style={styles.border}>
-      <View style={[styles.board, { width: boardSize, height: boardSize }]} {...panResponder.panHandlers}>
+      <View
+        ref={boardContainerRef}
+        onLayout={handleBoardLayout}
+        style={[styles.board, { width: boardSize, height: boardSize }]}
+        {...panResponder.panHandlers}
+      >
         {displayRows.map((row, rowIndex) =>
           row.map((square, colIndex) => (
             <Square
