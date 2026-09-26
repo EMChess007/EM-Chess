@@ -33,7 +33,7 @@ export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps)
   const [fen, setFen] = useState(initialFen);
   const [moveIndex, setMoveIndex] = useState(1);
   const [status, setStatus] = useState<PuzzleStatus>('playing');
-  const [lastMoveSan, setLastMoveSan] = useState<string | null>(null);
+  const [lastMove, setLastMove] = useState<Move | null>(null);
   const [wrongCount, setWrongCount] = useState(0);
   const [showWrongFlash, setShowWrongFlash] = useState(false);
   const [flashKey, setFlashKey] = useState(0);
@@ -110,7 +110,7 @@ export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps)
 
     setWrongCount(0);
     setFen(newFen);
-    setLastMoveSan(move.san);
+    setLastMove(move);
     const nextIndex = moveIndex + 1;
 
     if (nextIndex >= puzzle.moves.length) {
@@ -130,7 +130,7 @@ export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps)
       const afterReplyIndex = nextIndex + 1;
       if (replyMove) {
         setFen(replyEngine.getFen());
-        setLastMoveSan(replyMove.san);
+        setLastMove(replyMove);
       }
       setMoveIndex(afterReplyIndex);
       setBotReplying(false);
@@ -145,18 +145,18 @@ export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps)
     if (status !== 'playing' || botReplying) return;
     const engine = new ChessEngine(fen);
     let idx = moveIndex;
-    let sanOfLast: string | null = null;
+    let lastRevealedMove: Move | null = null;
     while (idx < puzzle.moves.length) {
       const parsed = parseUciMove(puzzle.moves[idx]);
       if (!parsed) break;
       const move = engine.move(parsed.from, parsed.to, parsed.promotion);
       if (!move) break;
-      sanOfLast = move.san;
+      lastRevealedMove = move;
       idx++;
     }
     setFen(engine.getFen());
     setMoveIndex(idx);
-    if (sanOfLast) setLastMoveSan(sanOfLast);
+    if (lastRevealedMove) setLastMove(lastRevealedMove);
     setStatus('revealed');
   };
 
@@ -164,7 +164,7 @@ export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps)
     setFen(initialFen);
     setMoveIndex(1);
     setStatus('playing');
-    setLastMoveSan(null);
+    setLastMove(null);
     setWrongCount(0);
     setAttemptKey((k) => k + 1);
   };
@@ -182,7 +182,7 @@ export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps)
       <GameScreenBody
         bottomBar={
           <View style={styles.footer}>
-            {lastMoveSan && <Text style={styles.lastMove}>Last move: {lastMoveSan}</Text>}
+            {lastMove && <Text style={styles.lastMove}>Last move: {lastMove.san}</Text>}
             <View style={styles.footerButtons}>
               {status === 'playing' && (
                 <Pressable style={[styles.button, styles.revealButton]} onPress={handleReveal}>
@@ -226,6 +226,7 @@ export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps)
             onMove={handleMove}
             disabled={status !== 'playing' || botReplying}
             orientation={solverColor}
+            lastMove={lastMove}
           />
         </View>
 

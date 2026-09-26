@@ -312,6 +312,7 @@ export default function BotGameScreen({
   const isReviewing = viewIndex !== null;
   const displayFen = isReviewing ? positions[viewIndex as number] : fen;
   const selectedMoveIndex = isReviewing ? (viewIndex as number) - 1 : history.length - 1;
+  const displayLastMove = selectedMoveIndex >= 0 ? history[selectedMoveIndex].move : null;
 
   const handleSelectMove = (index: number) => {
     const next = index + 1;
@@ -411,6 +412,7 @@ export default function BotGameScreen({
           chess960={chess960}
           initialFen={initialFen}
           orientation={flipped ? botColor : userColor}
+          lastMove={displayLastMove}
         />
 
         <View style={styles.playerRow}>

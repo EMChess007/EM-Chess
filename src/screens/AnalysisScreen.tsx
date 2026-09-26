@@ -288,6 +288,7 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
             disabled
             chess960={chess960}
             initialFen={initialFen}
+            lastMove={!previewFen && currentIndex > 0 ? history[currentIndex - 1].move : null}
           />
         </View>
       </View>

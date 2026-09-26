@@ -345,6 +345,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
   };
 
   const selectedMoveIndex = isReviewing ? (viewIndex as number) - 1 : moveList.length - 1;
+  const displayLastMove = selectedMoveIndex >= 0 ? moveList[selectedMoveIndex].move : null;
 
   // Tapping a move in the strip drives the exact same viewIndex the Back/Forward buttons do —
   // no separate navigation mechanism.
@@ -462,6 +463,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
           chess960={match.isChess960}
           initialFen={match.fen}
           orientation={myColor}
+          lastMove={displayLastMove}
         />
 
         <View style={styles.playerRow}>

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { ChessEngine } from '../logic/ChessEngine';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
-import type { Move, PieceColor } from '../types/chess';
+import type { Move, PieceColor, Piece as PieceModel } from '../types/chess';
 import { getBoardSize } from './boardSize';
+import Piece from './Piece';
 import Square from './Square';
 
 interface ChessBoardProps {
@@ -14,9 +15,37 @@ interface ChessBoardProps {
   initialFen?: string;
   /** Which side's pieces render at the bottom. Defaults to 'w' (White at bottom, as usual). */
   orientation?: PieceColor;
+  /** The move that produced the current `fen` (from whichever position was displayed just
+   * before it), if any — highlights its two squares and, when it looks like a genuine single
+   * forward step (see the animation effect below), slides the piece in from origin to
+   * destination instead of it just appearing at the destination. Pass `null`/omit for a
+   * freshly-set-up board with no "last move" to show. */
+  lastMove?: Move | null;
 }
 
-export default function ChessBoard({ fen, onMove, disabled, chess960, initialFen, orientation = 'w' }: ChessBoardProps) {
+const ANIMATION_DURATION_MS = 200;
+
+function squareToRowCol(square: string, orientation: PieceColor): { row: number; col: number } {
+  const file = square.charCodeAt(0) - 97; // 'a' -> 0
+  const rank = parseInt(square[1], 10);
+  let row = 8 - rank; // 0 = rank 8 (top, unflipped)
+  let col = file; // 0 = file a (left, unflipped)
+  if (orientation === 'b') {
+    row = 7 - row;
+    col = 7 - col;
+  }
+  return { row, col };
+}
+
+export default function ChessBoard({
+  fen,
+  onMove,
+  disabled,
+  chess960,
+  initialFen,
+  orientation = 'w',
+  lastMove,
+}: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
   const boardSize = getBoardSize(width, height);
   const squareSize = boardSize / 8;
@@ -61,6 +90,52 @@ export default function ChessBoard({ fen, onMove, disabled, chess960, initialFen
 
   useEffect(() => {
     setSelectedSquare(null);
+  }, [fen]);
+
+  // Slide animation: a moving piece "sprite" overlaid on top of the static grid, translated from
+  // the origin square's pixel position to the destination's over ANIMATION_DURATION_MS. The
+  // destination square's own (already-updated) piece is hidden for the duration so it doesn't
+  // just appear there instantly underneath the incoming sprite (see `hidePiece` below).
+  const animatedOffset = useRef(new Animated.ValueXY()).current;
+  const [slidingMove, setSlidingMove] = useState<{ to: string; piece: PieceModel } | null>(null);
+  const prevFenRef = useRef(fen);
+
+  useEffect(() => {
+    const prevFen = prevFenRef.current;
+    prevFenRef.current = fen;
+    if (!lastMove || prevFen === fen) return;
+
+    // Only animate when the position just before this one actually had the mover's piece
+    // sitting on `lastMove.from` — i.e. this really is one forward step from what was just on
+    // screen, not e.g. a jump to an arbitrary position while scrubbing move history. A relatively
+    // cheap, self-verifying check rather than threading a separate "did a live move just happen"
+    // flag through every caller.
+    let movingPiece: PieceModel | null = null;
+    try {
+      movingPiece = new ChessEngine(prevFen, { chess960, initialFen }).getPieceAt(lastMove.from);
+    } catch {
+      movingPiece = null;
+    }
+    if (!movingPiece) return;
+
+    const from = squareToRowCol(lastMove.from, orientation);
+    const to = squareToRowCol(lastMove.to, orientation);
+    animatedOffset.setValue({ x: from.col * squareSize, y: from.row * squareSize });
+    setSlidingMove({ to: lastMove.to, piece: movingPiece });
+
+    Animated.timing(animatedOffset, {
+      toValue: { x: to.col * squareSize, y: to.row * squareSize },
+      duration: ANIMATION_DURATION_MS,
+      easing: Easing.out(Easing.cubic),
+      // The web Animated implementation doesn't support the native driver at all — this only
+      // ever runs the JS-driven timing loop there regardless, but passing true anyway causes it
+      // to log a dev warning on every single move.
+      useNativeDriver: Platform.OS !== 'web',
+    }).start(() => setSlidingMove(null));
+    // Only `fen` actually needs to retrigger this — lastMove/chess960/initialFen/orientation/
+    // squareSize are all read fresh from the closure at the moment `fen` changes, which is
+    // exactly when they're relevant (the move that produced this new fen).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fen]);
 
   const legalTargets = selectedSquare ? engine.getLegalMoves(selectedSquare) : [];
@@ -111,6 +186,8 @@ export default function ChessBoard({ fen, onMove, disabled, chess960, initialFen
               isSelected={square.square === selectedSquare}
               isLegalTarget={legalTargets.includes(square.square)}
               isChecked={square.square === checkedKingSquare}
+              isLastMove={square.square === lastMove?.from || square.square === lastMove?.to}
+              hidePiece={slidingMove !== null && square.square === slidingMove.to}
               size={squareSize}
               onPress={handleSquarePress}
               lightColor={boardTheme.lightColor}
@@ -118,6 +195,22 @@ export default function ChessBoard({ fen, onMove, disabled, chess960, initialFen
               pieceImages={pieceTheme.images}
             />
           ))
+        )}
+
+        {slidingMove && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.slidingPiece,
+              {
+                width: squareSize,
+                height: squareSize,
+                transform: [{ translateX: animatedOffset.x }, { translateY: animatedOffset.y }],
+              },
+            ]}
+          >
+            <Piece piece={slidingMove.piece} images={pieceTheme.images} />
+          </Animated.View>
         )}
       </View>
     </View>
@@ -132,5 +225,13 @@ const styles = StyleSheet.create({
   board: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    position: 'relative',
+  },
+  slidingPiece: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
