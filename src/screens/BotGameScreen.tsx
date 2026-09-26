@@ -15,6 +15,7 @@ import StockfishBridge, { type StockfishBridgeHandle } from '../engine/Stockfish
 import { getBotThinkTimeMs } from '../logic/bots';
 import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getBotStrengthOptions, getEngineIdForElo, getEngineName } from '../logic/engines';
 import { buildGamePayload } from '../logic/gamePayload';
 import { getGameOutcome } from '../logic/gameResult';
@@ -50,6 +51,8 @@ export default function BotGameScreen({
   onExit,
   onAnalyze,
 }: BotGameScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   // Resolved once per screen mount (a fixed value for this game's whole lifetime, including any
   // "New Game" resets) — 'random' is a one-time coin flip made when the player enters the game,
   // not re-rolled on every render.
@@ -94,10 +97,10 @@ export default function BotGameScreen({
   const turn = engine.getTurn();
   const chessStatus = engine.getStatus();
 
-  // The bot's own clock is driven precisely by consumeTime() below (an exact, sub-second amount
-  // matching however long it actually "thought"), not by the once-a-second auto-tick — a fast
-  // bullet-speed bot move can take well under 1s, which the auto-tick alone would under-count.
-  const clock = useChessClock(timeControl, turn, engine.isGameOver(), { autoTick: turn === userColor });
+  // Auto-tick runs for whichever side's turn it is — including the bot's — so its clock counts
+  // down live, second by second, in real wall-clock time while it "thinks" (the engine really
+  // does take approximately thinkTimeMs to respond), exactly like the human side already did.
+  const clock = useChessClock(timeControl, turn, engine.isGameOver());
   const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null;
 
   const savePayload = useMemo(
@@ -199,8 +202,8 @@ export default function BotGameScreen({
         if (!move) throw new Error(`Invalid move from engine: "${uciMove}"`);
         if (cancelled) return;
 
-        // Actually charge the bot's clock for the time it "thought" — not just a UI effect.
-        clock.consumeTime(botColor, thinkTimeMs);
+        // The bot's clock was already ticking down live via auto-tick while it "thought" (see
+        // the useChessClock call above) — only the post-move increment still needs applying here.
         clock.applyIncrement(botColor);
         playMoveSound(move);
         setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: moveEngine.getFen() }]);
@@ -389,7 +392,7 @@ export default function BotGameScreen({
         {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
         {botThinking && (
           <View style={styles.thinkingRow}>
-            <ActivityIndicator size="small" color="#3a2618" />
+            <ActivityIndicator size="small" color={colors.text} />
             <Text style={styles.thinkingText}>The bot is thinking...</Text>
           </View>
         )}
@@ -442,94 +445,96 @@ export default function BotGameScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#777',
-  },
-  status: {
-    fontSize: 16,
-    color: '#333',
-  },
-  openingName: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    color: '#8a7a63',
-    textAlign: 'center',
-    maxWidth: 320,
-  },
-  reviewingText: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    color: '#8d6e00',
-  },
-  playerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  thinkingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  thinkingText: {
-    fontSize: 14,
-    color: '#3a2618',
-    fontStyle: 'italic',
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#b00020',
-  },
-  hintText: {
-    fontSize: 13,
-    fontStyle: 'italic',
-    color: '#2e6f4f',
-  },
-  controlsWrap: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  clock: {
-    fontSize: 20,
-    fontVariant: ['tabular-nums'],
-    color: '#333',
-    paddingVertical: 4,
-    paddingHorizontal: 14,
-    borderRadius: 6,
-  },
-  clockActive: {
-    fontWeight: '700',
-    color: '#fff',
-    backgroundColor: '#3a2618',
-  },
-  footer: {
-    marginTop: 16,
-    alignItems: 'center',
-    gap: 8,
-  },
-  lastMove: {
-    fontSize: 14,
-    color: '#555',
-  },
-  footerButtons: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  resetButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    backgroundColor: '#3a2618',
-    borderRadius: 8,
-  },
-  resetButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    subtitle: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    status: {
+      fontSize: 16,
+      color: colors.text,
+    },
+    openingName: {
+      fontSize: 12,
+      fontStyle: 'italic',
+      color: colors.textSecondary,
+      textAlign: 'center',
+      maxWidth: 320,
+    },
+    reviewingText: {
+      fontSize: 12,
+      fontStyle: 'italic',
+      color: colors.gold,
+    },
+    playerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    thinkingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    thinkingText: {
+      fontSize: 14,
+      color: colors.text,
+      fontStyle: 'italic',
+    },
+    errorText: {
+      fontSize: 13,
+      color: colors.danger,
+    },
+    hintText: {
+      fontSize: 13,
+      fontStyle: 'italic',
+      color: colors.accent,
+    },
+    controlsWrap: {
+      alignItems: 'center',
+      gap: 8,
+    },
+    clock: {
+      fontSize: 20,
+      fontVariant: ['tabular-nums'],
+      color: colors.text,
+      paddingVertical: 4,
+      paddingHorizontal: 14,
+      borderRadius: 6,
+    },
+    clockActive: {
+      fontWeight: '700',
+      color: '#fff',
+      backgroundColor: colors.buttonBackground,
+    },
+    footer: {
+      marginTop: 16,
+      alignItems: 'center',
+      gap: 8,
+    },
+    lastMove: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    footerButtons: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    resetButton: {
+      paddingVertical: 10,
+      paddingHorizontal: 24,
+      backgroundColor: colors.buttonBackground,
+      borderRadius: 8,
+    },
+    resetButtonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+  });
+}

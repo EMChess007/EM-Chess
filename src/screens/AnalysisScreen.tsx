@@ -26,6 +26,7 @@ import {
   type MoveQuality,
 } from '../logic/analysis';
 import { ChessEngine } from '../logic/ChessEngine';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { AVAILABLE_ENGINES, DEFAULT_ENGINE_ID } from '../logic/engines';
 import { generateExplanation } from '../logic/moveExplanations';
 import { parseUciMove, uciMoveToSan, uciSequenceToSan } from '../logic/uciMove';
@@ -58,6 +59,8 @@ const PV_DISPLAY_PLIES = 6;
 export default function AnalysisScreen({ initialFen, chess960, history, onExit }: AnalysisScreenProps) {
   const { width } = useWindowDimensions();
   const boardSize = getBoardSize(width);
+  const colors = useAppColors();
+  const styles = createStyles(colors);
 
   // Always defaults to the strongest engine, regardless of which engine played the bot's moves
   // in this game — analysis wants the most accurate read of the position, not a rematch of
@@ -248,7 +251,7 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
 
       {analyzing && (
         <View style={styles.analyzingRow}>
-          <ActivityIndicator size="small" color="#3a2618" />
+          <ActivityIndicator size="small" color={colors.text} />
           <Text style={styles.analyzingText}>
             Analyzing position {analyzedCount}/{positions.length}...
           </Text>
@@ -369,7 +372,7 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
                   </Text>
                 </View>
               ) : (
-                <ActivityIndicator size="small" color="#999" />
+                <ActivityIndicator size="small" color={colors.textMuted} />
               )}
             </Pressable>
           );
@@ -380,186 +383,189 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  body: {
-    flex: 1,
-    paddingHorizontal: 16,
-    gap: 6,
-  },
-  engineToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  engineToggleLabel: {
-    fontSize: 11,
-    color: '#999',
-  },
-  engineToggleChip: {
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    backgroundColor: '#f4f4f4',
-  },
-  engineToggleChipActive: {
-    backgroundColor: '#e0d3bd',
-  },
-  engineToggleChipText: {
-    fontSize: 11,
-    color: '#999',
-  },
-  engineToggleChipTextActive: {
-    color: '#3a2618',
-    fontWeight: '600',
-  },
-  analyzingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  analyzingText: {
-    fontSize: 13,
-    color: '#555',
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#b00020',
-  },
-  moveInfo: {
-    alignItems: 'center',
-    gap: 4,
-    minHeight: 44,
-  },
-  moveQualityBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  moveQualityBadgeText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#3a2618',
-  },
-  bestMoveText: {
-    fontSize: 13,
-    color: '#555',
-  },
-  boardRow: {
-    flexDirection: 'row',
-    alignSelf: 'center',
-    gap: 8,
-    alignItems: 'flex-start',
-  },
-  previewBanner: {
-    backgroundColor: '#2e6f4f',
-    borderRadius: 6,
-    paddingVertical: 4,
-    marginBottom: 4,
-    alignItems: 'center',
-  },
-  previewBannerText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  navRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-    marginTop: 8,
-  },
-  navButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: '#3a2618',
-    borderRadius: 8,
-  },
-  navButtonDisabled: {
-    opacity: 0.35,
-  },
-  navButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  linesBox: {
-    marginTop: 10,
-    gap: 4,
-  },
-  explanationBox: {
-    marginTop: 10,
-    backgroundColor: '#f7f2ea',
-    borderLeftWidth: 4,
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  explanationText: {
-    fontSize: 13,
-    color: '#3a2618',
-    lineHeight: 18,
-  },
-  linesPlaceholder: {
-    fontSize: 13,
-    color: '#999',
-    alignSelf: 'center',
-  },
-  lineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    backgroundColor: '#f7f2ea',
-  },
-  lineRowActive: {
-    backgroundColor: '#f0d9b5',
-  },
-  lineEval: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#3a2618',
-    minWidth: 46,
-  },
-  lineSequence: {
-    fontSize: 12,
-    color: '#555',
-    flex: 1,
-  },
-  moveList: {
-    flex: 1,
-    marginTop: 12,
-  },
-  moveListContent: {
-    paddingBottom: 24,
-  },
-  moveRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-  },
-  moveRowActive: {
-    backgroundColor: '#f0d9b5',
-  },
-  moveRowLabel: {
-    fontSize: 14,
-    color: '#333',
-  },
-  moveRowBadgeWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  moveRowBadge: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-});
+function createStyles(colors: AppColors) {
+  const isDark = colors.mode === 'dark';
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    body: {
+      flex: 1,
+      paddingHorizontal: 16,
+      gap: 6,
+    },
+    engineToggleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    engineToggleLabel: {
+      fontSize: 11,
+      color: colors.textMuted,
+    },
+    engineToggleChip: {
+      paddingVertical: 2,
+      paddingHorizontal: 8,
+      borderRadius: 10,
+      backgroundColor: isDark ? '#2a2a2a' : '#f4f4f4',
+    },
+    engineToggleChipActive: {
+      backgroundColor: isDark ? '#4a3f2a' : '#e0d3bd',
+    },
+    engineToggleChipText: {
+      fontSize: 11,
+      color: colors.textMuted,
+    },
+    engineToggleChipTextActive: {
+      color: colors.text,
+      fontWeight: '600',
+    },
+    analyzingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    analyzingText: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    errorText: {
+      fontSize: 13,
+      color: colors.danger,
+    },
+    moveInfo: {
+      alignItems: 'center',
+      gap: 4,
+      minHeight: 44,
+    },
+    moveQualityBadgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    moveQualityBadgeText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    bestMoveText: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    boardRow: {
+      flexDirection: 'row',
+      alignSelf: 'center',
+      gap: 8,
+      alignItems: 'flex-start',
+    },
+    previewBanner: {
+      backgroundColor: colors.accent,
+      borderRadius: 6,
+      paddingVertical: 4,
+      marginBottom: 4,
+      alignItems: 'center',
+    },
+    previewBannerText: {
+      color: '#fff',
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    navRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 10,
+      marginTop: 8,
+    },
+    navButton: {
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+      backgroundColor: colors.buttonBackground,
+      borderRadius: 8,
+    },
+    navButtonDisabled: {
+      opacity: 0.35,
+    },
+    navButtonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    linesBox: {
+      marginTop: 10,
+      gap: 4,
+    },
+    explanationBox: {
+      marginTop: 10,
+      backgroundColor: colors.surface,
+      borderLeftWidth: 4,
+      borderRadius: 6,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+    },
+    explanationText: {
+      fontSize: 13,
+      color: colors.text,
+      lineHeight: 18,
+    },
+    linesPlaceholder: {
+      fontSize: 13,
+      color: colors.textMuted,
+      alignSelf: 'center',
+    },
+    lineRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 8,
+      borderRadius: 6,
+      backgroundColor: colors.surface,
+    },
+    lineRowActive: {
+      backgroundColor: isDark ? '#4a3f2a' : '#f0d9b5',
+    },
+    lineEval: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.text,
+      minWidth: 46,
+    },
+    lineSequence: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      flex: 1,
+    },
+    moveList: {
+      flex: 1,
+      marginTop: 12,
+    },
+    moveListContent: {
+      paddingBottom: 24,
+    },
+    moveRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      borderRadius: 6,
+    },
+    moveRowActive: {
+      backgroundColor: isDark ? '#4a3f2a' : '#f0d9b5',
+    },
+    moveRowLabel: {
+      fontSize: 14,
+      color: colors.text,
+    },
+    moveRowBadgeWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    moveRowBadge: {
+      fontSize: 12,
+      fontWeight: '700',
+    },
+  });
+}

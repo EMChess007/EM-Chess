@@ -5,6 +5,7 @@ import ChessBoard from '../components/ChessBoard';
 import GameScreenBody from '../components/GameScreenBody';
 import ScreenHeader from '../components/ScreenHeader';
 import { ChessEngine } from '../logic/ChessEngine';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getDailyPuzzle, getDailyPuzzleDateKey } from '../logic/puzzles';
 import { isTodayPuzzleSolved, markTodayPuzzleSolved } from '../logic/puzzleStorage';
 import { parseUciMove } from '../logic/uciMove';
@@ -19,6 +20,8 @@ type PuzzleStatus = 'playing' | 'solved' | 'revealed';
 const REPLY_DELAY_MS = 500;
 
 export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   const puzzle = useMemo(() => getDailyPuzzle(), []);
 
   const solverColor = useMemo<PieceColor>(() => new ChessEngine(puzzle.fen).getTurn() === 'w' ? 'b' : 'w', [puzzle]);
@@ -232,7 +235,7 @@ export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps)
 
         {checkingStorage && (
           <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color="#999" />
+            <ActivityIndicator size="small" color={colors.textMuted} />
           </View>
         )}
       </GameScreenBody>
@@ -240,80 +243,83 @@ export default function DailyPuzzleScreen({ authToken }: DailyPuzzleScreenProps)
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#777',
-  },
-  alreadyBanner: {
-    backgroundColor: '#f0d9b5',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    maxWidth: 340,
-  },
-  alreadyBannerText: {
-    fontSize: 12,
-    color: '#3a2618',
-    textAlign: 'center',
-  },
-  status: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    textAlign: 'center',
-  },
-  statusSolved: {
-    color: '#1a7a1a',
-  },
-  statusRevealed: {
-    color: '#8d6e63',
-  },
-  wrongText: {
-    fontSize: 13,
-    color: '#b00020',
-  },
-  boardWrapper: {
-    padding: 4,
-    borderRadius: 6,
-    borderWidth: 3,
-    borderColor: 'transparent',
-  },
-  boardWrapperWrong: {
-    borderColor: '#e53935',
-  },
-  footer: {
-    marginTop: 4,
-    alignItems: 'center',
-    gap: 8,
-  },
-  lastMove: {
-    fontSize: 14,
-    color: '#555',
-  },
-  footerButtons: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  button: {
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    backgroundColor: '#3a2618',
-    borderRadius: 8,
-  },
-  revealButton: {
-    backgroundColor: '#8d6e63',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  loadingRow: {
-    marginTop: 4,
-  },
-});
+function createStyles(colors: AppColors) {
+  const isDark = colors.mode === 'dark';
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    subtitle: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    alreadyBanner: {
+      backgroundColor: isDark ? '#3a3120' : '#f0d9b5',
+      borderRadius: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+      maxWidth: 340,
+    },
+    alreadyBannerText: {
+      fontSize: 12,
+      color: colors.text,
+      textAlign: 'center',
+    },
+    status: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+      textAlign: 'center',
+    },
+    statusSolved: {
+      color: isDark ? '#5fd45f' : '#1a7a1a',
+    },
+    statusRevealed: {
+      color: colors.textSecondary,
+    },
+    wrongText: {
+      fontSize: 13,
+      color: colors.danger,
+    },
+    boardWrapper: {
+      padding: 4,
+      borderRadius: 6,
+      borderWidth: 3,
+      borderColor: 'transparent',
+    },
+    boardWrapperWrong: {
+      borderColor: '#e53935',
+    },
+    footer: {
+      marginTop: 4,
+      alignItems: 'center',
+      gap: 8,
+    },
+    lastMove: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    footerButtons: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    button: {
+      paddingVertical: 10,
+      paddingHorizontal: 24,
+      backgroundColor: colors.buttonBackground,
+      borderRadius: 8,
+    },
+    revealButton: {
+      backgroundColor: colors.textSecondary,
+    },
+    buttonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    loadingRow: {
+      marginTop: 4,
+    },
+  });
+}

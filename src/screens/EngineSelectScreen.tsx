@@ -14,6 +14,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import { buildCustomEngineHtml } from '../engine/customEngineHtml';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { StockfishEngineAdapter } from '../engine/StockfishEngineAdapter';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { deleteCustomEngine, saveCustomEngine } from '../logic/customEngines';
 import { AVAILABLE_ENGINES } from '../logic/engines';
 import { readFileAsBase64 } from '../logic/fileReading';
@@ -44,6 +45,8 @@ function describeError(err: unknown): unknown {
 }
 
 export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   const [engines, setEngines] = useState<EngineOption[]>(() => [...AVAILABLE_ENGINES]);
   const [phase, setPhase] = useState<Phase>('idle');
   const [pendingWasmBase64, setPendingWasmBase64] = useState<string | null>(null);
@@ -231,7 +234,7 @@ export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) 
 
         {phase === 'validating' ? (
           <View style={styles.validatingBox}>
-            <ActivityIndicator size="small" color="#3a2618" />
+            <ActivityIndicator size="small" color={colors.text} />
             <Text style={styles.validatingText}>Checking engine (up to 10 seconds)...</Text>
           </View>
         ) : phase === 'naming' ? (
@@ -272,132 +275,136 @@ export default function EngineSelectScreen({ onBack }: EngineSelectScreenProps) 
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 12,
-  },
-  engineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#f0d9b5',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#b58863',
-    gap: 10,
-  },
-  engineInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  engineName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#3a2618',
-  },
-  engineDescription: {
-    fontSize: 12,
-    color: '#5c4a35',
-  },
-  removeButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#b00020',
-    borderRadius: 6,
-  },
-  removeButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  addButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    backgroundColor: '#3a2618',
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  validatingBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 14,
-  },
-  validatingText: {
-    fontSize: 14,
-    color: '#555',
-  },
-  namingBox: {
-    gap: 10,
-    padding: 14,
-    backgroundColor: '#f7f2ea',
-    borderRadius: 10,
-  },
-  namingLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3a2618',
-  },
-  namingInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    fontSize: 15,
-    backgroundColor: '#fff',
-  },
-  namingButtons: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    backgroundColor: '#ddd',
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-  },
-  saveButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    backgroundColor: '#2e6f4f',
-  },
-  saveButtonDisabled: {
-    opacity: 0.5,
-  },
-  saveButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  hint: {
-    fontSize: 11,
-    color: '#999',
-    lineHeight: 15,
-  },
-});
+function createStyles(colors: AppColors) {
+  const isDark = colors.mode === 'dark';
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollContent: {
+      padding: 16,
+      paddingBottom: 32,
+      gap: 12,
+    },
+    engineRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      backgroundColor: isDark ? '#3a3120' : '#f0d9b5',
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: isDark ? '#6b5a3a' : '#b58863',
+      gap: 10,
+    },
+    engineInfo: {
+      flex: 1,
+      gap: 2,
+    },
+    engineName: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    engineDescription: {
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    removeButton: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      backgroundColor: colors.danger,
+      borderRadius: 6,
+    },
+    removeButtonText: {
+      color: '#fff',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    addButton: {
+      paddingVertical: 14,
+      paddingHorizontal: 20,
+      backgroundColor: colors.buttonBackground,
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    addButtonText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    validatingBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      paddingVertical: 14,
+    },
+    validatingText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    namingBox: {
+      gap: 10,
+      padding: 14,
+      backgroundColor: colors.surface,
+      borderRadius: 10,
+    },
+    namingLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    namingInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      fontSize: 15,
+      backgroundColor: colors.background,
+      color: colors.text,
+    },
+    namingButtons: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    cancelButton: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: 8,
+      alignItems: 'center',
+      backgroundColor: isDark ? '#3a3a3a' : '#ddd',
+    },
+    cancelButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    saveButton: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: 8,
+      alignItems: 'center',
+      backgroundColor: colors.accent,
+    },
+    saveButtonDisabled: {
+      opacity: 0.5,
+    },
+    saveButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: '#fff',
+    },
+    hint: {
+      fontSize: 11,
+      color: colors.textMuted,
+      lineHeight: 15,
+    },
+  });
+}
 
 // Only exported for documentation purposes elsewhere; not otherwise used outside this file.
 export { CUSTOM_ENGINE_DESCRIPTION };

@@ -5,6 +5,7 @@ import { appAlert } from '../components/AppAlert';
 import ColorSwatchPicker from '../components/ColorSwatchPicker';
 import ScreenHeader from '../components/ScreenHeader';
 import { AVAILABLE_BOARD_THEMES } from '../logic/boardThemes';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { deleteCustomBoardTheme, deleteCustomPieceTheme, saveCustomBoardTheme, saveCustomPieceTheme } from '../logic/customThemes';
 import { readFileAsDataUri } from '../logic/fileReading';
 import { AVAILABLE_PIECE_THEMES } from '../logic/pieceThemes';
@@ -48,6 +49,8 @@ const PIECE_SLOTS: { key: string; label: string }[] = [
 const MAX_IMAGE_BYTES = 200 * 1024;
 
 export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   const [boardThemes, setBoardThemes] = useState<BoardTheme[]>(() => [...AVAILABLE_BOARD_THEMES]);
   const [pieceThemes, setPieceThemes] = useState<PieceTheme[]>(() => [...AVAILABLE_PIECE_THEMES]);
   const [activeBoardId, setActiveBoardId] = useState(getActiveBoardThemeId);
@@ -325,183 +328,188 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 12,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#8a7a63',
-    textTransform: 'uppercase',
-  },
-  sectionTitleSpaced: {
-    marginTop: 10,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#f0d9b5',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#b58863',
-    gap: 12,
-  },
-  rowActive: {
-    borderWidth: 2,
-    borderColor: '#2e6f4f',
-  },
-  boardSwatchPair: {
-    flexDirection: 'row',
-  },
-  boardSwatch: {
-    width: 20,
-    height: 32,
-    borderWidth: 1,
-    borderColor: '#3a2618',
-  },
-  pieceThumb: {
-    width: 32,
-    height: 32,
-  },
-  pieceThumbGlyph: {
-    width: 32,
-    height: 32,
-    fontSize: 28,
-    textAlign: 'center',
-    lineHeight: 32,
-  },
-  rowInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  rowName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#3a2618',
-  },
-  activeLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#2e6f4f',
-  },
-  removeButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#b00020',
-    borderRadius: 6,
-  },
-  removeButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  addButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    backgroundColor: '#3a2618',
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  addForm: {
-    gap: 14,
-    padding: 14,
-    backgroundColor: '#f7f2ea',
-    borderRadius: 10,
-  },
-  nameInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    fontSize: 15,
-    backgroundColor: '#fff',
-  },
-  pieceCountLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#3a2618',
-  },
-  pieceGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  pieceSlot: {
-    width: 78,
-    alignItems: 'center',
-    gap: 4,
-    padding: 6,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ccc',
-  },
-  pieceSlotImage: {
-    width: 36,
-    height: 36,
-  },
-  pieceSlotPlus: {
-    width: 36,
-    height: 36,
-    fontSize: 22,
-    textAlign: 'center',
-    lineHeight: 36,
-    color: '#999',
-  },
-  pieceSlotLabel: {
-    fontSize: 10,
-    color: '#555',
-    textAlign: 'center',
-  },
-  formButtons: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    backgroundColor: '#ddd',
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-  },
-  saveButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    backgroundColor: '#2e6f4f',
-  },
-  saveButtonDisabled: {
-    opacity: 0.5,
-  },
-  saveButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  hint: {
-    fontSize: 11,
-    color: '#999',
-    lineHeight: 15,
-  },
-});
+function createStyles(colors: AppColors) {
+  const isDark = colors.mode === 'dark';
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollContent: {
+      padding: 16,
+      paddingBottom: 32,
+      gap: 12,
+    },
+    sectionTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+    },
+    sectionTitleSpaced: {
+      marginTop: 10,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      backgroundColor: isDark ? '#3a3120' : '#f0d9b5',
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: isDark ? '#6b5a3a' : '#b58863',
+      gap: 12,
+    },
+    rowActive: {
+      borderWidth: 2,
+      borderColor: colors.accent,
+    },
+    boardSwatchPair: {
+      flexDirection: 'row',
+    },
+    boardSwatch: {
+      width: 20,
+      height: 32,
+      borderWidth: 1,
+      borderColor: colors.text,
+    },
+    pieceThumb: {
+      width: 32,
+      height: 32,
+    },
+    pieceThumbGlyph: {
+      width: 32,
+      height: 32,
+      fontSize: 28,
+      textAlign: 'center',
+      lineHeight: 32,
+      color: colors.text,
+    },
+    rowInfo: {
+      flex: 1,
+      gap: 2,
+    },
+    rowName: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    activeLabel: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: colors.accent,
+    },
+    removeButton: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      backgroundColor: colors.danger,
+      borderRadius: 6,
+    },
+    removeButtonText: {
+      color: '#fff',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    addButton: {
+      paddingVertical: 14,
+      paddingHorizontal: 20,
+      backgroundColor: colors.buttonBackground,
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    addButtonText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    addForm: {
+      gap: 14,
+      padding: 14,
+      backgroundColor: colors.surface,
+      borderRadius: 10,
+    },
+    nameInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      fontSize: 15,
+      backgroundColor: colors.background,
+      color: colors.text,
+    },
+    pieceCountLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    pieceGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    pieceSlot: {
+      width: 78,
+      alignItems: 'center',
+      gap: 4,
+      padding: 6,
+      backgroundColor: colors.background,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    pieceSlotImage: {
+      width: 36,
+      height: 36,
+    },
+    pieceSlotPlus: {
+      width: 36,
+      height: 36,
+      fontSize: 22,
+      textAlign: 'center',
+      lineHeight: 36,
+      color: colors.textMuted,
+    },
+    pieceSlotLabel: {
+      fontSize: 10,
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    formButtons: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    cancelButton: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: 8,
+      alignItems: 'center',
+      backgroundColor: isDark ? '#3a3a3a' : '#ddd',
+    },
+    cancelButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    saveButton: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: 8,
+      alignItems: 'center',
+      backgroundColor: colors.accent,
+    },
+    saveButtonDisabled: {
+      opacity: 0.5,
+    },
+    saveButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: '#fff',
+    },
+    hint: {
+      fontSize: 11,
+      color: colors.textMuted,
+      lineHeight: 15,
+    },
+  });
+}

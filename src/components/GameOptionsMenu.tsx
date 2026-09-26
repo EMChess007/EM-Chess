@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
 export interface GameOptionsMenuItem {
   label: string;
@@ -17,6 +18,8 @@ interface GameOptionsMenuProps {
  * anywhere else) that appears directly below whatever "Options"/"•••" button toggles `visible`.
  * Shared between bot/local games (Flip Board) and online games (Resign, Request Draw). */
 export default function GameOptionsMenu({ visible, items }: GameOptionsMenuProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   if (!visible) return null;
 
   return (
@@ -35,32 +38,34 @@ export default function GameOptionsMenu({ visible, items }: GameOptionsMenuProps
   );
 }
 
-const styles = StyleSheet.create({
-  menu: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    overflow: 'hidden',
-    minWidth: 200,
-  },
-  item: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  itemBorder: {
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  itemDisabled: {
-    opacity: 0.4,
-  },
-  itemText: {
-    fontSize: 15,
-    color: '#3a2618',
-    fontWeight: '600',
-  },
-  itemTextDestructive: {
-    color: '#b00020',
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    menu: {
+      backgroundColor: colors.surface,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+      minWidth: 200,
+    },
+    item: {
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+    },
+    itemBorder: {
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    itemDisabled: {
+      opacity: 0.4,
+    },
+    itemText: {
+      fontSize: 15,
+      color: colors.text,
+      fontWeight: '600',
+    },
+    itemTextDestructive: {
+      color: colors.danger,
+    },
+  });
+}

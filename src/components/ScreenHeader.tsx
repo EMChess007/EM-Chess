@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
 interface ScreenHeaderProps {
   title: string;
@@ -23,6 +24,8 @@ interface ScreenHeaderProps {
  */
 export default function ScreenHeader({ title, onBack, backLabel = '‹ Back' }: ScreenHeaderProps) {
   const insets = useSafeAreaInsets();
+  const colors = useAppColors();
+  const styles = createStyles(colors);
 
   return (
     <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
@@ -36,24 +39,27 @@ export default function ScreenHeader({ title, onBack, backLabel = '‹ Back' }: 
   );
 }
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-    gap: 12,
-  },
-  backButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#3a2618',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingBottom: 4,
+      gap: 12,
+    },
+    backButton: {
+      paddingVertical: 6,
+      paddingHorizontal: 4,
+    },
+    backButtonText: {
+      fontSize: 16,
+      color: colors.text,
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: 'bold',
+      color: colors.text,
+    },
+  });
+}

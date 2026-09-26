@@ -3,15 +3,18 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, type StoredGame } from '../api/client';
 import { appAlert } from '../components/AppAlert';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getDailyPuzzle } from '../logic/puzzles';
 import { isTodayPuzzleSolved } from '../logic/puzzleStorage';
 import { replayPgn } from '../logic/pgnReplay';
+import { useStreak } from '../logic/streakStorage';
 import type { AnalyzeParams } from '../types/history';
 
 interface HomeScreenProps {
   onPlay: () => void;
   onOpenPuzzles: () => void;
   onOpenAnalysis: () => void;
+  onOpenStreak: () => void;
   onAnalyzeGame: (params: AnalyzeParams) => void;
   authToken: string | null;
 }
@@ -43,11 +46,14 @@ function formatResult(game: StoredGame): string {
   return RESULT_LABELS[game.result] ?? game.result;
 }
 
-export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onAnalyzeGame, authToken }: HomeScreenProps) {
+export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onOpenStreak, onAnalyzeGame, authToken }: HomeScreenProps) {
   // react-native's own <SafeAreaView> only actually applies an inset on iOS — on Android it's a
   // no-op, which is how the title ended up underneath the status bar there. Reading the inset
   // directly and adding it on top of the screen's own top padding works on both platforms.
   const insets = useSafeAreaInsets();
+  const colors = useAppColors();
+  const streak = useStreak();
+  const styles = createStyles(colors);
   const puzzle = getDailyPuzzle();
   const [puzzleSolved, setPuzzleSolved] = useState(false);
   const [games, setGames] = useState<StoredGame[] | null>(null);
@@ -100,7 +106,13 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onAn
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20 }]}>
-        <Text style={styles.title}>EM-Chess</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>EM-Chess</Text>
+          <Pressable style={styles.streakBadge} onPress={onOpenStreak}>
+            <Text style={styles.streakFlame}>🔥</Text>
+            <Text style={styles.streakCount}>{streak}</Text>
+          </Pressable>
+        </View>
 
         <Pressable style={styles.playButton} onPress={onPlay}>
           <Text style={styles.playButtonText}>Play</Text>
@@ -123,7 +135,7 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onAn
           {!authToken ? (
             <Text style={styles.sectionPlaceholder}>Log in to track your stats.</Text>
           ) : loadingGames ? (
-            <ActivityIndicator size="small" color="#3a2618" />
+            <ActivityIndicator size="small" color={colors.text} />
           ) : (
             <View style={styles.statsRow}>
               <View style={styles.statBox}>
@@ -146,7 +158,7 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onAn
           {!authToken ? (
             <Text style={styles.sectionPlaceholder}>Log in to see your recent games.</Text>
           ) : loadingGames ? (
-            <ActivityIndicator size="small" color="#3a2618" />
+            <ActivityIndicator size="small" color={colors.text} />
           ) : recentGames.length === 0 ? (
             <Text style={styles.sectionPlaceholder}>No games played yet.</Text>
           ) : (
@@ -168,136 +180,162 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onAn
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 32,
-    gap: 18,
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#3a2618',
-    marginBottom: 4,
-  },
-  playButton: {
-    paddingVertical: 26,
-    paddingHorizontal: 64,
-    backgroundColor: '#2e6f4f',
-    borderRadius: 16,
-    minWidth: 260,
-    alignItems: 'center',
-  },
-  playButtonText: {
-    color: '#fff',
-    fontSize: 28,
-    fontWeight: '700',
-  },
-  puzzleTile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    maxWidth: 400,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    backgroundColor: '#b5892e',
-    borderRadius: 12,
-  },
-  puzzleTileInfo: {
-    gap: 2,
-  },
-  puzzleTileTitle: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  puzzleTileSubtitle: {
-    color: '#fff',
-    opacity: 0.85,
-    fontSize: 12,
-  },
-  puzzleSolvedBadge: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-  },
-  puzzleSolvedBadgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  section: {
-    width: '100%',
-    maxWidth: 400,
-    gap: 8,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#3a2618',
-  },
-  sectionLink: {
-    fontSize: 13,
-    color: '#b5892e',
-    fontWeight: '600',
-  },
-  sectionPlaceholder: {
-    fontSize: 13,
-    color: '#999',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  statBox: {
-    backgroundColor: '#f7f2ea',
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#3a2618',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#8a7a63',
-    marginTop: 2,
-  },
-  recentGameList: {
-    gap: 6,
-  },
-  recentGameRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: '#f7f2ea',
-    borderRadius: 8,
-  },
-  recentGameOpponent: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3a2618',
-  },
-  recentGameResult: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#2e6f4f',
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollContent: {
+      padding: 20,
+      paddingBottom: 32,
+      gap: 18,
+      alignItems: 'center',
+    },
+    titleRow: {
+      width: '100%',
+      maxWidth: 400,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    title: {
+      fontSize: 32,
+      fontWeight: 'bold',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    streakBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      backgroundColor: colors.surface,
+      borderRadius: 20,
+    },
+    streakFlame: {
+      fontSize: 18,
+    },
+    streakCount: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    playButton: {
+      paddingVertical: 26,
+      paddingHorizontal: 64,
+      backgroundColor: colors.accent,
+      borderRadius: 16,
+      minWidth: 260,
+      alignItems: 'center',
+    },
+    playButtonText: {
+      color: '#fff',
+      fontSize: 28,
+      fontWeight: '700',
+    },
+    puzzleTile: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      width: '100%',
+      maxWidth: 400,
+      paddingVertical: 14,
+      paddingHorizontal: 20,
+      backgroundColor: colors.gold,
+      borderRadius: 12,
+    },
+    puzzleTileInfo: {
+      gap: 2,
+    },
+    puzzleTileTitle: {
+      color: '#fff',
+      fontSize: 17,
+      fontWeight: '700',
+    },
+    puzzleTileSubtitle: {
+      color: '#fff',
+      opacity: 0.85,
+      fontSize: 12,
+    },
+    puzzleSolvedBadge: {
+      backgroundColor: 'rgba(255,255,255,0.25)',
+      paddingVertical: 4,
+      paddingHorizontal: 10,
+      borderRadius: 8,
+    },
+    puzzleSolvedBadgeText: {
+      color: '#fff',
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    section: {
+      width: '100%',
+      maxWidth: 400,
+      gap: 8,
+    },
+    sectionHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    sectionTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    sectionLink: {
+      fontSize: 13,
+      color: colors.gold,
+      fontWeight: '600',
+    },
+    sectionPlaceholder: {
+      fontSize: 13,
+      color: colors.textMuted,
+    },
+    statsRow: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    statBox: {
+      backgroundColor: colors.surface,
+      borderRadius: 10,
+      paddingVertical: 12,
+      paddingHorizontal: 18,
+      alignItems: 'center',
+    },
+    statValue: {
+      fontSize: 22,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    statLabel: {
+      fontSize: 11,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    recentGameList: {
+      gap: 6,
+    },
+    recentGameRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      backgroundColor: colors.surface,
+      borderRadius: 8,
+    },
+    recentGameOpponent: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    recentGameResult: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.accent,
+    },
+  });
+}

@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from '
 import { appAlert } from '../components/AppAlert';
 import ScreenHeader from '../components/ScreenHeader';
 import { api, ApiError, type StoredGame } from '../api/client';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { replayPgn } from '../logic/pgnReplay';
 import type { AnalyzeParams } from '../types/history';
 
@@ -46,6 +47,8 @@ function formatDate(iso: string): string {
 }
 
 export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }: GameHistoryScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   const [games, setGames] = useState<StoredGame[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(!!authToken);
@@ -100,7 +103,7 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
 
       {authToken && loading && (
         <View style={styles.centerRow}>
-          <ActivityIndicator size="small" color="#3a2618" />
+          <ActivityIndicator size="small" color={colors.text} />
         </View>
       )}
 
@@ -142,77 +145,79 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#999',
-    paddingHorizontal: 16,
-    marginTop: 2,
-    marginBottom: 8,
-  },
-  centerRow: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    gap: 12,
-  },
-  loginButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    backgroundColor: '#3a2618',
-    borderRadius: 8,
-  },
-  loginButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  error: {
-    color: '#b00020',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  empty: {
-    color: '#777',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  list: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  row: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    gap: 4,
-  },
-  rowTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  rowOpponent: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#3a2618',
-  },
-  rowResult: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2e6f4f',
-  },
-  rowBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  rowMeta: {
-    fontSize: 12,
-    color: '#888',
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    subtitle: {
+      fontSize: 12,
+      color: colors.textMuted,
+      paddingHorizontal: 16,
+      marginTop: 2,
+      marginBottom: 8,
+    },
+    centerRow: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+      gap: 12,
+    },
+    loginButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 24,
+      backgroundColor: colors.buttonBackground,
+      borderRadius: 8,
+    },
+    loginButtonText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    error: {
+      color: colors.danger,
+      fontSize: 14,
+      textAlign: 'center',
+    },
+    empty: {
+      color: colors.textSecondary,
+      fontSize: 14,
+      textAlign: 'center',
+    },
+    list: {
+      flex: 1,
+      paddingHorizontal: 16,
+    },
+    row: {
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      gap: 4,
+    },
+    rowTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    rowOpponent: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    rowResult: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.accent,
+    },
+    rowBottom: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+    rowMeta: {
+      fontSize: 12,
+      color: colors.textMuted,
+    },
+  });
+}

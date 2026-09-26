@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { PieceColor, PieceType } from '../types/chess';
 
 const PIECE_SYMBOLS: Record<string, string> = {
@@ -29,6 +30,8 @@ interface CapturedPiecesProps {
 }
 
 export default function CapturedPieces({ pieces, color, advantage }: CapturedPiecesProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   if (pieces.length === 0 && advantage <= 0) return null;
 
   const sorted = [...pieces].sort((a, b) => DISPLAY_ORDER.indexOf(a) - DISPLAY_ORDER.indexOf(b));
@@ -45,21 +48,24 @@ export default function CapturedPieces({ pieces, color, advantage }: CapturedPie
   );
 }
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    maxWidth: 160,
-  },
-  icon: {
-    fontSize: 16,
-    marginRight: -3,
-  },
-  advantage: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#8a7a63',
-    marginLeft: 6,
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      maxWidth: 160,
+    },
+    icon: {
+      fontSize: 16,
+      marginRight: -3,
+      color: colors.text,
+    },
+    advantage: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: colors.textSecondary,
+      marginLeft: 6,
+    },
+  });
+}

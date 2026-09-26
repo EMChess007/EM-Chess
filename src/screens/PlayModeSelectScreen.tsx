@@ -1,6 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { appAlert } from '../components/AppAlert';
 import ScreenHeader from '../components/ScreenHeader';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { AuthUser } from '../types/auth';
 
 interface PlayModeSelectScreenProps {
@@ -28,6 +29,8 @@ export default function PlayModeSelectScreen({
   authUser,
   onAuthPress,
 }: PlayModeSelectScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   // Same login gate that used to live on the old menu's "Play Online" button — online
   // multiplayer needs a real account (matchmaking/rooms key off the session), unlike every
   // other mode on this screen.
@@ -95,61 +98,64 @@ export default function PlayModeSelectScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 16,
-  },
-  categoryCard: {
-    padding: 20,
-    backgroundColor: '#f0d9b5',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#b58863',
-    gap: 4,
-  },
-  onlineCard: {
-    backgroundColor: '#dce8f8',
-    borderColor: '#1a5fb4',
-  },
-  categoryTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#3a2618',
-  },
-  categorySubtitle: {
-    fontSize: 13,
-    color: '#5c4a35',
-    marginBottom: 8,
-  },
-  subButtonRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  subButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  botSubButton: {
-    backgroundColor: '#2e6f4f',
-  },
-  localSubButton: {
-    backgroundColor: '#3a2618',
-  },
-  engineSubButton: {
-    backgroundColor: '#8d6e00',
-  },
-  subButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: AppColors) {
+  const isDark = colors.mode === 'dark';
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollContent: {
+      padding: 16,
+      paddingBottom: 32,
+      gap: 16,
+    },
+    categoryCard: {
+      padding: 20,
+      backgroundColor: isDark ? '#3a3120' : '#f0d9b5',
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: isDark ? '#6b5a3a' : '#b58863',
+      gap: 4,
+    },
+    onlineCard: {
+      backgroundColor: isDark ? '#1c2b3d' : '#dce8f8',
+      borderColor: isDark ? '#3a6ea5' : '#1a5fb4',
+    },
+    categoryTitle: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    categorySubtitle: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      marginBottom: 8,
+    },
+    subButtonRow: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 4,
+    },
+    subButton: {
+      flex: 1,
+      paddingVertical: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    botSubButton: {
+      backgroundColor: colors.accent,
+    },
+    localSubButton: {
+      backgroundColor: colors.buttonBackground,
+    },
+    engineSubButton: {
+      backgroundColor: '#8d6e00',
+    },
+    subButtonText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '600',
+    },
+  });
+}

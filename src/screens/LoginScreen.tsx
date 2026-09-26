@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, ApiError } from '../api/client';
 import { saveAuthSession, type AuthSession } from '../api/authStorage';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
 interface LoginScreenProps {
   onSuccess: (session: AuthSession) => void;
@@ -15,6 +16,8 @@ export default function LoginScreen({ onSuccess, onSwitchToRegister, onBack }: L
   // row, so it needs its own absolute `top` nudged past the status bar directly (react-native's
   // <SafeAreaView> is a no-op on Android, which is why this was overlapping there).
   const insets = useSafeAreaInsets();
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -47,6 +50,7 @@ export default function LoginScreen({ onSuccess, onSwitchToRegister, onBack }: L
         <TextInput
           style={styles.input}
           placeholder="Email"
+          placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           keyboardType="email-address"
           value={email}
@@ -55,6 +59,7 @@ export default function LoginScreen({ onSuccess, onSwitchToRegister, onBack }: L
         <TextInput
           style={styles.input}
           placeholder="Password"
+          placeholderTextColor={colors.textMuted}
           secureTextEntry
           value={password}
           onChangeText={setPassword}
@@ -74,69 +79,73 @@ export default function LoginScreen({ onSuccess, onSwitchToRegister, onBack }: L
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 24,
-    gap: 16,
-  },
-  backButton: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#3a2618',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#3a2618',
-  },
-  form: {
-    width: '100%',
-    maxWidth: 320,
-    gap: 12,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    fontSize: 16,
-  },
-  error: {
-    color: '#b00020',
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  button: {
-    paddingVertical: 14,
-    backgroundColor: '#3a2618',
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  switchLink: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  switchLinkText: {
-    color: '#8d6e63',
-    fontSize: 14,
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.background,
+      paddingHorizontal: 24,
+      gap: 16,
+    },
+    backButton: {
+      position: 'absolute',
+      top: 16,
+      left: 16,
+      paddingVertical: 6,
+      paddingHorizontal: 4,
+    },
+    backButtonText: {
+      fontSize: 16,
+      color: colors.text,
+    },
+    title: {
+      fontSize: 26,
+      fontWeight: 'bold',
+      color: colors.text,
+    },
+    form: {
+      width: '100%',
+      maxWidth: 320,
+      gap: 12,
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      fontSize: 16,
+      color: colors.text,
+    },
+    error: {
+      color: colors.danger,
+      fontSize: 13,
+      textAlign: 'center',
+    },
+    button: {
+      paddingVertical: 14,
+      backgroundColor: colors.buttonBackground,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    buttonDisabled: {
+      opacity: 0.6,
+    },
+    buttonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    switchLink: {
+      alignItems: 'center',
+      paddingVertical: 8,
+    },
+    switchLinkText: {
+      color: colors.textSecondary,
+      fontSize: 14,
+    },
+  });
+}

@@ -11,6 +11,7 @@ import MoveListStrip from '../components/MoveListStrip';
 import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { ChessEngine } from '../logic/ChessEngine';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { describeEndReason } from '../logic/gameOutcomeText';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
@@ -48,6 +49,8 @@ interface ChatEntry {
 }
 
 export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }: OnlineGameScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   const myColor = match.color;
   const opponentColor: PieceColor = myColor === 'w' ? 'b' : 'w';
 
@@ -55,6 +58,12 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
   const [turn, setTurn] = useState<PieceColor>('w');
   const [whiteMs, setWhiteMs] = useState(match.whiteMs);
   const [blackMs, setBlackMs] = useState(match.blackMs);
+  // Purely cosmetic local countdown for whichever side's turn it is — whiteMs/blackMs above are
+  // the authoritative values and only ever change on a server message (opponent moved, our own
+  // move got acked, a reconnect resynced state), so without this the displayed clock would sit
+  // frozen between those events instead of visibly ticking down like a real clock.
+  const [displayWhiteMs, setDisplayWhiteMs] = useState(match.whiteMs);
+  const [displayBlackMs, setDisplayBlackMs] = useState(match.blackMs);
   const [moveList, setMoveList] = useState<MoveRecord[]>([]);
   const [lastMoveSan, setLastMoveSan] = useState<string | null>(null);
   const [boardKey, setBoardKey] = useState(0);
@@ -76,6 +85,26 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
   useEffect(() => {
     if (chatOpen) setChatUnread(0);
   }, [chatOpen]);
+
+  // Resync the cosmetic display clocks the instant a fresh authoritative value arrives.
+  useEffect(() => {
+    setDisplayWhiteMs(whiteMs);
+  }, [whiteMs]);
+  useEffect(() => {
+    setDisplayBlackMs(blackMs);
+  }, [blackMs]);
+
+  // Ticks the display clock down once a second for whichever side's turn it currently is — the
+  // authoritative whiteMs/blackMs only update on a server message, so without this the shown
+  // clock would otherwise sit frozen between moves instead of counting down live.
+  useEffect(() => {
+    if (gameOver || connectionState !== 'connected') return;
+    const interval = setInterval(() => {
+      if (turn === 'w') setDisplayWhiteMs((ms) => Math.max(0, ms - 1000));
+      else setDisplayBlackMs((ms) => Math.max(0, ms - 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [turn, gameOver, connectionState]);
 
   // Lets the socket-event effect below (stable deps, set up once) read the *current* fen when an
   // opponent_move arrives, without needing `fen` in its dependency array (which would tear down
@@ -366,8 +395,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
 
   const myName = 'You';
   const opponentName = 'Opponent';
-  const myMs = myColor === 'w' ? whiteMs : blackMs;
-  const opponentMs = myColor === 'w' ? blackMs : whiteMs;
+  const myMs = myColor === 'w' ? displayWhiteMs : displayBlackMs;
+  const opponentMs = myColor === 'w' ? displayBlackMs : displayWhiteMs;
 
   let statusText = isMyTurn ? 'Your turn' : `${opponentName}'s turn`;
   if (connectionState === 'reconnecting') statusText = 'Reconnecting...';
@@ -489,6 +518,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
                 value={chatInput}
                 onChangeText={setChatInput}
                 placeholder="Message opponent..."
+                placeholderTextColor={colors.textMuted}
                 onSubmitEditing={handleSendChat}
                 returnKeyType="send"
               />
@@ -515,15 +545,16 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
   },
   warningBanner: {
     fontSize: 13,
-    color: '#8d6e00',
-    backgroundColor: '#fff3cd',
+    color: colors.mode === 'dark' ? '#e0c34a' : '#8d6e00',
+    backgroundColor: colors.mode === 'dark' ? '#3a3120' : '#fff3cd',
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 6,
@@ -532,19 +563,19 @@ const styles = StyleSheet.create({
   },
   errorBanner: {
     fontSize: 13,
-    color: '#b00020',
+    color: colors.danger,
     textAlign: 'center',
     maxWidth: 320,
   },
   status: {
     fontSize: 16,
-    color: '#333',
+    color: colors.text,
     fontWeight: '600',
   },
   openingName: {
     fontSize: 12,
     fontStyle: 'italic',
-    color: '#8a7a63',
+    color: colors.textSecondary,
     textAlign: 'center',
     maxWidth: 320,
   },
@@ -556,7 +587,7 @@ const styles = StyleSheet.create({
   clock: {
     fontSize: 20,
     fontVariant: ['tabular-nums'],
-    color: '#333',
+    color: colors.text,
     paddingVertical: 4,
     paddingHorizontal: 14,
     borderRadius: 6,
@@ -564,7 +595,7 @@ const styles = StyleSheet.create({
   clockActive: {
     fontWeight: '700',
     color: '#fff',
-    backgroundColor: '#3a2618',
+    backgroundColor: colors.buttonBackground,
   },
   footer: {
     marginTop: 8,
@@ -573,12 +604,12 @@ const styles = StyleSheet.create({
   },
   lastMove: {
     fontSize: 14,
-    color: '#555',
+    color: colors.textSecondary,
   },
   reviewingText: {
     fontSize: 12,
     fontStyle: 'italic',
-    color: '#8d6e00',
+    color: colors.gold,
   },
   controlsWrap: {
     alignItems: 'center',
@@ -595,13 +626,13 @@ const styles = StyleSheet.create({
   drawAcceptButton: {
     paddingVertical: 6,
     paddingHorizontal: 16,
-    backgroundColor: '#2e6f4f',
+    backgroundColor: colors.accent,
     borderRadius: 6,
   },
   drawDeclineButton: {
     paddingVertical: 6,
     paddingHorizontal: 16,
-    backgroundColor: '#b00020',
+    backgroundColor: colors.danger,
     borderRadius: 6,
   },
   drawButtonText: {
@@ -613,7 +644,7 @@ const styles = StyleSheet.create({
     width: '90%',
     maxWidth: 340,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 8,
     gap: 8,
@@ -626,15 +657,15 @@ const styles = StyleSheet.create({
   },
   chatEmptyText: {
     fontSize: 13,
-    color: '#999',
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
   chatMessage: {
     fontSize: 13,
-    color: '#333',
+    color: colors.text,
   },
   chatMessageMine: {
-    color: '#3a2618',
+    color: colors.text,
     fontWeight: '600',
   },
   chatInputRow: {
@@ -644,16 +675,18 @@ const styles = StyleSheet.create({
   chatInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     borderRadius: 6,
     paddingVertical: 6,
     paddingHorizontal: 10,
     fontSize: 13,
+    color: colors.text,
   },
   chatSendButton: {
     paddingVertical: 6,
     paddingHorizontal: 14,
-    backgroundColor: '#3a2618',
+    backgroundColor: colors.buttonBackground,
     borderRadius: 6,
     justifyContent: 'center',
   },
@@ -662,4 +695,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-});
+  });
+}

@@ -5,6 +5,7 @@ import StockfishBridge, { type StockfishBridgeHandle } from '../engine/Stockfish
 import { buildStockfishHtml } from '../engine/stockfishHtml';
 import MoveQualityBadge from './MoveQualityBadge';
 import { MOVE_QUALITY_LABELS, type MoveQuality } from '../logic/analysis';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { computeGameSummary, type GameAnalysisSummary, type PlayerGameStats } from '../logic/gameSummary';
 import type { PieceColor } from '../types/chess';
 import type { GameHistoryEntry } from '../types/history';
@@ -52,6 +53,8 @@ export default function PostGameSummaryModal({
   onRematch,
   onNewGame,
 }: PostGameSummaryModalProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   const [summary, setSummary] = useState<GameAnalysisSummary | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
 
@@ -113,7 +116,7 @@ export default function PostGameSummaryModal({
         {history.length > 0 &&
           (!summary ? (
             <View style={styles.loadingRow}>
-              <ActivityIndicator size="small" color="#3a2618" />
+              <ActivityIndicator size="small" color={colors.text} />
               <Text style={styles.loadingText}>
                 Analyzing game{progress.total > 0 ? ` (${progress.done}/${progress.total})` : '...'}
               </Text>
@@ -160,129 +163,131 @@ export default function PostGameSummaryModal({
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 999,
-    elevation: 999,
-    padding: 24,
-  },
-  card: {
-    width: '100%',
-    maxWidth: 380,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 22,
-    gap: 12,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#3a2618',
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#777',
-    textAlign: 'center',
-    marginTop: -6,
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 20,
-  },
-  loadingText: {
-    fontSize: 13,
-    color: '#555',
-  },
-  playersRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  playersRowMulti: {
-    gap: 16,
-  },
-  playerBlock: {
-    flex: 1,
-    alignItems: 'center',
-    backgroundColor: '#f7f2ea',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    gap: 2,
-  },
-  playerLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#8a7a63',
-    textTransform: 'uppercase',
-  },
-  accuracyValue: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#2e6f4f',
-    marginTop: 4,
-  },
-  accuracyCaption: {
-    fontSize: 11,
-    color: '#999',
-    marginBottom: 6,
-  },
-  qualityList: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-    marginTop: 4,
-  },
-  qualityItem: {
-    alignItems: 'center',
-    gap: 2,
-  },
-  qualityCount: {
-    fontSize: 14,
-    color: '#3a2618',
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  qualityRow: {
-    fontSize: 11,
-    color: '#3a2618',
-    fontWeight: '600',
-  },
-  buttonColumn: {
-    gap: 10,
-    marginTop: 8,
-  },
-  primaryButton: {
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    backgroundColor: '#2e6f4f',
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  secondaryButton: {
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    backgroundColor: '#3a2618',
-  },
-  secondaryButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    overlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: colors.overlay,
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 999,
+      elevation: 999,
+      padding: 24,
+    },
+    card: {
+      width: '100%',
+      maxWidth: 380,
+      backgroundColor: colors.background,
+      borderRadius: 16,
+      padding: 22,
+      gap: 12,
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: '700',
+      color: colors.text,
+      textAlign: 'center',
+    },
+    subtitle: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginTop: -6,
+    },
+    loadingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      paddingVertical: 20,
+    },
+    loadingText: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    playersRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+    },
+    playersRowMulti: {
+      gap: 16,
+    },
+    playerBlock: {
+      flex: 1,
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 10,
+      gap: 2,
+    },
+    playerLabel: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+    },
+    accuracyValue: {
+      fontSize: 28,
+      fontWeight: '800',
+      color: colors.accent,
+      marginTop: 4,
+    },
+    accuracyCaption: {
+      fontSize: 11,
+      color: colors.textMuted,
+      marginBottom: 6,
+    },
+    qualityList: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 12,
+      marginTop: 4,
+    },
+    qualityItem: {
+      alignItems: 'center',
+      gap: 2,
+    },
+    qualityCount: {
+      fontSize: 14,
+      color: colors.text,
+      fontWeight: '700',
+      marginTop: 2,
+    },
+    qualityRow: {
+      fontSize: 11,
+      color: colors.text,
+      fontWeight: '600',
+    },
+    buttonColumn: {
+      gap: 10,
+      marginTop: 8,
+    },
+    primaryButton: {
+      paddingVertical: 14,
+      borderRadius: 10,
+      alignItems: 'center',
+      backgroundColor: colors.accent,
+    },
+    primaryButtonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    secondaryButton: {
+      paddingVertical: 12,
+      borderRadius: 10,
+      alignItems: 'center',
+      backgroundColor: colors.buttonBackground,
+    },
+    secondaryButtonText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '600',
+    },
+  });
+}

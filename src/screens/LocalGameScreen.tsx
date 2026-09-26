@@ -14,6 +14,7 @@ import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { DEFAULT_ENGINE_ID } from '../logic/engines';
 import { buildGamePayload } from '../logic/gamePayload';
 import { getGameOutcome } from '../logic/gameResult';
@@ -38,6 +39,8 @@ interface LocalGameScreenProps {
 }
 
 export default function LocalGameScreen({ timeControl, chess960 = false, authToken, onExit, onAnalyze }: LocalGameScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   const [initialFen, setInitialFen] = useState(() => (chess960 ? generateChess960Position() : START_FEN));
   const [fen, setFen] = useState(initialFen);
   const [lastMove, setLastMove] = useState<Move | null>(null);
@@ -329,80 +332,82 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  timeControlLabel: {
-    fontSize: 13,
-    color: '#777',
-  },
-  status: {
-    fontSize: 16,
-    color: '#333',
-  },
-  openingName: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    color: '#8a7a63',
-    textAlign: 'center',
-    maxWidth: 320,
-  },
-  reviewingText: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    color: '#8d6e00',
-  },
-  playerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  hintText: {
-    fontSize: 13,
-    fontStyle: 'italic',
-    color: '#2e6f4f',
-  },
-  controlsWrap: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  clock: {
-    fontSize: 20,
-    fontVariant: ['tabular-nums'],
-    color: '#333',
-    paddingVertical: 4,
-    paddingHorizontal: 14,
-    borderRadius: 6,
-  },
-  clockActive: {
-    fontWeight: '700',
-    color: '#fff',
-    backgroundColor: '#3a2618',
-  },
-  footer: {
-    marginTop: 16,
-    alignItems: 'center',
-    gap: 8,
-  },
-  lastMove: {
-    fontSize: 14,
-    color: '#555',
-  },
-  footerButtons: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  resetButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    backgroundColor: '#3a2618',
-    borderRadius: 8,
-  },
-  resetButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    timeControlLabel: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    status: {
+      fontSize: 16,
+      color: colors.text,
+    },
+    openingName: {
+      fontSize: 12,
+      fontStyle: 'italic',
+      color: colors.textSecondary,
+      textAlign: 'center',
+      maxWidth: 320,
+    },
+    reviewingText: {
+      fontSize: 12,
+      fontStyle: 'italic',
+      color: colors.gold,
+    },
+    playerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    hintText: {
+      fontSize: 13,
+      fontStyle: 'italic',
+      color: colors.accent,
+    },
+    controlsWrap: {
+      alignItems: 'center',
+      gap: 8,
+    },
+    clock: {
+      fontSize: 20,
+      fontVariant: ['tabular-nums'],
+      color: colors.text,
+      paddingVertical: 4,
+      paddingHorizontal: 14,
+      borderRadius: 6,
+    },
+    clockActive: {
+      fontWeight: '700',
+      color: '#fff',
+      backgroundColor: colors.buttonBackground,
+    },
+    footer: {
+      marginTop: 16,
+      alignItems: 'center',
+      gap: 8,
+    },
+    lastMove: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    footerButtons: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    resetButton: {
+      paddingVertical: 10,
+      paddingHorizontal: 24,
+      backgroundColor: colors.buttonBackground,
+      borderRadius: 8,
+    },
+    resetButtonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+  });
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text } from 'react-native';
 import { connectSocket, disconnectSocket } from '../api/socket';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { Ack, MatchFoundPayload } from '../types/multiplayer';
 import type { TimeControl } from '../types/timeControl';
 
@@ -13,6 +14,8 @@ interface MatchmakingScreenProps {
 }
 
 export default function MatchmakingScreen({ authToken, timeControl, chess960, onMatchFound, onCancel }: MatchmakingScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   const [error, setError] = useState<string | null>(null);
   // Tracks whether we should still leave_queue on unmount — false once a match is found (the
   // server has already removed both players from the queue itself at that point) or once the
@@ -97,7 +100,7 @@ export default function MatchmakingScreen({ authToken, timeControl, chess960, on
         </>
       ) : (
         <>
-          <ActivityIndicator size="large" color="#3a2618" />
+          <ActivityIndicator size="large" color={colors.text} />
           <Text style={styles.searchingText}>Searching for an opponent...</Text>
           <Pressable style={styles.cancelButton} onPress={handleCancel}>
             <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -108,38 +111,40 @@ export default function MatchmakingScreen({ authToken, timeControl, chess960, on
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    gap: 20,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#3a2618',
-  },
-  searchingText: {
-    fontSize: 16,
-    color: '#555',
-  },
-  errorText: {
-    fontSize: 15,
-    color: '#b00020',
-    textAlign: 'center',
-    paddingHorizontal: 24,
-  },
-  cancelButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 28,
-    backgroundColor: '#3a2618',
-    borderRadius: 8,
-  },
-  cancelButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.background,
+      gap: 20,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    searchingText: {
+      fontSize: 16,
+      color: colors.textSecondary,
+    },
+    errorText: {
+      fontSize: 15,
+      color: colors.danger,
+      textAlign: 'center',
+      paddingHorizontal: 24,
+    },
+    cancelButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 28,
+      backgroundColor: colors.buttonBackground,
+      borderRadius: 8,
+    },
+    cancelButtonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+  });
+}

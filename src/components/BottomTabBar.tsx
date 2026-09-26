@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
 export type MainTab = 'home' | 'puzzles' | 'analysis' | 'more';
 
@@ -22,6 +23,8 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
   // clearing the system gesture area on devices that need it. RN's own <SafeAreaView> doesn't
   // reliably do this on Android, which is why this reads the inset directly instead.
   const insets = useSafeAreaInsets();
+  const colors = useAppColors();
+  const styles = createStyles(colors);
 
   return (
     <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]}>
@@ -38,34 +41,36 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    gap: 2,
-  },
-  icon: {
-    fontSize: 20,
-    opacity: 0.5,
-  },
-  iconActive: {
-    opacity: 1,
-  },
-  label: {
-    fontSize: 11,
-    color: '#999',
-    fontWeight: '500',
-  },
-  labelActive: {
-    color: '#3a2618',
-    fontWeight: '700',
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      backgroundColor: colors.background,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    tab: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 8,
+      gap: 2,
+    },
+    icon: {
+      fontSize: 20,
+      opacity: 0.5,
+    },
+    iconActive: {
+      opacity: 1,
+    },
+    label: {
+      fontSize: 11,
+      color: colors.textMuted,
+      fontWeight: '500',
+    },
+    labelActive: {
+      color: colors.text,
+      fontWeight: '700',
+    },
+  });
+}

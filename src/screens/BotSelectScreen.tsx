@@ -1,6 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import ScreenHeader from '../components/ScreenHeader';
 import { BOT_CATEGORIES, getBotsByCategory } from '../logic/bots';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { AVAILABLE_ENGINES, getEngineIdForElo, getEngineName } from '../logic/engines';
 import type { BotPersonality } from '../types/bot';
 
@@ -25,6 +26,8 @@ function toCustomEngineBot(engineId: string, engineName: string): BotPersonality
 }
 
 export default function BotSelectScreen({ onSelect, onBack, chess960 }: BotSelectScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   const customEngines = AVAILABLE_ENGINES.filter((engine) => engine.isCustom);
 
   return (
@@ -73,54 +76,57 @@ export default function BotSelectScreen({ onSelect, onBack, chess960 }: BotSelec
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 20,
-  },
-  section: {
-    gap: 10,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#3a2618',
-  },
-  cardList: {
-    gap: 10,
-  },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    backgroundColor: '#f0d9b5',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#b58863',
-  },
-  cardName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#3a2618',
-  },
-  cardMeta: {
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  cardElo: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#5c4a35',
-  },
-  cardEngine: {
-    fontSize: 11,
-    color: '#8a7a63',
-  },
-});
+function createStyles(colors: AppColors) {
+  const isDark = colors.mode === 'dark';
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollContent: {
+      padding: 16,
+      paddingBottom: 32,
+      gap: 20,
+    },
+    section: {
+      gap: 10,
+    },
+    sectionTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    cardList: {
+      gap: 10,
+    },
+    card: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 14,
+      paddingHorizontal: 20,
+      backgroundColor: isDark ? '#3a3120' : '#f0d9b5',
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: isDark ? '#6b5a3a' : '#b58863',
+    },
+    cardName: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    cardMeta: {
+      alignItems: 'flex-end',
+      gap: 2,
+    },
+    cardElo: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    cardEngine: {
+      fontSize: 11,
+      color: colors.textSecondary,
+    },
+  });
+}

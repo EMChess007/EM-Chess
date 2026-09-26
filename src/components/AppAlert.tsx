@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
 export interface AppAlertButton {
   text: string;
@@ -42,6 +43,8 @@ export function appAlert(title: string, message?: string, buttons?: AppAlertButt
  * `appAlert(...)`; nothing else needs to render or manage this itself. */
 export default function AppAlertHost() {
   const [state, setLocalState] = useState<AlertState | null>(null);
+  const colors = useAppColors();
+  const styles = createStyles(colors);
 
   useEffect(() => {
     listeners.add(setLocalState);
@@ -99,72 +102,74 @@ export default function AppAlertHost() {
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 999,
-    elevation: 999,
-    padding: 24,
-  },
-  backdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  card: {
-    width: '100%',
-    maxWidth: 340,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    gap: 8,
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#3a2618',
-  },
-  message: {
-    fontSize: 14,
-    color: '#555',
-    lineHeight: 19,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 12,
-  },
-  button: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#3a2618',
-  },
-  buttonCancel: {
-    backgroundColor: '#ddd',
-  },
-  buttonDestructive: {
-    backgroundColor: '#b00020',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  buttonTextDestructive: {
-    color: '#fff',
-  },
-  buttonTextCancel: {
-    color: '#333',
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    overlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: colors.overlay,
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 999,
+      elevation: 999,
+      padding: 24,
+    },
+    backdrop: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
+    card: {
+      width: '100%',
+      maxWidth: 340,
+      backgroundColor: colors.background,
+      borderRadius: 12,
+      padding: 20,
+      gap: 8,
+    },
+    title: {
+      fontSize: 17,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    message: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      lineHeight: 19,
+    },
+    buttonRow: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 10,
+      marginTop: 12,
+    },
+    button: {
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      backgroundColor: colors.buttonBackground,
+    },
+    buttonCancel: {
+      backgroundColor: colors.mode === 'dark' ? '#3a3a3a' : '#ddd',
+    },
+    buttonDestructive: {
+      backgroundColor: colors.danger,
+    },
+    buttonText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    buttonTextDestructive: {
+      color: '#fff',
+    },
+    buttonTextCancel: {
+      color: colors.text,
+    },
+  });
+}

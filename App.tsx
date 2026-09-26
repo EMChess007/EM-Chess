@@ -23,11 +23,15 @@ import OnlineGameScreen from './src/screens/OnlineGameScreen';
 import OnlineTimeControlSelectScreen from './src/screens/OnlineTimeControlSelectScreen';
 import PlayModeSelectScreen from './src/screens/PlayModeSelectScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import StreakScreen from './src/screens/StreakScreen';
 import ThemeSelectScreen from './src/screens/ThemeSelectScreen';
 import TimeControlSelectScreen from './src/screens/TimeControlSelectScreen';
+import { restoreColorSchemeMode } from './src/logic/colorSchemeSettings';
+import { useAppColors } from './src/logic/colorSchemeHooks';
 import { restoreCustomEngines } from './src/logic/customEngines';
 import { restoreCustomThemes } from './src/logic/customThemes';
 import { restoreSoundSetting } from './src/logic/soundSettings';
+import { recordAppOpen } from './src/logic/streakStorage';
 import { restoreActiveThemes } from './src/logic/themeSettings';
 import type { BotPersonality } from './src/types/bot';
 import type { ColorChoice } from './src/types/chess';
@@ -55,6 +59,7 @@ type Screen =
   | { name: 'onlineGame'; token: string; match: MatchFoundPayload }
   | { name: 'engineSelect' }
   | { name: 'themeSelect' }
+  | { name: 'streak' }
   | {
       name: 'engineVsEngineSetup';
       timeControl: TimeControl;
@@ -89,12 +94,16 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
 
+  const colors = useAppColors();
+
   useEffect(() => {
     loadAuthSession().then(setAuthSession);
     restoreCustomEngines();
     restoreSoundSetting();
     restoreCustomThemes();
     restoreActiveThemes();
+    restoreColorSchemeMode();
+    recordAppOpen();
   }, []);
 
   useEffect(() => {
@@ -121,6 +130,7 @@ export default function App() {
           onPlay={() => setScreen({ name: 'playModeSelect' })}
           onOpenPuzzles={() => setActiveTab('puzzles')}
           onOpenAnalysis={() => setActiveTab('analysis')}
+          onOpenStreak={() => setScreen({ name: 'streak' })}
           onAnalyzeGame={(params) => setScreen({ name: 'analysis', params })}
           authToken={authSession?.token ?? null}
         />
@@ -277,6 +287,8 @@ export default function App() {
     content = <EngineSelectScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'themeSelect') {
     content = <ThemeSelectScreen onBack={() => setScreen({ name: 'main' })} />;
+  } else if (screen.name === 'streak') {
+    content = <StreakScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'engineVsEngineSetup') {
     content = (
       <EngineVsEngineSetupScreen
@@ -357,9 +369,9 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      {content}
+      <View style={{ flex: 1, backgroundColor: colors.background }}>{content}</View>
       <AppAlertHost />
-      <StatusBar style="auto" />
+      <StatusBar style={colors.mode === 'dark' ? 'light' : 'dark'} />
     </SafeAreaProvider>
   );
 }

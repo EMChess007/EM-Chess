@@ -1,5 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import ScreenHeader from '../components/ScreenHeader';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { BotPersonality } from '../types/bot';
 import type { ColorChoice } from '../types/chess';
 
@@ -37,9 +38,10 @@ interface EngineSlotProps {
   color: ColorChoice;
   onChangeColor: (color: ColorChoice) => void;
   otherColor: ColorChoice;
+  styles: ReturnType<typeof createStyles>;
 }
 
-function EngineSlot({ title, engine, onPickEngine, color, onChangeColor, otherColor }: EngineSlotProps) {
+function EngineSlot({ title, engine, onPickEngine, color, onChangeColor, otherColor, styles }: EngineSlotProps) {
   const options = availableColors(otherColor);
   return (
     <View style={styles.slot}>
@@ -81,6 +83,8 @@ export default function EngineVsEngineSetupScreen({
   onStart,
   onBack,
 }: EngineVsEngineSetupScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
   const canStart = !!engine1 && !!engine2;
 
   return (
@@ -94,6 +98,7 @@ export default function EngineVsEngineSetupScreen({
           color={color1}
           onChangeColor={onChangeColor1}
           otherColor={color2}
+          styles={styles}
         />
         <EngineSlot
           title="Engine 2"
@@ -102,6 +107,7 @@ export default function EngineVsEngineSetupScreen({
           color={color2}
           onChangeColor={onChangeColor2}
           otherColor={color1}
+          styles={styles}
         />
 
         <Pressable style={[styles.startButton, !canStart && styles.startButtonDisabled]} onPress={onStart} disabled={!canStart}>
@@ -113,94 +119,96 @@ export default function EngineVsEngineSetupScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 16,
-  },
-  slot: {
-    padding: 16,
-    backgroundColor: '#f7f2ea',
-    borderRadius: 12,
-    gap: 10,
-  },
-  slotTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#3a2618',
-  },
-  engineButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#3a2618',
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  engineButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  engineButtonSubtext: {
-    color: '#e0d5c5',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  colorLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#5c4a35',
-  },
-  colorRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  colorButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    backgroundColor: '#f0d9b5',
-    borderWidth: 1,
-    borderColor: '#b58863',
-  },
-  colorButtonSelected: {
-    backgroundColor: '#3a2618',
-    borderColor: '#3a2618',
-  },
-  colorButtonDisabled: {
-    opacity: 0.35,
-  },
-  colorButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#3a2618',
-  },
-  colorButtonTextSelected: {
-    color: '#fff',
-  },
-  startButton: {
-    paddingVertical: 16,
-    backgroundColor: '#2e6f4f',
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  startButtonDisabled: {
-    opacity: 0.5,
-  },
-  startButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  hint: {
-    fontSize: 12,
-    color: '#999',
-    textAlign: 'center',
-  },
-});
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollContent: {
+      padding: 16,
+      paddingBottom: 32,
+      gap: 16,
+    },
+    slot: {
+      padding: 16,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      gap: 10,
+    },
+    slotTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    engineButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      backgroundColor: colors.buttonBackground,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    engineButtonText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    engineButtonSubtext: {
+      color: '#e0d5c5',
+      fontSize: 12,
+      marginTop: 2,
+    },
+    colorLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    colorRow: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    colorButton: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: 8,
+      alignItems: 'center',
+      backgroundColor: colors.mode === 'dark' ? '#3a3120' : '#f0d9b5',
+      borderWidth: 1,
+      borderColor: colors.mode === 'dark' ? '#6b5a3a' : '#b58863',
+    },
+    colorButtonSelected: {
+      backgroundColor: colors.buttonBackground,
+      borderColor: colors.buttonBackground,
+    },
+    colorButtonDisabled: {
+      opacity: 0.35,
+    },
+    colorButtonText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    colorButtonTextSelected: {
+      color: '#fff',
+    },
+    startButton: {
+      paddingVertical: 16,
+      backgroundColor: colors.accent,
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    startButtonDisabled: {
+      opacity: 0.5,
+    },
+    startButtonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    hint: {
+      fontSize: 12,
+      color: colors.textMuted,
+      textAlign: 'center',
+    },
+  });
+}
