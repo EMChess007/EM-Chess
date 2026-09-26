@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { useSaveGameOnEnd } from '../api/useSaveGameOnEnd';
 import { appAlert } from '../components/AppAlert';
 import CapturedPieces from '../components/CapturedPieces';
-import ChessBoard from '../components/ChessBoard';
+import ChessBoard, { type PremoveIntent } from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import GameScreenBody from '../components/GameScreenBody';
@@ -312,6 +312,36 @@ export default function BotGameScreen({
     setHintText(null);
   };
 
+  // Premove: queued while the bot is "thinking" (see ChessBoard's premoveColor/onPremove), played
+  // automatically via handleMove the instant it's actually the user's turn again — same pattern
+  // as OnlineGameScreen's premove, just resolved against the bot's move landing instead of a
+  // socket event.
+  const [premove, setPremove] = useState<PremoveIntent | null>(null);
+  const [premoveInvalid, setPremoveInvalid] = useState(false);
+
+  const handleQueuePremove = (intent: PremoveIntent) => {
+    setPremove(intent);
+    setPremoveInvalid(false);
+  };
+
+  const handleCancelPremove = () => {
+    setPremove(null);
+    setPremoveInvalid(false);
+  };
+
+  useEffect(() => {
+    if (!premove || turn !== userColor || gameOver) return;
+    setPremove(null);
+    const premoveEngine = new ChessEngine(fen, { chess960, initialFen });
+    const move = premoveEngine.move(premove.from, premove.to, premove.promotion);
+    if (move) {
+      handleMove(move, premoveEngine.getFen());
+    } else {
+      setPremoveInvalid(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turn, premove]);
+
   const handleReset = () => {
     const nextInitialFen = chess960 ? generateChess960Position() : START_FEN;
     setInitialFen(nextInitialFen);
@@ -325,6 +355,8 @@ export default function BotGameScreen({
     setHintText(null);
     setShowOptions(false);
     setViewIndex(null);
+    setPremove(null);
+    setPremoveInvalid(false);
     wasMaterialDownRef.current = false;
     clock.reset();
   };
@@ -447,6 +479,17 @@ export default function BotGameScreen({
           </View>
         )}
         {engineError && <Text style={styles.errorText}>Engine error: {engineError}</Text>}
+        {premoveInvalid && <Text style={styles.errorText}>Premove was no longer legal — cancelled.</Text>}
+        {premove && turn === botColor && (
+          <View style={styles.premoveRow}>
+            <Text style={styles.premoveText}>
+              Premove queued: {premove.from}-{premove.to}
+            </Text>
+            <Pressable style={styles.premoveCancelButton} onPress={handleCancelPremove}>
+              <Text style={styles.premoveCancelButtonText}>Cancel</Text>
+            </Pressable>
+          </View>
+        )}
 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
@@ -461,11 +504,14 @@ export default function BotGameScreen({
           key={resetCount}
           fen={displayFen}
           onMove={handleMove}
-          disabled={gameOver || turn !== userColor || botThinking || isReviewing}
+          disabled={gameOver || isReviewing}
           chess960={chess960}
           initialFen={initialFen}
           orientation={flipped ? botColor : userColor}
           lastMove={displayLastMove}
+          enableAnnotations
+          premoveColor={userColor}
+          onPremove={handleQueuePremove}
         />
 
         <View style={styles.playerRow}>
@@ -539,6 +585,27 @@ function createStyles(colors: AppColors) {
     errorText: {
       fontSize: 13,
       color: colors.danger,
+    },
+    premoveRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    premoveText: {
+      fontSize: 13,
+      fontStyle: 'italic',
+      color: colors.gold,
+    },
+    premoveCancelButton: {
+      paddingVertical: 4,
+      paddingHorizontal: 10,
+      borderRadius: 6,
+      backgroundColor: colors.buttonBackground,
+    },
+    premoveCancelButtonText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: '#fff',
     },
     hintText: {
       fontSize: 13,

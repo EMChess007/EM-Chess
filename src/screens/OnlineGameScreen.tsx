@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { appAlert } from '../components/AppAlert';
 import CapturedPieces from '../components/CapturedPieces';
-import ChessBoard from '../components/ChessBoard';
+import ChessBoard, { type PremoveIntent } from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import GameScreenBody from '../components/GameScreenBody';
@@ -165,6 +165,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
       setGameOver(payload);
       setDrawOfferPending(false);
       setIncomingDrawOffer(false);
+      setPremove(null);
       triggerGameEndHaptics();
 
       // Online opponents have no calibrated rating of their own to compare against, so this
@@ -313,6 +314,40 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
         }
       );
   };
+
+  // Premove: queued while it's the opponent's turn (see ChessBoard's premoveColor/onPremove),
+  // executed the instant it actually becomes this player's turn — reusing handleMove exactly as
+  // if the player had just made that move themselves, so the ack/optimistic-update/desync-revert
+  // logic above doesn't need a second copy for this path.
+  const [premove, setPremove] = useState<PremoveIntent | null>(null);
+
+  const handleQueuePremove = (intent: PremoveIntent) => {
+    setPremove(intent);
+    setPremoveInvalidNotice(false);
+  };
+
+  const handleCancelPremove = () => {
+    setPremove(null);
+    setPremoveInvalidNotice(false);
+  };
+
+  const [premoveInvalidNotice, setPremoveInvalidNotice] = useState(false);
+
+  useEffect(() => {
+    if (!premove || turn !== myColor || gameOver) return;
+    setPremove(null);
+    const premoveEngine = new ChessEngine(fen, { chess960: match.isChess960, initialFen: match.fen });
+    const move = premoveEngine.move(premove.from, premove.to, premove.promotion);
+    if (move) {
+      handleMove(move, premoveEngine.getFen());
+    } else {
+      setPremoveInvalidNotice(true);
+    }
+    // fen/myColor/match/handleMove are all stable-enough-in-practice for this screen's lifetime
+    // (handleMove is redefined each render but always does the same thing); turn is what actually
+    // gates this, and premove is what it's acting on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turn, premove]);
 
   const handleExit = () => {
     disconnectSocket();
@@ -478,6 +513,17 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
         )}
         {moveError && <Text style={styles.errorBanner}>{moveError}</Text>}
         {drawNotice && <Text style={styles.errorBanner}>{drawNotice}</Text>}
+        {premoveInvalidNotice && <Text style={styles.errorBanner}>Premove was no longer legal — cancelled.</Text>}
+        {premove && !isMyTurn && (
+          <View style={styles.drawOfferRow}>
+            <Text style={styles.warningBanner}>
+              Premove queued: {premove.from}-{premove.to}
+            </Text>
+            <Pressable style={styles.drawDeclineButton} onPress={handleCancelPremove}>
+              <Text style={styles.drawButtonText}>Cancel</Text>
+            </Pressable>
+          </View>
+        )}
         {drawOfferPending && !gameOver && (
           <Text style={styles.warningBanner}>Draw offer sent — waiting for opponent...</Text>
         )}
@@ -511,11 +557,13 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
           key={boardKey}
           fen={displayFen}
           onMove={handleMove}
-          disabled={!isMyTurn || connectionState !== 'connected' || isReviewing}
+          disabled={!!gameOver || connectionState !== 'connected' || isReviewing}
           chess960={match.isChess960}
           initialFen={match.fen}
           orientation={myColor}
           lastMove={displayLastMove}
+          premoveColor={myColor}
+          onPremove={handleQueuePremove}
         />
 
         <View style={styles.playerRow}>

@@ -1,11 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, PanResponder, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { ChessEngine } from '../logic/ChessEngine';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { Move, PieceColor, Piece as PieceModel } from '../types/chess';
+import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
 import { getBoardSize } from './boardSize';
 import Piece from './Piece';
 import Square from './Square';
+
+// How long a hold must last before it's treated as "start drawing an arrow/highlight" instead of
+// a normal tap-to-select/tap-to-move — long enough that an ordinary quick tap never triggers it.
+const LONG_PRESS_MS = 400;
+// How far (in raw screen pixels) a touch may drift before the long-press timer even has a chance
+// to fire and still count as "held in place" — beyond this it's read as an intentional drag
+// starting immediately, not a long-press.
+const MOVE_THRESHOLD_PX = 10;
+
+export interface PremoveIntent {
+  from: string;
+  to: string;
+  promotion?: 'n' | 'b' | 'r' | 'q';
+}
 
 interface ChessBoardProps {
   fen: string;
@@ -21,6 +36,18 @@ interface ChessBoardProps {
    * destination instead of it just appearing at the destination. Pass `null`/omit for a
    * freshly-set-up board with no "last move" to show. */
   lastMove?: Move | null;
+  /** Lets the player long-press-drag to draw arrows and tap-and-hold to highlight squares (see
+   * BoardAnnotations) — cleared automatically whenever `fen` changes. Off by default; only
+   * Analysis/Local/Bot screens turn it on today. */
+  enableAnnotations?: boolean;
+  /** When set (to the local player's own color) and it isn't currently that color's turn, lets
+   * the player select one of their own pieces and a destination anyway — instead of attempting a
+   * real move, this calls `onPremove` with the raw (unvalidated) intent. The caller owns queuing/
+   * executing/cancelling it once it's actually this color's turn (see OnlineGameScreen/
+   * BotGameScreen's premove state) — ChessBoard itself doesn't preview legal targets for it, since
+   * whether it's still legal can only really be known once it's actually that color's turn. */
+  premoveColor?: PieceColor;
+  onPremove?: (move: PremoveIntent) => void;
 }
 
 const ANIMATION_DURATION_MS = 200;
@@ -37,6 +64,15 @@ function squareToRowCol(square: string, orientation: PieceColor): { row: number;
   return { row, col };
 }
 
+/** Inverse of squareToRowCol — the grid cell under a finger back to an algebraic square id. */
+function rowColToSquare(row: number, col: number, orientation: PieceColor): string {
+  const r = orientation === 'b' ? 7 - row : row;
+  const c = orientation === 'b' ? 7 - col : col;
+  const rank = 8 - r;
+  const file = String.fromCharCode(97 + c);
+  return `${file}${rank}`;
+}
+
 export default function ChessBoard({
   fen,
   onMove,
@@ -45,6 +81,9 @@ export default function ChessBoard({
   initialFen,
   orientation = 'w',
   lastMove,
+  enableAnnotations = false,
+  premoveColor,
+  onPremove,
 }: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
   const boardSize = getBoardSize(width, height);
@@ -90,6 +129,18 @@ export default function ChessBoard({
 
   useEffect(() => {
     setSelectedSquare(null);
+  }, [fen]);
+
+  // Arrows/highlights (see BoardAnnotations) — always reset on a real position change (a move
+  // played, a rewind/forward through history, a "New Game"), same as selectedSquare above.
+  const [arrows, setArrows] = useState<BoardArrow[]>([]);
+  const [highlights, setHighlights] = useState<GridPoint[]>([]);
+  const [liveArrow, setLiveArrow] = useState<{ from: GridPoint; toX: number; toY: number } | null>(null);
+
+  useEffect(() => {
+    setArrows([]);
+    setHighlights([]);
+    setLiveArrow(null);
   }, [fen]);
 
   // Slide animation: a moving piece "sprite" overlaid on top of the static grid, translated from
@@ -138,11 +189,16 @@ export default function ChessBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fen]);
 
-  const legalTargets = selectedSquare ? engine.getLegalMoves(selectedSquare) : [];
+  // Premove mode: true only while it's genuinely NOT premoveColor's turn — once it becomes their
+  // turn, this is exactly normal play again (the caller is expected to have already applied/
+  // cancelled any pending premove by then, see OnlineGameScreen/BotGameScreen).
+  const isPremoveMode = premoveColor !== undefined && premoveColor !== turn;
+  const selectableColor = isPremoveMode ? premoveColor : turn;
+  const legalTargets = selectedSquare && !isPremoveMode ? engine.getLegalMoves(selectedSquare) : [];
 
   const selectOwnPiece = (square: string) => {
     const squareData = board.flat().find((s) => s.square === square);
-    if (squareData?.piece && squareData.piece.color === turn) {
+    if (squareData?.piece && squareData.piece.color === selectableColor) {
       setSelectedSquare(square);
     } else {
       setSelectedSquare(null);
@@ -162,6 +218,17 @@ export default function ChessBoard({
       return;
     }
 
+    if (isPremoveMode) {
+      const squareData = board.flat().find((s) => s.square === square);
+      if (squareData?.piece && squareData.piece.color === selectableColor) {
+        setSelectedSquare(square); // reselect a different piece to premove instead
+        return;
+      }
+      onPremove?.({ from: selectedSquare, to: square, promotion: 'q' });
+      setSelectedSquare(null);
+      return;
+    }
+
     if (legalTargets.includes(square)) {
       const move = engine.move(selectedSquare, square, 'q');
       if (move) {
@@ -174,9 +241,103 @@ export default function ChessBoard({
     selectOwnPiece(square);
   };
 
+  // --- Unified touch handling for the whole grid: a quick tap behaves exactly like the old
+  // per-square Pressable.onPress did (see handleSquarePress above); a long-press-and-drag draws
+  // an arrow (or, released back on the same square, toggles a highlight there) when
+  // `enableAnnotations` is on. One PanResponder on the board container (rather than a Pressable
+  // per square) is what makes it possible to track the finger continuously after the long-press
+  // fires, which Pressable's onPress/onLongPress alone can't do. Every position below is read
+  // from `nativeEvent.locationX/locationY` — coordinates relative to the responder view itself —
+  // rather than page-absolute coordinates, so this stays correct even if the board sits inside a
+  // ScrollView that's scrolled away from its initial layout position (GameScreenBody is one).
+  const gestureRef = useRef<{
+    startSquare: string;
+    longPressTimer: ReturnType<typeof setTimeout> | null;
+    armed: boolean;
+  } | null>(null);
+
+  const pixelToGrid = (localX: number, localY: number): GridPoint => ({
+    row: Math.min(7, Math.max(0, Math.floor(localY / squareSize))),
+    col: Math.min(7, Math.max(0, Math.floor(localX / squareSize))),
+  });
+
+  const clearGesture = () => {
+    if (gestureRef.current?.longPressTimer) clearTimeout(gestureRef.current.longPressTimer);
+    gestureRef.current = null;
+    setLiveArrow(null);
+  };
+
+  // Deliberately NOT memoized (e.g. via useRef/useMemo) — PanResponder.create() is cheap, and its
+  // handlers below close over this render's handleSquarePress/orientation/enableAnnotations/
+  // squareSize. Freezing it into a ref on first mount (a common pattern elsewhere) would pin every
+  // handler to that first render's values forever, silently breaking moves/orientation on every
+  // render after the very first one.
+  const panResponder = PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        const { locationX, locationY } = evt.nativeEvent;
+        const { row, col } = pixelToGrid(locationX, locationY);
+        const startSquare = rowColToSquare(row, col, orientation);
+
+        const timer = enableAnnotations
+          ? setTimeout(() => {
+              if (!gestureRef.current) return;
+              gestureRef.current.armed = true;
+              setLiveArrow({ from: { row, col }, toX: locationX, toY: locationY });
+            }, LONG_PRESS_MS)
+          : null;
+        gestureRef.current = { startSquare, longPressTimer: timer, armed: false };
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        const state = gestureRef.current;
+        if (!state) return;
+
+        if (!state.armed) {
+          // Moved too far before the long-press timer fired — this is a fast drag/swipe, not a
+          // held annotation gesture, so cancel the pending timer (it simply won't arm).
+          if (Math.hypot(gestureState.dx, gestureState.dy) > MOVE_THRESHOLD_PX && state.longPressTimer) {
+            clearTimeout(state.longPressTimer);
+            state.longPressTimer = null;
+          }
+          return;
+        }
+
+        const startGrid = squareToRowCol(state.startSquare, orientation);
+        setLiveArrow({ from: startGrid, toX: evt.nativeEvent.locationX, toY: evt.nativeEvent.locationY });
+      },
+      onPanResponderRelease: (evt) => {
+        const state = gestureRef.current;
+        if (!state) return;
+
+        const { locationX, locationY } = evt.nativeEvent;
+        const { row, col } = pixelToGrid(locationX, locationY);
+
+        if (state.armed) {
+          const endSquare = rowColToSquare(row, col, orientation);
+          const startGrid = squareToRowCol(state.startSquare, orientation);
+
+          if (endSquare === state.startSquare) {
+            setHighlights((prev) =>
+              prev.some((p) => p.row === startGrid.row && p.col === startGrid.col)
+                ? prev.filter((p) => !(p.row === startGrid.row && p.col === startGrid.col))
+                : [...prev, startGrid]
+            );
+          } else {
+            setArrows((prev) => [...prev, { from: startGrid, to: { row, col } }]);
+          }
+        } else {
+          // A genuine quick tap — release position is still the start square (taps don't drag).
+          handleSquarePress(rowColToSquare(row, col, orientation));
+        }
+        clearGesture();
+      },
+      onPanResponderTerminate: clearGesture,
+  });
+
   return (
     <View style={styles.border}>
-      <View style={[styles.board, { width: boardSize, height: boardSize }]}>
+      <View style={[styles.board, { width: boardSize, height: boardSize }]} {...panResponder.panHandlers}>
         {displayRows.map((row, rowIndex) =>
           row.map((square, colIndex) => (
             <Square
@@ -189,12 +350,15 @@ export default function ChessBoard({
               isLastMove={square.square === lastMove?.from || square.square === lastMove?.to}
               hidePiece={slidingMove !== null && square.square === slidingMove.to}
               size={squareSize}
-              onPress={handleSquarePress}
               lightColor={boardTheme.lightColor}
               darkColor={boardTheme.darkColor}
               pieceImages={pieceTheme.images}
             />
           ))
+        )}
+
+        {enableAnnotations && (
+          <BoardAnnotations squareSize={squareSize} arrows={arrows} highlights={highlights} liveArrow={liveArrow} />
         )}
 
         {slidingMove && (

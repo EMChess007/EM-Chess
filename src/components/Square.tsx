@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import type { BoardSquare } from '../types/chess';
 import type { PieceImageMap } from '../types/theme';
 import Piece from './Piece';
@@ -20,13 +20,14 @@ interface SquareProps {
    * instant the move lands, underneath the incoming sprite. */
   hidePiece?: boolean;
   size: number;
-  onPress: (square: string) => void;
   /** The active board theme's colors and the active piece theme's images — see ChessBoard.tsx. */
   lightColor: string;
   darkColor: string;
   pieceImages?: PieceImageMap;
 }
 
+// Purely presentational — ChessBoard's own PanResponder (on the board container) handles every
+// tap/long-press/drag across the whole grid, so this never needs its own touch handling.
 export default function Square({
   data,
   isLight,
@@ -36,14 +37,12 @@ export default function Square({
   isLastMove,
   hidePiece,
   size,
-  onPress,
   lightColor,
   darkColor,
   pieceImages,
 }: SquareProps) {
   return (
-    <Pressable
-      onPress={() => onPress(data.square)}
+    <View
       style={[
         styles.square,
         { width: size, height: size, backgroundColor: isLight ? lightColor : darkColor },
@@ -52,9 +51,9 @@ export default function Square({
         isChecked && styles.checked,
       ]}
     >
-      {isLegalTarget && <Pressable style={styles.legalDot} onPress={() => onPress(data.square)} />}
+      {isLegalTarget && <View style={styles.legalDot} />}
       {data.piece && !hidePiece && <Piece piece={data.piece} images={pieceImages} />}
-    </Pressable>
+    </View>
   );
 }
 

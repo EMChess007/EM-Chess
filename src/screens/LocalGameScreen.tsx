@@ -331,6 +331,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
           initialFen={initialFen}
           orientation={flipped ? 'b' : 'w'}
           lastMove={displayLastMove}
+          enableAnnotations
         />
 
         <View style={styles.playerRow}>
