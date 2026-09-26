@@ -9,6 +9,28 @@ const READY_TIMEOUT_MS = 10000;
 const BEST_MOVE_TIMEOUT_MS = 20000;
 const ANALYSIS_TIMEOUT_MS = 30000;
 
+// How many candidate root moves to ask the engine for when `skillLevel` is set, so a weak bot's
+// "maximum error"/"probability" blunder can be picked from real engine-evaluated alternatives
+// instead of relying on the engine's own internal Skill Level weakening. Live UCI testing showed
+// that internal mechanism essentially never substitutes a genuinely bad move (only ever nudges
+// between near-equal top choices), regardless of movetime or how extreme the configured error/
+// probability values are — so weak bots played at full strength in practice. This MultiPV-based
+// substitution is time-independent (it only needs the search to have ranked a few root moves,
+// which happens even at very low movetime), fixing that gap.
+const WEAK_BOT_CANDIDATE_MULTIPV = 6;
+
+interface ScoredCandidate {
+  move: string;
+  virtualCp: number;
+}
+
+/** Converts a UCI score to a single comparable number (mate scores treated as far outside any
+ * realistic `skillLevelMaximumError` window, signed by which side is winning). */
+function scoreToVirtualCp(type: 'cp' | 'mate', value: number): number {
+  if (type === 'cp') return value;
+  return value > 0 ? 100000 - value : -100000 - value;
+}
+
 /**
  * Controls a Stockfish-family engine instance running inside a StockfishBridge (a hidden
  * WebView on native, a hidden iframe on web — see StockfishBridge.tsx / .web.tsx).
@@ -126,6 +148,15 @@ export class StockfishEngineAdapter implements UciChessEngine {
       this.send('setoption name UCI_LimitStrength value false');
     }
 
+    // A weak (skillLevel-based) bot gets its blunder injected below, from real MultiPV
+    // candidates — see WEAK_BOT_CANDIDATE_MULTIPV. Still send the engine's own Skill Level
+    // options too (harmless, and it does provide some native weakening on its own), but they're
+    // no longer solely relied on for producing genuine mistakes.
+    const injectingBlunders =
+      options.skillLevel !== undefined &&
+      options.skillLevelMaximumError !== undefined &&
+      options.skillLevelProbability !== undefined;
+
     if (options.skillLevel !== undefined) {
       this.send(`setoption name Skill Level value ${Math.round(options.skillLevel)}`);
     }
@@ -134,6 +165,21 @@ export class StockfishEngineAdapter implements UciChessEngine {
     }
     if (options.skillLevelProbability !== undefined) {
       this.send(`setoption name Skill Level Probability value ${Math.round(options.skillLevelProbability)}`);
+    }
+    this.send(`setoption name MultiPV value ${injectingBlunders ? WEAK_BOT_CANDIDATE_MULTIPV : 1}`);
+
+    const candidatesByRank = new Map<number, ScoredCandidate>();
+    const infoListener: LineListener = (line) => {
+      const match = INFO_LINE_RE.exec(line);
+      if (!match) return;
+      const rank = parseInt(match[1], 10);
+      const type = match[2] as 'cp' | 'mate';
+      const value = parseInt(match[3], 10);
+      const move = match[4].trim().split(/\s+/)[0];
+      candidatesByRank.set(rank, { move, virtualCp: scoreToVirtualCp(type, value) });
+    };
+    if (injectingBlunders) {
+      this.lineListeners.add(infoListener);
     }
 
     const bestMove = this.waitForLine((line) => BEST_MOVE_RE.test(line), BEST_MOVE_TIMEOUT_MS);
@@ -144,12 +190,34 @@ export class StockfishEngineAdapter implements UciChessEngine {
       this.send(`go movetime ${Math.round(options.movetimeMs ?? 1000)}`);
     }
 
-    const line = await bestMove;
+    let line: string;
+    try {
+      line = await bestMove;
+    } finally {
+      this.lineListeners.delete(infoListener);
+    }
     const match = BEST_MOVE_RE.exec(line);
     if (!match) {
       throw new Error(`StockfishEngineAdapter: could not parse bestmove line: "${line}"`);
     }
-    return match[1];
+    const engineMove = match[1];
+
+    if (!injectingBlunders) return engineMove;
+
+    const best = candidatesByRank.get(1);
+    if (!best) return engineMove;
+
+    const eligible: ScoredCandidate[] = [];
+    for (const [rank, candidate] of candidatesByRank) {
+      if (rank === 1) continue;
+      if (best.virtualCp - candidate.virtualCp <= options.skillLevelMaximumError!) {
+        eligible.push(candidate);
+      }
+    }
+    if (eligible.length > 0 && Math.random() * 1000 < options.skillLevelProbability!) {
+      return eligible[Math.floor(Math.random() * eligible.length)].move;
+    }
+    return engineMove;
   }
 
   /**
