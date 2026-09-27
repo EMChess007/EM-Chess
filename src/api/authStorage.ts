@@ -9,7 +9,17 @@ import type { AuthResponse, AuthUser } from '../types/auth';
 // could succeed while the other failed (a transient SecureStore/AsyncStorage hiccup, or the app
 // being killed between the two), silently corrupting the session so the user got logged out on
 // next launch with no error ever surfaced. One atomic value removes that failure mode entirely.
-const SESSION_KEY = 'auth:session';
+//
+// No ":" (or any character outside [A-Za-z0-9._-]) — expo-secure-store's Android implementation
+// validates the key and throws "Invalid key provided to SecureStore" for anything else. This was
+// the actual root cause of the auto-logout bug this whole session: the previous key ('auth:session',
+// and the two individual keys before that, 'auth:token'/'auth:user') all contained a colon, so
+// EVERY SecureStore.setItemAsync/getItemAsync call here has been throwing since expo-secure-store
+// was first introduced — save silently failed every single login, so there was never anything
+// valid to load on the next launch. Confirmed via the on-device Diagnostic Log (see
+// logic/diagnosticLog.ts): "[authStorage] Failed to save session: Invalid key provided to
+// SecureStore. Keys must not be empty and contain only alphanumeric characters, '.', '-', and '_'."
+const SESSION_KEY = 'auth_session';
 
 export interface AuthSession {
   token: string;
