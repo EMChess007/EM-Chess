@@ -15,6 +15,7 @@ interface PlayModeSelectScreenProps {
   onLocalChess960: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
+  onBoardEditor: () => void;
   authUser: AuthUser | null;
   onAuthPress: () => void;
 }
@@ -30,6 +31,7 @@ export default function PlayModeSelectScreen({
   onLocalChess960,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
+  onBoardEditor,
   authUser,
   onAuthPress,
 }: PlayModeSelectScreenProps) {
@@ -111,6 +113,14 @@ export default function PlayModeSelectScreen({
             </Pressable>
           </View>
         </View>
+
+        <View style={styles.categoryCard}>
+          <Text style={styles.categoryTitle}>Board Editor</Text>
+          <Text style={styles.categorySubtitle}>Set up a custom position and analyze it</Text>
+          <Pressable style={[styles.subButton, styles.editorSubButton]} onPress={onBoardEditor}>
+            <Text style={styles.subButtonText}>Open Editor</Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </View>
   );
@@ -182,6 +192,9 @@ function createStyles(colors: AppColors) {
     },
     engineSubButton: {
       backgroundColor: '#8d6e00',
+    },
+    editorSubButton: {
+      backgroundColor: colors.accent,
     },
     subButtonText: {
       color: '#fff',

@@ -9,6 +9,7 @@ import AppAlertHost, { appAlert } from './src/components/AppAlert';
 import BottomTabBar, { type MainTab } from './src/components/BottomTabBar';
 import AchievementsScreen from './src/screens/AchievementsScreen';
 import AnalysisScreen from './src/screens/AnalysisScreen';
+import BoardSetupScreen from './src/screens/BoardSetupScreen';
 import BotGameScreen from './src/screens/BotGameScreen';
 import BotSelectScreen from './src/screens/BotSelectScreen';
 import ChallengeScreen from './src/screens/ChallengeScreen';
@@ -63,6 +64,7 @@ type Screen =
   | { name: 'game'; timeControl: TimeControl; chess960: boolean }
   | { name: 'botGame'; timeControl: TimeControl; bot: BotPersonality; chess960: boolean; colorChoice: ColorChoice }
   | { name: 'analysis'; params: AnalyzeParams }
+  | { name: 'boardSetup' }
   | { name: 'login' }
   | { name: 'register' }
   | { name: 'onlineTimeControlSelect'; token: string }
@@ -255,6 +257,7 @@ export default function App() {
         onLocalChess960={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'local', chess960: true } })}
         onEngineVsEngineClassic={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'engineVsEngine', chess960: false } })}
         onEngineVsEngineChess960={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'engineVsEngine', chess960: true } })}
+        onBoardEditor={() => setScreen({ name: 'boardSetup' })}
         authUser={authSession?.user ?? null}
         onAuthPress={() => setScreen({ name: 'login' })}
       />
@@ -401,6 +404,13 @@ export default function App() {
     );
   } else if (screen.name === 'analysis') {
     content = <AnalysisScreen {...screen.params} onExit={() => setScreen({ name: 'main' })} />;
+  } else if (screen.name === 'boardSetup') {
+    content = (
+      <BoardSetupScreen
+        onBack={() => setScreen({ name: 'playModeSelect' })}
+        onAnalyze={(params) => setScreen({ name: 'analysis', params })}
+      />
+    );
   } else if (screen.name === 'engineSelect') {
     content = <EngineSelectScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'themeSelect') {
