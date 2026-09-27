@@ -108,16 +108,33 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>({ name: 'main' });
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
+  // Gates the very first render on the persisted Dark/Light preference having actually loaded —
+  // without this, every screen mounts once with useAppColors()'s synchronous default ('light',
+  // see colorSchemeSettings.ts) and only corrects itself once restoreColorSchemeMode's AsyncStorage
+  // read resolves and notifies subscribers. That's normally a same-frame correction, but showing
+  // the wrong theme for even one frame is exactly the reported bug (dark-mode users seeing a
+  // flash of light background at cold start) — so nothing renders until it's known for certain.
+  const [themeReady, setThemeReady] = useState(false);
 
   const colors = useAppColors();
 
   useEffect(() => {
-    loadAuthSession().then(setAuthSession);
+    loadAuthSession().then((session) => {
+      // Visible in `adb logcat`/EAS build logs even in a signed preview build (unlike a caught
+      // error deep in authStorage.ts, which the OS-level SecureStore layer can swallow entirely —
+      // see loadAuthSession's own comment) — the one thing this can't distinguish is "never had a
+      // session" from "had one, but the OS-level Keystore key backing it was invalidated", since
+      // Android's SecureStore implementation treats both identically (returns null, no exception)
+      // by design once a key is gone. If this logs "no session found" right after a real login+
+      // close+reopen cycle, that's the Keystore-invalidation case, not an app-level bug.
+      console.log(`[App] Startup session check: ${session ? `restored (user ${session.user.username})` : 'no session found'}`);
+      setAuthSession(session);
+    });
     restoreCustomEngines();
     restoreSoundSetting();
     restoreCustomThemes();
     restoreActiveThemes();
-    restoreColorSchemeMode();
+    restoreColorSchemeMode().finally(() => setThemeReady(true));
     restoreRatings();
     restoreAchievements();
     recordAppOpen();
@@ -142,6 +159,12 @@ export default function App() {
 
   useEffect(() => {
     setSessionExpiredHandler(() => {
+      // Distinct from the startup log above: this fires only when a request was actually made
+      // WITH a token and the server rejected it (401) — a real backend-side rejection (token
+      // genuinely expired, or the server's JWT_SECRET no longer matches what signed it), not a
+      // client-side storage issue. Always paired with the visible alert below, unlike a plain
+      // "no session found" at startup.
+      console.log('[App] Session expired: server rejected an authenticated request (401).');
       clearAuthSession();
       setAuthSession(null);
       setScreen({ name: 'login' });
@@ -154,6 +177,14 @@ export default function App() {
     clearAuthSession();
     setAuthSession(null);
   };
+
+  if (!themeReady) {
+    return (
+      <SafeAreaProvider>
+        <View style={{ flex: 1, backgroundColor: colors.background }} />
+      </SafeAreaProvider>
+    );
+  }
 
   let content;
   if (screen.name === 'main') {
