@@ -42,8 +42,19 @@ export function getPuzzleCount(): number {
  * Rush) that need a fresh one each time rather than one fixed puzzle per day. Avoids repeating any
  * id in `excludeIds` (the puzzles already seen this run) when the dataset is large enough to make
  * that possible, so a single run doesn't loop back onto a puzzle the player just solved.
+ *
+ * `themes`, when non-empty, restricts the pool to puzzles tagged with at least one of them (see
+ * puzzleThemes.ts) — used by Puzzle Training. Falls back to the full dataset if that filter
+ * somehow matches nothing (shouldn't happen for the curated theme list, but a themed run should
+ * never simply have no puzzle to show).
  */
-export function getRandomPuzzle(excludeIds: ReadonlySet<string> = new Set(), rng: () => number = Math.random): PuzzleData {
-  const pool = excludeIds.size < PUZZLES.length ? PUZZLES.filter((p) => !excludeIds.has(p.id)) : PUZZLES;
+export function getRandomPuzzle(
+  excludeIds: ReadonlySet<string> = new Set(),
+  rng: () => number = Math.random,
+  themes?: readonly string[]
+): PuzzleData {
+  const themed = themes && themes.length > 0 ? PUZZLES.filter((p) => p.themes.some((t) => themes.includes(t))) : PUZZLES;
+  const base = themed.length > 0 ? themed : PUZZLES;
+  const pool = excludeIds.size < base.length ? base.filter((p) => !excludeIds.has(p.id)) : base;
   return pool[Math.floor(rng() * pool.length)];
 }

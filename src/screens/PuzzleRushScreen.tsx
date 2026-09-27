@@ -8,6 +8,7 @@ import { ChessEngine } from '../logic/ChessEngine';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { triggerMoveHaptics } from '../logic/haptics';
 import { getBestScore, saveScoreIfBest, type PuzzleRushDuration } from '../logic/puzzleRushStorage';
+import { PUZZLE_THEME_OPTIONS } from '../logic/puzzleThemes';
 import { getRandomPuzzle } from '../logic/puzzles';
 import { formatTime } from '../logic/time';
 import { parseUciMove } from '../logic/uciMove';
@@ -16,6 +17,11 @@ import type { PuzzleData } from '../types/puzzle';
 
 interface PuzzleRushScreenProps {
   onExit: () => void;
+  /** When set (from PuzzleTrainingScreen), restricts every puzzle this run serves to one tagged
+   * with at least one of these themes, and skips best-score tracking — a themed run isn't
+   * comparable to an unrestricted one, so mixing them into the same best-score bucket would be
+   * misleading (see puzzleRushStorage.ts, which only keys by duration). */
+  themeFilter?: string[];
 }
 
 type Phase = 'setup' | 'playing' | 'ended';
@@ -35,7 +41,7 @@ function setupPuzzle(puzzle: PuzzleData) {
   return { fen: engine.getFen(), solverColor };
 }
 
-export default function PuzzleRushScreen({ onExit }: PuzzleRushScreenProps) {
+export default function PuzzleRushScreen({ onExit, themeFilter }: PuzzleRushScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
 
@@ -76,7 +82,7 @@ export default function PuzzleRushScreen({ onExit }: PuzzleRushScreenProps) {
   }, [wrongFlashKey]);
 
   const loadPuzzle = (excludeIds: Set<string>) => {
-    const next = getRandomPuzzle(excludeIds);
+    const next = getRandomPuzzle(excludeIds, Math.random, themeFilter);
     excludeIds.add(next.id);
     const { fen: nextFen, solverColor: nextSolverColor } = setupPuzzle(next);
     setPuzzle(next);
@@ -95,6 +101,7 @@ export default function PuzzleRushScreen({ onExit }: PuzzleRushScreenProps) {
     setFinalScore(finished);
     setPhase('ended');
     if (finished >= 10) unlockAchievement('puzzle_rush_10');
+    if (themeFilter && themeFilter.length > 0) return;
     saveScoreIfBest(duration, finished).then((best) => {
       setBestScores((b) => ({ ...b, [duration]: best }));
       setNewBest(finished > 0 && finished >= best);
@@ -186,20 +193,26 @@ export default function PuzzleRushScreen({ onExit }: PuzzleRushScreenProps) {
   };
 
   const bestForCurrentDuration = bestScores[duration];
+  const isThemed = !!themeFilter && themeFilter.length > 0;
+  const themedLabel = isThemed
+    ? themeFilter!.map((id) => PUZZLE_THEME_OPTIONS.find((o) => o.id === id)?.label ?? id).join(', ')
+    : null;
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Puzzle Rush" onBack={onExit} backLabel="‹ Back" />
+      <ScreenHeader title={isThemed ? 'Puzzle Training' : 'Puzzle Rush'} onBack={onExit} backLabel="‹ Back" />
 
       {phase === 'setup' && (
         <View style={styles.centerColumn}>
-          <Text style={styles.setupTitle}>Solve as many puzzles as you can.</Text>
+          <Text style={styles.setupTitle}>
+            {isThemed ? `Training: ${themedLabel}` : 'Solve as many puzzles as you can.'}
+          </Text>
           <Text style={styles.setupSubtitle}>The run ends after {MAX_MISTAKES} mistakes or when time runs out.</Text>
           <View style={styles.durationRow}>
             {DURATIONS.map((d) => (
               <Pressable key={d} style={styles.durationButton} onPress={() => startRun(d)}>
                 <Text style={styles.durationButtonText}>{d} minutes</Text>
-                <Text style={styles.durationBestText}>Best: {bestScores[d]}</Text>
+                {!isThemed && <Text style={styles.durationBestText}>Best: {bestScores[d]}</Text>}
               </Pressable>
             ))}
           </View>
@@ -242,8 +255,10 @@ export default function PuzzleRushScreen({ onExit }: PuzzleRushScreenProps) {
           <Text style={styles.setupTitle}>Time's up!</Text>
           <Text style={styles.finalScore}>{finalScore}</Text>
           <Text style={styles.setupSubtitle}>puzzles solved</Text>
-          {newBest && <Text style={styles.newBestText}>New best!</Text>}
-          <Text style={styles.setupSubtitle}>Best for {duration} minutes: {bestForCurrentDuration}</Text>
+          {!isThemed && newBest && <Text style={styles.newBestText}>New best!</Text>}
+          {!isThemed && (
+            <Text style={styles.setupSubtitle}>Best for {duration} minutes: {bestForCurrentDuration}</Text>
+          )}
           <View style={styles.durationRow}>
             <Pressable style={styles.durationButton} onPress={() => startRun(duration)}>
               <Text style={styles.durationButtonText}>Play Again</Text>

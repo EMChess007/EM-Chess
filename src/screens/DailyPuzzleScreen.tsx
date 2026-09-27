@@ -14,13 +14,14 @@ import type { Move, PieceColor } from '../types/chess';
 interface DailyPuzzleScreenProps {
   authToken: string | null;
   onOpenPuzzleRush: () => void;
+  onOpenPuzzleTraining: () => void;
 }
 
 type PuzzleStatus = 'playing' | 'solved' | 'revealed';
 
 const REPLY_DELAY_MS = 500;
 
-export default function DailyPuzzleScreen({ authToken, onOpenPuzzleRush }: DailyPuzzleScreenProps) {
+export default function DailyPuzzleScreen({ authToken, onOpenPuzzleRush, onOpenPuzzleTraining }: DailyPuzzleScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const puzzle = useMemo(() => getDailyPuzzle(), []);
@@ -204,9 +205,14 @@ export default function DailyPuzzleScreen({ authToken, onOpenPuzzleRush }: Daily
       >
         <View style={styles.topRow}>
           <Text style={styles.subtitle}>Puzzle rating: {puzzle.rating}</Text>
-          <Pressable style={styles.rushLink} onPress={onOpenPuzzleRush}>
-            <Text style={styles.rushLinkText}>Puzzle Rush ›</Text>
-          </Pressable>
+          <View style={styles.rushLinkRow}>
+            <Pressable style={styles.rushLink} onPress={onOpenPuzzleTraining}>
+              <Text style={styles.rushLinkText}>Puzzle Training ›</Text>
+            </Pressable>
+            <Pressable style={styles.rushLink} onPress={onOpenPuzzleRush}>
+              <Text style={styles.rushLinkText}>Puzzle Rush ›</Text>
+            </Pressable>
+          </View>
         </View>
 
         {!checkingStorage && alreadySolvedToday && status === 'playing' && (
@@ -266,6 +272,9 @@ function createStyles(colors: AppColors) {
       alignItems: 'center',
       width: '100%',
       maxWidth: 340,
+    },
+    rushLinkRow: {
+      flexDirection: 'row',
     },
     rushLink: {
       paddingVertical: 4,

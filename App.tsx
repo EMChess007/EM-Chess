@@ -30,6 +30,7 @@ import OnlineTimeControlSelectScreen from './src/screens/OnlineTimeControlSelect
 import PgnImportScreen from './src/screens/PgnImportScreen';
 import PlayModeSelectScreen from './src/screens/PlayModeSelectScreen';
 import PuzzleRushScreen from './src/screens/PuzzleRushScreen';
+import PuzzleTrainingScreen from './src/screens/PuzzleTrainingScreen';
 import RatingHistoryScreen from './src/screens/RatingHistoryScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import SpectateListScreen from './src/screens/SpectateListScreen';
@@ -80,7 +81,8 @@ type Screen =
   | { name: 'engineSelect' }
   | { name: 'themeSelect' }
   | { name: 'streak' }
-  | { name: 'puzzleRush' }
+  | { name: 'puzzleRush'; themeFilter?: string[] }
+  | { name: 'puzzleTraining' }
   | { name: 'achievements' }
   | { name: 'diagnosticLogs' }
   | { name: 'leaderboard'; token: string }
@@ -220,6 +222,7 @@ export default function App() {
         <DailyPuzzleScreen
           authToken={authSession?.token ?? null}
           onOpenPuzzleRush={() => setScreen({ name: 'puzzleRush' })}
+          onOpenPuzzleTraining={() => setScreen({ name: 'puzzleTraining' })}
         />
       );
     } else if (activeTab === 'analysis') {
@@ -433,7 +436,14 @@ export default function App() {
   } else if (screen.name === 'streak') {
     content = <StreakScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'puzzleRush') {
-    content = <PuzzleRushScreen onExit={() => setScreen({ name: 'main' })} />;
+    content = <PuzzleRushScreen onExit={() => setScreen({ name: 'main' })} themeFilter={screen.themeFilter} />;
+  } else if (screen.name === 'puzzleTraining') {
+    content = (
+      <PuzzleTrainingScreen
+        onBack={() => setScreen({ name: 'main' })}
+        onStart={(themes) => setScreen({ name: 'puzzleRush', themeFilter: themes })}
+      />
+    );
   } else if (screen.name === 'achievements') {
     content = <AchievementsScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'leaderboard') {
