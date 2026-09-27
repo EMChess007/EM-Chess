@@ -30,6 +30,7 @@ import OnlineTimeControlSelectScreen from './src/screens/OnlineTimeControlSelect
 import PgnImportScreen from './src/screens/PgnImportScreen';
 import PlayModeSelectScreen from './src/screens/PlayModeSelectScreen';
 import PuzzleRushScreen from './src/screens/PuzzleRushScreen';
+import RatingHistoryScreen from './src/screens/RatingHistoryScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import SpectateListScreen from './src/screens/SpectateListScreen';
 import SpectatorGameScreen from './src/screens/SpectatorGameScreen';
@@ -43,6 +44,7 @@ import { restoreCustomThemes } from './src/logic/customThemes';
 import { restoreAchievements } from './src/logic/achievementStorage';
 import { logDiagnostic, restoreDiagnosticLog } from './src/logic/diagnosticLog';
 import { restoreRatings } from './src/logic/ratingStorage';
+import { restoreRatingHistory } from './src/logic/ratingHistoryStorage';
 import { restoreSoundSetting } from './src/logic/soundSettings';
 import { recordAppOpen } from './src/logic/streakStorage';
 import { restoreActiveThemes } from './src/logic/themeSettings';
@@ -82,6 +84,7 @@ type Screen =
   | { name: 'achievements' }
   | { name: 'diagnosticLogs' }
   | { name: 'leaderboard'; token: string }
+  | { name: 'ratingHistory' }
   | {
       name: 'engineVsEngineSetup';
       timeControl: TimeControl;
@@ -147,6 +150,7 @@ export default function App() {
     restoreActiveThemes();
     restoreColorSchemeMode().finally(() => setThemeReady(true));
     restoreRatings();
+    restoreRatingHistory();
     restoreAchievements();
     recordAppOpen();
   }, []);
@@ -236,6 +240,7 @@ export default function App() {
           onOpenThemes={() => setScreen({ name: 'themeSelect' })}
           onOpenAchievements={() => setScreen({ name: 'achievements' })}
           onOpenLeaderboard={() => authSession && setScreen({ name: 'leaderboard', token: authSession.token })}
+          onOpenRatingHistory={() => setScreen({ name: 'ratingHistory' })}
           onOpenDiagnosticLogs={() => setScreen({ name: 'diagnosticLogs' })}
         />
       );
@@ -433,6 +438,8 @@ export default function App() {
     content = <AchievementsScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'leaderboard') {
     content = <LeaderboardScreen authToken={screen.token} onBack={() => setScreen({ name: 'main' })} />;
+  } else if (screen.name === 'ratingHistory') {
+    content = <RatingHistoryScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'diagnosticLogs') {
     content = <DiagnosticLogsScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'engineVsEngineSetup') {

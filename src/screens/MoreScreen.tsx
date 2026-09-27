@@ -23,6 +23,7 @@ interface MoreScreenProps {
   onOpenThemes: () => void;
   onOpenAchievements: () => void;
   onOpenLeaderboard: () => void;
+  onOpenRatingHistory: () => void;
   onOpenDiagnosticLogs: () => void;
 }
 
@@ -34,6 +35,7 @@ export default function MoreScreen({
   onOpenThemes,
   onOpenAchievements,
   onOpenLeaderboard,
+  onOpenRatingHistory,
   onOpenDiagnosticLogs,
 }: MoreScreenProps) {
   // react-native's own <SafeAreaView> only actually applies an inset on iOS — see ScreenHeader
@@ -107,6 +109,9 @@ export default function MoreScreen({
           }}
         >
           <Text style={styles.rowButtonText}>View Leaderboard</Text>
+        </Pressable>
+        <Pressable style={styles.rowButton} onPress={onOpenRatingHistory}>
+          <Text style={styles.rowButtonText}>View Rating History</Text>
         </Pressable>
       </View>
 

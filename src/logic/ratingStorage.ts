@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../api/client';
 import { DEFAULT_RATING, RATING_CATEGORIES, updateRating, type GameResult, type RatingCategory } from './rating';
+import { recordRatingHistoryEntry } from './ratingHistoryStorage';
 
 const KEY_PREFIX = 'rating:';
 
@@ -67,6 +68,7 @@ export async function recordRatedGame(
   } catch {
     // Non-critical: worst case this update isn't remembered next launch.
   }
+  await recordRatingHistoryEntry(category, next);
   if (authToken) {
     api.updateRating(authToken, category, next).catch((err) => {
       console.warn('[ratingStorage] Failed to sync rating to backend:', err instanceof Error ? err.message : err);
