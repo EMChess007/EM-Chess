@@ -16,6 +16,7 @@ interface PlayModeSelectScreenProps {
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onBoardEditor: () => void;
+  onImportPgn: () => void;
   authUser: AuthUser | null;
   onAuthPress: () => void;
 }
@@ -32,6 +33,7 @@ export default function PlayModeSelectScreen({
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onBoardEditor,
+  onImportPgn,
   authUser,
   onAuthPress,
 }: PlayModeSelectScreenProps) {
@@ -117,9 +119,14 @@ export default function PlayModeSelectScreen({
         <View style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>Board Editor</Text>
           <Text style={styles.categorySubtitle}>Set up a custom position and analyze it</Text>
-          <Pressable style={[styles.subButton, styles.editorSubButton]} onPress={onBoardEditor}>
-            <Text style={styles.subButtonText}>Open Editor</Text>
-          </Pressable>
+          <View style={styles.subButtonRow}>
+            <Pressable style={[styles.subButton, styles.editorSubButton]} onPress={onBoardEditor}>
+              <Text style={styles.subButtonText}>Open Editor</Text>
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.editorSubButton]} onPress={onImportPgn}>
+              <Text style={styles.subButtonText}>Import PGN</Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </View>

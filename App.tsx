@@ -27,6 +27,7 @@ import MatchmakingScreen from './src/screens/MatchmakingScreen';
 import MoreScreen from './src/screens/MoreScreen';
 import OnlineGameScreen from './src/screens/OnlineGameScreen';
 import OnlineTimeControlSelectScreen from './src/screens/OnlineTimeControlSelectScreen';
+import PgnImportScreen from './src/screens/PgnImportScreen';
 import PlayModeSelectScreen from './src/screens/PlayModeSelectScreen';
 import PuzzleRushScreen from './src/screens/PuzzleRushScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
@@ -65,6 +66,7 @@ type Screen =
   | { name: 'botGame'; timeControl: TimeControl; bot: BotPersonality; chess960: boolean; colorChoice: ColorChoice }
   | { name: 'analysis'; params: AnalyzeParams }
   | { name: 'boardSetup' }
+  | { name: 'pgnImport' }
   | { name: 'login' }
   | { name: 'register' }
   | { name: 'onlineTimeControlSelect'; token: string }
@@ -258,6 +260,7 @@ export default function App() {
         onEngineVsEngineClassic={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'engineVsEngine', chess960: false } })}
         onEngineVsEngineChess960={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'engineVsEngine', chess960: true } })}
         onBoardEditor={() => setScreen({ name: 'boardSetup' })}
+        onImportPgn={() => setScreen({ name: 'pgnImport' })}
         authUser={authSession?.user ?? null}
         onAuthPress={() => setScreen({ name: 'login' })}
       />
@@ -407,6 +410,13 @@ export default function App() {
   } else if (screen.name === 'boardSetup') {
     content = (
       <BoardSetupScreen
+        onBack={() => setScreen({ name: 'playModeSelect' })}
+        onAnalyze={(params) => setScreen({ name: 'analysis', params })}
+      />
+    );
+  } else if (screen.name === 'pgnImport') {
+    content = (
+      <PgnImportScreen
         onBack={() => setScreen({ name: 'playModeSelect' })}
         onAnalyze={(params) => setScreen({ name: 'analysis', params })}
       />

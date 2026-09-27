@@ -76,16 +76,14 @@ function extractSanTokens(pgn: string): string[] {
 }
 
 /**
- * Reconstructs the move-by-move history (fenBefore/fenAfter per move) a stored game's PGN
- * represents — the same shape a live game screen builds incrementally as it's played (see
- * LocalGameScreen/BotGameScreen), so it can feed straight into AnalysisScreen. Returns null if
- * any move in the PGN can't be resolved (a corrupt/foreign PGN) rather than a partial, silently
- * wrong result.
+ * Replays an already-tokenized list of SAN moves from `initialFen`, resolving each one through
+ * ChessEngine (so Chess960 castling — see resolveSanMove above — is handled correctly). Returns
+ * null if any token can't be resolved to a legal move, rather than a partial, silently wrong
+ * result. Shared by replayPgn below (which does its own PGN tokenizing) and pgnImport.ts (which
+ * needs a more thorough tokenizer that also strips comments/NAGs/variations a foreign PGN may
+ * contain).
  */
-export function replayPgn(pgn: string, chess960: boolean): { initialFen: string; history: GameHistoryEntry[] } | null {
-  const initialFen = extractInitialFen(pgn);
-  const sanTokens = extractSanTokens(pgn);
-
+export function replaySanTokens(initialFen: string, chess960: boolean, sanTokens: string[]): GameHistoryEntry[] | null {
   const history: GameHistoryEntry[] = [];
   let fen = initialFen;
 
@@ -102,5 +100,18 @@ export function replayPgn(pgn: string, chess960: boolean): { initialFen: string;
     fen = fenAfter;
   }
 
-  return { initialFen, history };
+  return history;
+}
+
+/**
+ * Reconstructs the move-by-move history (fenBefore/fenAfter per move) a stored game's PGN
+ * represents — the same shape a live game screen builds incrementally as it's played (see
+ * LocalGameScreen/BotGameScreen), so it can feed straight into AnalysisScreen. Returns null if
+ * any move in the PGN can't be resolved (a corrupt/foreign PGN) rather than a partial, silently
+ * wrong result.
+ */
+export function replayPgn(pgn: string, chess960: boolean): { initialFen: string; history: GameHistoryEntry[] } | null {
+  const initialFen = extractInitialFen(pgn);
+  const history = replaySanTokens(initialFen, chess960, extractSanTokens(pgn));
+  return history ? { initialFen, history } : null;
 }
