@@ -8,6 +8,7 @@ interface PlayModeSelectScreenProps {
   onBack: () => void;
   onOnline: () => void;
   onChallengeFriend: () => void;
+  onTournaments: () => void;
   onSpectate: () => void;
   onBotClassic: () => void;
   onBotChess960: () => void;
@@ -25,6 +26,7 @@ export default function PlayModeSelectScreen({
   onBack,
   onOnline,
   onChallengeFriend,
+  onTournaments,
   onSpectate,
   onBotClassic,
   onBotChess960,
@@ -55,6 +57,7 @@ export default function PlayModeSelectScreen({
   };
   const handleOnline = requireLogin(onOnline);
   const handleChallengeFriend = requireLogin(onChallengeFriend);
+  const handleTournaments = requireLogin(onTournaments);
 
   return (
     <View style={styles.container}>
@@ -66,10 +69,19 @@ export default function PlayModeSelectScreen({
           <Text style={styles.categorySubtitle}>Play live against another player</Text>
           <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.onlineSubButton]} onPress={handleOnline}>
-              <Text style={styles.subButtonText}>Quick Match</Text>
+              <Text style={styles.subButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                Quick Match
+              </Text>
             </Pressable>
             <Pressable style={[styles.subButton, styles.onlineSubButton]} onPress={handleChallengeFriend}>
-              <Text style={styles.subButtonText}>Challenge Friend</Text>
+              <Text style={styles.subButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                Challenge Friend
+              </Text>
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.onlineSubButton]} onPress={handleTournaments}>
+              <Text style={styles.subButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                Tournaments
+              </Text>
             </Pressable>
           </View>
           <Pressable style={styles.spectateLink} onPress={onSpectate}>

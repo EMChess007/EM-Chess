@@ -33,6 +33,8 @@ import PuzzleRushScreen from './src/screens/PuzzleRushScreen';
 import PuzzleTrainingScreen from './src/screens/PuzzleTrainingScreen';
 import RatingHistoryScreen from './src/screens/RatingHistoryScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import TournamentScreen from './src/screens/TournamentScreen';
+import TournamentStandingsScreen from './src/screens/TournamentStandingsScreen';
 import SpectateListScreen from './src/screens/SpectateListScreen';
 import SpectatorGameScreen from './src/screens/SpectatorGameScreen';
 import StreakScreen from './src/screens/StreakScreen';
@@ -77,7 +79,9 @@ type Screen =
   | { name: 'challenge'; token: string }
   | { name: 'spectateList'; token: string | null }
   | { name: 'spectatorGame'; token: string | null; roomId: string; whiteUsername: string; blackUsername: string }
-  | { name: 'onlineGame'; token: string; match: MatchFoundPayload }
+  | { name: 'onlineGame'; token: string; match: MatchFoundPayload; returnToTournamentId?: string }
+  | { name: 'tournament'; token: string }
+  | { name: 'tournamentStandings'; token: string; tournamentId: string }
   | { name: 'engineSelect' }
   | { name: 'themeSelect' }
   | { name: 'streak' }
@@ -260,6 +264,7 @@ export default function App() {
         onBack={() => setScreen({ name: 'main' })}
         onOnline={() => authSession && setScreen({ name: 'onlineTimeControlSelect', token: authSession.token })}
         onChallengeFriend={() => authSession && setScreen({ name: 'challenge', token: authSession.token })}
+        onTournaments={() => authSession && setScreen({ name: 'tournament', token: authSession.token })}
         onSpectate={() => setScreen({ name: 'spectateList', token: authSession?.token ?? null })}
         onBotClassic={() => setScreen({ name: 'botSelect', chess960: false })}
         onBotChess960={() => setScreen({ name: 'botSelect', chess960: true })}
@@ -292,12 +297,36 @@ export default function App() {
       />
     );
   } else if (screen.name === 'onlineGame') {
+    const { token, returnToTournamentId } = screen;
     content = (
       <OnlineGameScreen
-        authToken={screen.token}
+        authToken={token}
         match={screen.match}
-        onExit={() => setScreen({ name: 'main' })}
+        keepSocketAlive={!!returnToTournamentId}
+        onExit={() =>
+          setScreen(returnToTournamentId ? { name: 'tournamentStandings', token, tournamentId: returnToTournamentId } : { name: 'main' })
+        }
         onAnalyze={(params) => setScreen({ name: 'analysis', params })}
+      />
+    );
+  } else if (screen.name === 'tournament') {
+    content = (
+      <TournamentScreen
+        authToken={screen.token}
+        authUser={authSession!.user}
+        onEnterStandings={(tournamentId) => setScreen({ name: 'tournamentStandings', token: screen.token, tournamentId })}
+        onBack={() => setScreen({ name: 'playModeSelect' })}
+      />
+    );
+  } else if (screen.name === 'tournamentStandings') {
+    const { token, tournamentId } = screen;
+    content = (
+      <TournamentStandingsScreen
+        authToken={token}
+        authUser={authSession!.user}
+        tournamentId={tournamentId}
+        onEnterGame={(match) => setScreen({ name: 'onlineGame', token, match, returnToTournamentId: tournamentId })}
+        onExit={() => setScreen({ name: 'main' })}
       />
     );
   } else if (screen.name === 'challenge') {

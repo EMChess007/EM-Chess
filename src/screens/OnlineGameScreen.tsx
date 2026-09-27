@@ -39,6 +39,11 @@ interface OnlineGameScreenProps {
   match: MatchFoundPayload;
   onExit: () => void;
   onAnalyze: (params: AnalyzeParams) => void;
+  /** Set when this game was entered from a tournament (see TournamentStandingsScreen) — exiting
+   * goes back to that tournament's live standings, which needs the same socket connection to
+   * keep receiving its own push updates (participant tracking is keyed by socket.id), so this
+   * skips the disconnect a normal exit-to-menu does. */
+  keepSocketAlive?: boolean;
 }
 
 // Extends the shared GameHistoryEntry shape (move/fenBefore/fenAfter — what analysis/summary
@@ -53,7 +58,7 @@ interface ChatEntry {
   text: string;
 }
 
-export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }: OnlineGameScreenProps) {
+export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, keepSocketAlive }: OnlineGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const myColor = match.color;
@@ -350,7 +355,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze }
   }, [turn, premove]);
 
   const handleExit = () => {
-    disconnectSocket();
+    if (!keepSocketAlive) disconnectSocket();
     onExit();
   };
 

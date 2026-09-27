@@ -123,3 +123,78 @@ export interface JoinChallengePayload {
 }
 
 export type Ack<T extends object = object> = ({ ok: true } & T) | { ok: false; error: string };
+
+// --- Tournaments -------------------------------------------------------------
+
+export type TournamentStatus = 'lobby' | 'active' | 'finished';
+
+export interface CreateTournamentPayload {
+  name: string;
+  timeControl: OnlineTimeControl;
+  timeControlLabel?: string;
+  isChess960?: boolean;
+}
+
+export interface JoinTournamentPayload {
+  code: string;
+}
+
+export interface TournamentIdPayload {
+  tournamentId: string;
+}
+
+export interface TournamentParticipantSummary {
+  userId: string;
+  username: string;
+}
+
+export interface TournamentLobbyState {
+  id: string;
+  code: string;
+  name: string;
+  timeControl: OnlineTimeControl;
+  isChess960: boolean;
+  status: TournamentStatus;
+  creatorUserId: string;
+  participants: TournamentParticipantSummary[];
+}
+
+export interface TournamentStandingRow {
+  userId: string;
+  username: string;
+  points: number;
+  played: number;
+}
+
+export interface TournamentNextMatch {
+  status: 'pending' | 'active';
+  opponentUsername: string;
+  timeControl: OnlineTimeControl;
+  isChess960: boolean;
+  roomId: string | null;
+  playerToken: string | null;
+  color: PieceColor | null;
+  fen: string | null;
+  whiteMs: number | null;
+  blackMs: number | null;
+}
+
+export interface TournamentStandingsPayload {
+  standings: TournamentStandingRow[];
+  status: TournamentStatus;
+  yourNextMatch: TournamentNextMatch | null;
+}
+
+/** Same shape as MatchFoundPayload — a tournament match is an ordinary game room in every
+ * respect once it starts, so the client reuses OnlineGameScreen unchanged for it. */
+export interface TournamentMatchReadyPayload {
+  roomId: string;
+  color: PieceColor;
+  playerToken: string;
+  opponent: { userId: string; username: string };
+  timeControl: OnlineTimeControl;
+  isChess960: boolean;
+  fen: string;
+  whiteMs: number;
+  blackMs: number;
+}
