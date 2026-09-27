@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { logDiagnostic } from '../logic/diagnosticLog';
 import type { AuthResponse, AuthUser } from '../types/auth';
 
 // A single combined key/blob, not two separate ones — see saveAuthSession/loadAuthSession below
@@ -49,10 +50,11 @@ async function removeSession(): Promise<void> {
 export async function saveAuthSession(session: AuthResponse): Promise<void> {
   try {
     await setSession(JSON.stringify({ token: session.token, user: session.user }));
+    logDiagnostic(`[authStorage] Saved session for ${session.user.username}.`);
   } catch (err) {
     // Not silently swallowed anymore (see SESSION_KEY comment) — a failure here means the user
     // will be asked to log in again next launch, which is worth being able to actually diagnose.
-    console.warn('[authStorage] Failed to save session:', err instanceof Error ? err.message : err);
+    logDiagnostic(`[authStorage] Failed to save session: ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -64,7 +66,7 @@ export async function loadAuthSession(): Promise<AuthSession | null> {
     if (!parsed.token || !parsed.user) return null;
     return parsed;
   } catch (err) {
-    console.warn('[authStorage] Failed to load session:', err instanceof Error ? err.message : err);
+    logDiagnostic(`[authStorage] Failed to load session: ${err instanceof Error ? err.message : err}`);
     return null;
   }
 }
@@ -73,6 +75,6 @@ export async function clearAuthSession(): Promise<void> {
   try {
     await removeSession();
   } catch (err) {
-    console.warn('[authStorage] Failed to clear session:', err instanceof Error ? err.message : err);
+    logDiagnostic(`[authStorage] Failed to clear session: ${err instanceof Error ? err.message : err}`);
   }
 }

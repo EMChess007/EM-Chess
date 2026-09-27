@@ -23,6 +23,7 @@ interface MoreScreenProps {
   onOpenThemes: () => void;
   onOpenAchievements: () => void;
   onOpenLeaderboard: () => void;
+  onOpenDiagnosticLogs: () => void;
 }
 
 export default function MoreScreen({
@@ -33,6 +34,7 @@ export default function MoreScreen({
   onOpenThemes,
   onOpenAchievements,
   onOpenLeaderboard,
+  onOpenDiagnosticLogs,
 }: MoreScreenProps) {
   // react-native's own <SafeAreaView> only actually applies an inset on iOS — see ScreenHeader
   // for the shared version of this fix used by every sub-screen; this tab-root screen has a
@@ -144,6 +146,10 @@ export default function MoreScreen({
           <Switch value={soundOn} onValueChange={(value) => setSoundEnabled(value)} />
         </View>
       </View>
+
+      <Pressable style={styles.diagnosticsLink} onPress={onOpenDiagnosticLogs}>
+        <Text style={styles.diagnosticsLinkText}>Diagnostics</Text>
+      </Pressable>
       </ScrollView>
     </View>
   );
@@ -240,6 +246,15 @@ function createStyles(colors: AppColors) {
     ratingHint: {
       fontSize: 11,
       color: colors.textMuted,
+    },
+    diagnosticsLink: {
+      alignSelf: 'center',
+      paddingVertical: 16,
+    },
+    diagnosticsLinkText: {
+      fontSize: 12,
+      color: colors.textMuted,
+      textDecorationLine: 'underline',
     },
   });
 }

@@ -13,6 +13,7 @@ import BotGameScreen from './src/screens/BotGameScreen';
 import BotSelectScreen from './src/screens/BotSelectScreen';
 import ChallengeScreen from './src/screens/ChallengeScreen';
 import DailyPuzzleScreen from './src/screens/DailyPuzzleScreen';
+import DiagnosticLogsScreen from './src/screens/DiagnosticLogsScreen';
 import EngineSelectScreen from './src/screens/EngineSelectScreen';
 import EngineVsEngineGameScreen from './src/screens/EngineVsEngineGameScreen';
 import EngineVsEngineSetupScreen from './src/screens/EngineVsEngineSetupScreen';
@@ -38,6 +39,7 @@ import { useAppColors } from './src/logic/colorSchemeHooks';
 import { restoreCustomEngines } from './src/logic/customEngines';
 import { restoreCustomThemes } from './src/logic/customThemes';
 import { restoreAchievements } from './src/logic/achievementStorage';
+import { logDiagnostic, restoreDiagnosticLog } from './src/logic/diagnosticLog';
 import { restoreRatings } from './src/logic/ratingStorage';
 import { restoreSoundSetting } from './src/logic/soundSettings';
 import { recordAppOpen } from './src/logic/streakStorage';
@@ -74,6 +76,7 @@ type Screen =
   | { name: 'streak' }
   | { name: 'puzzleRush' }
   | { name: 'achievements' }
+  | { name: 'diagnosticLogs' }
   | { name: 'leaderboard'; token: string }
   | {
       name: 'engineVsEngineSetup';
@@ -119,15 +122,19 @@ export default function App() {
   const colors = useAppColors();
 
   useEffect(() => {
+    // Started first (though not awaited before the others below — logDiagnostic is safe to call
+    // before this resolves, see its own comment) so this session's own startup log line is never
+    // lost regardless of exactly when it fires relative to this.
+    restoreDiagnosticLog();
     loadAuthSession().then((session) => {
-      // Visible in `adb logcat`/EAS build logs even in a signed preview build (unlike a caught
-      // error deep in authStorage.ts, which the OS-level SecureStore layer can swallow entirely —
-      // see loadAuthSession's own comment) — the one thing this can't distinguish is "never had a
-      // session" from "had one, but the OS-level Keystore key backing it was invalidated", since
-      // Android's SecureStore implementation treats both identically (returns null, no exception)
-      // by design once a key is gone. If this logs "no session found" right after a real login+
-      // close+reopen cycle, that's the Keystore-invalidation case, not an app-level bug.
-      console.log(`[App] Startup session check: ${session ? `restored (user ${session.user.username})` : 'no session found'}`);
+      // Persisted (see diagnosticLog.ts) so this line survives being read on a LATER launch too —
+      // the whole point, since a signed preview/production build has no attached console. The one
+      // thing this can't distinguish is "never had a session" from "had one, but the OS-level
+      // Keystore key backing it was invalidated", since Android's SecureStore implementation
+      // treats both identically (returns null, no exception) by design once a key is gone. If this
+      // logs "no session found" right after a real login+close+reopen cycle, that's the
+      // Keystore-invalidation case, not an app-level bug.
+      logDiagnostic(`[App] Startup session check: ${session ? `restored (user ${session.user.username})` : 'no session found'}`);
       setAuthSession(session);
     });
     restoreCustomEngines();
@@ -164,7 +171,7 @@ export default function App() {
       // genuinely expired, or the server's JWT_SECRET no longer matches what signed it), not a
       // client-side storage issue. Always paired with the visible alert below, unlike a plain
       // "no session found" at startup.
-      console.log('[App] Session expired: server rejected an authenticated request (401).');
+      logDiagnostic('[App] Session expired: server rejected an authenticated request (401).');
       clearAuthSession();
       setAuthSession(null);
       setScreen({ name: 'login' });
@@ -225,6 +232,7 @@ export default function App() {
           onOpenThemes={() => setScreen({ name: 'themeSelect' })}
           onOpenAchievements={() => setScreen({ name: 'achievements' })}
           onOpenLeaderboard={() => authSession && setScreen({ name: 'leaderboard', token: authSession.token })}
+          onOpenDiagnosticLogs={() => setScreen({ name: 'diagnosticLogs' })}
         />
       );
     }
@@ -405,6 +413,8 @@ export default function App() {
     content = <AchievementsScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'leaderboard') {
     content = <LeaderboardScreen authToken={screen.token} onBack={() => setScreen({ name: 'main' })} />;
+  } else if (screen.name === 'diagnosticLogs') {
+    content = <DiagnosticLogsScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'engineVsEngineSetup') {
     content = (
       <EngineVsEngineSetupScreen
