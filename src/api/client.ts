@@ -108,35 +108,69 @@ interface RequestOptions {
 // "genuinely no network" path below, which already rejects immediately on its own.
 const REQUEST_TIMEOUT_MS = 12000;
 
+// The Render free tier spins the whole backend down after a period of inactivity and takes up to
+// "50 seconds or more" (Render's own wording) to wake back up on the next request — long enough
+// that the very first request of a session can fail outright (a connection-level failure while
+// the container is still booting, not merely a slow response) well within REQUEST_TIMEOUT_MS.
+// Retrying a couple of times with a growing delay rides out that window across several short
+// attempts instead of one long one, so a user doesn't have to notice the failure and manually
+// retry themselves (see the "second attempt worked" bug report this was added for). Only ever
+// retries a connection-level failure (fetch() itself rejecting) — a real HTTP response, even an
+// error one, is never blindly retried here.
+const RETRY_DELAYS_MS = [3000, 6000];
+
+function isRenderBackend(): boolean {
+  return API_BASE_URL === RENDER_BACKEND_URL;
+}
+
+async function fetchOnce(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
 
   const url = `${API_BASE_URL}${path}`;
   const method = options.method ?? 'GET';
-  console.log(`[api/client] ${method} ${url}`);
+  const init: RequestInit = {
+    method,
+    headers,
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+  };
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response: Response | undefined;
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    console.log(`[api/client] ${method} ${url}${attempt > 0 ? ` (retry ${attempt})` : ''}`);
+    try {
+      response = await fetchOnce(url, init);
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err;
+      if (attempt < RETRY_DELAYS_MS.length) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+      }
+    }
+  }
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method,
-      headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
+  if (lastError || !response) {
+    if (lastError instanceof Error && lastError.name === 'AbortError') {
       throw new ApiError(0, 'Request timed out. The server took too long to respond.');
     }
     throw new ApiError(
       0,
-      'Could not connect to the server. Make sure the backend is running and your phone is on the same network as your computer.'
+      isRenderBackend()
+        ? "Could not connect to the server. It may still be waking up after being idle — please try again in a moment."
+        : 'Could not connect to the server. Make sure the backend is running and your phone is on the same network as your computer.'
     );
-  } finally {
-    clearTimeout(timeoutId);
   }
 
   const isJson = response.headers.get('content-type')?.includes('application/json');
