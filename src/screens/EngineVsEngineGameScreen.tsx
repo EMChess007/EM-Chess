@@ -17,6 +17,7 @@ import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getBotStrengthOptions, getEngineIdForElo } from '../logic/engines';
 import { describeEndReason } from '../logic/gameOutcomeText';
 import { getGameOutcome } from '../logic/gameResult';
+import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
@@ -34,6 +35,7 @@ interface EngineVsEngineGameScreenProps {
   engine2: BotPersonality;
   timeControl: TimeControl;
   chess960?: boolean;
+  kingOfTheHill?: boolean;
   colorChoice1?: ColorChoice;
   colorChoice2?: ColorChoice;
   onExit: () => void;
@@ -62,6 +64,7 @@ export default function EngineVsEngineGameScreen({
   engine2,
   timeControl,
   chess960 = false,
+  kingOfTheHill = false,
   colorChoice1 = 'random',
   colorChoice2 = 'random',
   onExit,
@@ -108,12 +111,15 @@ export default function EngineVsEngineGameScreen({
   );
   const turn = engine.getTurn();
   const chessStatus = engine.getStatus();
+  // Chess.js has no idea this rule exists — checked independently, only when actually playing
+  // this variant (see kingOfTheHill.ts).
+  const kingOfTheHillWinner = kingOfTheHill ? getKingOfTheHillWinner(engine) : null;
 
   // Auto-tick runs for whichever engine's turn it is, so its clock counts down live, second by
   // second, in real wall-clock time while it "thinks" (each engine really does take
   // approximately thinkTimeMs to respond) — same mechanism as a human's clock.
   const clock = useChessClock(timeControl, turn, engine.isGameOver());
-  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || stopped;
+  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || stopped || kingOfTheHillWinner !== null;
 
   const bridgeRef1 = useRef<StockfishBridgeHandle>(null);
   const handleBridgeRef1 = useCallback(
@@ -217,8 +223,11 @@ export default function EngineVsEngineGameScreen({
     statusText = `Win on time: ${clock.timeoutWinner === c1 ? engine1.name : engine2.name}`;
   }
   if (stopped) statusText = 'Game stopped.';
+  if (kingOfTheHillWinner) {
+    statusText = `${kingOfTheHillWinner === c1 ? engine1.name : engine2.name} wins by King of the Hill!`;
+  }
 
-  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner);
+  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, null, false, kingOfTheHillWinner);
   const outcomeWinnerColor: PieceColor | null =
     outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
   const summaryTitle = stopped
@@ -280,7 +289,12 @@ export default function EngineVsEngineGameScreen({
     <View style={styles.container}>
       <StockfishBridge ref={handleBridgeRef1} onLine={handleEngineLine1} html={runtime1.buildHtml()} />
       {!sameEngine && <StockfishBridge ref={handleBridgeRef2} onLine={handleEngineLine2} html={runtime2.buildHtml()} />}
-      <ScreenHeader title={`Chess — Engine vs Engine${chess960 ? ' (Chess960)' : ''}`} onBack={onExit} backLabel="‹ Menu" />
+      <ScreenHeader
+        title="Chess — Engine vs Engine"
+        subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : undefined}
+        onBack={onExit}
+        backLabel="‹ Menu"
+      />
       <MoveListStrip
         moves={history.map((h) => ({ san: h.move.san }))}
         selectedIndex={selectedMoveIndex}
@@ -348,6 +362,7 @@ export default function EngineVsEngineGameScreen({
           initialFen={initialFen}
           orientation={flipped ? 'b' : 'w'}
           lastMove={displayLastMove}
+          kingOfTheHill={kingOfTheHill}
         />
 
         <View style={styles.playerRow}>

@@ -4,7 +4,7 @@ export type PgnResult = '1-0' | '0-1' | '1/2-1/2';
 
 export type GameOutcome =
   | { over: false }
-  | { over: true; result: PgnResult; reason: 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'agreement' };
+  | { over: true; result: PgnResult; reason: 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'agreement' | 'kingOfTheHill' };
 
 /**
  * Whether a game just ended and, if so, its PGN-style result ("1-0"/"0-1"/"1/2-1/2") — shared
@@ -16,8 +16,15 @@ export function getGameOutcome(
   turn: PieceColor,
   timeoutWinner: PieceColor | null,
   resignedBy: PieceColor | null = null,
-  drawnByAgreement = false
+  drawnByAgreement = false,
+  kingOfTheHillWinner: PieceColor | null = null
 ): GameOutcome {
+  // Checked first — reaching the center wins outright regardless of the rest of the position
+  // (check/material/whose turn it technically is don't matter), and chess.js has no idea this
+  // rule exists, so it can never surface via `chessStatus` on its own.
+  if (kingOfTheHillWinner) {
+    return { over: true, result: kingOfTheHillWinner === 'w' ? '1-0' : '0-1', reason: 'kingOfTheHill' };
+  }
   if (drawnByAgreement) {
     return { over: true, result: '1/2-1/2', reason: 'agreement' };
   }

@@ -2,12 +2,14 @@
 // see gameResult.ts) produces the first five; OnlineGameScreen's server-driven GameOverPayload
 // adds 'abandonment'. Purely a display formatter — no new end-detection logic, just labels what
 // engine.getStatus()/clock/resign/server state already told the caller.
-export type EndReason = 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'abandonment' | 'agreement';
+export type EndReason = 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'abandonment' | 'agreement' | 'kingOfTheHill';
 
 export function describeEndReason(reason: EndReason): string {
   switch (reason) {
     case 'checkmate':
       return 'by Checkmate';
+    case 'kingOfTheHill':
+      return 'by King of the Hill';
     case 'timeout':
       return 'by Timeout';
     case 'resignation':

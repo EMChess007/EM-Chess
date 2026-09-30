@@ -4,6 +4,11 @@ import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
 interface ScreenHeaderProps {
   title: string;
+  /** A short line shown below the title, on its own row, in a smaller/muted style — for anything
+   * that shouldn't have to share width with the title and back button (most commonly the active
+   * game variant, e.g. "King of the Hill"). Keeping this separate means `title` itself can stay a
+   * short, fixed, single line regardless of how long a variant name gets. */
+  subtitle?: string;
   /** Omit for a tab-root screen with no "back" affordance (Home/Puzzles/Analysis/More). */
   onBack?: () => void;
   /** Text for the back link — screens use either "‹ Menu" (returns to the tab hub) or "‹ Back"
@@ -22,7 +27,7 @@ interface ScreenHeaderProps {
  * Caller contract: the screen's own root must be a plain <View> (not <SafeAreaView>), with
  * this component as its first child — nothing above it should also be adding top padding.
  */
-export default function ScreenHeader({ title, onBack, backLabel = '‹ Back' }: ScreenHeaderProps) {
+export default function ScreenHeader({ title, subtitle, onBack, backLabel = '‹ Back' }: ScreenHeaderProps) {
   const insets = useSafeAreaInsets();
   const colors = useAppColors();
   const styles = createStyles(colors);
@@ -34,7 +39,16 @@ export default function ScreenHeader({ title, onBack, backLabel = '‹ Back' }: 
           <Text style={styles.backButtonText}>{backLabel}</Text>
         </Pressable>
       )}
-      <Text style={styles.title}>{title}</Text>
+      <View style={styles.titleBlock}>
+        <Text style={styles.title} numberOfLines={1}>
+          {title}
+        </Text>
+        {subtitle && (
+          <Text style={styles.subtitle} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -56,10 +70,19 @@ function createStyles(colors: AppColors) {
       fontSize: 16,
       color: colors.text,
     },
+    titleBlock: {
+      flex: 1,
+    },
     title: {
       fontSize: 22,
       fontWeight: 'bold',
       color: colors.text,
+    },
+    subtitle: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.textSecondary,
+      marginTop: 2,
     },
   });
 }

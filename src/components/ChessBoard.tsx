@@ -48,7 +48,13 @@ interface ChessBoardProps {
    * whether it's still legal can only really be known once it's actually that color's turn. */
   premoveColor?: PieceColor;
   onPremove?: (move: PremoveIntent) => void;
+  /** Lightly highlights the 4 center squares (d4/d5/e4/e5) — the King of the Hill win condition —
+   * so it's clear what the target is. Off by default; only screens actually playing that variant
+   * turn it on. */
+  kingOfTheHill?: boolean;
 }
+
+const KING_OF_THE_HILL_SQUARES = ['d4', 'd5', 'e4', 'e5'];
 
 const ANIMATION_DURATION_MS = 200;
 
@@ -84,6 +90,7 @@ export default function ChessBoard({
   enableAnnotations = false,
   premoveColor,
   onPremove,
+  kingOfTheHill = false,
 }: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
   const boardSize = getBoardSize(width, height);
@@ -264,7 +271,15 @@ export default function ChessBoard({
   const boardContainerRef = useRef<View>(null);
   const boardOffsetRef = useRef({ x: 0, y: 0 });
 
-  const handleBoardLayout = () => {
+  // .measure() is an async native round-trip, so caching its result only from onLayout can go
+  // stale: if something above the board changes height (e.g. the status line wrapping to a
+  // second line the moment "— Check!" is appended) without a fresh onLayout firing in time, every
+  // tap resolves against the board's OLD on-screen position — off by roughly whatever it shifted,
+  // which silently maps taps to the wrong square (worse near edges/corners, where there's no
+  // neighboring square to "absorb" the error). Re-running this at the start of every gesture, not
+  // only on layout changes, means onPanResponderRelease — which fires a beat later, plenty of time
+  // for the round-trip — always uses a freshly re-measured offset instead of a possibly-ancient one.
+  const remeasureBoardOffset = () => {
     boardContainerRef.current?.measure((_x, _y, _width, _height, pageX, pageY) => {
       boardOffsetRef.current = { x: pageX, y: pageY };
     });
@@ -294,7 +309,19 @@ export default function ChessBoard({
   const panResponder = PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      // Without this, the board — once it claims a gesture on touch-down — never lets go for the
+      // rest of that gesture, even for a vertical drag that was clearly meant to scroll the
+      // surrounding screen (see GameScreenBody). A plain tap never triggers this at all (it never
+      // moves enough for anything to request termination); a genuinely armed long-press-drawn
+      // arrow refuses to be interrupted mid-draw. Everything else — most of all, an ordinary
+      // scroll swipe that happens to start over the board — hands off to whichever ancestor
+      // ScrollView asks for it.
+      onPanResponderTerminationRequest: () => !gestureRef.current?.armed,
       onPanResponderGrant: (evt) => {
+        // Fired here (in addition to onLayout) so this gesture's own later events — chiefly
+        // onPanResponderRelease, where a tap actually resolves to a square — use a freshly
+        // re-measured offset instead of a possibly-stale one (see remeasureBoardOffset).
+        remeasureBoardOffset();
         const { x: localX, y: localY } = toBoardLocal(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
         const { row, col } = pixelToGrid(localX, localY);
         const startSquare = rowColToSquare(row, col, orientation);
@@ -352,10 +379,14 @@ export default function ChessBoard({
           } else {
             setArrows((prev) => [...prev, { from: startGrid, to: { row, col } }]);
           }
-        } else {
+        } else if (Math.hypot(gestureState.dx, gestureState.dy) <= MOVE_THRESHOLD_PX) {
           // A genuine quick tap — release position is still the start square (taps don't drag).
           handleSquarePress(rowColToSquare(row, col, orientation));
         }
+        // else: the finger moved past the tap threshold without ever arming an annotation drag —
+        // an aborted drag/scroll attempt (enableAnnotations off, or it moved too fast to arm), not
+        // a tap. Deliberately does nothing rather than acting on whatever square it happened to
+        // end on.
         clearGesture();
       },
       onPanResponderTerminate: clearGesture,
@@ -365,7 +396,7 @@ export default function ChessBoard({
     <View style={styles.border}>
       <View
         ref={boardContainerRef}
-        onLayout={handleBoardLayout}
+        onLayout={remeasureBoardOffset}
         style={[styles.board, { width: boardSize, height: boardSize }]}
         {...panResponder.panHandlers}
       >
@@ -379,6 +410,7 @@ export default function ChessBoard({
               isLegalTarget={legalTargets.includes(square.square)}
               isChecked={square.square === checkedKingSquare}
               isLastMove={square.square === lastMove?.from || square.square === lastMove?.to}
+              isKingOfTheHillTarget={kingOfTheHill && KING_OF_THE_HILL_SQUARES.includes(square.square)}
               hidePiece={slidingMove !== null && square.square === slidingMove.to}
               size={squareSize}
               lightColor={boardTheme.lightColor}

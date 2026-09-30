@@ -15,6 +15,10 @@ interface SquareProps {
   /** True for the two squares (origin + destination) of the last move played — see
    * ChessBoard.tsx. Lower priority than isSelected/isChecked when a square happens to be both. */
   isLastMove: boolean;
+  /** True for one of the 4 center squares (d4/d5/e4/e5) when the game is being played in King of
+   * the Hill mode — a light, purely informational tint showing the win-condition target, distinct
+   * from and lower-priority than isSelected/isChecked/isLastMove. */
+  isKingOfTheHillTarget?: boolean;
   /** Hides this square's piece glyph — used only for the destination square while ChessBoard's
    * slide animation is carrying the moving piece in, so it doesn't already show up here the
    * instant the move lands, underneath the incoming sprite. */
@@ -35,6 +39,7 @@ export default function Square({
   isLegalTarget,
   isChecked,
   isLastMove,
+  isKingOfTheHillTarget,
   hidePiece,
   size,
   lightColor,
@@ -46,6 +51,7 @@ export default function Square({
       style={[
         styles.square,
         { width: size, height: size, backgroundColor: isLight ? lightColor : darkColor },
+        isKingOfTheHillTarget && styles.kingOfTheHillTarget,
         isLastMove && styles.lastMove,
         isSelected && styles.selected,
         isChecked && styles.checked,
@@ -61,6 +67,9 @@ const styles = StyleSheet.create({
   square: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  kingOfTheHillTarget: {
+    backgroundColor: 'rgba(255, 193, 7, 0.35)',
   },
   lastMove: {
     backgroundColor: '#f7ec74',

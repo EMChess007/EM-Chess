@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import ScreenHeader from '../components/ScreenHeader';
+import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { connectSocket, disconnectSocket, getSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getTimeControlsByCategory } from '../logic/timeControls';
@@ -37,7 +38,7 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
   const styles = createStyles(colors);
   const [phase, setPhase] = useState<Phase>('menu');
   const [name, setName] = useState('');
-  const [chess960, setChess960] = useState(false);
+  const [variant, setVariant] = useState<GameVariant>('classic');
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [lobby, setLobby] = useState<TournamentLobbyState | null>(null);
@@ -64,6 +65,8 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
       return;
     }
     setError(null);
+    const isChess960 = variant === 'chess960';
+    const isKingOfTheHill = variant === 'kingOfTheHill';
     const socket = connectSocket(authToken);
     socket.emit(
       'create_tournament',
@@ -71,7 +74,8 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
         name: trimmedName,
         timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
         timeControlLabel: timeControl.label,
-        isChess960: chess960,
+        isChess960,
+        isKingOfTheHill,
       },
       (ack: Ack<{ code: string; tournamentId: string }>) => {
         if (!ack.ok) {
@@ -83,7 +87,8 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
           code: ack.code,
           name: trimmedName,
           timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
-          isChess960: chess960,
+          isChess960,
+          isKingOfTheHill,
           status: 'lobby',
           creatorUserId: authUser.id,
           participants: [{ userId: authUser.id, username: authUser.username }],
@@ -173,12 +178,8 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
             placeholderTextColor={colors.textMuted}
             maxLength={60}
           />
-          <Pressable style={styles.chess960Row} onPress={() => setChess960((v) => !v)}>
-            <View style={[styles.checkbox, chess960 && styles.checkboxChecked]}>
-              {chess960 && <Text style={styles.checkboxMark}>✓</Text>}
-            </View>
-            <Text style={styles.chess960Label}>Chess960 (Fischer Random)</Text>
-          </Pressable>
+          <Text style={styles.sectionTitle}>Variant</Text>
+          <VariantSelector value={variant} onChange={setVariant} />
           {error && <Text style={styles.errorText}>{error}</Text>}
           <ScrollView contentContainerStyle={styles.setupScrollContent}>
             {CATEGORIES.map(({ category, label }) => (
@@ -219,6 +220,9 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
       {phase === 'lobby' && lobby && (
         <View style={styles.lobbyContainer}>
           <Text style={styles.lobbyName}>{lobby.name}</Text>
+          <Text style={styles.lobbySubtitle}>
+            {lobby.isKingOfTheHill ? 'King of the Hill' : lobby.isChess960 ? 'Chess960' : 'Classic'}
+          </Text>
           <Pressable style={styles.codeBox} onPress={handleShareCode}>
             <Text style={styles.codeText}>{lobby.code}</Text>
             <Text style={styles.codeHint}>Tap to share</Text>
@@ -296,6 +300,12 @@ function createStyles(colors: AppColors) {
       fontSize: 20,
       fontWeight: '700',
       color: colors.text,
+      textAlign: 'center',
+    },
+    lobbySubtitle: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.textSecondary,
       textAlign: 'center',
     },
     codeBox: {
@@ -381,35 +391,6 @@ function createStyles(colors: AppColors) {
       borderColor: colors.border,
       color: colors.text,
       backgroundColor: colors.surface,
-    },
-    chess960Row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      alignSelf: 'flex-start',
-    },
-    checkbox: {
-      width: 22,
-      height: 22,
-      borderRadius: 5,
-      borderWidth: 2,
-      borderColor: isDark ? '#6b5a3a' : '#b58863',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    checkboxChecked: {
-      backgroundColor: colors.buttonBackground,
-      borderColor: colors.buttonBackground,
-    },
-    checkboxMark: {
-      color: '#fff',
-      fontSize: 14,
-      fontWeight: '700',
-    },
-    chess960Label: {
-      fontSize: 15,
-      color: colors.text,
-      fontWeight: '600',
     },
     section: {
       width: '100%',

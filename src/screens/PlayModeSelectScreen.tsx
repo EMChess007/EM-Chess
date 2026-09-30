@@ -1,5 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { appAlert } from '../components/AppAlert';
+import ModeButtonLabel from '../components/ModeButtonLabel';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { AuthUser } from '../types/auth';
@@ -12,10 +13,13 @@ interface PlayModeSelectScreenProps {
   onSpectate: () => void;
   onBotClassic: () => void;
   onBotChess960: () => void;
+  onBotKingOfTheHill: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
+  onLocalKingOfTheHill: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
+  onEngineVsEngineKingOfTheHill: () => void;
   onBoardEditor: () => void;
   onImportPgn: () => void;
   authUser: AuthUser | null;
@@ -30,10 +34,13 @@ export default function PlayModeSelectScreen({
   onSpectate,
   onBotClassic,
   onBotChess960,
+  onBotKingOfTheHill,
   onLocalClassic,
   onLocalChess960,
+  onLocalKingOfTheHill,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
+  onEngineVsEngineKingOfTheHill,
   onBoardEditor,
   onImportPgn,
   authUser,
@@ -69,19 +76,13 @@ export default function PlayModeSelectScreen({
           <Text style={styles.categorySubtitle}>Play live against another player</Text>
           <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.onlineSubButton]} onPress={handleOnline}>
-              <Text style={styles.subButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                Quick Match
-              </Text>
+              <ModeButtonLabel label="Quick Match" style={styles.subButtonText} />
             </Pressable>
             <Pressable style={[styles.subButton, styles.onlineSubButton]} onPress={handleChallengeFriend}>
-              <Text style={styles.subButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                Challenge Friend
-              </Text>
+              <ModeButtonLabel label="Challenge Friend" style={styles.subButtonText} />
             </Pressable>
             <Pressable style={[styles.subButton, styles.onlineSubButton]} onPress={handleTournaments}>
-              <Text style={styles.subButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                Tournaments
-              </Text>
+              <ModeButtonLabel label="Tournaments" style={styles.subButtonText} />
             </Pressable>
           </View>
           <Pressable style={styles.spectateLink} onPress={onSpectate}>
@@ -94,10 +95,13 @@ export default function PlayModeSelectScreen({
           <Text style={styles.categorySubtitle}>Play against the computer</Text>
           <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotClassic}>
-              <Text style={styles.subButtonText}>Classic</Text>
+              <ModeButtonLabel label="Classic" style={styles.subButtonText} />
             </Pressable>
             <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotChess960}>
-              <Text style={styles.subButtonText}>Chess960</Text>
+              <ModeButtonLabel label="Chess960" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotKingOfTheHill}>
+              <ModeButtonLabel label="King of the Hill" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>
@@ -107,10 +111,13 @@ export default function PlayModeSelectScreen({
           <Text style={styles.categorySubtitle}>Two players on the same device</Text>
           <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalClassic}>
-              <Text style={styles.subButtonText}>Classic</Text>
+              <ModeButtonLabel label="Classic" style={styles.subButtonText} />
             </Pressable>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalChess960}>
-              <Text style={styles.subButtonText}>Chess960</Text>
+              <ModeButtonLabel label="Chess960" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalKingOfTheHill}>
+              <ModeButtonLabel label="King of the Hill" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>
@@ -120,10 +127,13 @@ export default function PlayModeSelectScreen({
           <Text style={styles.categorySubtitle}>Watch two engines play each other automatically</Text>
           <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.engineSubButton]} onPress={onEngineVsEngineClassic}>
-              <Text style={styles.subButtonText}>Classic</Text>
+              <ModeButtonLabel label="Classic" style={styles.subButtonText} />
             </Pressable>
             <Pressable style={[styles.subButton, styles.engineSubButton]} onPress={onEngineVsEngineChess960}>
-              <Text style={styles.subButtonText}>Chess960</Text>
+              <ModeButtonLabel label="Chess960" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.engineSubButton]} onPress={onEngineVsEngineKingOfTheHill}>
+              <ModeButtonLabel label="King of the Hill" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>
@@ -133,10 +143,10 @@ export default function PlayModeSelectScreen({
           <Text style={styles.categorySubtitle}>Set up a custom position and analyze it</Text>
           <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.editorSubButton]} onPress={onBoardEditor}>
-              <Text style={styles.subButtonText}>Open Editor</Text>
+              <ModeButtonLabel label="Open Editor" style={styles.subButtonText} />
             </Pressable>
             <Pressable style={[styles.subButton, styles.editorSubButton]} onPress={onImportPgn}>
-              <Text style={styles.subButtonText}>Import PGN</Text>
+              <ModeButtonLabel label="Import PGN" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>
@@ -189,6 +199,7 @@ function createStyles(colors: AppColors) {
       paddingVertical: 14,
       borderRadius: 8,
       alignItems: 'center',
+      justifyContent: 'center',
     },
     onlineSubButton: {
       backgroundColor: isDark ? '#3a6ea5' : '#1a5fb4',
@@ -219,6 +230,7 @@ function createStyles(colors: AppColors) {
       color: '#fff',
       fontSize: 15,
       fontWeight: '600',
+      textAlign: 'center',
     },
   });
 }

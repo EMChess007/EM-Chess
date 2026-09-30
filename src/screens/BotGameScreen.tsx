@@ -22,6 +22,7 @@ import { buildGamePayload } from '../logic/gamePayload';
 import { getGameOutcome } from '../logic/gameResult';
 import { describeEndReason } from '../logic/gameOutcomeText';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
+import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
@@ -40,6 +41,7 @@ interface BotGameScreenProps {
   bot: BotPersonality;
   timeControl: TimeControl;
   chess960?: boolean;
+  kingOfTheHill?: boolean;
   colorChoice?: ColorChoice;
   authToken: string | null;
   onExit: () => void;
@@ -50,6 +52,7 @@ export default function BotGameScreen({
   bot,
   timeControl,
   chess960 = false,
+  kingOfTheHill = false,
   colorChoice = 'random',
   authToken,
   onExit,
@@ -100,12 +103,15 @@ export default function BotGameScreen({
   );
   const turn = engine.getTurn();
   const chessStatus = engine.getStatus();
+  // Chess.js has no idea this rule exists — checked independently, only when actually playing
+  // this variant (see kingOfTheHill.ts).
+  const kingOfTheHillWinner = kingOfTheHill ? getKingOfTheHillWinner(engine) : null;
 
   // Auto-tick runs for whichever side's turn it is — including the bot's — so its clock counts
   // down live, second by second, in real wall-clock time while it "thinks" (the engine really
   // does take approximately thinkTimeMs to respond), exactly like the human side already did.
   const clock = useChessClock(timeControl, turn, engine.isGameOver());
-  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null;
+  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null || kingOfTheHillWinner !== null;
 
   // Fires once per game (not once per re-render while gameOver stays true) — resets itself the
   // moment `gameOver` next goes back to false, i.e. on the next "New Game"/rematch.
@@ -126,6 +132,7 @@ export default function BotGameScreen({
         turn,
         timeoutWinner: clock.timeoutWinner,
         resignedBy,
+        kingOfTheHillWinner,
         history,
         initialFen,
         chess960,
@@ -133,7 +140,7 @@ export default function BotGameScreen({
         opponentType: 'bot',
         opponentElo: bot.elo,
       }),
-    [chessStatus, turn, clock.timeoutWinner, resignedBy, history, initialFen, chess960, timeControl, bot.elo]
+    [chessStatus, turn, clock.timeoutWinner, resignedBy, kingOfTheHillWinner, history, initialFen, chess960, timeControl, bot.elo]
   );
   useSaveGameOnEnd(authToken, resetCount, savePayload);
 
@@ -272,8 +279,11 @@ export default function BotGameScreen({
     statusText = `Win on time: ${clock.timeoutWinner === userColor ? 'You' : bot.name}`;
   }
   if (resignedBy) statusText = `You resigned — ${bot.name} wins`;
+  if (kingOfTheHillWinner) {
+    statusText = `${kingOfTheHillWinner === userColor ? 'You win' : `${bot.name} wins`} by King of the Hill!`;
+  }
 
-  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy);
+  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy, false, kingOfTheHillWinner);
   const winnerColor: PieceColor | null =
     outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : winnerColor === userColor ? 'You Won' : 'Bot Won';
@@ -421,7 +431,12 @@ export default function BotGameScreen({
   return (
     <View style={styles.container}>
       <StockfishBridge ref={handleBridgeRef} onLine={handleEngineLine} html={engineRuntime.buildHtml()} />
-      <ScreenHeader title={`Chess — vs Bot${chess960 ? ' (Chess960)' : ''}`} onBack={onExit} backLabel="‹ Menu" />
+      <ScreenHeader
+        title="Chess — vs Bot"
+        subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : undefined}
+        onBack={onExit}
+        backLabel="‹ Menu"
+      />
       <MoveListStrip
         moves={history.map((h) => ({ san: h.move.san }))}
         selectedIndex={selectedMoveIndex}
@@ -510,6 +525,7 @@ export default function BotGameScreen({
           orientation={flipped ? botColor : userColor}
           lastMove={displayLastMove}
           enableAnnotations
+          kingOfTheHill={kingOfTheHill}
           premoveColor={userColor}
           onPremove={handleQueuePremove}
         />

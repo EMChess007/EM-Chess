@@ -97,7 +97,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
       <GameScreenBody bottomBar={<View />}>
         <Text style={styles.subtitle}>
           {whiteUsername} vs {blackUsername}
-          {state.isChess960 ? ' · Chess960' : ''}
+          {state.isChess960 ? ' · Chess960' : state.isKingOfTheHill ? ' · King of the Hill' : ''}
         </Text>
         <Text style={styles.status}>{statusText}</Text>
 
@@ -107,7 +107,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
           </Text>
         </View>
 
-        <ChessBoard fen={state.fen} onMove={() => {}} disabled chess960={state.isChess960} />
+        <ChessBoard fen={state.fen} onMove={() => {}} disabled chess960={state.isChess960} kingOfTheHill={state.isKingOfTheHill} />
 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === 'w' && !gameOver && styles.clockActive]}>

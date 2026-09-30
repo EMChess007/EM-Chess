@@ -469,7 +469,12 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title={`Online Game${match.isChess960 ? ' (Chess960)' : ''}`} onBack={handleExit} backLabel="‹ Menu" />
+      <ScreenHeader
+        title="Online Game"
+        subtitle={match.isChess960 ? 'Chess960' : match.isKingOfTheHill ? 'King of the Hill' : undefined}
+        onBack={handleExit}
+        backLabel="‹ Menu"
+      />
       <MoveListStrip
         moves={moveList.map((m) => ({ san: m.move.san }))}
         selectedIndex={selectedMoveIndex}
@@ -567,6 +572,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           initialFen={match.fen}
           orientation={myColor}
           lastMove={displayLastMove}
+          kingOfTheHill={match.isKingOfTheHill}
           premoveColor={myColor}
           onPremove={handleQueuePremove}
         />
@@ -726,7 +732,7 @@ function createStyles(colors: AppColors) {
     gap: 8,
   },
   chatMessages: {
-    maxHeight: 140,
+    maxHeight: 90,
   },
   chatMessagesContent: {
     gap: 4,

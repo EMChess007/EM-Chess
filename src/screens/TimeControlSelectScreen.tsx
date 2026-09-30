@@ -33,7 +33,7 @@ export default function TimeControlSelectScreen({
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title={`Select Time Control${subtitle ? ` — ${subtitle}` : ''}`} onBack={onBack} />
+      <ScreenHeader title="Select Time Control" subtitle={subtitle} onBack={onBack} />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {showColorPicker && (
           <View style={styles.section}>

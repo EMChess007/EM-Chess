@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import ScreenHeader from '../components/ScreenHeader';
+import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getTimeControlsByCategory } from '../logic/timeControls';
 import type { TimeControl, TimeControlCategory } from '../types/timeControl';
 
 interface OnlineTimeControlSelectScreenProps {
-  onSelect: (timeControl: TimeControl, chess960: boolean) => void;
+  onSelect: (timeControl: TimeControl, chess960: boolean, kingOfTheHill: boolean) => void;
   onBack: () => void;
 }
 
@@ -21,18 +22,15 @@ const ONLINE_CATEGORIES: { category: TimeControlCategory; label: string }[] = [
 export default function OnlineTimeControlSelectScreen({ onSelect, onBack }: OnlineTimeControlSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const [chess960, setChess960] = useState(false);
+  const [variant, setVariant] = useState<GameVariant>('classic');
 
   return (
     <View style={styles.container}>
       <ScreenHeader title="Play Online" onBack={onBack} />
 
-      <Pressable style={styles.chess960Row} onPress={() => setChess960((v) => !v)}>
-        <View style={[styles.checkbox, chess960 && styles.checkboxChecked]}>
-          {chess960 && <Text style={styles.checkboxMark}>✓</Text>}
-        </View>
-        <Text style={styles.chess960Label}>Chess960 (Fischer Random)</Text>
-      </Pressable>
+      <View style={styles.variantRow}>
+        <VariantSelector value={variant} onChange={setVariant} />
+      </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {ONLINE_CATEGORIES.map(({ category, label }) => (
@@ -40,7 +38,11 @@ export default function OnlineTimeControlSelectScreen({ onSelect, onBack }: Onli
             <Text style={styles.sectionTitle}>{label}</Text>
             <View style={styles.presetGrid}>
               {getTimeControlsByCategory(category).map((tc) => (
-                <Pressable key={tc.id} style={styles.presetButton} onPress={() => onSelect(tc, chess960)}>
+                <Pressable
+                  key={tc.id}
+                  style={styles.presetButton}
+                  onPress={() => onSelect(tc, variant === 'chess960', variant === 'kingOfTheHill')}
+                >
                   <Text style={styles.presetButtonText}>{tc.label}</Text>
                 </Pressable>
               ))}
@@ -59,36 +61,10 @@ function createStyles(colors: AppColors) {
       flex: 1,
       backgroundColor: colors.background,
     },
-    chess960Row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
+    variantRow: {
       paddingHorizontal: 16,
       paddingTop: 10,
       paddingBottom: 4,
-    },
-    checkbox: {
-      width: 22,
-      height: 22,
-      borderRadius: 5,
-      borderWidth: 2,
-      borderColor: isDark ? '#6b5a3a' : '#b58863',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    checkboxChecked: {
-      backgroundColor: colors.buttonBackground,
-      borderColor: colors.buttonBackground,
-    },
-    checkboxMark: {
-      color: '#fff',
-      fontSize: 14,
-      fontWeight: '700',
-    },
-    chess960Label: {
-      fontSize: 15,
-      color: colors.text,
-      fontWeight: '600',
     },
     scrollContent: {
       padding: 16,

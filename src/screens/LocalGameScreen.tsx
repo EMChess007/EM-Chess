@@ -20,6 +20,7 @@ import { buildGamePayload } from '../logic/gamePayload';
 import { getGameOutcome } from '../logic/gameResult';
 import { describeEndReason } from '../logic/gameOutcomeText';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
+import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
@@ -34,12 +35,20 @@ import type { TimeControl } from '../types/timeControl';
 interface LocalGameScreenProps {
   timeControl: TimeControl;
   chess960?: boolean;
+  kingOfTheHill?: boolean;
   authToken: string | null;
   onExit: () => void;
   onAnalyze: (params: AnalyzeParams) => void;
 }
 
-export default function LocalGameScreen({ timeControl, chess960 = false, authToken, onExit, onAnalyze }: LocalGameScreenProps) {
+export default function LocalGameScreen({
+  timeControl,
+  chess960 = false,
+  kingOfTheHill = false,
+  authToken,
+  onExit,
+  onAnalyze,
+}: LocalGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const [initialFen, setInitialFen] = useState(() => (chess960 ? generateChess960Position() : START_FEN));
@@ -112,9 +121,13 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   );
   const turn = engine.getTurn();
   const chessStatus = engine.getStatus();
+  // Chess.js has no idea this rule exists — checked independently, only when actually playing
+  // this variant (see kingOfTheHill.ts).
+  const kingOfTheHillWinner = kingOfTheHill ? getKingOfTheHillWinner(engine) : null;
 
   const clock = useChessClock(timeControl, turn, engine.isGameOver());
-  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null || drawAgreed;
+  const gameOver =
+    engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null || drawAgreed || kingOfTheHillWinner !== null;
 
   // See BotGameScreen's identical effect — fires once per game, resetting when gameOver next
   // goes back to false (the next "New Game").
@@ -136,6 +149,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
         timeoutWinner: clock.timeoutWinner,
         resignedBy,
         drawnByAgreement: drawAgreed,
+        kingOfTheHillWinner,
         history,
         initialFen,
         chess960,
@@ -143,7 +157,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
         opponentType: 'human',
         opponentElo: null,
       }),
-    [chessStatus, turn, clock.timeoutWinner, resignedBy, drawAgreed, history, initialFen, chess960, timeControl]
+    [chessStatus, turn, clock.timeoutWinner, resignedBy, drawAgreed, kingOfTheHillWinner, history, initialFen, chess960, timeControl]
   );
   useSaveGameOnEnd(authToken, resetCount, savePayload);
 
@@ -164,10 +178,11 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
   if (clock.timeoutWinner) statusText = `Win on time: ${clock.timeoutWinner === 'w' ? 'White' : 'Black'}`;
   if (resignedBy) statusText = `${resignedBy === 'w' ? 'White' : 'Black'} resigned — ${resignedBy === 'w' ? 'Black' : 'White'} wins`;
   if (drawAgreed) statusText = 'Draw by agreement';
+  if (kingOfTheHillWinner) statusText = `${kingOfTheHillWinner === 'w' ? 'White' : 'Black'} wins by King of the Hill!`;
 
   // No personal point of view here (two players share one device) — matches the plain
   // White/Black wording `statusText` above already uses.
-  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy, drawAgreed);
+  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy, drawAgreed, kingOfTheHillWinner);
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : outcome.result === '1-0' ? 'White Won' : 'Black Won';
   const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';
 
@@ -267,7 +282,12 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title={`Chess${chess960 ? ' — Chess960' : ' — Local Game'}`} onBack={onExit} backLabel="‹ Menu" />
+      <ScreenHeader
+        title="Chess — Local Game"
+        subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : undefined}
+        onBack={onExit}
+        backLabel="‹ Menu"
+      />
       <MoveListStrip
         moves={history.map((h) => ({ san: h.move.san }))}
         selectedIndex={selectedMoveIndex}
@@ -332,6 +352,7 @@ export default function LocalGameScreen({ timeControl, chess960 = false, authTok
           orientation={flipped ? 'b' : 'w'}
           lastMove={displayLastMove}
           enableAnnotations
+          kingOfTheHill={kingOfTheHill}
         />
 
         <View style={styles.playerRow}>

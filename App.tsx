@@ -58,24 +58,31 @@ import type { ActiveGameSummary, MatchFoundPayload } from './src/types/multiplay
 import type { TimeControl } from './src/types/timeControl';
 
 type TimeControlFlowMode =
-  | { kind: 'local'; chess960: boolean }
-  | { kind: 'bot'; bot: BotPersonality; chess960: boolean }
-  | { kind: 'engineVsEngine'; chess960: boolean };
+  | { kind: 'local'; chess960: boolean; kingOfTheHill: boolean }
+  | { kind: 'bot'; bot: BotPersonality; chess960: boolean; kingOfTheHill: boolean }
+  | { kind: 'engineVsEngine'; chess960: boolean; kingOfTheHill: boolean };
 
 type Screen =
   | { name: 'main' }
   | { name: 'playModeSelect' }
-  | { name: 'botSelect'; chess960: boolean }
+  | { name: 'botSelect'; chess960: boolean; kingOfTheHill: boolean }
   | { name: 'timeControlSelect'; mode: TimeControlFlowMode }
-  | { name: 'game'; timeControl: TimeControl; chess960: boolean }
-  | { name: 'botGame'; timeControl: TimeControl; bot: BotPersonality; chess960: boolean; colorChoice: ColorChoice }
+  | { name: 'game'; timeControl: TimeControl; chess960: boolean; kingOfTheHill: boolean }
+  | {
+      name: 'botGame';
+      timeControl: TimeControl;
+      bot: BotPersonality;
+      chess960: boolean;
+      kingOfTheHill: boolean;
+      colorChoice: ColorChoice;
+    }
   | { name: 'analysis'; params: AnalyzeParams }
   | { name: 'boardSetup' }
   | { name: 'pgnImport' }
   | { name: 'login' }
   | { name: 'register' }
   | { name: 'onlineTimeControlSelect'; token: string }
-  | { name: 'matchmaking'; token: string; timeControl: TimeControl; chess960: boolean }
+  | { name: 'matchmaking'; token: string; timeControl: TimeControl; chess960: boolean; kingOfTheHill: boolean }
   | { name: 'challenge'; token: string }
   | { name: 'spectateList'; token: string | null }
   | { name: 'spectatorGame'; token: string | null; roomId: string; whiteUsername: string; blackUsername: string }
@@ -95,6 +102,7 @@ type Screen =
       name: 'engineVsEngineSetup';
       timeControl: TimeControl;
       chess960: boolean;
+      kingOfTheHill: boolean;
       engine1: BotPersonality | null;
       engine2: BotPersonality | null;
       color1: ColorChoice;
@@ -105,6 +113,7 @@ type Screen =
       slot: 1 | 2;
       timeControl: TimeControl;
       chess960: boolean;
+      kingOfTheHill: boolean;
       engine1: BotPersonality | null;
       engine2: BotPersonality | null;
       color1: ColorChoice;
@@ -114,6 +123,7 @@ type Screen =
       name: 'engineVsEngineGame';
       timeControl: TimeControl;
       chess960: boolean;
+      kingOfTheHill: boolean;
       engine1: BotPersonality;
       engine2: BotPersonality;
       color1: ColorChoice;
@@ -266,12 +276,21 @@ export default function App() {
         onChallengeFriend={() => authSession && setScreen({ name: 'challenge', token: authSession.token })}
         onTournaments={() => authSession && setScreen({ name: 'tournament', token: authSession.token })}
         onSpectate={() => setScreen({ name: 'spectateList', token: authSession?.token ?? null })}
-        onBotClassic={() => setScreen({ name: 'botSelect', chess960: false })}
-        onBotChess960={() => setScreen({ name: 'botSelect', chess960: true })}
-        onLocalClassic={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'local', chess960: false } })}
-        onLocalChess960={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'local', chess960: true } })}
-        onEngineVsEngineClassic={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'engineVsEngine', chess960: false } })}
-        onEngineVsEngineChess960={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'engineVsEngine', chess960: true } })}
+        onBotClassic={() => setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false })}
+        onBotChess960={() => setScreen({ name: 'botSelect', chess960: true, kingOfTheHill: false })}
+        onBotKingOfTheHill={() => setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: true })}
+        onLocalClassic={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'local', chess960: false, kingOfTheHill: false } })}
+        onLocalChess960={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'local', chess960: true, kingOfTheHill: false } })}
+        onLocalKingOfTheHill={() => setScreen({ name: 'timeControlSelect', mode: { kind: 'local', chess960: false, kingOfTheHill: true } })}
+        onEngineVsEngineClassic={() =>
+          setScreen({ name: 'timeControlSelect', mode: { kind: 'engineVsEngine', chess960: false, kingOfTheHill: false } })
+        }
+        onEngineVsEngineChess960={() =>
+          setScreen({ name: 'timeControlSelect', mode: { kind: 'engineVsEngine', chess960: true, kingOfTheHill: false } })
+        }
+        onEngineVsEngineKingOfTheHill={() =>
+          setScreen({ name: 'timeControlSelect', mode: { kind: 'engineVsEngine', chess960: false, kingOfTheHill: true } })
+        }
         onBoardEditor={() => setScreen({ name: 'boardSetup' })}
         onImportPgn={() => setScreen({ name: 'pgnImport' })}
         authUser={authSession?.user ?? null}
@@ -282,7 +301,9 @@ export default function App() {
     const { token } = screen;
     content = (
       <OnlineTimeControlSelectScreen
-        onSelect={(timeControl, chess960) => setScreen({ name: 'matchmaking', token, timeControl, chess960 })}
+        onSelect={(timeControl, chess960, kingOfTheHill) =>
+          setScreen({ name: 'matchmaking', token, timeControl, chess960, kingOfTheHill })
+        }
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
     );
@@ -292,6 +313,7 @@ export default function App() {
         authToken={screen.token}
         timeControl={screen.timeControl}
         chess960={screen.chess960}
+        kingOfTheHill={screen.kingOfTheHill}
         onMatchFound={(match) => setScreen({ name: 'onlineGame', token: screen.token, match })}
         onCancel={() => setScreen({ name: 'main' })}
       />
@@ -388,28 +410,28 @@ export default function App() {
       />
     );
   } else if (screen.name === 'botSelect') {
-    const { chess960 } = screen;
+    const { chess960, kingOfTheHill } = screen;
     content = (
       <BotSelectScreen
         chess960={chess960}
-        onSelect={(bot) => setScreen({ name: 'timeControlSelect', mode: { kind: 'bot', bot, chess960 } })}
+        kingOfTheHill={kingOfTheHill}
+        onSelect={(bot) => setScreen({ name: 'timeControlSelect', mode: { kind: 'bot', bot, chess960, kingOfTheHill } })}
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
     );
   } else if (screen.name === 'timeControlSelect') {
     const { mode } = screen;
+    const variantLabel = mode.chess960 ? 'Chess960' : mode.kingOfTheHill ? 'King of the Hill' : undefined;
     const subtitle =
       mode.kind === 'bot'
-        ? mode.chess960
-          ? `${mode.bot.name} · Chess960`
+        ? variantLabel
+          ? `${mode.bot.name} · ${variantLabel}`
           : mode.bot.name
         : mode.kind === 'engineVsEngine'
-          ? mode.chess960
-            ? 'Engine vs Engine · Chess960'
+          ? variantLabel
+            ? `Engine vs Engine · ${variantLabel}`
             : 'Engine vs Engine'
-          : mode.chess960
-            ? 'Chess960'
-            : undefined;
+          : variantLabel;
     content = (
       <TimeControlSelectScreen
         subtitle={subtitle}
@@ -417,19 +439,21 @@ export default function App() {
         onSelect={(timeControl, colorChoice) =>
           setScreen(
             mode.kind === 'local'
-              ? { name: 'game', timeControl, chess960: mode.chess960 }
+              ? { name: 'game', timeControl, chess960: mode.chess960, kingOfTheHill: mode.kingOfTheHill }
               : mode.kind === 'bot'
                 ? {
                     name: 'botGame',
                     timeControl,
                     bot: mode.bot,
                     chess960: mode.chess960,
+                    kingOfTheHill: mode.kingOfTheHill,
                     colorChoice: colorChoice ?? 'random',
                   }
                 : {
                     name: 'engineVsEngineSetup',
                     timeControl,
                     chess960: mode.chess960,
+                    kingOfTheHill: mode.kingOfTheHill,
                     engine1: null,
                     engine2: null,
                     color1: 'random',
@@ -438,7 +462,9 @@ export default function App() {
           )
         }
         onBack={() =>
-          setScreen(mode.kind === 'bot' ? { name: 'botSelect', chess960: mode.chess960 } : { name: 'playModeSelect' })
+          setScreen(
+            mode.kind === 'bot' ? { name: 'botSelect', chess960: mode.chess960, kingOfTheHill: mode.kingOfTheHill } : { name: 'playModeSelect' }
+          )
         }
       />
     );
@@ -498,6 +524,7 @@ export default function App() {
             name: 'engineVsEngineGame',
             timeControl: screen.timeControl,
             chess960: screen.chess960,
+            kingOfTheHill: screen.kingOfTheHill,
             engine1: screen.engine1,
             engine2: screen.engine2,
             color1: screen.color1,
@@ -511,6 +538,7 @@ export default function App() {
     content = (
       <BotSelectScreen
         chess960={screen.chess960}
+        kingOfTheHill={screen.kingOfTheHill}
         onBack={() => setScreen({ ...screen, name: 'engineVsEngineSetup' })}
         onSelect={(bot) =>
           setScreen({
@@ -527,6 +555,7 @@ export default function App() {
       <EngineVsEngineGameScreen
         timeControl={screen.timeControl}
         chess960={screen.chess960}
+        kingOfTheHill={screen.kingOfTheHill}
         engine1={screen.engine1}
         engine2={screen.engine2}
         colorChoice1={screen.color1}
@@ -541,6 +570,7 @@ export default function App() {
         bot={screen.bot}
         timeControl={screen.timeControl}
         chess960={screen.chess960}
+        kingOfTheHill={screen.kingOfTheHill}
         colorChoice={screen.colorChoice}
         authToken={authSession?.token ?? null}
         onExit={() => setScreen({ name: 'main' })}
@@ -552,6 +582,7 @@ export default function App() {
       <LocalGameScreen
         timeControl={screen.timeControl}
         chess960={screen.chess960}
+        kingOfTheHill={screen.kingOfTheHill}
         authToken={authSession?.token ?? null}
         onExit={() => setScreen({ name: 'main' })}
         onAnalyze={(params) => setScreen({ name: 'analysis', params })}

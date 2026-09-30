@@ -1,10 +1,8 @@
 // Everything around the board on the tallest of the four GameScreenBody screens (BotGameScreen:
 // header + move list, subtitle, status line, a player row above and below the board, opening
 // name, bottom action bar) in its typical state — not the rare worst case where every optional
-// banner (engine error, "bot is thinking", hint) is visible at once. Reserving for the typical
-// case keeps the board a sensible size on ordinary screens; the rare worst case still renders
-// correctly, just via GameScreenBody's scroll fallback (see its scroll indicator) instead of
-// every banner fitting on screen with zero scrolling.
+// banner (engine error, "bot is thinking", hint) is visible at once. The board size is otherwise
+// fixed; screens rely on GameScreenBody's scroll to reach anything past this typical-state budget.
 const RESERVED_CHROME_HEIGHT = 450;
 const MIN_SQUARE_SIZE = 24;
 

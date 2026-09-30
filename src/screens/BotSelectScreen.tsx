@@ -9,6 +9,7 @@ interface BotSelectScreenProps {
   onSelect: (bot: BotPersonality) => void;
   onBack: () => void;
   chess960?: boolean;
+  kingOfTheHill?: boolean;
 }
 
 /** A placeholder ELO shown for custom-engine cards — irrelevant to actual play, since
@@ -25,14 +26,15 @@ function toCustomEngineBot(engineId: string, engineName: string): BotPersonality
   };
 }
 
-export default function BotSelectScreen({ onSelect, onBack, chess960 }: BotSelectScreenProps) {
+export default function BotSelectScreen({ onSelect, onBack, chess960, kingOfTheHill }: BotSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const customEngines = AVAILABLE_ENGINES.filter((engine) => engine.isCustom);
+  const variantName = chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : undefined;
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title={`Select a Bot${chess960 ? ' — Chess960' : ''}`} onBack={onBack} />
+      <ScreenHeader title="Select a Bot" subtitle={variantName} onBack={onBack} />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {BOT_CATEGORIES.map(({ category, label }) => (

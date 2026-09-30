@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import ScreenHeader from '../components/ScreenHeader';
+import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getTimeControlsByCategory } from '../logic/timeControls';
@@ -25,7 +26,7 @@ export default function ChallengeScreen({ authToken, onMatchFound, onBack }: Cha
   const colors = useAppColors();
   const styles = createStyles(colors);
   const [phase, setPhase] = useState<Phase>('menu');
-  const [chess960, setChess960] = useState(false);
+  const [variant, setVariant] = useState<GameVariant>('classic');
   const [code, setCode] = useState<string | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +55,8 @@ export default function ChallengeScreen({ authToken, onMatchFound, onBack }: Cha
       {
         timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
         timeControlLabel: timeControl.label,
-        isChess960: chess960,
+        isChess960: variant === 'chess960',
+        isKingOfTheHill: variant === 'kingOfTheHill',
       },
       (ack: Ack<{ code: string }>) => {
         if (!ack.ok) {
@@ -118,12 +120,7 @@ export default function ChallengeScreen({ authToken, onMatchFound, onBack }: Cha
 
       {phase === 'setup' && (
         <View style={styles.setupContainer}>
-          <Pressable style={styles.chess960Row} onPress={() => setChess960((v) => !v)}>
-            <View style={[styles.checkbox, chess960 && styles.checkboxChecked]}>
-              {chess960 && <Text style={styles.checkboxMark}>✓</Text>}
-            </View>
-            <Text style={styles.chess960Label}>Chess960 (Fischer Random)</Text>
-          </Pressable>
+          <VariantSelector value={variant} onChange={setVariant} />
           {error && <Text style={styles.errorText}>{error}</Text>}
           <ScrollView contentContainerStyle={styles.setupScrollContent}>
             {CATEGORIES.map(({ category, label }) => (
@@ -223,35 +220,6 @@ function createStyles(colors: AppColors) {
       color: '#fff',
       fontSize: 12,
       opacity: 0.85,
-    },
-    chess960Row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      alignSelf: 'flex-start',
-    },
-    checkbox: {
-      width: 22,
-      height: 22,
-      borderRadius: 5,
-      borderWidth: 2,
-      borderColor: isDark ? '#6b5a3a' : '#b58863',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    checkboxChecked: {
-      backgroundColor: colors.buttonBackground,
-      borderColor: colors.buttonBackground,
-    },
-    checkboxMark: {
-      color: '#fff',
-      fontSize: 14,
-      fontWeight: '700',
-    },
-    chess960Label: {
-      fontSize: 15,
-      color: colors.text,
-      fontWeight: '600',
     },
     section: {
       width: '100%',

@@ -9,11 +9,12 @@ export interface OnlineTimeControl {
   incrementSeconds: number;
 }
 
-export type GameOverReason = 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'abandonment' | 'resignation';
+export type GameOverReason = 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'abandonment' | 'resignation' | 'kingOfTheHill';
 
 export interface JoinQueuePayload {
   timeControl: OnlineTimeControl;
   isChess960?: boolean;
+  isKingOfTheHill?: boolean;
 }
 
 export interface MakeMovePayload {
@@ -53,6 +54,7 @@ export interface MatchFoundPayload {
   opponent: { userId: string | null };
   timeControl: OnlineTimeControl;
   isChess960: boolean;
+  isKingOfTheHill: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;
@@ -90,6 +92,7 @@ export interface RejoinStatePayload {
   color: PieceColor;
   timeControl: OnlineTimeControl;
   isChess960: boolean;
+  isKingOfTheHill: boolean;
   whiteMs: number;
   blackMs: number;
   moves: { from: string; to: string; promotion?: string; san: string }[];
@@ -115,6 +118,7 @@ export interface ActiveGameSummary {
 export interface CreateChallengePayload {
   timeControl: OnlineTimeControl;
   isChess960?: boolean;
+  isKingOfTheHill?: boolean;
   timeControlLabel?: string;
 }
 
@@ -133,6 +137,7 @@ export interface CreateTournamentPayload {
   timeControl: OnlineTimeControl;
   timeControlLabel?: string;
   isChess960?: boolean;
+  isKingOfTheHill?: boolean;
 }
 
 export interface JoinTournamentPayload {
@@ -154,6 +159,7 @@ export interface TournamentLobbyState {
   name: string;
   timeControl: OnlineTimeControl;
   isChess960: boolean;
+  isKingOfTheHill: boolean;
   status: TournamentStatus;
   creatorUserId: string;
   participants: TournamentParticipantSummary[];
@@ -171,6 +177,7 @@ export interface TournamentNextMatch {
   opponentUsername: string;
   timeControl: OnlineTimeControl;
   isChess960: boolean;
+  isKingOfTheHill: boolean;
   roomId: string | null;
   playerToken: string | null;
   color: PieceColor | null;
@@ -194,6 +201,7 @@ export interface TournamentMatchReadyPayload {
   opponent: { userId: string; username: string };
   timeControl: OnlineTimeControl;
   isChess960: boolean;
+  isKingOfTheHill: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;
