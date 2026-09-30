@@ -57,6 +57,7 @@ export default function ChallengeScreen({ authToken, onMatchFound, onBack }: Cha
         timeControlLabel: timeControl.label,
         isChess960: variant === 'chess960',
         isKingOfTheHill: variant === 'kingOfTheHill',
+        isThreeCheck: variant === 'threeCheck',
       },
       (ack: Ack<{ code: string }>) => {
         if (!ack.ok) {

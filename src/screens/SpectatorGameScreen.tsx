@@ -6,6 +6,7 @@ import MoveListStrip from '../components/MoveListStrip';
 import ScreenHeader from '../components/ScreenHeader';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import { THREE_CHECK_TARGET, getThreeCheckCounts } from '../logic/threeCheck';
 import { formatTime } from '../logic/time';
 import type { Ack, GameOverPayload, SpectateStatePayload, SpectatorMovePayload } from '../types/multiplayer';
 import type { PieceColor } from '../types/chess';
@@ -89,6 +90,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
   if (gameOver) {
     statusText = gameOver.winner === null ? 'Draw' : `${gameOver.winner === 'w' ? whiteUsername : blackUsername} won`;
   }
+  const checkCounts = state.isThreeCheck ? getThreeCheckCounts(moves) : null;
 
   return (
     <View style={styles.container}>
@@ -97,13 +99,14 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
       <GameScreenBody bottomBar={<View />}>
         <Text style={styles.subtitle}>
           {whiteUsername} vs {blackUsername}
-          {state.isChess960 ? ' · Chess960' : state.isKingOfTheHill ? ' · King of the Hill' : ''}
+          {state.isChess960 ? ' · Chess960' : state.isKingOfTheHill ? ' · King of the Hill' : state.isThreeCheck ? ' · Three-Check' : ''}
         </Text>
         <Text style={styles.status}>{statusText}</Text>
 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === 'b' && !gameOver && styles.clockActive]}>
             {blackUsername}: {formatTime(state.blackMs / 1000)}
+            {checkCounts ? ` · Checks: ${checkCounts.b}/${THREE_CHECK_TARGET}` : ''}
           </Text>
         </View>
 
@@ -112,6 +115,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === 'w' && !gameOver && styles.clockActive]}>
             {whiteUsername}: {formatTime(state.whiteMs / 1000)}
+            {checkCounts ? ` · Checks: ${checkCounts.w}/${THREE_CHECK_TARGET}` : ''}
           </Text>
         </View>
       </GameScreenBody>

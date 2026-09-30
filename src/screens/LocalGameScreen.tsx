@@ -24,6 +24,7 @@ import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
+import { THREE_CHECK_TARGET, getThreeCheckCounts, getThreeCheckWinner } from '../logic/threeCheck';
 import { formatTime } from '../logic/time';
 import { uciMoveToSan } from '../logic/uciMove';
 import { useChessClock } from '../logic/useChessClock';
@@ -36,6 +37,7 @@ interface LocalGameScreenProps {
   timeControl: TimeControl;
   chess960?: boolean;
   kingOfTheHill?: boolean;
+  threeCheck?: boolean;
   authToken: string | null;
   onExit: () => void;
   onAnalyze: (params: AnalyzeParams) => void;
@@ -45,6 +47,7 @@ export default function LocalGameScreen({
   timeControl,
   chess960 = false,
   kingOfTheHill = false,
+  threeCheck = false,
   authToken,
   onExit,
   onAnalyze,
@@ -124,10 +127,20 @@ export default function LocalGameScreen({
   // Chess.js has no idea this rule exists — checked independently, only when actually playing
   // this variant (see kingOfTheHill.ts).
   const kingOfTheHillWinner = kingOfTheHill ? getKingOfTheHillWinner(engine) : null;
+  // Derived from `history` (see threeCheck.ts) rather than separately tracked state, so it's
+  // automatically correct after Undo too.
+  const historyMoves = useMemo(() => history.map((h) => h.move), [history]);
+  const threeCheckWinner = threeCheck ? getThreeCheckWinner(historyMoves) : null;
+  const checkCounts = threeCheck ? getThreeCheckCounts(historyMoves) : null;
 
   const clock = useChessClock(timeControl, turn, engine.isGameOver());
   const gameOver =
-    engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null || drawAgreed || kingOfTheHillWinner !== null;
+    engine.isGameOver() ||
+    clock.timeoutWinner !== null ||
+    resignedBy !== null ||
+    drawAgreed ||
+    kingOfTheHillWinner !== null ||
+    threeCheckWinner !== null;
 
   // See BotGameScreen's identical effect — fires once per game, resetting when gameOver next
   // goes back to false (the next "New Game").
@@ -150,6 +163,7 @@ export default function LocalGameScreen({
         resignedBy,
         drawnByAgreement: drawAgreed,
         kingOfTheHillWinner,
+        threeCheckWinner,
         history,
         initialFen,
         chess960,
@@ -157,7 +171,19 @@ export default function LocalGameScreen({
         opponentType: 'human',
         opponentElo: null,
       }),
-    [chessStatus, turn, clock.timeoutWinner, resignedBy, drawAgreed, kingOfTheHillWinner, history, initialFen, chess960, timeControl]
+    [
+      chessStatus,
+      turn,
+      clock.timeoutWinner,
+      resignedBy,
+      drawAgreed,
+      kingOfTheHillWinner,
+      threeCheckWinner,
+      history,
+      initialFen,
+      chess960,
+      timeControl,
+    ]
   );
   useSaveGameOnEnd(authToken, resetCount, savePayload);
 
@@ -179,10 +205,11 @@ export default function LocalGameScreen({
   if (resignedBy) statusText = `${resignedBy === 'w' ? 'White' : 'Black'} resigned — ${resignedBy === 'w' ? 'Black' : 'White'} wins`;
   if (drawAgreed) statusText = 'Draw by agreement';
   if (kingOfTheHillWinner) statusText = `${kingOfTheHillWinner === 'w' ? 'White' : 'Black'} wins by King of the Hill!`;
+  if (threeCheckWinner) statusText = `${threeCheckWinner === 'w' ? 'White' : 'Black'} wins by Three-Check!`;
 
   // No personal point of view here (two players share one device) — matches the plain
   // White/Black wording `statusText` above already uses.
-  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy, drawAgreed, kingOfTheHillWinner);
+  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy, drawAgreed, kingOfTheHillWinner, threeCheckWinner);
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : outcome.result === '1-0' ? 'White Won' : 'Black Won';
   const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';
 
@@ -284,7 +311,7 @@ export default function LocalGameScreen({
     <View style={styles.container}>
       <ScreenHeader
         title="Chess — Local Game"
-        subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : undefined}
+        subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : threeCheck ? 'Three-Check' : undefined}
         onBack={onExit}
         backLabel="‹ Menu"
       />
@@ -336,6 +363,7 @@ export default function LocalGameScreen({
           <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
             {topColor === 'w' ? 'White' : 'Black'}
             {clock.hasClock ? `: ${formatTime(topColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
+            {checkCounts ? ` · Checks: ${checkCounts[topColor]}/${THREE_CHECK_TARGET}` : ''}
           </Text>
           <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
@@ -359,6 +387,7 @@ export default function LocalGameScreen({
           <Text style={[styles.clock, turn === bottomColor && !gameOver && styles.clockActive]}>
             {bottomColor === 'w' ? 'White' : 'Black'}
             {clock.hasClock ? `: ${formatTime(bottomColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
+            {checkCounts ? ` · Checks: ${checkCounts[bottomColor]}/${THREE_CHECK_TARGET}` : ''}
           </Text>
           <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
         </View>

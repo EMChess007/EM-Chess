@@ -28,6 +28,7 @@ import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
 import { toRatingCategory } from '../logic/rating';
 import { recordRatedGame } from '../logic/ratingStorage';
+import { THREE_CHECK_TARGET, getThreeCheckCounts, getThreeCheckWinner } from '../logic/threeCheck';
 import { formatTime } from '../logic/time';
 import { parseUciMove, uciMoveToSan } from '../logic/uciMove';
 import { useChessClock } from '../logic/useChessClock';
@@ -42,6 +43,7 @@ interface BotGameScreenProps {
   timeControl: TimeControl;
   chess960?: boolean;
   kingOfTheHill?: boolean;
+  threeCheck?: boolean;
   colorChoice?: ColorChoice;
   authToken: string | null;
   onExit: () => void;
@@ -53,6 +55,7 @@ export default function BotGameScreen({
   timeControl,
   chess960 = false,
   kingOfTheHill = false,
+  threeCheck = false,
   colorChoice = 'random',
   authToken,
   onExit,
@@ -106,12 +109,18 @@ export default function BotGameScreen({
   // Chess.js has no idea this rule exists — checked independently, only when actually playing
   // this variant (see kingOfTheHill.ts).
   const kingOfTheHillWinner = kingOfTheHill ? getKingOfTheHillWinner(engine) : null;
+  // Derived from `history` (see threeCheck.ts) rather than separately tracked state, so it's
+  // automatically correct after Undo too.
+  const historyMoves = useMemo(() => history.map((h) => h.move), [history]);
+  const threeCheckWinner = threeCheck ? getThreeCheckWinner(historyMoves) : null;
+  const checkCounts = threeCheck ? getThreeCheckCounts(historyMoves) : null;
 
   // Auto-tick runs for whichever side's turn it is — including the bot's — so its clock counts
   // down live, second by second, in real wall-clock time while it "thinks" (the engine really
   // does take approximately thinkTimeMs to respond), exactly like the human side already did.
   const clock = useChessClock(timeControl, turn, engine.isGameOver());
-  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null || kingOfTheHillWinner !== null;
+  const gameOver =
+    engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null || kingOfTheHillWinner !== null || threeCheckWinner !== null;
 
   // Fires once per game (not once per re-render while gameOver stays true) — resets itself the
   // moment `gameOver` next goes back to false, i.e. on the next "New Game"/rematch.
@@ -133,6 +142,7 @@ export default function BotGameScreen({
         timeoutWinner: clock.timeoutWinner,
         resignedBy,
         kingOfTheHillWinner,
+        threeCheckWinner,
         history,
         initialFen,
         chess960,
@@ -140,7 +150,19 @@ export default function BotGameScreen({
         opponentType: 'bot',
         opponentElo: bot.elo,
       }),
-    [chessStatus, turn, clock.timeoutWinner, resignedBy, kingOfTheHillWinner, history, initialFen, chess960, timeControl, bot.elo]
+    [
+      chessStatus,
+      turn,
+      clock.timeoutWinner,
+      resignedBy,
+      kingOfTheHillWinner,
+      threeCheckWinner,
+      history,
+      initialFen,
+      chess960,
+      timeControl,
+      bot.elo,
+    ]
   );
   useSaveGameOnEnd(authToken, resetCount, savePayload);
 
@@ -282,8 +304,11 @@ export default function BotGameScreen({
   if (kingOfTheHillWinner) {
     statusText = `${kingOfTheHillWinner === userColor ? 'You win' : `${bot.name} wins`} by King of the Hill!`;
   }
+  if (threeCheckWinner) {
+    statusText = `${threeCheckWinner === userColor ? 'You win' : `${bot.name} wins`} by Three-Check!`;
+  }
 
-  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy, false, kingOfTheHillWinner);
+  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy, false, kingOfTheHillWinner, threeCheckWinner);
   const winnerColor: PieceColor | null =
     outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : winnerColor === userColor ? 'You Won' : 'Bot Won';
@@ -424,6 +449,7 @@ export default function BotGameScreen({
     captured: color === 'w' ? whiteCaptured : blackCaptured,
     iconColor: (color === 'w' ? 'b' : 'w') as PieceColor,
     advantage: color === 'w' ? (materialDiff > 0 ? materialDiff : 0) : materialDiff < 0 ? -materialDiff : 0,
+    checks: checkCounts ? checkCounts[color] : null,
   });
   const top = playerInfo(topColor);
   const bottom = playerInfo(bottomColor);
@@ -433,7 +459,7 @@ export default function BotGameScreen({
       <StockfishBridge ref={handleBridgeRef} onLine={handleEngineLine} html={engineRuntime.buildHtml()} />
       <ScreenHeader
         title="Chess — vs Bot"
-        subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : undefined}
+        subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : threeCheck ? 'Three-Check' : undefined}
         onBack={onExit}
         backLabel="‹ Menu"
       />
@@ -509,6 +535,7 @@ export default function BotGameScreen({
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
             {top.label}{clock.hasClock ? `: ${formatTime(top.seconds)}` : ''}
+            {top.checks !== null ? ` · Checks: ${top.checks}/${THREE_CHECK_TARGET}` : ''}
           </Text>
           <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
@@ -533,6 +560,7 @@ export default function BotGameScreen({
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === bottomColor && !gameOver && styles.clockActive]}>
             {bottom.label}{clock.hasClock ? `: ${formatTime(bottom.seconds)}` : ''}
+            {bottom.checks !== null ? ` · Checks: ${bottom.checks}/${THREE_CHECK_TARGET}` : ''}
           </Text>
           <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
         </View>

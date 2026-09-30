@@ -14,12 +14,15 @@ interface PlayModeSelectScreenProps {
   onBotClassic: () => void;
   onBotChess960: () => void;
   onBotKingOfTheHill: () => void;
+  onBotThreeCheck: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
   onLocalKingOfTheHill: () => void;
+  onLocalThreeCheck: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
+  onEngineVsEngineThreeCheck: () => void;
   onBoardEditor: () => void;
   onImportPgn: () => void;
   authUser: AuthUser | null;
@@ -35,12 +38,15 @@ export default function PlayModeSelectScreen({
   onBotClassic,
   onBotChess960,
   onBotKingOfTheHill,
+  onBotThreeCheck,
   onLocalClassic,
   onLocalChess960,
   onLocalKingOfTheHill,
+  onLocalThreeCheck,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
+  onEngineVsEngineThreeCheck,
   onBoardEditor,
   onImportPgn,
   authUser,
@@ -103,6 +109,9 @@ export default function PlayModeSelectScreen({
             <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotKingOfTheHill}>
               <ModeButtonLabel label="King of the Hill" style={styles.subButtonText} />
             </Pressable>
+            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotThreeCheck}>
+              <ModeButtonLabel label="Three-Check" style={styles.subButtonText} />
+            </Pressable>
           </View>
         </View>
 
@@ -119,6 +128,9 @@ export default function PlayModeSelectScreen({
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalKingOfTheHill}>
               <ModeButtonLabel label="King of the Hill" style={styles.subButtonText} />
             </Pressable>
+            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalThreeCheck}>
+              <ModeButtonLabel label="Three-Check" style={styles.subButtonText} />
+            </Pressable>
           </View>
         </View>
 
@@ -134,6 +146,9 @@ export default function PlayModeSelectScreen({
             </Pressable>
             <Pressable style={[styles.subButton, styles.engineSubButton]} onPress={onEngineVsEngineKingOfTheHill}>
               <ModeButtonLabel label="King of the Hill" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.engineSubButton]} onPress={onEngineVsEngineThreeCheck}>
+              <ModeButtonLabel label="Three-Check" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>

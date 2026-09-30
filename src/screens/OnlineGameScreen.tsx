@@ -21,6 +21,7 @@ import { lookupOpening } from '../logic/openings';
 import { toRatingCategory } from '../logic/rating';
 import { getRatings, recordRatedGame } from '../logic/ratingStorage';
 import { categoryForInitialSeconds } from '../logic/timeControls';
+import { THREE_CHECK_TARGET, getThreeCheckCounts } from '../logic/threeCheck';
 import { formatTime } from '../logic/time';
 import type { Move, PieceColor } from '../types/chess';
 import type { AnalyzeParams, GameHistoryEntry } from '../types/history';
@@ -460,6 +461,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   const opponentName = 'Opponent';
   const myMs = myColor === 'w' ? displayWhiteMs : displayBlackMs;
   const opponentMs = myColor === 'w' ? displayBlackMs : displayWhiteMs;
+  // Purely a display aid, derived from the same synced move list used everywhere else on this
+  // screen — who actually WINS by reaching three checks is decided authoritatively by the server
+  // (see handleGameOver's `gameOver.reason === 'threeCheck'`), never by this count.
+  const checkCounts = match.isThreeCheck ? getThreeCheckCounts(moveList.map((m) => m.move)) : null;
 
   let statusText = isMyTurn ? 'Your turn' : `${opponentName}'s turn`;
   if (connectionState === 'reconnecting') statusText = 'Reconnecting...';
@@ -471,7 +476,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     <View style={styles.container}>
       <ScreenHeader
         title="Online Game"
-        subtitle={match.isChess960 ? 'Chess960' : match.isKingOfTheHill ? 'King of the Hill' : undefined}
+        subtitle={
+          match.isChess960 ? 'Chess960' : match.isKingOfTheHill ? 'King of the Hill' : match.isThreeCheck ? 'Three-Check' : undefined
+        }
         onBack={handleExit}
         backLabel="‹ Menu"
       />
@@ -557,6 +564,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === opponentColor && !gameOver && styles.clockActive]}>
             {opponentName}: {formatTime(opponentMs / 1000)}
+            {checkCounts ? ` · Checks: ${checkCounts[opponentColor]}/${THREE_CHECK_TARGET}` : ''}
           </Text>
           <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
         </View>
@@ -580,6 +588,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === myColor && !gameOver && styles.clockActive]}>
             {myName}: {formatTime(myMs / 1000)}
+            {checkCounts ? ` · Checks: ${checkCounts[myColor]}/${THREE_CHECK_TARGET}` : ''}
           </Text>
           <CapturedPieces pieces={myCaptured} color={opponentColor} advantage={myAdvantage} />
         </View>

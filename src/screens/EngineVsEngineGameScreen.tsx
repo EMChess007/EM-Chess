@@ -21,6 +21,7 @@ import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
+import { THREE_CHECK_TARGET, getThreeCheckCounts, getThreeCheckWinner } from '../logic/threeCheck';
 import { formatTime } from '../logic/time';
 import { parseUciMove } from '../logic/uciMove';
 import { useChessClock } from '../logic/useChessClock';
@@ -36,6 +37,7 @@ interface EngineVsEngineGameScreenProps {
   timeControl: TimeControl;
   chess960?: boolean;
   kingOfTheHill?: boolean;
+  threeCheck?: boolean;
   colorChoice1?: ColorChoice;
   colorChoice2?: ColorChoice;
   onExit: () => void;
@@ -65,6 +67,7 @@ export default function EngineVsEngineGameScreen({
   timeControl,
   chess960 = false,
   kingOfTheHill = false,
+  threeCheck = false,
   colorChoice1 = 'random',
   colorChoice2 = 'random',
   onExit,
@@ -114,12 +117,17 @@ export default function EngineVsEngineGameScreen({
   // Chess.js has no idea this rule exists — checked independently, only when actually playing
   // this variant (see kingOfTheHill.ts).
   const kingOfTheHillWinner = kingOfTheHill ? getKingOfTheHillWinner(engine) : null;
+  // Derived from `history` (see threeCheck.ts) rather than separately tracked state.
+  const historyMoves = useMemo(() => history.map((h) => h.move), [history]);
+  const threeCheckWinner = threeCheck ? getThreeCheckWinner(historyMoves) : null;
+  const checkCounts = threeCheck ? getThreeCheckCounts(historyMoves) : null;
 
   // Auto-tick runs for whichever engine's turn it is, so its clock counts down live, second by
   // second, in real wall-clock time while it "thinks" (each engine really does take
   // approximately thinkTimeMs to respond) — same mechanism as a human's clock.
   const clock = useChessClock(timeControl, turn, engine.isGameOver());
-  const gameOver = engine.isGameOver() || clock.timeoutWinner !== null || stopped || kingOfTheHillWinner !== null;
+  const gameOver =
+    engine.isGameOver() || clock.timeoutWinner !== null || stopped || kingOfTheHillWinner !== null || threeCheckWinner !== null;
 
   const bridgeRef1 = useRef<StockfishBridgeHandle>(null);
   const handleBridgeRef1 = useCallback(
@@ -226,8 +234,11 @@ export default function EngineVsEngineGameScreen({
   if (kingOfTheHillWinner) {
     statusText = `${kingOfTheHillWinner === c1 ? engine1.name : engine2.name} wins by King of the Hill!`;
   }
+  if (threeCheckWinner) {
+    statusText = `${threeCheckWinner === c1 ? engine1.name : engine2.name} wins by Three-Check!`;
+  }
 
-  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, null, false, kingOfTheHillWinner);
+  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, null, false, kingOfTheHillWinner, threeCheckWinner);
   const outcomeWinnerColor: PieceColor | null =
     outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
   const summaryTitle = stopped
@@ -281,6 +292,7 @@ export default function EngineVsEngineGameScreen({
     captured: color === 'w' ? whiteCaptured : blackCaptured,
     iconColor: (color === 'w' ? 'b' : 'w') as PieceColor,
     advantage: color === 'w' ? (materialDiff > 0 ? materialDiff : 0) : materialDiff < 0 ? -materialDiff : 0,
+    checks: checkCounts ? checkCounts[color] : null,
   });
   const top = playerInfo(topColor);
   const bottom = playerInfo(bottomColor);
@@ -291,7 +303,7 @@ export default function EngineVsEngineGameScreen({
       {!sameEngine && <StockfishBridge ref={handleBridgeRef2} onLine={handleEngineLine2} html={runtime2.buildHtml()} />}
       <ScreenHeader
         title="Chess — Engine vs Engine"
-        subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : undefined}
+        subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : threeCheck ? 'Three-Check' : undefined}
         onBack={onExit}
         backLabel="‹ Menu"
       />
@@ -347,6 +359,7 @@ export default function EngineVsEngineGameScreen({
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
             {top.label}{clock.hasClock ? `: ${formatTime(top.seconds)}` : ''}
+            {top.checks !== null ? ` · Checks: ${top.checks}/${THREE_CHECK_TARGET}` : ''}
           </Text>
           <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
@@ -368,6 +381,7 @@ export default function EngineVsEngineGameScreen({
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === bottomColor && !gameOver && styles.clockActive]}>
             {bottom.label}{clock.hasClock ? `: ${formatTime(bottom.seconds)}` : ''}
+            {bottom.checks !== null ? ` · Checks: ${bottom.checks}/${THREE_CHECK_TARGET}` : ''}
           </Text>
           <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
         </View>

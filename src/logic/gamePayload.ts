@@ -12,6 +12,7 @@ interface BuildGamePayloadArgs {
   resignedBy?: PieceColor | null;
   drawnByAgreement?: boolean;
   kingOfTheHillWinner?: PieceColor | null;
+  threeCheckWinner?: PieceColor | null;
   history: GameHistoryEntry[];
   initialFen: string;
   chess960: boolean;
@@ -32,7 +33,8 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
     args.timeoutWinner,
     args.resignedBy ?? null,
     args.drawnByAgreement ?? false,
-    args.kingOfTheHillWinner ?? null
+    args.kingOfTheHillWinner ?? null,
+    args.threeCheckWinner ?? null
   );
   if (!outcome.over || args.history.length === 0) return null;
 

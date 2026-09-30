@@ -4,7 +4,11 @@ export type PgnResult = '1-0' | '0-1' | '1/2-1/2';
 
 export type GameOutcome =
   | { over: false }
-  | { over: true; result: PgnResult; reason: 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'agreement' | 'kingOfTheHill' };
+  | {
+      over: true;
+      result: PgnResult;
+      reason: 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'agreement' | 'kingOfTheHill' | 'threeCheck';
+    };
 
 /**
  * Whether a game just ended and, if so, its PGN-style result ("1-0"/"0-1"/"1/2-1/2") — shared
@@ -17,13 +21,18 @@ export function getGameOutcome(
   timeoutWinner: PieceColor | null,
   resignedBy: PieceColor | null = null,
   drawnByAgreement = false,
-  kingOfTheHillWinner: PieceColor | null = null
+  kingOfTheHillWinner: PieceColor | null = null,
+  threeCheckWinner: PieceColor | null = null
 ): GameOutcome {
-  // Checked first — reaching the center wins outright regardless of the rest of the position
-  // (check/material/whose turn it technically is don't matter), and chess.js has no idea this
-  // rule exists, so it can never surface via `chessStatus` on its own.
+  // Checked first — reaching the center (or delivering the third check) wins outright regardless
+  // of the rest of the position (check/material/whose turn it technically is don't matter), and
+  // chess.js has no idea either rule exists, so neither can ever surface via `chessStatus` on its
+  // own. The two are mutually exclusive variants, so both being set at once never happens.
   if (kingOfTheHillWinner) {
     return { over: true, result: kingOfTheHillWinner === 'w' ? '1-0' : '0-1', reason: 'kingOfTheHill' };
+  }
+  if (threeCheckWinner) {
+    return { over: true, result: threeCheckWinner === 'w' ? '1-0' : '0-1', reason: 'threeCheck' };
   }
   if (drawnByAgreement) {
     return { over: true, result: '1/2-1/2', reason: 'agreement' };

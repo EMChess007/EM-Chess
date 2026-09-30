@@ -10,11 +10,20 @@ interface MatchmakingScreenProps {
   timeControl: TimeControl;
   chess960: boolean;
   kingOfTheHill: boolean;
+  threeCheck: boolean;
   onMatchFound: (match: MatchFoundPayload) => void;
   onCancel: () => void;
 }
 
-export default function MatchmakingScreen({ authToken, timeControl, chess960, kingOfTheHill, onMatchFound, onCancel }: MatchmakingScreenProps) {
+export default function MatchmakingScreen({
+  authToken,
+  timeControl,
+  chess960,
+  kingOfTheHill,
+  threeCheck,
+  onMatchFound,
+  onCancel,
+}: MatchmakingScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +45,7 @@ export default function MatchmakingScreen({ authToken, timeControl, chess960, ki
           timeControlLabel: timeControl.label,
           isChess960: chess960,
           isKingOfTheHill: kingOfTheHill,
+          isThreeCheck: threeCheck,
         },
         (ack: Ack) => {
           if (!ack.ok) setError(ack.error);
@@ -61,6 +71,7 @@ export default function MatchmakingScreen({ authToken, timeControl, chess960, ki
         timeControlLabel: timeControl.label,
         isChess960: chess960,
         isKingOfTheHill: kingOfTheHill,
+        isThreeCheck: threeCheck,
       },
       (ack: Ack) => {
         if (!ack.ok) setError(ack.error);
@@ -74,8 +85,8 @@ export default function MatchmakingScreen({ authToken, timeControl, chess960, ki
         socket.emit('leave_queue', {});
       }
     };
-    // timeControl/chess960/kingOfTheHill/authToken are fixed for this screen's lifetime (set once by the
-    // caller); onMatchFound is a stable callback from App.tsx.
+    // timeControl/chess960/kingOfTheHill/threeCheck/authToken are fixed for this screen's lifetime
+    // (set once by the caller); onMatchFound is a stable callback from App.tsx.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -90,7 +101,7 @@ export default function MatchmakingScreen({ authToken, timeControl, chess960, ki
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.title}>
-        {chess960 ? 'Chess960 · ' : kingOfTheHill ? 'King of the Hill · ' : ''}
+        {chess960 ? 'Chess960 · ' : kingOfTheHill ? 'King of the Hill · ' : threeCheck ? 'Three-Check · ' : ''}
         {timeControl.label}
       </Text>
 

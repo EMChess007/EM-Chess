@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
-export type GameVariant = 'classic' | 'chess960' | 'kingOfTheHill';
+export type GameVariant = 'classic' | 'chess960' | 'kingOfTheHill' | 'threeCheck';
 
 interface VariantSelectorProps {
   value: GameVariant;
@@ -17,11 +17,12 @@ const OPTIONS: { value: GameVariant; label: string }[] = [
   { value: 'classic', label: 'Classic' },
   { value: 'chess960', label: 'Chess960' },
   { value: 'kingOfTheHill', label: 'King of the\nHill' },
+  { value: 'threeCheck', label: 'Three-\nCheck' },
 ];
 
-/** Mutually-exclusive Classic / Chess960 / King of the Hill picker — shared by every online setup
- * screen that used to be a plain Chess960 checkbox (OnlineTimeControlSelectScreen, ChallengeScreen,
- * TournamentScreen), since a game is exactly one of these, never a combination. */
+/** Mutually-exclusive Classic / Chess960 / King of the Hill / Three-Check picker — shared by every
+ * online setup screen that used to be a plain Chess960 checkbox (OnlineTimeControlSelectScreen,
+ * ChallengeScreen, TournamentScreen), since a game is exactly one of these, never a combination. */
 export default function VariantSelector({ value, onChange }: VariantSelectorProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
