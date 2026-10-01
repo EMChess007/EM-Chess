@@ -11,6 +11,7 @@ interface BotSelectScreenProps {
   chess960?: boolean;
   kingOfTheHill?: boolean;
   threeCheck?: boolean;
+  setupChess?: boolean;
 }
 
 /** A placeholder ELO shown for custom-engine cards — irrelevant to actual play, since
@@ -27,11 +28,19 @@ function toCustomEngineBot(engineId: string, engineName: string): BotPersonality
   };
 }
 
-export default function BotSelectScreen({ onSelect, onBack, chess960, kingOfTheHill, threeCheck }: BotSelectScreenProps) {
+export default function BotSelectScreen({ onSelect, onBack, chess960, kingOfTheHill, threeCheck, setupChess }: BotSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const customEngines = AVAILABLE_ENGINES.filter((engine) => engine.isCustom);
-  const variantName = chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : threeCheck ? 'Three-Check' : undefined;
+  const variantName = chess960
+    ? 'Chess960'
+    : kingOfTheHill
+      ? 'King of the Hill'
+      : threeCheck
+        ? 'Three-Check'
+        : setupChess
+          ? 'Setup Chess'
+          : undefined;
 
   return (
     <View style={styles.container}>

@@ -42,6 +42,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
         isChess960: payload.isChess960,
         isKingOfTheHill: payload.isKingOfTheHill,
         isThreeCheck: payload.isThreeCheck,
+        isSetupChess: false, // Tournaments don't support Setup Chess yet
         fen: payload.fen,
         whiteMs: payload.whiteMs,
         blackMs: payload.blackMs,
@@ -78,6 +79,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
       isChess960: match.isChess960,
       isKingOfTheHill: match.isKingOfTheHill,
       isThreeCheck: match.isThreeCheck,
+      isSetupChess: false, // Tournaments don't support Setup Chess yet
       fen: match.fen,
       whiteMs: match.whiteMs ?? 0,
       blackMs: match.blackMs ?? 0,

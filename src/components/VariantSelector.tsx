@@ -1,11 +1,14 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
-export type GameVariant = 'classic' | 'chess960' | 'kingOfTheHill' | 'threeCheck';
+export type GameVariant = 'classic' | 'chess960' | 'kingOfTheHill' | 'threeCheck' | 'setupChess';
 
 interface VariantSelectorProps {
   value: GameVariant;
   onChange: (variant: GameVariant) => void;
+  /** Hides specific variants from the row — e.g. Tournaments excludes 'setupChess' for now (see
+   * its own screen for why), since blind-setup-per-match doesn't have a settled design yet. */
+  excludeVariants?: GameVariant[];
 }
 
 // A label may embed a literal "\n" at its preferred break point (Text renders it as a forced
@@ -18,17 +21,20 @@ const OPTIONS: { value: GameVariant; label: string }[] = [
   { value: 'chess960', label: 'Chess960' },
   { value: 'kingOfTheHill', label: 'King of the\nHill' },
   { value: 'threeCheck', label: 'Three-\nCheck' },
+  { value: 'setupChess', label: 'Setup\nChess' },
 ];
 
-/** Mutually-exclusive Classic / Chess960 / King of the Hill / Three-Check picker — shared by every
- * online setup screen that used to be a plain Chess960 checkbox (OnlineTimeControlSelectScreen,
- * ChallengeScreen, TournamentScreen), since a game is exactly one of these, never a combination. */
-export default function VariantSelector({ value, onChange }: VariantSelectorProps) {
+/** Mutually-exclusive Classic / Chess960 / King of the Hill / Three-Check / Setup Chess picker —
+ * shared by every online setup screen that used to be a plain Chess960 checkbox
+ * (OnlineTimeControlSelectScreen, ChallengeScreen, TournamentScreen), since a game is exactly one
+ * of these, never a combination. */
+export default function VariantSelector({ value, onChange, excludeVariants }: VariantSelectorProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
+  const options = excludeVariants ? OPTIONS.filter((o) => !excludeVariants.includes(o.value)) : OPTIONS;
   return (
     <View style={styles.row}>
-      {OPTIONS.map((option) => {
+      {options.map((option) => {
         const selected = value === option.value;
         return (
           <Pressable key={option.value} style={[styles.chip, selected && styles.chipSelected]} onPress={() => onChange(option.value)}>

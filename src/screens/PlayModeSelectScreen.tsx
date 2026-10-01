@@ -15,10 +15,12 @@ interface PlayModeSelectScreenProps {
   onBotChess960: () => void;
   onBotKingOfTheHill: () => void;
   onBotThreeCheck: () => void;
+  onBotSetupChess: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
   onLocalKingOfTheHill: () => void;
   onLocalThreeCheck: () => void;
+  onLocalSetupChess: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
@@ -39,10 +41,12 @@ export default function PlayModeSelectScreen({
   onBotChess960,
   onBotKingOfTheHill,
   onBotThreeCheck,
+  onBotSetupChess,
   onLocalClassic,
   onLocalChess960,
   onLocalKingOfTheHill,
   onLocalThreeCheck,
+  onLocalSetupChess,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
@@ -109,8 +113,13 @@ export default function PlayModeSelectScreen({
             <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotKingOfTheHill}>
               <ModeButtonLabel label="King of the Hill" style={styles.subButtonText} />
             </Pressable>
+          </View>
+          <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotThreeCheck}>
               <ModeButtonLabel label="Three-Check" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotSetupChess}>
+              <ModeButtonLabel label="Setup Chess" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>
@@ -128,8 +137,13 @@ export default function PlayModeSelectScreen({
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalKingOfTheHill}>
               <ModeButtonLabel label="King of the Hill" style={styles.subButtonText} />
             </Pressable>
+          </View>
+          <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalThreeCheck}>
               <ModeButtonLabel label="Three-Check" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalSetupChess}>
+              <ModeButtonLabel label="Setup Chess" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>

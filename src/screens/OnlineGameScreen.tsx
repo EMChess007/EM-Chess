@@ -130,10 +130,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // state sync after reconnecting) rather than being threaded through each individual handler
   // below. See LocalGameScreen's identical effect for why a miss here doesn't clear the name.
   useEffect(() => {
-    if (match.isChess960) return;
+    if (match.isChess960 || match.isSetupChess) return;
     const openingMatch = lookupOpening(fen);
     if (openingMatch) setOpeningName(openingMatch.name);
-  }, [fen, match.isChess960]);
+  }, [fen, match.isChess960, match.isSetupChess]);
 
   // Wire up every server -> client event for this game once, for the lifetime of the screen.
   useEffect(() => {
@@ -477,7 +477,15 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       <ScreenHeader
         title="Online Game"
         subtitle={
-          match.isChess960 ? 'Chess960' : match.isKingOfTheHill ? 'King of the Hill' : match.isThreeCheck ? 'Three-Check' : undefined
+          match.isChess960
+            ? 'Chess960'
+            : match.isKingOfTheHill
+              ? 'King of the Hill'
+              : match.isThreeCheck
+                ? 'Three-Check'
+                : match.isSetupChess
+                  ? 'Setup Chess'
+                  : undefined
         }
         onBack={handleExit}
         backLabel="‹ Menu"
@@ -569,7 +577,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
         </View>
 
-        {!match.isChess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!match.isChess960 && !match.isSetupChess && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={boardKey}

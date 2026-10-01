@@ -5,12 +5,15 @@ import VariantSelector, { type GameVariant } from '../components/VariantSelector
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getTimeControlsByCategory } from '../logic/timeControls';
-import type { Ack, MatchFoundPayload } from '../types/multiplayer';
+import type { Ack, MatchFoundPayload, SetupChessPairedPayload } from '../types/multiplayer';
 import type { TimeControl, TimeControlCategory } from '../types/timeControl';
 
 interface ChallengeScreenProps {
   authToken: string;
   onMatchFound: (match: MatchFoundPayload) => void;
+  /** Fires instead of onMatchFound for a Setup Chess challenge — see MatchmakingScreen's
+   * identical prop for why. */
+  onSetupChessPaired: (paired: SetupChessPairedPayload) => void;
   onBack: () => void;
 }
 
@@ -22,7 +25,7 @@ const CATEGORIES: { category: TimeControlCategory; label: string }[] = [
   { category: 'rapid', label: 'Rapid' },
 ];
 
-export default function ChallengeScreen({ authToken, onMatchFound, onBack }: ChallengeScreenProps) {
+export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessPaired, onBack }: ChallengeScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const [phase, setPhase] = useState<Phase>('menu');
@@ -40,9 +43,15 @@ export default function ChallengeScreen({ authToken, onMatchFound, onBack }: Cha
       activeRef.current = false;
       onMatchFound(payload);
     };
+    const handleSetupChessPaired = (payload: SetupChessPairedPayload) => {
+      activeRef.current = false;
+      onSetupChessPaired(payload);
+    };
     socket.on('match_found', handleMatchFound);
+    socket.on('setup_chess_paired', handleSetupChessPaired);
     return () => {
       socket.off('match_found', handleMatchFound);
+      socket.off('setup_chess_paired', handleSetupChessPaired);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
@@ -58,6 +67,7 @@ export default function ChallengeScreen({ authToken, onMatchFound, onBack }: Cha
         isChess960: variant === 'chess960',
         isKingOfTheHill: variant === 'kingOfTheHill',
         isThreeCheck: variant === 'threeCheck',
+        isSetupChess: variant === 'setupChess',
       },
       (ack: Ack<{ code: string }>) => {
         if (!ack.ok) {

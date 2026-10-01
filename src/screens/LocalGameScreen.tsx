@@ -38,6 +38,10 @@ interface LocalGameScreenProps {
   chess960?: boolean;
   kingOfTheHill?: boolean;
   threeCheck?: boolean;
+  setupChess?: boolean;
+  /** The merged starting position from the Setup Chess builder flow — used instead of
+   * self-generating one when present (setupChess games always pass this). */
+  initialFen?: string;
   authToken: string | null;
   onExit: () => void;
   onAnalyze: (params: AnalyzeParams) => void;
@@ -48,13 +52,15 @@ export default function LocalGameScreen({
   chess960 = false,
   kingOfTheHill = false,
   threeCheck = false,
+  setupChess = false,
+  initialFen: initialFenProp,
   authToken,
   onExit,
   onAnalyze,
 }: LocalGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const [initialFen, setInitialFen] = useState(() => (chess960 ? generateChess960Position() : START_FEN));
+  const [initialFen, setInitialFen] = useState(() => initialFenProp ?? (chess960 ? generateChess960Position() : START_FEN));
   const [fen, setFen] = useState(initialFen);
   const [lastMove, setLastMove] = useState<Move | null>(null);
   const [history, setHistory] = useState<GameHistoryEntry[]>([]);
@@ -107,16 +113,17 @@ export default function LocalGameScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hintRequestKey]);
 
-  // Opening names don't apply to Chess960 (the shuffled starting position makes the whole
-  // concept meaningless), and only ever *upgrade* to a deeper/more specific name — the book
-  // doesn't have an entry for every single ply, so a miss here just means "no new checkpoint
-  // yet", not "left the book"; once a played move truly can't lead to any further named
-  // position, no later position will match either, so this naturally stops updating on its own.
+  // Opening names don't apply to Chess960 or Setup Chess (a shuffled or custom-built starting
+  // position makes the whole concept meaningless), and only ever *upgrade* to a deeper/more
+  // specific name — the book doesn't have an entry for every single ply, so a miss here just
+  // means "no new checkpoint yet", not "left the book"; once a played move truly can't lead to
+  // any further named position, no later position will match either, so this naturally stops
+  // updating on its own.
   useEffect(() => {
-    if (chess960) return;
+    if (chess960 || setupChess) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960]);
+  }, [fen, chess960, setupChess]);
 
   const engine = useMemo(
     () => new ChessEngine(fen, { chess960, initialFen }),
@@ -225,7 +232,7 @@ export default function LocalGameScreen({
   };
 
   const handleReset = () => {
-    const nextInitialFen = chess960 ? generateChess960Position() : START_FEN;
+    const nextInitialFen = initialFenProp ?? (chess960 ? generateChess960Position() : START_FEN);
     setInitialFen(nextInitialFen);
     setFen(nextInitialFen);
     setLastMove(null);
@@ -311,7 +318,9 @@ export default function LocalGameScreen({
     <View style={styles.container}>
       <ScreenHeader
         title="Chess — Local Game"
-        subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : threeCheck ? 'Three-Check' : undefined}
+        subtitle={
+          chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : threeCheck ? 'Three-Check' : setupChess ? 'Setup Chess' : undefined
+        }
         onBack={onExit}
         backLabel="‹ Menu"
       />
@@ -368,7 +377,7 @@ export default function LocalGameScreen({
           <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
 
-        {!chess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!chess960 && !setupChess && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={resetCount}

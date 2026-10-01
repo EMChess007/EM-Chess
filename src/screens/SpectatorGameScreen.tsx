@@ -99,7 +99,15 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
       <GameScreenBody bottomBar={<View />}>
         <Text style={styles.subtitle}>
           {whiteUsername} vs {blackUsername}
-          {state.isChess960 ? ' · Chess960' : state.isKingOfTheHill ? ' · King of the Hill' : state.isThreeCheck ? ' · Three-Check' : ''}
+          {state.isChess960
+            ? ' · Chess960'
+            : state.isKingOfTheHill
+              ? ' · King of the Hill'
+              : state.isThreeCheck
+                ? ' · Three-Check'
+                : state.isSetupChess
+                  ? ' · Setup Chess'
+                  : ''}
         </Text>
         <Text style={styles.status}>{statusText}</Text>
 

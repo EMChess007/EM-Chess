@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text } from 'react-native';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
-import type { Ack, MatchFoundPayload } from '../types/multiplayer';
+import type { Ack, MatchFoundPayload, SetupChessPairedPayload } from '../types/multiplayer';
 import type { TimeControl } from '../types/timeControl';
 
 interface MatchmakingScreenProps {
@@ -11,7 +11,12 @@ interface MatchmakingScreenProps {
   chess960: boolean;
   kingOfTheHill: boolean;
   threeCheck: boolean;
+  setupChess: boolean;
   onMatchFound: (match: MatchFoundPayload) => void;
+  /** Fires instead of onMatchFound when setupChess is true — there's no room yet, just a paired
+   * opponent and an assigned color, so the caller hands off to the Setup Chess builder flow
+   * rather than straight into OnlineGameScreen. */
+  onSetupChessPaired: (paired: SetupChessPairedPayload) => void;
   onCancel: () => void;
 }
 
@@ -21,7 +26,9 @@ export default function MatchmakingScreen({
   chess960,
   kingOfTheHill,
   threeCheck,
+  setupChess,
   onMatchFound,
+  onSetupChessPaired,
   onCancel,
 }: MatchmakingScreenProps) {
   const colors = useAppColors();
@@ -46,6 +53,7 @@ export default function MatchmakingScreen({
           isChess960: chess960,
           isKingOfTheHill: kingOfTheHill,
           isThreeCheck: threeCheck,
+          isSetupChess: setupChess,
         },
         (ack: Ack) => {
           if (!ack.ok) setError(ack.error);
@@ -57,8 +65,13 @@ export default function MatchmakingScreen({
       stillQueuedRef.current = false;
       onMatchFound(payload);
     };
+    const handleSetupChessPaired = (payload: SetupChessPairedPayload) => {
+      stillQueuedRef.current = false;
+      onSetupChessPaired(payload);
+    };
 
     socket.on('match_found', handleMatchFound);
+    socket.on('setup_chess_paired', handleSetupChessPaired);
     // A network hiccup while waiting drops us out of the server's queue (see backend
     // disconnect handling) — re-join automatically once the connection comes back, so a brief
     // wobble doesn't silently strand the player in "searching..." forever.
@@ -72,6 +85,7 @@ export default function MatchmakingScreen({
         isChess960: chess960,
         isKingOfTheHill: kingOfTheHill,
         isThreeCheck: threeCheck,
+        isSetupChess: setupChess,
       },
       (ack: Ack) => {
         if (!ack.ok) setError(ack.error);
@@ -80,13 +94,15 @@ export default function MatchmakingScreen({
 
     return () => {
       socket.off('match_found', handleMatchFound);
+      socket.off('setup_chess_paired', handleSetupChessPaired);
       socket.io.off('reconnect', rejoinQueueOnReconnect);
       if (stillQueuedRef.current) {
         socket.emit('leave_queue', {});
       }
     };
-    // timeControl/chess960/kingOfTheHill/threeCheck/authToken are fixed for this screen's lifetime
-    // (set once by the caller); onMatchFound is a stable callback from App.tsx.
+    // timeControl/chess960/kingOfTheHill/threeCheck/setupChess/authToken are fixed for this
+    // screen's lifetime (set once by the caller); onMatchFound/onSetupChessPaired are stable
+    // callbacks from App.tsx.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -101,7 +117,15 @@ export default function MatchmakingScreen({
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.title}>
-        {chess960 ? 'Chess960 · ' : kingOfTheHill ? 'King of the Hill · ' : threeCheck ? 'Three-Check · ' : ''}
+        {chess960
+          ? 'Chess960 · '
+          : kingOfTheHill
+            ? 'King of the Hill · '
+            : threeCheck
+              ? 'Three-Check · '
+              : setupChess
+                ? 'Setup Chess · '
+                : ''}
         {timeControl.label}
       </Text>
 

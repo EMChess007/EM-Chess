@@ -44,6 +44,11 @@ interface BotGameScreenProps {
   chess960?: boolean;
   kingOfTheHill?: boolean;
   threeCheck?: boolean;
+  setupChess?: boolean;
+  /** The merged starting position from the Setup Chess builder flow — used instead of
+   * self-generating one when present. `colorChoice` must already be the concrete color the human
+   * built their army as (not 'random') when this is set, see BotSetupChessFlowScreen. */
+  initialFen?: string;
   colorChoice?: ColorChoice;
   authToken: string | null;
   onExit: () => void;
@@ -56,6 +61,8 @@ export default function BotGameScreen({
   chess960 = false,
   kingOfTheHill = false,
   threeCheck = false,
+  setupChess = false,
+  initialFen: initialFenProp,
   colorChoice = 'random',
   authToken,
   onExit,
@@ -76,7 +83,7 @@ export default function BotGameScreen({
   // exception is a synthetic "custom engine" bot card (see BotSelectScreen), which sets
   // `engineId` explicitly to override this.
   const engineId = useMemo(() => bot.engineId ?? getEngineIdForElo(bot.elo), [bot.engineId, bot.elo]);
-  const [initialFen, setInitialFen] = useState(() => (chess960 ? generateChess960Position() : START_FEN));
+  const [initialFen, setInitialFen] = useState(() => initialFenProp ?? (chess960 ? generateChess960Position() : START_FEN));
   const [fen, setFen] = useState(initialFen);
   const [lastMove, setLastMove] = useState<Move | null>(null);
   const [history, setHistory] = useState<GameHistoryEntry[]>([]);
@@ -95,10 +102,10 @@ export default function BotGameScreen({
   // See LocalGameScreen's identical effect for why a miss here doesn't clear the name — it only
   // ever upgrades to a deeper/more specific match as the game continues.
   useEffect(() => {
-    if (chess960) return;
+    if (chess960 || setupChess) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960]);
+  }, [fen, chess960, setupChess]);
 
   const engine = useMemo(
     () => new ChessEngine(fen, { chess960, initialFen }),
@@ -378,7 +385,7 @@ export default function BotGameScreen({
   }, [turn, premove]);
 
   const handleReset = () => {
-    const nextInitialFen = chess960 ? generateChess960Position() : START_FEN;
+    const nextInitialFen = initialFenProp ?? (chess960 ? generateChess960Position() : START_FEN);
     setInitialFen(nextInitialFen);
     setFen(nextInitialFen);
     setLastMove(null);
@@ -459,7 +466,9 @@ export default function BotGameScreen({
       <StockfishBridge ref={handleBridgeRef} onLine={handleEngineLine} html={engineRuntime.buildHtml()} />
       <ScreenHeader
         title="Chess — vs Bot"
-        subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : threeCheck ? 'Three-Check' : undefined}
+        subtitle={
+          chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : threeCheck ? 'Three-Check' : setupChess ? 'Setup Chess' : undefined
+        }
         onBack={onExit}
         backLabel="‹ Menu"
       />
@@ -540,7 +549,7 @@ export default function BotGameScreen({
           <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
 
-        {!chess960 && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!chess960 && !setupChess && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={resetCount}
