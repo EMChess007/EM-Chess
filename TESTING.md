@@ -62,31 +62,38 @@ exactly as before this was added.
 reach Sentry once configured will carry the same recent-app-state trail already visible via
 `More → Diagnostics → Copy All`.
 
-### To actually turn this on, a maintainer needs to:
+### Current setup (already done)
 
-1. Create a free account at [sentry.io](https://sentry.io) (or self-host, if preferred).
-2. Create a new project, platform **React Native**.
-3. Copy its DSN (Settings → Projects → [project] → Client Keys (DSN)).
-4. Put it in `.env.local` (already gitignored, already has a placeholder line added):
-   ```
-   EXPO_PUBLIC_SENTRY_DSN=https://xxxxx@xxxxx.ingest.sentry.io/xxxxx
-   ```
-5. For EAS builds (not just local `expo start`), add the same key as an EAS secret so it's present
-   at build time: `eas secret:create --name EXPO_PUBLIC_SENTRY_DSN --value <your-dsn> --type string`.
-6. That's enough for JS-level crash/error capture (unhandled exceptions, unhandled promise
-   rejections, React render errors via `Sentry.wrap`). `app.json`'s `plugins` array already has
-   the bare `"@sentry/react-native"` config plugin (added automatically by `expo install`) —
-   this enables native-level crash symbolication too, with no further action needed for that part.
-7. **Optional, for readable native stack traces and automatic source map upload during EAS
-   builds**: that needs your Sentry **organization slug** and **project slug**, plus a
-   `SENTRY_AUTH_TOKEN` (Settings → Account → API → Auth Tokens, scope `project:releases`) set as
-   an EAS secret. Once you have those, replace the plugin entry in `app.json` with:
-   ```json
-   ["@sentry/react-native/expo", { "organization": "your-org-slug", "project": "your-project-slug", "url": "https://sentry.io/" }]
-   ```
-   This step was deliberately left out for now — it needs real values this session doesn't have,
-   and a wrong/placeholder value here risks failing a real build, whereas skipping it just means
-   slightly-less-readable native crash traces until it's added.
+- **Sentry project**: organization `manoskapa`, project `em-chess`.
+- **DSN** (`EXPO_PUBLIC_SENTRY_DSN`): in `.env.local` (gitignored) for local runs, and an EAS
+  environment variable (plaintext — it's a public client key by design) for the `production`,
+  `preview` and `development` environments.
+- **Source maps** (`SENTRY_AUTH_TOKEN`): an organization auth token, in `.env.local` for local
+  uploads and an EAS environment variable with **sensitive** visibility for all three environments.
+  Never put it in `app.json`, `eas.json` or any committed file — it's only read at build/export
+  time and is not bundled into the app.
+- `app.json` carries the `@sentry/react-native/expo` plugin with the org/project slugs (not
+  secret); `metro.config.js` uses `getSentryExpoConfig` so every bundle carries a debug ID that
+  uploaded source maps are matched against.
+
+### How source maps get uploaded
+
+- **EAS native builds** (`eas build`): the Sentry plugin uploads automatically during the build,
+  using the `SENTRY_AUTH_TOKEN` EAS variable. Nothing to run by hand.
+- **Local export / OTA updates** (verified end to end this round):
+  ```
+  npx expo export --platform android --source-maps --output-dir dist-sentry-test
+  npx sentry-expo-upload-sourcemaps dist-sentry-test      # needs SENTRY_AUTH_TOKEN in the environment
+  ```
+  Note `--source-maps` is required — `expo export` doesn't emit maps by default. A successful run
+  prints a debug ID per bundle; Sentry's `artifact-lookup` API resolves that ID to the uploaded
+  bundle, which is how this was confirmed.
+
+### If the token ever needs rotating
+
+Create a new organization token in Sentry (Settings → Developer Settings → Organization Tokens),
+update `.env.local`, then `eas env:update` (or delete/re-create) `SENTRY_AUTH_TOKEN` with
+**sensitive** visibility, and revoke the old token in Sentry.
 
 ## 4. Diagnostic logging (`More → Diagnostics` in-app)
 

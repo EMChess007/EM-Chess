@@ -41,7 +41,14 @@
           "hidden": true
         }
       ],
-      "@sentry/react-native"
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "manoskapa",
+          "project": "em-chess",
+          "url": "https://sentry.io/"
+        }
+      ]
     ],
     "extra": {
       "eas": {
