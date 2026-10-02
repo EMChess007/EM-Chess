@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Sentry from '@sentry/react-native';
 
 const STORAGE_KEY = 'diagnosticLog:v1';
 const MAX_ENTRIES = 100;
@@ -38,6 +39,10 @@ export function logDiagnostic(message: string): void {
   AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(entries)).catch(() => {
     // Non-critical: worst case this one line isn't remembered next launch.
   });
+  // Also a Sentry breadcrumb (see src/logic/sentry.ts) — a no-op with no DSN configured, same as
+  // Sentry.init() itself. Means any crash report that DOES reach Sentry carries the same recent
+  // app-state trail a user could otherwise only hand over via More > Diagnostics > Copy All.
+  Sentry.addBreadcrumb({ message, level: 'info', category: 'diagnostic-log' });
 }
 
 export function getDiagnosticLog(): string[] {

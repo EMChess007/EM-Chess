@@ -1,0 +1,31 @@
+name: CI
+
+# Runs on every push/PR targeting master — type-checks the app and runs its own pure-logic unit
+# tests (vitest; no React Native renderer involved, so no simulator/emulator needed). The chess
+# engine's Fog of War-specific coverage (en passant, performance, visibility ground truth,
+# redaction history) lives in the backend repo instead, since those scripts also test the
+# server's own twin implementation side by side — see that repo's ci.yml.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
