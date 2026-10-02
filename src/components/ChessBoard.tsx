@@ -1,8 +1,9 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { ChessEngine } from '../logic/ChessEngine';
+import { getGiveawayMoves } from '../logic/giveaway';
 import { isTouchInside, subscribeToScreenTouches } from '../logic/screenTouches';
-import { PROMOTION_CHOICES, PROMOTION_LABELS, type PromotionPiece, isPromotionMove } from '../logic/promotion';
+import { PROMOTION_LABELS, type PromotionPiece, getPromotionChoices, isPromotionMove } from '../logic/promotion';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { Move, PieceColor, Piece as PieceModel } from '../types/chess';
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
@@ -21,7 +22,7 @@ const MOVE_THRESHOLD_PX = 10;
 export interface PremoveIntent {
   from: string;
   to: string;
-  promotion?: 'n' | 'b' | 'r' | 'q';
+  promotion?: Move['promotion'];
 }
 
 interface ChessBoardProps {
@@ -63,6 +64,12 @@ interface ChessBoardProps {
    * (rule: no check/checkmate concept); the caller alone decides when the game ends, via
    * `move.captured === 'k'` on whatever movePseudoLegal/onMove returns. */
   fogOfWar?: boolean;
+  /** Giveaway (Antichess) only — see giveaway.ts. Like fogOfWar, switches move interaction to the
+   * pseudo-legal generator (no check concept, capturable kings, no king-safety filtering), but
+   * narrowed by the mandatory-capture rule via getGiveawayMoves, and the promotion picker also
+   * offers a king. Also drops the normal isGameOver()/check highlighting; the caller decides when
+   * the game ends (getGiveawayWinner). Mutually exclusive with every other variant. */
+  giveaway?: boolean;
   /** Fog of War only — the squares currently visible to the LOCAL viewer. Squares outside this
    * set render fogged (see Square's isFogged) regardless of what `fen`/the engine actually has
    * there: for Local/Bot this is still the true fen client-side (there's no network boundary to
@@ -112,6 +119,7 @@ function ChessBoard({
   onPremove,
   kingOfTheHill = false,
   fogOfWar = false,
+  giveaway = false,
   visibleSquares,
 }: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
@@ -122,9 +130,11 @@ function ChessBoard({
 
   // skipValidation: Online Fog of War's `fen` is server-redacted and can legitimately be missing
   // a king the viewer can't currently see — see ChessEngine's own doc comment on the option.
+  // Giveaway also skips validation: a captured king leaves later fens without one, like Fog of War.
+  const usesPseudoLegalMoves = fogOfWar || giveaway;
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar }),
-    [fen, chess960, initialFen, fogOfWar]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway }),
+    [fen, chess960, initialFen, usesPseudoLegalMoves, giveaway]
   );
   const board = useMemo(() => engine.getBoard(), [engine]);
   // Reversing both axes together preserves each square's light/dark identity (a 180° rotation
@@ -140,7 +150,7 @@ function ChessBoard({
   // still (correctly, but irrelevantly) report one once a position reaches such a pattern via
   // movePseudoLegal — the caller alone decides when a Fog of War game ends (king capture), via
   // the `disabled` prop, so this never gates input itself in that mode.
-  const gameOver = fogOfWar ? false : engine.isGameOver();
+  const gameOver = usesPseudoLegalMoves ? false : engine.isGameOver();
   const status = engine.getStatus();
 
   // Reuses the same check/checkmate detection already driving status text and game-end logic
@@ -151,14 +161,14 @@ function ChessBoard({
   // already uses). Checkmate intentionally keeps this highlighted (status stays 'checkmate'),
   // same as check. Never highlighted in Fog of War — check isn't announced there at all.
   const checkedKingSquare = useMemo(() => {
-    if (fogOfWar || (status !== 'check' && status !== 'checkmate')) return null;
+    if (usesPseudoLegalMoves || (status !== 'check' && status !== 'checkmate')) return null;
     for (const row of board) {
       for (const square of row) {
         if (square.piece?.type === 'k' && square.piece.color === turn) return square.square;
       }
     }
     return null;
-  }, [board, turn, status, fogOfWar]);
+  }, [board, turn, status, usesPseudoLegalMoves]);
 
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
 
@@ -213,7 +223,7 @@ function ChessBoard({
     // flag through every caller.
     let movingPiece: PieceModel | null = null;
     try {
-      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: fogOfWar }).getPieceAt(lastMove.from);
+      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway }).getPieceAt(lastMove.from);
     } catch {
       movingPiece = null;
     }
@@ -247,15 +257,30 @@ function ChessBoard({
   // Fog of War: pseudo-legal targets (see ChessBoard's own fogOfWar doc comment) instead of
   // king-safety-filtered legal ones — getPseudoLegalMoves already generates for `selectableColor`
   // regardless of whose turn it actually is, which is also what makes this correct in premove mode.
+  // Giveaway: the same pseudo-legal primitive, collapsed to mandatory captures when any exist.
   const legalTargets =
     selectedSquare && !isPremoveMode
-      ? fogOfWar
+      ? giveaway
+        ? getGiveawayMoves(engine, selectedSquare).map((m) => m.to)
+        : fogOfWar
         ? engine
             .getPseudoLegalMoves(selectableColor)
             .filter((m) => m.from === selectedSquare)
             .map((m) => m.to)
         : engine.getLegalMoves(selectedSquare)
       : [];
+
+  /** Applies a human move on a SCRATCH engine (never the memoized one — see handleSquarePress) and
+   * returns the resulting move + fen, or null if the position doesn't allow it. In Giveaway the
+   * attempted move is first checked against getGiveawayMoves: unlike Fog of War, not every
+   * pseudo-legal move is legal there (mandatory capture can rule it out), so movePseudoLegal alone
+   * would be too permissive a gate. */
+  const tryMove = (from: string, to: string, promotion?: Move['promotion']): { move: Move; fen: string } | null => {
+    const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway });
+    if (giveaway && !getGiveawayMoves(moveEngine, from).some((m) => m.to === to && m.promotion === promotion)) return null;
+    const move = usesPseudoLegalMoves ? moveEngine.movePseudoLegal(from, to, promotion) : moveEngine.move(from, to, promotion);
+    return move ? { move, fen: moveEngine.getFen() } : null;
+  };
 
   const selectOwnPiece = (square: string) => {
     const squareData = board.flat().find((s) => s.square === square);
@@ -314,11 +339,10 @@ function ChessBoard({
       // reading the NEW position's data while every other derived value on this render still
       // reflects the OLD `fen`. A disposable engine built from the same fen/options keeps the
       // memoized one untouched until the parent legitimately updates `fen`.
-      const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar });
-      const move = fogOfWar ? moveEngine.movePseudoLegal(selectedSquare, square) : moveEngine.move(selectedSquare, square);
-      if (move) {
+      const result = tryMove(selectedSquare, square);
+      if (result) {
         setSelectedSquare(null);
-        onMove(move, moveEngine.getFen());
+        onMove(result.move, result.fen);
         return;
       }
     }
@@ -359,11 +383,10 @@ function ChessBoard({
       return;
     }
     // A scratch engine, never the memoized one — see handleSquarePress's own explanation above.
-    const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar });
-    const move = fogOfWar ? moveEngine.movePseudoLegal(from, to, piece) : moveEngine.move(from, to, piece);
-    if (move) {
+    const result = tryMove(from, to, piece);
+    if (result) {
       setSelectedSquare(null);
-      onMove(move, moveEngine.getFen());
+      onMove(result.move, result.fen);
     }
   };
 
@@ -648,7 +671,7 @@ function ChessBoard({
           <View style={styles.promotionPanel}>
             <Text style={styles.promotionTitle}>Promote to</Text>
             <View style={styles.promotionRow}>
-              {PROMOTION_CHOICES.map((choice) => (
+              {getPromotionChoices(giveaway).map((choice) => (
                 <Pressable
                   key={choice}
                   style={[styles.promotionButton, { width: squareSize * 1.15, height: squareSize * 1.15 }]}

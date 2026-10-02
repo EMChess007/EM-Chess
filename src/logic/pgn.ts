@@ -9,7 +9,7 @@ import { formatSanMoves } from './sanFormat';
  * reloads the position via a raw FEN (see ChessEngine.performChess960Castle), which resets
  * chess.js's own history — `history` is the only complete, reliable record across that.
  */
-export function buildPgn(initialFen: string, history: GameHistoryEntry[], result: string): string {
+export function buildPgn(initialFen: string, history: GameHistoryEntry[], result: string, variant?: string): string {
   const fenParts = initialFen.split(' ');
   const startTurn: 'w' | 'b' = fenParts[1] === 'b' ? 'b' : 'w';
   const startMoveNumber = parseInt(fenParts[5], 10) || 1;
@@ -21,6 +21,7 @@ export function buildPgn(initialFen: string, history: GameHistoryEntry[], result
   );
 
   const tags = [`[Result "${result}"]`];
+  if (variant) tags.push(`[Variant "${variant}"]`);
   if (initialFen !== START_FEN) {
     tags.push('[SetUp "1"]', `[FEN "${initialFen}"]`);
   }

@@ -17,12 +17,14 @@ interface PlayModeSelectScreenProps {
   onBotThreeCheck: () => void;
   onBotSetupChess: () => void;
   onBotFogOfWar: () => void;
+  onBotGiveaway: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
   onLocalKingOfTheHill: () => void;
   onLocalThreeCheck: () => void;
   onLocalSetupChess: () => void;
   onLocalFogOfWar: () => void;
+  onLocalGiveaway: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
@@ -45,12 +47,14 @@ export default function PlayModeSelectScreen({
   onBotThreeCheck,
   onBotSetupChess,
   onBotFogOfWar,
+  onBotGiveaway,
   onLocalClassic,
   onLocalChess960,
   onLocalKingOfTheHill,
   onLocalThreeCheck,
   onLocalSetupChess,
   onLocalFogOfWar,
+  onLocalGiveaway,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
@@ -129,6 +133,11 @@ export default function PlayModeSelectScreen({
               <ModeButtonLabel label="Fog of War" style={styles.subButtonText} />
             </Pressable>
           </View>
+          <View style={styles.subButtonRow}>
+            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotGiveaway}>
+              <ModeButtonLabel label="Giveaway" style={styles.subButtonText} />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.categoryCard}>
@@ -154,6 +163,11 @@ export default function PlayModeSelectScreen({
             </Pressable>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalFogOfWar}>
               <ModeButtonLabel label="Fog of War" style={styles.subButtonText} />
+            </Pressable>
+          </View>
+          <View style={styles.subButtonRow}>
+            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalGiveaway}>
+              <ModeButtonLabel label="Giveaway" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>

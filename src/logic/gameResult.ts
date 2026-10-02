@@ -16,7 +16,8 @@ export type GameOutcome =
         | 'agreement'
         | 'kingOfTheHill'
         | 'threeCheck'
-        | 'fogOfWar';
+        | 'fogOfWar'
+        | 'giveaway';
     };
 
 /**
@@ -32,13 +33,20 @@ export function getGameOutcome(
   drawnByAgreement = false,
   kingOfTheHillWinner: PieceColor | null = null,
   threeCheckWinner: PieceColor | null = null,
-  fogOfWarWinner: PieceColor | null = null
+  fogOfWarWinner: PieceColor | null = null,
+  giveawayWinner: PieceColor | null = null
 ): GameOutcome {
   // Checked first of all — Fog of War has no checkmate/stalemate/draw concept whatsoever (see
   // ChessBoard's own fogOfWar doc comment), so king capture is the ONLY way a Fog of War game
   // ever ends; every other branch below is unreachable for it, same as kingOfTheHillWinner/
   // threeCheckWinner for their own variants (all mutually exclusive — one game is only ever one
   // of these at a time).
+  // Giveaway (Antichess) sits in this same top tier: it has no checkmate/stalemate/draw concept
+  // either (running out of legal moves is a WIN for whoever is stuck — see giveaway.ts), and the
+  // variants are mutually exclusive, so at most one of this and fogOfWarWinner is ever set.
+  if (giveawayWinner) {
+    return { over: true, result: giveawayWinner === 'w' ? '1-0' : '0-1', reason: 'giveaway' };
+  }
   if (fogOfWarWinner) {
     return { over: true, result: fogOfWarWinner === 'w' ? '1-0' : '0-1', reason: 'fogOfWar' };
   }

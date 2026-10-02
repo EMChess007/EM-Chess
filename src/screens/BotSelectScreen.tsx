@@ -13,6 +13,7 @@ interface BotSelectScreenProps {
   threeCheck?: boolean;
   setupChess?: boolean;
   fogOfWar?: boolean;
+  giveaway?: boolean;
 }
 
 /** A placeholder ELO shown for custom-engine cards — irrelevant to actual play, since
@@ -37,6 +38,7 @@ export default function BotSelectScreen({
   threeCheck,
   setupChess,
   fogOfWar,
+  giveaway,
 }: BotSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
@@ -51,7 +53,9 @@ export default function BotSelectScreen({
           ? 'Setup Chess'
           : fogOfWar
             ? 'Fog of War'
-            : undefined;
+            : giveaway
+              ? 'Giveaway'
+              : undefined;
 
   return (
     <View style={styles.container}>

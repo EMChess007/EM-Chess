@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { describeEndReason } from '../gameOutcomeText';
 import { getGameOutcome } from '../gameResult';
 import { getThreeCheckCounts, getThreeCheckWinner, THREE_CHECK_TARGET } from '../threeCheck';
 import { computeCapturedMaterial, materialValue } from '../material';
@@ -31,6 +32,31 @@ describe('getGameOutcome', () => {
 
   it('resignation credits the side the resigner did NOT play', () => {
     expect(getGameOutcome('playing', 'w', null, 'w')).toEqual({ over: true, result: '0-1', reason: 'resignation' });
+  });
+
+  describe('Giveaway', () => {
+    it('reports the winner and reason, for either color', () => {
+      expect(getGameOutcome('playing', 'w', null, null, false, null, null, null, 'w')).toEqual({ over: true, result: '1-0', reason: 'giveaway' });
+      expect(getGameOutcome('playing', 'w', null, null, false, null, null, null, 'b')).toEqual({ over: true, result: '0-1', reason: 'giveaway' });
+    });
+
+    it('sits in the top tier: outranks timeout, resignation, agreement, checkmate and every other variant', () => {
+      // Every other signal set at once, all pointing at the opposite result.
+      const outcome = getGameOutcome('checkmate', 'b', 'b', 'b', true, 'b', 'b', null, 'w');
+      expect(outcome).toEqual({ over: true, result: '1-0', reason: 'giveaway' });
+    });
+
+    it('does not end the game on its own when nobody has won yet', () => {
+      expect(getGameOutcome('playing', 'w', null, null, false, null, null, null, null)).toEqual({ over: false });
+    });
+
+    it('a clock loss still ends a Giveaway game (timeout is independent of the variant rules)', () => {
+      expect(getGameOutcome('playing', 'w', 'b', null, false, null, null, null, null)).toEqual({ over: true, result: '0-1', reason: 'timeout' });
+    });
+
+    it('has a human-readable end reason', () => {
+      expect(describeEndReason('giveaway')).toMatch(/no legal moves/i);
+    });
   });
 
   it('king of the hill / three-check outrank ordinary chess.js status', () => {

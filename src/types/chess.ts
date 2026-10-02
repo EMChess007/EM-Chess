@@ -21,7 +21,9 @@ export interface BoardSquare {
 export interface Move {
   from: Square;
   to: Square;
-  promotion?: 'n' | 'b' | 'r' | 'q';
+  /** 'k' only ever appears in Giveaway (Antichess), where a pawn may promote to a king — see
+   * ChessEngineOptions.giveaway. */
+  promotion?: 'n' | 'b' | 'r' | 'q' | 'k';
   san: string;
   /** The type of piece captured by this move (regular capture or en passant), if any. */
   captured?: PieceType;

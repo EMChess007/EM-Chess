@@ -12,7 +12,8 @@ export type EndReason =
   | 'agreement'
   | 'kingOfTheHill'
   | 'threeCheck'
-  | 'fogOfWar';
+  | 'fogOfWar'
+  | 'giveaway';
 
 export function describeEndReason(reason: EndReason): string {
   switch (reason) {
@@ -24,6 +25,8 @@ export function describeEndReason(reason: EndReason): string {
       return 'by Three-Check';
     case 'fogOfWar':
       return 'by King Capture';
+    case 'giveaway':
+      return 'by Having No Legal Moves';
     case 'timeout':
       return 'by Timeout';
     case 'resignation':

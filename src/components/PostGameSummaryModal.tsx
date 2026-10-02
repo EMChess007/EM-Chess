@@ -25,6 +25,10 @@ interface PostGameSummaryModalProps {
    * computeGameSummary, which otherwise crashes (well, fails silently here — see its own try/
    * catch below — but never produces a summary) on a finished Fog of War game's final position. */
   fogOfWar?: boolean;
+  /** Giveaway (Antichess) only — Stockfish knows nothing of its rules (mandatory captures,
+   * capturable kings, no check) and can misbehave on its kingless positions, so no accuracy
+   * analysis runs and Game Review is not offered. */
+  giveaway?: boolean;
   history: GameHistoryEntry[];
   /** One entry (Bot/Online: just the user) or two (Local: White and Black). */
   players: SummaryPlayer[];
@@ -52,6 +56,7 @@ export default function PostGameSummaryModal({
   initialFen,
   chess960,
   fogOfWar = false,
+  giveaway = false,
   history,
   players,
   onGameReview,
@@ -69,7 +74,7 @@ export default function PostGameSummaryModal({
   // attachBridge() on the same engine, and the second one silently steals the connection from the
   // first (same reasoning EngineVsEngineGameScreen documents for reusing one runtime across two
   // engines that happen to share an id — except here we specifically want isolation, not sharing).
-  const scratchEngine = useMemo(() => (visible ? new StockfishEngineAdapter() : null), [visible]);
+  const scratchEngine = useMemo(() => (visible && !giveaway ? new StockfishEngineAdapter() : null), [visible, giveaway]);
   const bridgeRef = useRef<StockfishBridgeHandle>(null);
   const handleBridgeRef = useCallback(
     (handle: StockfishBridgeHandle | null) => {
@@ -127,6 +132,7 @@ export default function PostGameSummaryModal({
         <Text style={styles.subtitle}>{subtitle}</Text>
 
         {history.length > 0 &&
+          !giveaway &&
           (!summary ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color={colors.text} />
@@ -159,9 +165,11 @@ export default function PostGameSummaryModal({
           ))}
 
         <View style={styles.buttonColumn}>
-          <Pressable style={styles.primaryButton} onPress={onGameReview}>
-            <Text style={styles.primaryButtonText}>Game Review</Text>
-          </Pressable>
+          {!giveaway && (
+            <Pressable style={styles.primaryButton} onPress={onGameReview}>
+              <Text style={styles.primaryButtonText}>Game Review</Text>
+            </Pressable>
+          )}
           {onRematch && (
             <Pressable style={styles.secondaryButton} onPress={onRematch}>
               <Text style={styles.secondaryButtonText}>Rematch</Text>

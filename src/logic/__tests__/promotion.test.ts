@@ -139,7 +139,7 @@ describe('ChessBoard source wiring (no RN renderer available)', () => {
 
   it('asks via the shared isPromotionMove check and the picker for both real moves and premoves', () => {
     expect(source).toContain('isPromotionMove');
-    expect(source).toContain('PROMOTION_CHOICES');
+    expect(source).toContain('getPromotionChoices');
     expect(source).toMatch(/kind: 'move'/);
     expect(source).toMatch(/kind: 'premove'/);
   });

@@ -137,3 +137,40 @@ As in the backend's audit: this is not equal-depth coverage everywhere, by desig
 engine and Fog of War got the deepest investment because that's where every bug this project has
 actually found so far has lived. Gaps above are named, not hidden, so a future session knows
 exactly where to look first if something in one of those areas turns out wrong.
+
+## 6. Giveaway (Antichess) — scope, decisions and known limits
+
+Added following CHECKLIST.md. Rules and the shared logic live in `src/logic/giveaway.ts`; the
+engine-level pieces chess.js can't express (no castling, promotion to a king, no '+'/'#' in SAN)
+sit behind `ChessEngine`'s opt-in `giveaway` option, so every other mode's move generation is
+untouched.
+
+**Scope (decided with the maintainer): Local + Bots only.** Online, Challenges, Tournaments and
+Engine vs Engine do NOT offer Giveaway — the Online setup screens exclude it from their
+`VariantSelector`, and there is deliberately no server-side implementation yet. CHECKLIST §4
+(client/server parity tests) therefore doesn't apply until Online is added; when it is, it needs a
+`RoomChessEngine` twin of the `giveaway` option plus mandatory-capture validation in
+`rooms.ts`, with side-by-side tests (same shape as the Fog of War ones).
+
+**Mutual exclusivity:** Giveaway cannot combine with any other variant (it has its own
+`getGameOutcome` priority slot next to Fog of War, no check/checkmate/stalemate/draw concept).
+
+**Decisions worth knowing**
+- Castling is forbidden (standard Antichess; chess.js would otherwise offer it).
+- A pawn may promote to a king (picker shows 5 pieces in Giveaway).
+- Bots do NOT use Stockfish (`chooseGiveawayBotMove` in `bots.ts`): a 1-ply heuristic that scores a
+  move by the material it hands the opponent, avoids moves that leave them with no legal move (that
+  wins THEM the game), and uses ELO only as a "chance to play the best-scoring move" dial
+  (~20% at 400 up to ~90% at 3000). It is a first version — how strong Giveaway bots should be is a
+  product decision, not tuned yet.
+- No hints, no premoves, no accuracy review. The post-game modal skips the Stockfish analysis and
+  Game Review button, and saved PGNs carry `[Variant "Antichess"]` so Game History's "analyze"
+  refuses to replay them under ordinary chess rules. Games don't move the player's chess rating or
+  unlock rating-based achievements.
+
+**Known limits**
+- SAN disambiguation (e.g. "Nbd7" vs "Nd7") is computed by chess.js from its own legal-move list,
+  which assumes ordinary king safety, so in rare positions a SAN in the move list/PGN could omit a
+  disambiguator. Cosmetic only — the moves themselves come from the Giveaway generator.
+- No React Native renderer in this project: board/screen wiring is guarded by source-level tests in
+  `giveaway.test.ts`, and was verified by hand in the web build (Local and Bot), not on a device.

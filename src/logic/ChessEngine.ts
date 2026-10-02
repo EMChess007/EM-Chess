@@ -5,6 +5,9 @@ import { collapseFenRank, expandFenRank, getChess960BackRankFiles } from './ches
 
 const FILES = 'abcdefgh';
 
+/** chess.js's KSIDE_CASTLE (32) | QSIDE_CASTLE (64) move flags — see ChessEngineOptions.giveaway. */
+const CASTLE_FLAGS = 32 | 64;
+
 /** chess.js's own internal move shape — not exported by name, but structurally identical to this
  * (TypeScript matches structurally, so this works wherever chess.js's own unexported
  * `InternalMove` type is expected, e.g. the `Move` class's constructor). See `ChessInternals`
@@ -40,7 +43,7 @@ function toAppMove(pretty: ChessJsMove): Move {
   return {
     from: pretty.from,
     to: pretty.to,
-    promotion: pretty.promotion as 'n' | 'b' | 'r' | 'q' | undefined,
+    promotion: pretty.promotion as Move['promotion'],
     san: pretty.san,
     captured: pretty.captured as Move['captured'],
   };
@@ -72,7 +75,7 @@ function toAppMoveFromRaw(raw: InternalMove): Move {
   return {
     from: squareFromIndex(raw.from),
     to: squareFromIndex(raw.to),
-    promotion: raw.promotion as 'n' | 'b' | 'r' | 'q' | undefined,
+    promotion: raw.promotion as Move['promotion'],
     san: '', // never read — see this function's own doc comment.
     captured: raw.captured as Move['captured'],
   };
@@ -101,17 +104,31 @@ export interface ChessEngineOptions {
    * default) and keeps that validation as a real safety net.
    */
   skipValidation?: boolean;
+  /**
+   * Giveaway (Antichess) only — see giveaway.ts for the rules. Changes what getPseudoLegalMoves/
+   * movePseudoLegal generate, because chess.js's pseudo-legal generator is built for ordinary chess:
+   *  - Castling is dropped: standard Antichess has none (chess.js would otherwise still offer it,
+   *    and even suppress it based on a check rule that has no meaning here).
+   *  - A pawn reaching its last rank may also promote to a KING, which chess.js never offers (the
+   *    king is a normal capturable piece in this variant, so there's no "only one king" rule).
+   *  - SAN loses its '+'/'#' suffix: chess.js still computes one from its (here meaningless) check
+   *    detection, which would put misleading check marks in the move list and exported PGN.
+   * Every other mode leaves this off (the default), so its move generation is untouched.
+   */
+  giveaway?: boolean;
 }
 
 export class ChessEngine {
   private chess: Chess;
   private chess960: boolean;
   private files: { kingFile: number; queenRookFile: number; kingRookFile: number };
+  private giveaway: boolean;
 
   constructor(fen?: string, options?: ChessEngineOptions) {
     const skipValidation = options?.skipValidation ?? false;
     this.chess = fen ? new Chess(fen, { skipValidation }) : new Chess();
     this.chess960 = options?.chess960 ?? false;
+    this.giveaway = options?.giveaway ?? false;
     this.files = getChess960BackRankFiles(options?.initialFen ?? fen ?? START_FEN);
   }
 
@@ -142,7 +159,7 @@ export class ChessEngine {
     return [...nonCastling.map((move) => move.to), ...castlingTargets];
   }
 
-  move(from: string, to: string, promotion?: 'n' | 'b' | 'r' | 'q'): Move | null {
+  move(from: string, to: string, promotion?: Move['promotion']): Move | null {
     if (this.chess960) {
       const side = this.matchChess960CastleAttempt(from, to);
       if (side) {
@@ -244,8 +261,7 @@ export class ChessEngine {
   getPseudoLegalMoves(color?: PieceColor): Move[] {
     const turn = this.chess.turn();
     const source = !color || color === turn ? this.chess : this.cloneWithTurn(color);
-    const internals = source as unknown as ChessInternals;
-    return internals._moves({ legal: false }).map(toAppMoveFromRaw);
+    return this.generateRaw(source).map(toAppMoveFromRaw);
   }
 
   /** Applies `from`-`to` if it matches one of the CURRENT side's pseudo-legal moves (see
@@ -254,9 +270,9 @@ export class ChessEngine {
    * square (Fog of War's whole win condition). Returns null if nothing matches (illegal shape,
    * wrong turn, blocked path, etc.) — same contract as move(). Doesn't handle Chess960 castling —
    * Fog of War and Chess960 aren't combinable from the UI today. */
-  movePseudoLegal(from: string, to: string, promotion?: 'n' | 'b' | 'r' | 'q'): Move | null {
+  movePseudoLegal(from: string, to: string, promotion?: Move['promotion']): Move | null {
     const internals = this.chess as unknown as ChessInternals;
-    const candidates = internals._moves({ legal: false });
+    const candidates = this.generateRaw(this.chess);
     // Compared directly off the raw move's own from/to/promotion (see toAppMoveFromRaw's doc
     // comment) — NOT by wrapping every scanned candidate in a chess.js Move first just to read
     // those three fields, which used to pay that wrapper's full san/fen-computing cost once per
@@ -268,7 +284,23 @@ export class ChessEngine {
     if (!raw) return null;
     const pretty = new ChessJsMove(this.chess, raw);
     internals._makeMove(raw);
-    return toAppMove(pretty);
+    const applied = toAppMove(pretty);
+    return this.giveaway ? { ...applied, san: applied.san.replace(/[+#]$/, '') } : applied;
+  }
+
+  /** chess.js's raw pseudo-legal candidates for `source`'s side to move, adjusted for Giveaway when
+   * that option is on (see ChessEngineOptions.giveaway). Plain `_moves({ legal: false })` otherwise. */
+  private generateRaw(source: Chess): InternalMove[] {
+    const raw = (source as unknown as ChessInternals)._moves({ legal: false });
+    if (!this.giveaway) return raw;
+    const out: InternalMove[] = [];
+    for (const m of raw) {
+      if (m.flags & (CASTLE_FLAGS)) continue;
+      out.push(m);
+      // chess.js emits one candidate per promotion piece (n/b/r/q); Giveaway adds the king too.
+      if (m.promotion === 'q') out.push({ ...m, promotion: 'k' });
+    }
+    return out;
   }
 
   private cloneWithTurn(color: PieceColor): Chess {

@@ -1,5 +1,9 @@
 import type { BotCategory, BotPersonality } from '../types/bot';
+import type { Move } from '../types/chess';
 import type { TimeControl } from '../types/timeControl';
+import { PIECE_VALUES } from './analysis';
+import { ChessEngine } from './ChessEngine';
+import { getGiveawayMoves } from './giveaway';
 
 export const BOT_CATEGORIES: { category: BotCategory; label: string }[] = [
   { category: 'absoluteBeginner', label: 'Kid / Absolute Beginner' },
@@ -118,4 +122,59 @@ export function getBotThinkTimeMs({ timeControl, remainingSeconds, legalMoveCoun
   // flagging on time because of our own computed "thinking" delay).
   thinkMs = Math.min(thinkMs, remainingMs - 1);
   return Math.round(Math.max(0, thinkMs));
+}
+
+// --- Giveaway (Antichess) -----------------------------------------------------------------
+
+/**
+ * Picks a move for a bot playing Giveaway. Deliberately NOT Stockfish: it has no concept of this
+ * ruleset (mandatory captures, capturable kings, "run out of moves to win"), and — unlike Fog of
+ * War, where any Stockfish move is automatically also legal — a normal engine move routinely
+ * breaks the mandatory-capture rule. So this picks from getGiveawayMoves (always rule-legal) with a
+ * deliberately simple heuristic, shipped as a first version to be tuned later (how good Giveaway
+ * bots should be is a product decision, not just engineering):
+ *
+ *  - The aim of Giveaway is to LOSE all your material, so a move scores by what it hands the
+ *    opponent: the value of the pieces they can then capture of ours (they are forced to capture
+ *    if they can), minus the value of anything we capture ourselves (taking their pieces helps them).
+ *  - A move after which the opponent has NO legal move is heavily penalised — that wins THEM the game.
+ *  - ELO is the only strength dial: the chance of playing the best-scoring move (rather than a
+ *    random legal one) rises from ~20% at 400 ELO to ~90% at 3000, so weak bots still blunder
+ *    plenty and strong ones play the heuristic reliably. Every bot shares the same 1-ply heuristic.
+ *
+ * Returns null only when the bot has no legal move (the game would already be over — see
+ * getGiveawayWinner).
+ */
+export function chooseGiveawayBotMove(engine: ChessEngine, elo: number, rng: () => number = Math.random): Move | null {
+  const moves = getGiveawayMoves(engine);
+  if (moves.length === 0) return null;
+  if (moves.length === 1) return moves[0];
+
+  const bestChance = 0.2 + 0.7 * Math.min(1, Math.max(0, (elo - 400) / 2600));
+  if (rng() >= bestChance) return moves[Math.floor(rng() * moves.length)];
+
+  const fen = engine.getFen();
+  const scored = moves.map((move) => {
+    const scratch = new ChessEngine(fen, { skipValidation: true, giveaway: true });
+    scratch.movePseudoLegal(move.from, move.to, move.promotion);
+    const replies = getGiveawayMoves(scratch);
+    let score = 0;
+    if (move.captured) score -= PIECE_VALUES[move.captured] + 1;
+    if (replies.length === 0) {
+      score -= 100;
+    } else {
+      // The opponent must capture whenever they can, so every reply here that captures takes
+      // something of ours; assume they pick the most valuable (the pessimistic case for scoring).
+      // A bot that WANTS to be captured scores higher for handing over more.
+      const captured = replies.filter((reply) => reply.captured);
+      if (captured.length > 0) {
+        const taken = captured.map((reply) => PIECE_VALUES[scratch.getPieceAt(reply.to)?.type ?? 'p']);
+        score += Math.max(...taken) + 1;
+      }
+    }
+    return { move, score };
+  });
+  const top = Math.max(...scored.map((s) => s.score));
+  const best = scored.filter((s) => s.score === top);
+  return best[Math.floor(rng() * best.length)].move;
 }
