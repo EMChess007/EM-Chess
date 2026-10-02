@@ -1,6 +1,8 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, PanResponder, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { ChessEngine } from '../logic/ChessEngine';
+import { isTouchInside, subscribeToScreenTouches } from '../logic/screenTouches';
+import { PROMOTION_CHOICES, PROMOTION_LABELS, type PromotionPiece, isPromotionMove } from '../logic/promotion';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { Move, PieceColor, Piece as PieceModel } from '../types/chess';
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
@@ -160,8 +162,14 @@ function ChessBoard({
 
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
 
+  // A human move that promotes a pawn is frozen here until they pick the piece — see
+  // handleSquarePress/completePromotion. `kind` records whether it resolves into a real move or a
+  // queued premove once chosen.
+  const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string; color: PieceColor; kind: 'move' | 'premove' } | null>(null);
+
   useEffect(() => {
     setSelectedSquare(null);
+    setPendingPromotion(null);
   }, [fen]);
 
   // Arrows/highlights (see BoardAnnotations) — always reset on a real position change (a move
@@ -259,7 +267,7 @@ function ChessBoard({
   };
 
   const handleSquarePress = (square: string) => {
-    if (disabled || gameOver) return;
+    if (disabled || gameOver || pendingPromotion) return;
 
     if (!selectedSquare) {
       selectOwnPiece(square);
@@ -277,12 +285,25 @@ function ChessBoard({
         setSelectedSquare(square); // reselect a different piece to premove instead
         return;
       }
-      onPremove?.({ from: selectedSquare, to: square, promotion: 'q' });
+      const premovingPiece = board.flat().find((s) => s.square === selectedSquare)?.piece;
+      if (premovingPiece && isPromotionMove(premovingPiece, square)) {
+        setPendingPromotion({ from: selectedSquare, to: square, color: premovingPiece.color, kind: 'premove' });
+        return;
+      }
+      onPremove?.({ from: selectedSquare, to: square });
       setSelectedSquare(null);
       return;
     }
 
     if (legalTargets.includes(square)) {
+      // A pawn reaching its last rank — by a plain push or a capture alike — is never completed
+      // automatically: the move is held until the player picks the promotion piece.
+      const movingPiece = board.flat().find((s) => s.square === selectedSquare)?.piece;
+      if (movingPiece && isPromotionMove(movingPiece, square)) {
+        setPendingPromotion({ from: selectedSquare, to: square, color: movingPiece.color, kind: 'move' });
+        return;
+      }
+
       // A scratch engine, NOT the memoized `engine` above — ChessEngine.move()/movePseudoLegal()
       // mutate chess.js's internal board state in place rather than returning a new instance. If
       // this called them on the memoized `engine`, it would silently fall out of sync with its
@@ -294,7 +315,7 @@ function ChessBoard({
       // reflects the OLD `fen`. A disposable engine built from the same fen/options keeps the
       // memoized one untouched until the parent legitimately updates `fen`.
       const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar });
-      const move = fogOfWar ? moveEngine.movePseudoLegal(selectedSquare, square, 'q') : moveEngine.move(selectedSquare, square, 'q');
+      const move = fogOfWar ? moveEngine.movePseudoLegal(selectedSquare, square) : moveEngine.move(selectedSquare, square);
       if (move) {
         setSelectedSquare(null);
         onMove(move, moveEngine.getFen());
@@ -303,6 +324,47 @@ function ChessBoard({
     }
 
     selectOwnPiece(square);
+  };
+
+  // Tap outside the board deselects, same as tapping inside it on an empty/unrelated square does.
+  // The board's own PanResponder can only ever see touches that land on the board itself, so this
+  // listens to the app-wide touch signal instead (see screenTouches.ts / App.tsx). Only subscribed
+  // while something is actually selected, and skipped while the promotion picker is up (that has its
+  // own full-screen cancel). The touch is NOT consumed — a tap on Resign/Hint/Undo etc. still does
+  // its own job as well; this just also clears the selection.
+  useEffect(() => {
+    if (!selectedSquare || pendingPromotion) return;
+    return subscribeToScreenTouches((pageX, pageY) => {
+      boardContainerRef.current?.measure((_x, _y, width, height, boardPageX, boardPageY) => {
+        if (!isTouchInside(pageX, pageY, { x: boardPageX, y: boardPageY, width, height })) {
+          setSelectedSquare(null);
+        }
+      });
+    });
+  }, [selectedSquare, pendingPromotion]);
+
+  // Cancelling also deselects the pawn, so the player is back to a clean "nothing selected" state.
+  const cancelPromotion = () => {
+    setPendingPromotion(null);
+    setSelectedSquare(null);
+  };
+
+  const completePromotion = (piece: PromotionPiece) => {
+    if (!pendingPromotion) return;
+    const { from, to, kind } = pendingPromotion;
+    setPendingPromotion(null);
+    if (kind === 'premove') {
+      onPremove?.({ from, to, promotion: piece });
+      setSelectedSquare(null);
+      return;
+    }
+    // A scratch engine, never the memoized one — see handleSquarePress's own explanation above.
+    const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar });
+    const move = fogOfWar ? moveEngine.movePseudoLegal(from, to, piece) : moveEngine.move(from, to, piece);
+    if (move) {
+      setSelectedSquare(null);
+      onMove(move, moveEngine.getFen());
+    }
   };
 
   // --- Unified touch handling for the whole grid: a quick tap behaves exactly like the old
@@ -570,11 +632,75 @@ function ChessBoard({
           </Animated.View>
         )}
       </View>
+
+      {/* A real Modal, not an overlay inside the board: it covers the WHOLE screen, so a tap
+          anywhere outside the four buttons — on the board or off it — lands on the backdrop and
+          cancels. (An earlier absolutely-positioned overlay only covered the board's own bounds,
+          so taps elsewhere on the screen never reached it.) Android's back button cancels too. */}
+      <Modal
+        visible={pendingPromotion !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={cancelPromotion}
+      >
+        <Pressable style={styles.promotionBackdrop} onPress={cancelPromotion} accessibilityLabel="Cancel promotion">
+          <View style={styles.promotionPanel}>
+            <Text style={styles.promotionTitle}>Promote to</Text>
+            <View style={styles.promotionRow}>
+              {PROMOTION_CHOICES.map((choice) => (
+                <Pressable
+                  key={choice}
+                  style={[styles.promotionButton, { width: squareSize * 1.15, height: squareSize * 1.15 }]}
+                  onPress={() => completePromotion(choice)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Promote to ${PROMOTION_LABELS[choice]}`}
+                >
+                  <Piece piece={{ type: choice, color: pendingPromotion?.color ?? 'w' }} images={pieceTheme.images} />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  promotionBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  promotionPanel: {
+    backgroundColor: '#f4ecd8',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    gap: 8,
+  },
+  promotionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3a2618',
+  },
+  promotionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  promotionButton: {
+    backgroundColor: '#d9c8a3',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   border: {
     borderWidth: 2,
     borderColor: '#3a2618',

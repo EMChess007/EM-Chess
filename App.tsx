@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { AppState, Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { setSessionExpiredHandler } from './src/api/client';
+import { notifyScreenTouch } from './src/logic/screenTouches';
 import { clearAuthSession, loadAuthSession, type AuthSession } from './src/api/authStorage';
 import AppAlertHost, { appAlert } from './src/components/AppAlert';
 import BottomTabBar, { type MainTab } from './src/components/BottomTabBar';
@@ -807,7 +808,17 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>{content}</View>
+      <View
+        style={{ flex: 1, backgroundColor: colors.background }}
+        // Observes every touch start without claiming it (returns false), so Resign/Hint/Undo, scroll
+        // views etc. behave exactly as before — see src/logic/screenTouches.ts.
+        onStartShouldSetResponderCapture={(e) => {
+          notifyScreenTouch(e.nativeEvent.pageX, e.nativeEvent.pageY);
+          return false;
+        }}
+      >
+        {content}
+      </View>
       <AppAlertHost />
       <StatusBar style={colors.mode === 'dark' ? 'light' : 'dark'} />
     </SafeAreaProvider>
