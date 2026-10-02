@@ -23,6 +23,16 @@ interface SquareProps {
    * slide animation is carrying the moving piece in, so it doesn't already show up here the
    * instant the move lands, underneath the incoming sprite. */
   hidePiece?: boolean;
+  /** Fog of War only — true when this square is outside the local viewer's current visibility.
+   * Covers the square with a FULLY OPAQUE overlay instead of showing whatever's there (or isn't):
+   * for Local/Bot, ChessBoard still holds the true fen, so `data.piece` may well be populated
+   * here — this is what actually hides it from rendering, not the fen itself. Opaque rather than
+   * a translucent tint deliberately — this square's own background color is still set above from
+   * isLastMove/isChecked/isSelected regardless of fog (simpler than threading fog awareness into
+   * every one of those), and anything less than fully opaque would let that color bleed through
+   * and leak exactly the kind of information (e.g. "a move just landed here") Fog of War exists
+   * to hide. */
+  isFogged?: boolean;
   size: number;
   /** The active board theme's colors and the active piece theme's images — see ChessBoard.tsx. */
   lightColor: string;
@@ -41,6 +51,7 @@ export default function Square({
   isLastMove,
   isKingOfTheHillTarget,
   hidePiece,
+  isFogged,
   size,
   lightColor,
   darkColor,
@@ -57,8 +68,14 @@ export default function Square({
         isChecked && styles.checked,
       ]}
     >
-      {isLegalTarget && <View style={styles.legalDot} />}
-      {data.piece && !hidePiece && <Piece piece={data.piece} images={pieceImages} />}
+      {isFogged ? (
+        <View style={[StyleSheet.absoluteFill, styles.fog]} />
+      ) : (
+        <>
+          {isLegalTarget && <View style={styles.legalDot} />}
+          {data.piece && !hidePiece && <Piece piece={data.piece} images={pieceImages} />}
+        </>
+      )}
     </View>
   );
 }
@@ -86,5 +103,8 @@ const styles = StyleSheet.create({
     height: 14,
     borderRadius: 7,
     backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  fog: {
+    backgroundColor: '#23201c',
   },
 });

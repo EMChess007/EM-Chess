@@ -17,7 +17,8 @@ export type GameOverReason =
   | 'abandonment'
   | 'resignation'
   | 'kingOfTheHill'
-  | 'threeCheck';
+  | 'threeCheck'
+  | 'fogOfWar';
 
 export interface JoinQueuePayload {
   timeControl: OnlineTimeControl;
@@ -25,6 +26,7 @@ export interface JoinQueuePayload {
   isKingOfTheHill?: boolean;
   isThreeCheck?: boolean;
   isSetupChess?: boolean;
+  isFogOfWar?: boolean;
 }
 
 export interface MakeMovePayload {
@@ -67,20 +69,31 @@ export interface MatchFoundPayload {
   isKingOfTheHill: boolean;
   isThreeCheck: boolean;
   isSetupChess: boolean;
+  isFogOfWar: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;
+  /** Fog of War only — this recipient's own current visibility (square names); see
+   * ChessBoard's visibleSquares prop. Even the classical starting position isn't fully visible
+   * to either side under this variant's rule, so it's populated from the very first
+   * `match_found` already. Omitted outside Fog of War. */
+  visibleSquares?: string[];
 }
 
 export interface OpponentMovePayload {
-  from: string;
-  to: string;
+  /** Omitted together (along with `san`) when this move happened outside the Fog of War
+   * recipient's own visibility — the new (redacted) `fen`/`turn`/clocks/`visibleSquares` still
+   * arrive, just not what specifically happened. Always present outside Fog of War. */
+  from?: string;
+  to?: string;
   promotion?: 'n' | 'b' | 'r' | 'q';
-  san: string;
+  san?: string;
   fen: string;
   turn: PieceColor;
   whiteMs: number;
   blackMs: number;
+  /** Fog of War only — see MatchFoundPayload.visibleSquares. */
+  visibleSquares?: string[];
 }
 
 export interface GameOverPayload {
@@ -107,9 +120,14 @@ export interface RejoinStatePayload {
   isKingOfTheHill: boolean;
   isThreeCheck: boolean;
   isSetupChess: boolean;
+  isFogOfWar: boolean;
   whiteMs: number;
   blackMs: number;
-  moves: { from: string; to: string; promotion?: string; san: string }[];
+  /** Each entry's fields are all omitted together for a Fog of War move this viewer never
+   * witnessed — always fully populated outside Fog of War. */
+  moves: { from?: string; to?: string; promotion?: string; san?: string }[];
+  /** Fog of War only — see MatchFoundPayload.visibleSquares. */
+  visibleSquares?: string[];
   opponentConnected: boolean;
 }
 
@@ -135,6 +153,7 @@ export interface CreateChallengePayload {
   isKingOfTheHill?: boolean;
   isThreeCheck?: boolean;
   isSetupChess?: boolean;
+  isFogOfWar?: boolean;
   timeControlLabel?: string;
 }
 

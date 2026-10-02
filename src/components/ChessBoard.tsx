@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, PanResponder, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { ChessEngine } from '../logic/ChessEngine';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
@@ -52,6 +52,24 @@ interface ChessBoardProps {
    * so it's clear what the target is. Off by default; only screens actually playing that variant
    * turn it on. */
   kingOfTheHill?: boolean;
+  /** Fog of War only — switches move interaction from legal moves (king-safety enforced) to
+   * pseudo-legal moves (see ChessEngine.getPseudoLegalMoves/movePseudoLegal): a move is allowed
+   * even if it leaves the mover's own king exposed, and landing on the enemy king is a normal,
+   * allowed capture rather than something chess.js would otherwise refuse to generate. Also
+   * suppresses check highlighting and the normal isGameOver() gate — see getStatus()'s own
+   * chess.js-driven checkmate/stalemate detection, which doesn't apply to this variant at all
+   * (rule: no check/checkmate concept); the caller alone decides when the game ends, via
+   * `move.captured === 'k'` on whatever movePseudoLegal/onMove returns. */
+  fogOfWar?: boolean;
+  /** Fog of War only — the squares currently visible to the LOCAL viewer. Squares outside this
+   * set render fogged (see Square's isFogged) regardless of what `fen`/the engine actually has
+   * there: for Local/Bot this is still the true fen client-side (there's no network boundary to
+   * protect there, just a display-correctness concern), and for Online the fen arriving here is
+   * already server-redacted, but a blank square in a redacted fen is ambiguous between "known
+   * empty" and "fogged" — this set is what actually disambiguates the two. Omit entirely outside
+   * Fog of War (undefined means "nothing is fogged").
+   */
+  visibleSquares?: Set<string>;
 }
 
 const KING_OF_THE_HILL_SQUARES = ['d4', 'd5', 'e4', 'e5'];
@@ -79,7 +97,7 @@ function rowColToSquare(row: number, col: number, orientation: PieceColor): stri
   return `${file}${rank}`;
 }
 
-export default function ChessBoard({
+function ChessBoard({
   fen,
   onMove,
   disabled,
@@ -91,6 +109,8 @@ export default function ChessBoard({
   premoveColor,
   onPremove,
   kingOfTheHill = false,
+  fogOfWar = false,
+  visibleSquares,
 }: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
   const boardSize = getBoardSize(width, height);
@@ -98,9 +118,11 @@ export default function ChessBoard({
   const boardTheme = useActiveBoardTheme();
   const pieceTheme = useActivePieceTheme();
 
+  // skipValidation: Online Fog of War's `fen` is server-redacted and can legitimately be missing
+  // a king the viewer can't currently see — see ChessEngine's own doc comment on the option.
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen }),
-    [fen, chess960, initialFen]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar }),
+    [fen, chess960, initialFen, fogOfWar]
   );
   const board = useMemo(() => engine.getBoard(), [engine]);
   // Reversing both axes together preserves each square's light/dark identity (a 180° rotation
@@ -112,7 +134,11 @@ export default function ChessBoard({
     [board, orientation]
   );
   const turn = engine.getTurn();
-  const gameOver = engine.isGameOver();
+  // Fog of War has no checkmate/stalemate concept at all, and chess.js's own isGameOver() can
+  // still (correctly, but irrelevantly) report one once a position reaches such a pattern via
+  // movePseudoLegal — the caller alone decides when a Fog of War game ends (king capture), via
+  // the `disabled` prop, so this never gates input itself in that mode.
+  const gameOver = fogOfWar ? false : engine.isGameOver();
   const status = engine.getStatus();
 
   // Reuses the same check/checkmate detection already driving status text and game-end logic
@@ -121,16 +147,16 @@ export default function ChessBoard({
   // naturally covers "my king" or "the opponent's king" depending on whose turn it now is, in
   // every mode (including Chess960, since it's derived from the same board/turn everything else
   // already uses). Checkmate intentionally keeps this highlighted (status stays 'checkmate'),
-  // same as check.
+  // same as check. Never highlighted in Fog of War — check isn't announced there at all.
   const checkedKingSquare = useMemo(() => {
-    if (status !== 'check' && status !== 'checkmate') return null;
+    if (fogOfWar || (status !== 'check' && status !== 'checkmate')) return null;
     for (const row of board) {
       for (const square of row) {
         if (square.piece?.type === 'k' && square.piece.color === turn) return square.square;
       }
     }
     return null;
-  }, [board, turn, status]);
+  }, [board, turn, status, fogOfWar]);
 
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
 
@@ -163,6 +189,15 @@ export default function ChessBoard({
     prevFenRef.current = fen;
     if (!lastMove || prevFen === fen) return;
 
+    // Fog of War: the sliding sprite below is a separate overlay rendered on top of the whole
+    // grid, entirely outside Square's own fog check — animating it for a move whose squares
+    // aren't in the viewer's own current visibility would show the piece moving in full view for
+    // the animation's duration, then hide it, a flash leak of exactly the information this mode
+    // exists to hide. Skipping the animation outright and letting the static (correctly fogged)
+    // board render directly is what actually prevents that — not narrowing the sprite's own
+    // visuals, since by the time any narrowing could apply the leak has already happened.
+    if (visibleSquares && (!visibleSquares.has(lastMove.from) || !visibleSquares.has(lastMove.to))) return;
+
     // Only animate when the position just before this one actually had the mover's piece
     // sitting on `lastMove.from` — i.e. this really is one forward step from what was just on
     // screen, not e.g. a jump to an arbitrary position while scrubbing move history. A relatively
@@ -170,7 +205,7 @@ export default function ChessBoard({
     // flag through every caller.
     let movingPiece: PieceModel | null = null;
     try {
-      movingPiece = new ChessEngine(prevFen, { chess960, initialFen }).getPieceAt(lastMove.from);
+      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: fogOfWar }).getPieceAt(lastMove.from);
     } catch {
       movingPiece = null;
     }
@@ -201,7 +236,18 @@ export default function ChessBoard({
   // cancelled any pending premove by then, see OnlineGameScreen/BotGameScreen).
   const isPremoveMode = premoveColor !== undefined && premoveColor !== turn;
   const selectableColor = isPremoveMode ? premoveColor : turn;
-  const legalTargets = selectedSquare && !isPremoveMode ? engine.getLegalMoves(selectedSquare) : [];
+  // Fog of War: pseudo-legal targets (see ChessBoard's own fogOfWar doc comment) instead of
+  // king-safety-filtered legal ones — getPseudoLegalMoves already generates for `selectableColor`
+  // regardless of whose turn it actually is, which is also what makes this correct in premove mode.
+  const legalTargets =
+    selectedSquare && !isPremoveMode
+      ? fogOfWar
+        ? engine
+            .getPseudoLegalMoves(selectableColor)
+            .filter((m) => m.from === selectedSquare)
+            .map((m) => m.to)
+        : engine.getLegalMoves(selectedSquare)
+      : [];
 
   const selectOwnPiece = (square: string) => {
     const squareData = board.flat().find((s) => s.square === square);
@@ -237,10 +283,21 @@ export default function ChessBoard({
     }
 
     if (legalTargets.includes(square)) {
-      const move = engine.move(selectedSquare, square, 'q');
+      // A scratch engine, NOT the memoized `engine` above — ChessEngine.move()/movePseudoLegal()
+      // mutate chess.js's internal board state in place rather than returning a new instance. If
+      // this called them on the memoized `engine`, it would silently fall out of sync with its
+      // own useMemo cache key (still `fen`, the OLD position) the instant the move is applied —
+      // for the whole window between now and the parent's re-render with the new `fen` prop (an
+      // async setState), any OTHER render triggered in between (a different piece of state
+      // changing) would reuse the memoized-but-now-mutated `engine` instead of recomputing it,
+      // reading the NEW position's data while every other derived value on this render still
+      // reflects the OLD `fen`. A disposable engine built from the same fen/options keeps the
+      // memoized one untouched until the parent legitimately updates `fen`.
+      const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar });
+      const move = fogOfWar ? moveEngine.movePseudoLegal(selectedSquare, square, 'q') : moveEngine.move(selectedSquare, square, 'q');
       if (move) {
         setSelectedSquare(null);
-        onMove(move, engine.getFen());
+        onMove(move, moveEngine.getFen());
         return;
       }
     }
@@ -270,19 +327,40 @@ export default function ChessBoard({
   } | null>(null);
   const boardContainerRef = useRef<View>(null);
   const boardOffsetRef = useRef({ x: 0, y: 0 });
+  // The most recent not-yet-resolved remeasureBoardOffset() call, if any — see that function's
+  // own doc comment for why onPanResponderRelease needs to be able to wait on this instead of
+  // always trusting boardOffsetRef.current, which can be stale mid-flight.
+  const pendingMeasureRef = useRef<Promise<{ x: number; y: number }> | null>(null);
 
-  // .measure() is an async native round-trip, so caching its result only from onLayout can go
-  // stale: if something above the board changes height (e.g. the status line wrapping to a
-  // second line the moment "— Check!" is appended) without a fresh onLayout firing in time, every
-  // tap resolves against the board's OLD on-screen position — off by roughly whatever it shifted,
-  // which silently maps taps to the wrong square (worse near edges/corners, where there's no
-  // neighboring square to "absorb" the error). Re-running this at the start of every gesture, not
-  // only on layout changes, means onPanResponderRelease — which fires a beat later, plenty of time
-  // for the round-trip — always uses a freshly re-measured offset instead of a possibly-ancient one.
-  const remeasureBoardOffset = () => {
-    boardContainerRef.current?.measure((_x, _y, _width, _height, pageX, pageY) => {
-      boardOffsetRef.current = { x: pageX, y: pageY };
+  // .measure() is an async round-trip (a real native-bridge round-trip on iOS/Android; still
+  // genuinely async on web), so caching its result and reading boardOffsetRef.current elsewhere
+  // was a race: if something above the board changes height (e.g. the move-list strip appearing
+  // after the first move, or the status line wrapping to a second line for "— Check!") and a tap
+  // lands before THIS remeasurement resolves, the release handler would use the board's OLD
+  // on-screen position — off by roughly whatever it shifted, silently resolving the tap to the
+  // wrong square (confirmed directly: a tap on a square whose piece had legal-move dots showing
+  // moments earlier failed to complete a move at all). Calling this at the start of every gesture
+  // (not just on layout changes) isn't enough on its own, since "fires before release" was an
+  // assumption, not a guarantee, for a fast tap. This now returns the in-flight Promise (tracked
+  // in pendingMeasureRef) so onPanResponderRelease can actually wait for a fresh measurement
+  // instead of hoping one already landed.
+  const remeasureBoardOffset = (): Promise<{ x: number; y: number }> => {
+    const node = boardContainerRef.current;
+    if (!node) return Promise.resolve(boardOffsetRef.current);
+    const promise = new Promise<{ x: number; y: number }>((resolve) => {
+      node.measure((_x, _y, _width, _height, pageX, pageY) => {
+        const offset = { x: pageX, y: pageY };
+        boardOffsetRef.current = offset;
+        resolve(offset);
+      });
     });
+    pendingMeasureRef.current = promise;
+    promise.finally(() => {
+      // Only clear if nothing newer has started in the meantime (a slower, older measurement
+      // resolving after a fresher one must not stomp on the fresher one's own pending-ness).
+      if (pendingMeasureRef.current === promise) pendingMeasureRef.current = null;
+    });
+    return promise;
   };
 
   const pixelToGrid = (localX: number, localY: number): GridPoint => ({
@@ -326,6 +404,11 @@ export default function ChessBoard({
         const { row, col } = pixelToGrid(localX, localY);
         const startSquare = rowColToSquare(row, col, orientation);
 
+        // Arming here only ever means "a live arrow/highlight preview may start showing if the
+        // finger goes on to actually drag" — it no longer decides tap-vs-annotation by itself
+        // (see onPanResponderRelease's own doc comment: that decision is distance-based now, not
+        // time-based), so there's no need to suppress it just because a piece happens to be
+        // selected — a genuine drag should still draw an arrow regardless.
         const timer = enableAnnotations
           ? setTimeout(() => {
               if (!gestureRef.current) return;
@@ -363,30 +446,76 @@ export default function ChessBoard({
         const hasMoved = gestureState.moveX !== 0 || gestureState.moveY !== 0;
         const pageX = hasMoved ? gestureState.moveX : evt.nativeEvent.pageX;
         const pageY = hasMoved ? gestureState.moveY : evt.nativeEvent.pageY;
-        const { x: localX, y: localY } = toBoardLocal(pageX, pageY);
-        const { row, col } = pixelToGrid(localX, localY);
+        // Captured now, before clearGesture() below — resolveRelease may run asynchronously
+        // (waiting on a pending measurement), by which point gestureRef.current would already be
+        // cleared.
+        const armed = state.armed;
+        const startSquare = state.startSquare;
+        const dx = gestureState.dx;
+        const dy = gestureState.dy;
 
-        if (state.armed) {
-          const endSquare = rowColToSquare(row, col, orientation);
-          const startGrid = squareToRowCol(state.startSquare, orientation);
+        const resolveRelease = (offset: { x: number; y: number }, viaFreshMeasurement: boolean) => {
+          const localX = pageX - offset.x;
+          const localY = pageY - offset.y;
+          const { row, col } = pixelToGrid(localX, localY);
+          const resolvedSquare = rowColToSquare(row, col, orientation);
 
-          if (endSquare === state.startSquare) {
-            setHighlights((prev) =>
-              prev.some((p) => p.row === startGrid.row && p.col === startGrid.col)
-                ? prev.filter((p) => !(p.row === startGrid.row && p.col === startGrid.col))
-                : [...prev, startGrid]
+          if (__DEV__) {
+            // Defensive diagnostic — if a tap ever resolves to the wrong square again, this is
+            // the first thing to check: was a fresh measurement actually awaited, and does the
+            // offset used look like the board's real on-screen position. Console-only (not
+            // logDiagnostic): this fires on every single tap, far more often than this app's
+            // other diagnostic events, and would otherwise cycle the shared 100-entry ring buffer
+            // out within a handful of moves — a build that actually needs this (not just dev) can
+            // still get it from a cable + adb logcat, same as before this session.
+            console.log(
+              `[ChessBoard] tap -> ${resolvedSquare} | page=(${pageX.toFixed(1)},${pageY.toFixed(1)}) ` +
+                `offset=(${offset.x.toFixed(1)},${offset.y.toFixed(1)}) ` +
+                `${viaFreshMeasurement ? '[awaited a fresh measurement]' : '[used cached offset]'}`
             );
-          } else {
-            setArrows((prev) => [...prev, { from: startGrid, to: { row, col } }]);
           }
-        } else if (Math.hypot(gestureState.dx, gestureState.dy) <= MOVE_THRESHOLD_PX) {
-          // A genuine quick tap — release position is still the start square (taps don't drag).
-          handleSquarePress(rowColToSquare(row, col, orientation));
+
+          // Root-cause fix: whether this was a genuinely STATIONARY release (finger never moved
+          // past MOVE_THRESHOLD_PX) decides everything — NOT whether the long-press timer
+          // happened to already fire (see onPanResponderGrant's 400ms timer above). The previous
+          // version branched on `armed` first, so an entirely ordinary tap that simply took
+          // >=LONG_PRESS_MS to release (easy mid-move-selection, or just hesitating over which
+          // piece to pick) got silently reinterpreted as an annotation gesture instead of calling
+          // handleSquarePress at all — no error, nothing in the diagnostic log above either,
+          // since that only ever records the resolved square, never whether it actually reached
+          // handleSquarePress. A real annotation drag always involves genuine movement past the
+          // threshold; a stationary release never does, regardless of how long it was held — so
+          // checking distance first, unconditionally, closes the whole timing-dependent bug
+          // class rather than the specific places it was spotted.
+          const isStationary = Math.hypot(dx, dy) <= MOVE_THRESHOLD_PX;
+          if (isStationary) {
+            handleSquarePress(resolvedSquare);
+          } else if (armed) {
+            const startGrid = squareToRowCol(startSquare, orientation);
+            if (resolvedSquare === startSquare) {
+              setHighlights((prev) =>
+                prev.some((p) => p.row === startGrid.row && p.col === startGrid.col)
+                  ? prev.filter((p) => !(p.row === startGrid.row && p.col === startGrid.col))
+                  : [...prev, startGrid]
+              );
+            } else {
+              setArrows((prev) => [...prev, { from: startGrid, to: { row, col } }]);
+            }
+          }
+          // else: moved past the tap threshold without ever arming — an aborted drag/scroll
+          // attempt (enableAnnotations off, or it moved too fast to arm), not a tap or an
+          // annotation. Deliberately does nothing rather than acting on whatever square it
+          // happened to end on.
+        };
+
+        // The crux of the fix: if a remeasure triggered at gesture-grant (or by a layout shift
+        // just before it) hasn't resolved yet, WAIT for it instead of resolving this tap against
+        // a boardOffsetRef that might still reflect the board's position before that shift.
+        if (pendingMeasureRef.current) {
+          pendingMeasureRef.current.then((offset) => resolveRelease(offset, true));
+        } else {
+          resolveRelease(boardOffsetRef.current, false);
         }
-        // else: the finger moved past the tap threshold without ever arming an annotation drag —
-        // an aborted drag/scroll attempt (enableAnnotations off, or it moved too fast to arm), not
-        // a tap. Deliberately does nothing rather than acting on whatever square it happened to
-        // end on.
         clearGesture();
       },
       onPanResponderTerminate: clearGesture,
@@ -412,6 +541,7 @@ export default function ChessBoard({
               isLastMove={square.square === lastMove?.from || square.square === lastMove?.to}
               isKingOfTheHillTarget={kingOfTheHill && KING_OF_THE_HILL_SQUARES.includes(square.square)}
               hidePiece={slidingMove !== null && square.square === slidingMove.to}
+              isFogged={visibleSquares !== undefined && !visibleSquares.has(square.square)}
               size={squareSize}
               lightColor={boardTheme.lightColor}
               darkColor={boardTheme.darkColor}
@@ -462,3 +592,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
+
+// Default (shallow) prop comparison is enough as long as every caller keeps fen/visibleSquares/
+// lastMove/onMove/onPremove referentially stable across renders that don't actually change the
+// position (see LocalGameScreen/BotGameScreen/OnlineGameScreen's memoized handleMove/
+// handleQueuePremove) — without this, the once-a-second chess clock tick in those screens was
+// forcing this whole board (64 Square children + piece images) to re-render from scratch on
+// every tick regardless of whether the position had changed at all.
+export default memo(ChessBoard);

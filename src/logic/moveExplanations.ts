@@ -23,6 +23,10 @@ export interface ExplanationContext {
   bestOpponentReplyUci: string | null;
   chess960: boolean;
   initialFen: string;
+  /** Fog of War only — see AnalyzeParams's own doc comment: a finished game's fenAfter can
+   * genuinely be missing the losing side's king, which every ChessEngine construction below
+   * needs skipValidation for. */
+  fogOfWar: boolean;
 }
 
 // --- Piece names ----------------------------------------------------
@@ -85,7 +89,7 @@ function detectHangingPiece(ctx: ExplanationContext): { pieceType: PieceType; sq
   const parsed = parseUciMove(ctx.bestOpponentReplyUci);
   if (!parsed) return null;
 
-  const after = new ChessEngine(ctx.fenAfter, { chess960: ctx.chess960, initialFen: ctx.initialFen });
+  const after = new ChessEngine(ctx.fenAfter, { chess960: ctx.chess960, initialFen: ctx.initialFen, skipValidation: ctx.fogOfWar });
   const captured = after.getPieceAt(parsed.to);
   if (!captured || captured.color !== ctx.moverColor) return null;
 
@@ -95,7 +99,7 @@ function detectHangingPiece(ctx: ExplanationContext): { pieceType: PieceType; sq
 /** Whether, right after this move, some single opponent piece can legally reach 2+ squares
  * occupied by the mover's minor-or-better pieces — a fork. */
 function detectFork(ctx: ExplanationContext): { attackerType: PieceType } | null {
-  const after = new ChessEngine(ctx.fenAfter, { chess960: ctx.chess960, initialFen: ctx.initialFen });
+  const after = new ChessEngine(ctx.fenAfter, { chess960: ctx.chess960, initialFen: ctx.initialFen, skipValidation: ctx.fogOfWar });
   const opponentColor: PieceColor = ctx.moverColor === 'w' ? 'b' : 'w';
   const board = after.getBoard().flat();
 
@@ -142,8 +146,8 @@ function countKingShield(engine: ChessEngine, kingSquare: string, color: PieceCo
 /** Whether this move reduced the number of the mover's own pawns/pieces immediately around
  * their own king, leaving it comparatively bare (a rough, cheap king-safety proxy). */
 function detectKingSafetyDrop(ctx: ExplanationContext): boolean {
-  const before = new ChessEngine(ctx.fenBefore, { chess960: ctx.chess960, initialFen: ctx.initialFen });
-  const after = new ChessEngine(ctx.fenAfter, { chess960: ctx.chess960, initialFen: ctx.initialFen });
+  const before = new ChessEngine(ctx.fenBefore, { chess960: ctx.chess960, initialFen: ctx.initialFen, skipValidation: ctx.fogOfWar });
+  const after = new ChessEngine(ctx.fenAfter, { chess960: ctx.chess960, initialFen: ctx.initialFen, skipValidation: ctx.fogOfWar });
 
   const kingBefore = findKingSquare(before, ctx.moverColor);
   const kingAfter = findKingSquare(after, ctx.moverColor);
@@ -264,7 +268,7 @@ export function generateExplanation(ctx: ExplanationContext): string {
 
   switch (ctx.quality) {
     case 'brilliant': {
-      const before = new ChessEngine(ctx.fenBefore, { chess960: ctx.chess960, initialFen: ctx.initialFen });
+      const before = new ChessEngine(ctx.fenBefore, { chess960: ctx.chess960, initialFen: ctx.initialFen, skipValidation: ctx.fogOfWar });
       const movedPiece = before.getPieceAt(ctx.move.from);
       return fill(pick(BRILLIANT_TEMPLATES, seed), { piece: movedPiece ? PIECE_ACCUSATIVE[movedPiece.type] : 'material', moveSan });
     }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { PieceColor } from '../types/chess';
 import type { TimeControl } from '../types/timeControl';
 
@@ -63,24 +63,35 @@ export function useChessClock(
     else if (blackSeconds <= 0) setTimeoutWinner('w');
   }, [whiteSeconds, blackSeconds, hasClock, timeoutWinner]);
 
-  const applyIncrement = (color: PieceColor) => {
-    if (!hasClock) return;
-    if (color === 'w') setWhiteSeconds((s) => s + timeControl.incrementSeconds);
-    else setBlackSeconds((s) => s + timeControl.incrementSeconds);
-  };
+  // All three wrapped in useCallback — callers (e.g. LocalGameScreen/BotGameScreen's handleMove)
+  // memoize their own handlers off these, and a fresh function reference every render (which a
+  // plain arrow function here would produce even though hasClock/timeControl never actually
+  // change mid-game) would defeat that: it'd force those handlers — and in turn a memoized
+  // ChessBoard depending on them — to re-identify as "changed" on every clock tick.
+  const applyIncrement = useCallback(
+    (color: PieceColor) => {
+      if (!hasClock) return;
+      if (color === 'w') setWhiteSeconds((s) => s + timeControl.incrementSeconds);
+      else setBlackSeconds((s) => s + timeControl.incrementSeconds);
+    },
+    [hasClock, timeControl.incrementSeconds]
+  );
 
-  const consumeTime = (color: PieceColor, ms: number) => {
-    if (!hasClock) return;
-    const deltaSeconds = ms / 1000;
-    if (color === 'w') setWhiteSeconds((s) => Math.max(0, s - deltaSeconds));
-    else setBlackSeconds((s) => Math.max(0, s - deltaSeconds));
-  };
+  const consumeTime = useCallback(
+    (color: PieceColor, ms: number) => {
+      if (!hasClock) return;
+      const deltaSeconds = ms / 1000;
+      if (color === 'w') setWhiteSeconds((s) => Math.max(0, s - deltaSeconds));
+      else setBlackSeconds((s) => Math.max(0, s - deltaSeconds));
+    },
+    [hasClock]
+  );
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setWhiteSeconds(timeControl.initialSeconds);
     setBlackSeconds(timeControl.initialSeconds);
     setTimeoutWinner(null);
-  };
+  }, [timeControl.initialSeconds]);
 
   return { whiteSeconds, blackSeconds, timeoutWinner, hasClock, applyIncrement, consumeTime, reset };
 }

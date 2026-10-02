@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { appAlert } from '../components/AppAlert';
@@ -14,6 +14,8 @@ import { ChessEngine } from '../logic/ChessEngine';
 import { unlockAchievement } from '../logic/achievementStorage';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { describeEndReason } from '../logic/gameOutcomeText';
+import { logDiagnostic } from '../logic/diagnosticLog';
+import { getVisibleSquares, logFogOfWarGameStart, logFogOfWarPly } from '../logic/fogOfWar';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
@@ -93,6 +95,21 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   const [chatInput, setChatInput] = useState('');
   const [chatUnread, setChatUnread] = useState(0);
   const wasMaterialDownRef = useRef(false);
+  // Fog of War only — the server always redacts `fen` for this recipient already (see
+  // MatchFoundPayload.visibleSquares), but ChessBoard still needs this explicit set to tell a
+  // genuinely-empty-and-visible square apart from a fogged one (see ChessBoard's own doc comment
+  // on visibleSquares).
+  const [visibleSquares, setVisibleSquares] = useState<Set<string> | undefined>(
+    match.isFogOfWar ? new Set(match.visibleSquares ?? []) : undefined
+  );
+
+  // Fog of War only — see logFogOfWarGameStart's own doc comment (diagnosticLog.ts, reachable via
+  // More > Diagnostics): never shown in gameplay UI.
+  useEffect(() => {
+    if (!match.isFogOfWar) return;
+    logFogOfWarGameStart('OnlineGame', match.fen, match.isChess960);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [match.isFogOfWar, match.roomId]);
 
   useEffect(() => {
     if (chatOpen) setChatUnread(0);
@@ -126,40 +143,81 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     fenRef.current = fen;
   }, [fen]);
 
+  // Fog of War only — a running count purely for logFogOfWarPly's own `ply` label; the moves
+  // themselves are already in order in the diagnostic log regardless (see its own doc comment).
+  const plyCounterRef = useRef(0);
+
   // Reacts to `fen` changing for any reason (our own move, the opponent's move, or a rejoin
   // state sync after reconnecting) rather than being threaded through each individual handler
   // below. See LocalGameScreen's identical effect for why a miss here doesn't clear the name.
   useEffect(() => {
-    if (match.isChess960 || match.isSetupChess) return;
+    if (match.isChess960 || match.isSetupChess || match.isFogOfWar) return;
     const openingMatch = lookupOpening(fen);
     if (openingMatch) setOpeningName(openingMatch.name);
-  }, [fen, match.isChess960, match.isSetupChess]);
+  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar]);
 
   // Wire up every server -> client event for this game once, for the lifetime of the screen.
   useEffect(() => {
     const socket = connectSocket(authToken);
 
     const handleOpponentMove = (payload: OpponentMovePayload) => {
-      // Replayed locally purely to learn what piece type (if any) this move captured — the
-      // resulting position itself always comes from `payload.fen` below, never from this replay,
-      // keeping the server as the sole authority on the actual game state.
-      const replayEngine = new ChessEngine(fenRef.current, { chess960: match.isChess960, initialFen: match.fen });
-      const replayed = replayEngine.move(payload.from, payload.to, payload.promotion);
-
       setFen(payload.fen);
       setTurn(payload.turn);
       setWhiteMs(payload.whiteMs);
       setBlackMs(payload.blackMs);
-      setLastMoveSan(payload.san);
+      if (match.isFogOfWar) setVisibleSquares(new Set(payload.visibleSquares ?? []));
+
+      // Fog of War: the opponent's move might genuinely be outside this player's own visibility
+      // (payload.from/to/san all omitted together in that case — see OpponentMovePayload's own
+      // doc comment) — there's nothing to replay or show then, just the new (already redacted)
+      // fen/turn/clocks/visibility above. A hidden move can never be a capture of one of MY OWN
+      // pieces (any square holding my own piece is always part of my own visibility by rule, so
+      // losing it is always revealed) — so `captured: undefined` here is always correct, not a
+      // guess.
+      if (match.isFogOfWar && payload.san === undefined) {
+        setMoveList((list) => [...list, { move: { from: '', to: '', san: '?' }, mover: opponentColor, fenBefore: fenRef.current, fenAfter: payload.fen }]);
+        logFogOfWarPly({
+          ply: ++plyCounterRef.current,
+          mover: opponentColor,
+          san: '(hidden — server omitted it)',
+          to: '(hidden)',
+          perspectives: [{ label: `visibleTo(${myColor}, you)`, revealed: false, visible: new Set(payload.visibleSquares ?? []) }],
+        });
+        return;
+      }
+
+      // Replayed locally purely to learn what piece type (if any) this move captured — the
+      // resulting position itself always comes from `payload.fen` below, never from this replay,
+      // keeping the server as the sole authority on the actual game state. skipValidation is only
+      // ever actually needed for Fog of War (a redacted fen can legitimately be missing a king).
+      const replayEngine = new ChessEngine(fenRef.current, {
+        chess960: match.isChess960,
+        initialFen: match.fen,
+        skipValidation: match.isFogOfWar,
+      });
+      const replayed = match.isFogOfWar
+        ? replayEngine.movePseudoLegal(payload.from!, payload.to!, payload.promotion)
+        : replayEngine.move(payload.from!, payload.to!, payload.promotion);
+
+      setLastMoveSan(payload.san!);
       playMoveSound(replayed);
       triggerMoveHaptics(replayed);
+      if (match.isFogOfWar) {
+        logFogOfWarPly({
+          ply: ++plyCounterRef.current,
+          mover: opponentColor,
+          san: payload.san!,
+          to: payload.to!,
+          perspectives: [{ label: `visibleTo(${myColor}, you)`, revealed: true, visible: new Set(payload.visibleSquares ?? []) }],
+        });
+      }
       setMoveList((list) => [
         ...list,
         {
           // Falls back to a minimal synthetic Move if the local replay itself failed (an
           // extremely rare desync) — still enough to show the SAN in the move list; classifyMove
           // just won't be able to match it against the engine's best line for that one ply.
-          move: replayed ?? { from: '', to: '', san: payload.san },
+          move: replayed ?? { from: '', to: '', san: payload.san! },
           mover: opponentColor,
           fenBefore: fenRef.current,
           fenAfter: payload.fen,
@@ -199,22 +257,27 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     };
 
     const handleOpponentDisconnected = (payload: { graceSeconds: number }) => {
+      logDiagnostic(`[Multiplayer] opponent disconnected (room ${match.roomId}), grace period ${Math.round(payload.graceSeconds)}s`);
       setOpponentGraceSeconds(Math.round(payload.graceSeconds));
     };
 
     const handleOpponentReconnected = () => {
+      logDiagnostic(`[Multiplayer] opponent reconnected (room ${match.roomId})`);
       setOpponentGraceSeconds(null);
     };
 
     const handleDisconnect = () => {
+      logDiagnostic(`[Multiplayer] own connection dropped (room ${match.roomId})`);
       setConnectionState('reconnecting');
     };
 
     const handleReconnect = () => {
+      logDiagnostic(`[Multiplayer] own connection restored, rejoining (room ${match.roomId})`);
       socket.emit(
         'rejoin_game',
         { roomId: match.roomId, playerToken: match.playerToken },
         (ack: Ack<{ state: RejoinStatePayload }>) => {
+          logDiagnostic(`[Multiplayer] rejoin_game ${ack.ok ? 'succeeded' : `failed: ${ack.error}`} (room ${match.roomId})`);
           if (ack.ok) {
             setFen(ack.state.fen);
             setTurn(ack.state.turn);
@@ -222,22 +285,42 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             setBlackMs(ack.state.blackMs);
             setConnectionState('connected');
             setViewIndex(null);
+            if (match.isFogOfWar) setVisibleSquares(new Set(ack.state.visibleSquares ?? []));
 
             // Rebuild the full move list (and with it, captured pieces) from scratch — we may
             // have missed one or more opponent_move events entirely while disconnected, so
             // patching the existing list wouldn't be reliable.
-            const replayEngine = new ChessEngine(match.fen, { chess960: match.isChess960, initialFen: match.fen });
+            const replayEngine = new ChessEngine(match.fen, {
+              chess960: match.isChess960,
+              initialFen: match.fen,
+              skipValidation: match.isFogOfWar,
+            });
             const rebuilt: MoveRecord[] = [];
+            // Fog of War only — a move this player never witnessed (see RejoinStatePayload's own
+            // doc comment) can't be replayed at all (no from/to to replay with), which permanently
+            // desyncs `replayEngine` from the true position from that point on. Rather than guess,
+            // this stops attempting real replay the moment that happens and just stamps every
+            // remaining entry with the last position actually known to be correct — a stale (but
+            // still genuinely real, previously-redacted) fen, never a fabricated or leaked one.
+            let replayBroken = false;
             ack.state.moves.forEach((m, i) => {
+              const mover: PieceColor = i % 2 === 0 ? 'w' : 'b';
               const fenBefore = replayEngine.getFen();
-              const result = replayEngine.move(m.from, m.to, m.promotion as Move['promotion']);
+
+              if (!m.san || replayBroken) {
+                replayBroken = true;
+                rebuilt.push({ move: { from: m.from ?? '', to: m.to ?? '', san: m.san ?? '?' }, mover, fenBefore, fenAfter: fenBefore });
+                return;
+              }
+
+              const result = match.isFogOfWar
+                ? replayEngine.movePseudoLegal(m.from!, m.to!, m.promotion as Move['promotion'])
+                : replayEngine.move(m.from!, m.to!, m.promotion as Move['promotion']);
               if (result) {
-                rebuilt.push({
-                  move: result,
-                  mover: i % 2 === 0 ? 'w' : 'b',
-                  fenBefore,
-                  fenAfter: replayEngine.getFen(),
-                });
+                rebuilt.push({ move: result, mover, fenBefore, fenAfter: replayEngine.getFen() });
+              } else if (match.isFogOfWar) {
+                replayBroken = true;
+                rebuilt.push({ move: { from: m.from!, to: m.to!, san: m.san! }, mover, fenBefore, fenAfter: fenBefore });
               }
             });
             setMoveList(rebuilt);
@@ -283,43 +366,76 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
 
   const isMyTurn = turn === myColor && !gameOver;
 
-  const handleMove = (move: Move, newFen: string) => {
-    if (gameOver || turn !== myColor || connectionState !== 'connected' || viewIndex !== null) return;
+  // Memoized — passed straight through to ChessBoard (now React.memo'd), so a reference that
+  // changes every render (as a plain inline function would) would force the whole board to
+  // re-render every time the cosmetic per-second display clock ticks, regardless of whether the
+  // position actually changed.
+  const handleMove = useCallback(
+    (move: Move, newFen: string) => {
+      if (gameOver || turn !== myColor || connectionState !== 'connected' || viewIndex !== null) return;
 
-    const fenBeforeMove = fen; // closure snapshot, for reverting if the server disagrees
-    setMoveError(null);
-    setFen(newFen);
-    setTurn(opponentColor); // optimistic — the ack below confirms/corrects this
-    setLastMoveSan(move.san);
-    playMoveSound(move);
-    triggerMoveHaptics(move);
-    setMoveList((list) => [...list, { move, mover: myColor, fenBefore: fenBeforeMove, fenAfter: newFen }]);
+      const fenBeforeMove = fen; // closure snapshot, for reverting if the server disagrees
+      const visibleSquaresBeforeMove = visibleSquares;
+      setMoveError(null);
+      setFen(newFen);
+      setTurn(opponentColor); // optimistic — the ack below confirms/corrects this
+      setLastMoveSan(move.san);
+      playMoveSound(move);
+      triggerMoveHaptics(move);
+      setMoveList((list) => [...list, { move, mover: myColor, fenBefore: fenBeforeMove, fenAfter: newFen }]);
+      // Fog of War: computed straight from `newFen` — ChessBoard already built it via this same
+      // player's own movePseudoLegal, and a player's own pseudo-legal move generation never depends
+      // on currently-invisible information (see fogOfWar.ts), so this is just as correct as waiting
+      // for the server's ack — done here purely so the board's fog doesn't visibly lag a beat.
+      if (match.isFogOfWar) {
+        const visibleNow = getVisibleSquares(new ChessEngine(newFen, { skipValidation: true }), myColor);
+        setVisibleSquares(visibleNow);
+        logFogOfWarPly({
+          ply: ++plyCounterRef.current,
+          mover: myColor,
+          san: move.san,
+          to: move.to,
+          perspectives: [{ label: `visibleTo(${myColor}, you)`, revealed: true, visible: visibleNow }],
+        });
+      }
 
-    const socket = connectSocket(authToken);
-    socket
-      .timeout(8000)
-      .emit(
-        'make_move',
-        { roomId: match.roomId, from: move.from, to: move.to, promotion: move.promotion },
-        (err: unknown, ack?: Ack<{ fen: string; san: string; turn: PieceColor; whiteMs: number; blackMs: number }>) => {
-          if (err || !ack || !ack.ok) {
-            // The server disagreed with a move our own board thought was legal — extremely
-            // rare (a desync, e.g. after a missed event during a reconnect), but never just
-            // trust the optimistic update in that case: revert to the position before it.
-            setMoveError(ack && !ack.ok ? ack.error : 'The move was not confirmed by the server.');
-            setFen(fenBeforeMove);
-            setTurn(myColor);
-            setMoveList((list) => list.slice(0, -1));
-            setBoardKey((k) => k + 1);
-            return;
+      const socket = connectSocket(authToken);
+      socket
+        .timeout(8000)
+        .emit(
+          'make_move',
+          { roomId: match.roomId, from: move.from, to: move.to, promotion: move.promotion },
+          (
+            err: unknown,
+            ack?: Ack<{ fen: string; san: string; turn: PieceColor; whiteMs: number; blackMs: number; visibleSquares?: string[] }>
+          ) => {
+            if (err || !ack || !ack.ok) {
+              // The server disagreed with a move our own board thought was legal — extremely
+              // rare (a desync, e.g. after a missed event during a reconnect), but never just
+              // trust the optimistic update in that case: revert to the position before it.
+              logDiagnostic(
+                `[Multiplayer] make_move rejected (room ${match.roomId}): ${move.from}-${move.to} | ${
+                  ack && !ack.ok ? ack.error : err ? String(err) : 'no ack'
+                } | fenBefore=${fenBeforeMove}`
+              );
+              setMoveError(ack && !ack.ok ? ack.error : 'The move was not confirmed by the server.');
+              setFen(fenBeforeMove);
+              setTurn(myColor);
+              setMoveList((list) => list.slice(0, -1));
+              setBoardKey((k) => k + 1);
+              if (match.isFogOfWar) setVisibleSquares(visibleSquaresBeforeMove);
+              return;
+            }
+            setFen(ack.fen);
+            setTurn(ack.turn);
+            setWhiteMs(ack.whiteMs);
+            setBlackMs(ack.blackMs);
+            if (match.isFogOfWar) setVisibleSquares(new Set(ack.visibleSquares ?? []));
           }
-          setFen(ack.fen);
-          setTurn(ack.turn);
-          setWhiteMs(ack.whiteMs);
-          setBlackMs(ack.blackMs);
-        }
-      );
-  };
+        );
+    },
+    [gameOver, turn, myColor, connectionState, viewIndex, fen, visibleSquares, opponentColor, match, authToken]
+  );
 
   // Premove: queued while it's the opponent's turn (see ChessBoard's premoveColor/onPremove),
   // executed the instant it actually becomes this player's turn — reusing handleMove exactly as
@@ -327,10 +443,11 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // logic above doesn't need a second copy for this path.
   const [premove, setPremove] = useState<PremoveIntent | null>(null);
 
-  const handleQueuePremove = (intent: PremoveIntent) => {
+  // Memoized for the same reason as handleMove above — also passed straight to ChessBoard.
+  const handleQueuePremove = useCallback((intent: PremoveIntent) => {
     setPremove(intent);
     setPremoveInvalidNotice(false);
-  };
+  }, []);
 
   const handleCancelPremove = () => {
     setPremove(null);
@@ -342,8 +459,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   useEffect(() => {
     if (!premove || turn !== myColor || gameOver) return;
     setPremove(null);
-    const premoveEngine = new ChessEngine(fen, { chess960: match.isChess960, initialFen: match.fen });
-    const move = premoveEngine.move(premove.from, premove.to, premove.promotion);
+    const premoveEngine = new ChessEngine(fen, { chess960: match.isChess960, initialFen: match.fen, skipValidation: match.isFogOfWar });
+    const move = match.isFogOfWar
+      ? premoveEngine.movePseudoLegal(premove.from, premove.to, premove.promotion)
+      : premoveEngine.move(premove.from, premove.to, premove.promotion);
     if (move) {
       handleMove(move, premoveEngine.getFen());
     } else {
@@ -485,7 +604,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                 ? 'Three-Check'
                 : match.isSetupChess
                   ? 'Setup Chess'
-                  : undefined
+                  : match.isFogOfWar
+                    ? 'Fog of War'
+                    : undefined
         }
         onBack={handleExit}
         backLabel="‹ Menu"
@@ -577,7 +698,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
         </View>
 
-        {!match.isChess960 && !match.isSetupChess && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={boardKey}
@@ -589,6 +710,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           orientation={myColor}
           lastMove={displayLastMove}
           kingOfTheHill={match.isKingOfTheHill}
+          fogOfWar={match.isFogOfWar}
+          visibleSquares={visibleSquares}
           premoveColor={myColor}
           onPremove={handleQueuePremove}
         />
@@ -635,9 +758,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         subtitle={summarySubtitle}
         initialFen={match.fen}
         chess960={match.isChess960}
+        fogOfWar={match.isFogOfWar}
         history={moveList}
         players={[{ label: 'You', color: myColor }]}
-        onGameReview={() => onAnalyze({ initialFen: match.fen, chess960: match.isChess960, history: moveList })}
+        onGameReview={() => onAnalyze({ initialFen: match.fen, chess960: match.isChess960, fogOfWar: match.isFogOfWar, history: moveList })}
         onNewGame={handleExit}
       />
     </View>

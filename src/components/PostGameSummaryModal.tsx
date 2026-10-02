@@ -21,6 +21,10 @@ interface PostGameSummaryModalProps {
   subtitle: string;
   initialFen: string;
   chess960: boolean;
+  /** Fog of War only — see AnalyzeParams's own doc comment; threaded through to
+   * computeGameSummary, which otherwise crashes (well, fails silently here — see its own try/
+   * catch below — but never produces a summary) on a finished Fog of War game's final position. */
+  fogOfWar?: boolean;
   history: GameHistoryEntry[];
   /** One entry (Bot/Online: just the user) or two (Local: White and Black). */
   players: SummaryPlayer[];
@@ -47,6 +51,7 @@ export default function PostGameSummaryModal({
   subtitle,
   initialFen,
   chess960,
+  fogOfWar = false,
   history,
   players,
   onGameReview,
@@ -87,9 +92,16 @@ export default function PostGameSummaryModal({
     (async () => {
       try {
         await scratchEngine.initEngine();
-        const result = await computeGameSummary(initialFen, chess960, history, scratchEngine, (done, total) => {
-          if (!cancelled) setProgress({ done, total });
-        });
+        const result = await computeGameSummary(
+          initialFen,
+          chess960,
+          history,
+          scratchEngine,
+          (done, total) => {
+            if (!cancelled) setProgress({ done, total });
+          },
+          fogOfWar
+        );
         if (!cancelled) setSummary(result);
       } catch {
         // Non-critical: the popup still shows the result/title without accuracy if this fails.

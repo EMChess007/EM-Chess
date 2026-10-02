@@ -12,6 +12,7 @@ interface MatchmakingScreenProps {
   kingOfTheHill: boolean;
   threeCheck: boolean;
   setupChess: boolean;
+  fogOfWar: boolean;
   onMatchFound: (match: MatchFoundPayload) => void;
   /** Fires instead of onMatchFound when setupChess is true — there's no room yet, just a paired
    * opponent and an assigned color, so the caller hands off to the Setup Chess builder flow
@@ -27,6 +28,7 @@ export default function MatchmakingScreen({
   kingOfTheHill,
   threeCheck,
   setupChess,
+  fogOfWar,
   onMatchFound,
   onSetupChessPaired,
   onCancel,
@@ -54,6 +56,7 @@ export default function MatchmakingScreen({
           isKingOfTheHill: kingOfTheHill,
           isThreeCheck: threeCheck,
           isSetupChess: setupChess,
+          isFogOfWar: fogOfWar,
         },
         (ack: Ack) => {
           if (!ack.ok) setError(ack.error);
@@ -86,6 +89,7 @@ export default function MatchmakingScreen({
         isKingOfTheHill: kingOfTheHill,
         isThreeCheck: threeCheck,
         isSetupChess: setupChess,
+        isFogOfWar: fogOfWar,
       },
       (ack: Ack) => {
         if (!ack.ok) setError(ack.error);
@@ -125,7 +129,9 @@ export default function MatchmakingScreen({
               ? 'Three-Check · '
               : setupChess
                 ? 'Setup Chess · '
-                : ''}
+                : fogOfWar
+                  ? 'Fog of War · '
+                  : ''}
         {timeControl.label}
       </Text>
 

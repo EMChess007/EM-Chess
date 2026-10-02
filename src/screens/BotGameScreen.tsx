@@ -14,6 +14,7 @@ import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { unlockAchievement } from '../logic/achievementStorage';
 import { getBotThinkTimeMs } from '../logic/bots';
+import { logDiagnostic } from '../logic/diagnosticLog';
 import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
@@ -21,6 +22,13 @@ import { getBotStrengthOptions, getEngineIdForElo, getEngineName } from '../logi
 import { buildGamePayload } from '../logic/gamePayload';
 import { getGameOutcome } from '../logic/gameResult';
 import { describeEndReason } from '../logic/gameOutcomeText';
+import {
+  getFogOfWarWinner,
+  getVisibleSquares,
+  logFogOfWarGameStart,
+  logFogOfWarPly,
+  useIncrementalFogRedaction,
+} from '../logic/fogOfWar';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
@@ -45,6 +53,7 @@ interface BotGameScreenProps {
   kingOfTheHill?: boolean;
   threeCheck?: boolean;
   setupChess?: boolean;
+  fogOfWar?: boolean;
   /** The merged starting position from the Setup Chess builder flow — used instead of
    * self-generating one when present. `colorChoice` must already be the concrete color the human
    * built their army as (not 'random') when this is set, see BotSetupChessFlowScreen. */
@@ -62,6 +71,7 @@ export default function BotGameScreen({
   kingOfTheHill = false,
   threeCheck = false,
   setupChess = false,
+  fogOfWar = false,
   initialFen: initialFenProp,
   colorChoice = 'random',
   authToken,
@@ -98,18 +108,22 @@ export default function BotGameScreen({
   const [hintLoading, setHintLoading] = useState(false);
   const [hintRequestKey, setHintRequestKey] = useState(0);
   const [viewIndex, setViewIndex] = useState<number | null>(null); // null = live position
+  const [fogOfWarWinner, setFogOfWarWinner] = useState<PieceColor | null>(null);
 
   // See LocalGameScreen's identical effect for why a miss here doesn't clear the name — it only
   // ever upgrades to a deeper/more specific match as the game continues.
   useEffect(() => {
-    if (chess960 || setupChess) return;
+    if (chess960 || setupChess || fogOfWar) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960, setupChess]);
+  }, [fen, chess960, setupChess, fogOfWar]);
 
+  // skipValidation: once a Fog of War game ends via king capture, `fen` genuinely has no king
+  // for the losing side — see ChessEngine's own doc comment on the option (this is the exact
+  // crash category already found/fixed in cloneWithTurn, caught again here by a systematic grep).
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen }),
-    [fen, chess960, initialFen]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar }),
+    [fen, chess960, initialFen, fogOfWar]
   );
   const turn = engine.getTurn();
   const chessStatus = engine.getStatus();
@@ -122,12 +136,72 @@ export default function BotGameScreen({
   const threeCheckWinner = threeCheck ? getThreeCheckWinner(historyMoves) : null;
   const checkCounts = threeCheck ? getThreeCheckCounts(historyMoves) : null;
 
+  // Fog of War has no checkmate/stalemate/draw concept — see LocalGameScreen's identical
+  // engineGameOver for the full rationale (king capture, via fogOfWarWinner below, is the only
+  // way such a game ends).
+  const engineGameOver = fogOfWar ? false : engine.isGameOver();
   // Auto-tick runs for whichever side's turn it is — including the bot's — so its clock counts
   // down live, second by second, in real wall-clock time while it "thinks" (the engine really
   // does take approximately thinkTimeMs to respond), exactly like the human side already did.
-  const clock = useChessClock(timeControl, turn, engine.isGameOver());
+  const clock = useChessClock(timeControl, turn, engineGameOver);
   const gameOver =
-    engine.isGameOver() || clock.timeoutWinner !== null || resignedBy !== null || kingOfTheHillWinner !== null || threeCheckWinner !== null;
+    engineGameOver ||
+    clock.timeoutWinner !== null ||
+    resignedBy !== null ||
+    kingOfTheHillWinner !== null ||
+    threeCheckWinner !== null ||
+    fogOfWarWinner !== null;
+
+  // Fog of War only — the human always sees their own fog continuously (unlike Local's
+  // alternating hotseat device-holder, there's exactly one person at this device, and the bot
+  // has no "view" of its own — it always plays from the true `fen`, the deliberately accepted
+  // asymmetry this mode is built around). Move-history/last-move redaction is from the human's
+  // point of view too, for the same reason.
+  const visibleSquares = useMemo(() => (fogOfWar ? getVisibleSquares(engine, userColor) : undefined), [fogOfWar, engine, userColor]);
+  // Incremental, not a full replay-from-scratch per render/move — see useIncrementalFogRedaction's
+  // own doc comment (and this session's profiling: a full replay cost ~230ms by move 40, run
+  // synchronously inside the very render handleMove triggers).
+  const fogRedactedByColor = useIncrementalFogRedaction(fogOfWar, initialFen, history, engine);
+  const fogRedactedHistory = fogOfWar ? fogRedactedByColor[userColor] : null;
+  const lastMoveRevealed = !fogOfWar || (fogRedactedHistory?.[fogRedactedHistory.length - 1]?.revealed ?? true);
+
+  // Fog of War only — see logFogOfWarGameStart/logFogOfWarPly's own doc comments (diagnosticLog.ts,
+  // reachable via More > Diagnostics): never shown in gameplay UI, purely so a player who spots a
+  // move that looks wrong can copy out the exact sequence afterward instead of relying on memory.
+  useEffect(() => {
+    if (!fogOfWar) return;
+    logFogOfWarGameStart('BotGame', initialFen, chess960);
+    // Deliberately keyed on resetCount (a fresh game), not initialFen alone — a rematch can reuse
+    // the identical initialFen (classical start) while still being a genuinely new game to log.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fogOfWar, resetCount]);
+
+  useEffect(() => {
+    if (!fogOfWar || history.length === 0) return;
+    const entry = history[history.length - 1];
+    const mover: PieceColor = (history.length - 1) % 2 === 0 ? 'w' : 'b';
+    logFogOfWarPly({
+      ply: history.length,
+      mover,
+      san: entry.move.san,
+      to: entry.move.to,
+      perspectives: [
+        {
+          label: `visibleTo(${userColor}, you)`,
+          revealed: fogRedactedByColor[userColor][fogRedactedByColor[userColor].length - 1]?.revealed ?? false,
+          visible: getVisibleSquares(engine, userColor),
+        },
+        {
+          label: `visibleTo(${botColor}, bot)`,
+          revealed: fogRedactedByColor[botColor][fogRedactedByColor[botColor].length - 1]?.revealed ?? false,
+          visible: getVisibleSquares(engine, botColor),
+        },
+      ],
+    });
+    // Keyed on history.length (fires exactly once per new ply) — engine/userColor/botColor are
+    // read fresh from the closure at that moment, which is exactly when they're relevant.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fogOfWar, history.length]);
 
   // Fires once per game (not once per re-render while gameOver stays true) — resets itself the
   // moment `gameOver` next goes back to false, i.e. on the next "New Game"/rematch.
@@ -150,6 +224,7 @@ export default function BotGameScreen({
         resignedBy,
         kingOfTheHillWinner,
         threeCheckWinner,
+        fogOfWarWinner,
         history,
         initialFen,
         chess960,
@@ -164,6 +239,7 @@ export default function BotGameScreen({
       resignedBy,
       kingOfTheHillWinner,
       threeCheckWinner,
+      fogOfWarWinner,
       history,
       initialFen,
       chess960,
@@ -229,29 +305,56 @@ export default function BotGameScreen({
 
     (async () => {
       try {
-        await engineRuntime.engine.initEngine();
-        engineRuntime.engine.setPosition(fen);
-
-        // Same think-time logic for every bot personality/ELO and for both classical and
-        // Chess960 — this is the only place BotGameScreen asks the engine for a move.
-        const thinkTimeMs = getBotThinkTimeMs({
-          timeControl,
-          remainingSeconds: botColor === 'w' ? clock.whiteSeconds : clock.blackSeconds,
-          legalMoveCount: engine.getLegalMoveCount(),
-        });
-
-        const uciMove = await engineRuntime.engine.getBestMove({
-          ...getBotStrengthOptions(bot.elo),
-          movetimeMs: thinkTimeMs,
-        });
-        if (cancelled) return;
-
-        const parsed = parseUciMove(uciMove);
-        if (!parsed) throw new Error(`Unrecognized move from engine: "${uciMove}"`);
-
         const moveEngine = new ChessEngine(fen, { chess960, initialFen });
-        const move = moveEngine.move(parsed.from, parsed.to, parsed.promotion);
-        if (!move) throw new Error(`Invalid move from engine: "${uciMove}"`);
+        let move: Move | null = null;
+
+        // Fog of War only — Stockfish (like every standard UCI engine) can never suggest
+        // capturing the enemy king itself: its own move generator assumes ordinary legal-chess
+        // invariants, under which the enemy king is never actually sitting there capturable, so
+        // that move type doesn't exist in its search at all. If the human just left their own
+        // king exposed within the bot's reach, this is checked and taken directly — skipping the
+        // engine entirely for this ply — since otherwise the bot would simply never notice.
+        if (fogOfWar) {
+          const captureKing = engine.getPseudoLegalMoves(botColor).find((m) => m.captured === 'k');
+          if (captureKing) {
+            move = moveEngine.movePseudoLegal(captureKing.from, captureKing.to, captureKing.promotion);
+          }
+        }
+
+        if (!move) {
+          await engineRuntime.engine.initEngine();
+          engineRuntime.engine.setPosition(fen);
+
+          // Same think-time logic for every bot personality/ELO and for both classical and
+          // Chess960 — this is the only place BotGameScreen asks the engine for a move.
+          const thinkTimeMs = getBotThinkTimeMs({
+            timeControl,
+            remainingSeconds: botColor === 'w' ? clock.whiteSeconds : clock.blackSeconds,
+            legalMoveCount: engine.getLegalMoveCount(),
+          });
+
+          const thinkStartedAt = Date.now();
+          const uciMove = await engineRuntime.engine.getBestMove({
+            ...getBotStrengthOptions(bot.elo),
+            movetimeMs: thinkTimeMs,
+          });
+          const actualThinkMs = Date.now() - thinkStartedAt;
+          // Lightweight engine-timing diagnostic — requested movetime vs. actual wall-clock time
+          // taken (a large gap would point at the WebView bridge, not the engine itself).
+          logDiagnostic(`[Engine] ${getEngineName(engineId)} think: requested=${thinkTimeMs}ms actual=${actualThinkMs}ms -> ${uciMove}`);
+          if (cancelled) return;
+
+          const parsed = parseUciMove(uciMove);
+          if (!parsed) throw new Error(`Unrecognized move from engine: "${uciMove}"`);
+
+          // Fog of War: movePseudoLegal uniformly (not just for the king-capture branch above) —
+          // see ChessBoard's own fogOfWar doc comment; a move Stockfish suggests is always also
+          // pseudo-legal, so this is a strict superset of what move() would have accepted anyway.
+          move = fogOfWar
+            ? moveEngine.movePseudoLegal(parsed.from, parsed.to, parsed.promotion)
+            : moveEngine.move(parsed.from, parsed.to, parsed.promotion);
+          if (!move) throw new Error(`Invalid move from engine: "${uciMove}"`);
+        }
         if (cancelled) return;
 
         // The bot's clock was already ticking down live via auto-tick while it "thought" (see
@@ -262,6 +365,10 @@ export default function BotGameScreen({
         setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: moveEngine.getFen() }]);
         setLastMove(move);
         setFen(moveEngine.getFen());
+        if (fogOfWar) {
+          const winner = getFogOfWarWinner(move, botColor);
+          if (winner) setFogOfWarWinner(winner);
+        }
       } catch (err) {
         if (!cancelled) {
           const message = err instanceof Error ? err.message : String(err);
@@ -300,10 +407,12 @@ export default function BotGameScreen({
   const winnerLabel = turn === userColor ? bot.name : 'You';
 
   let statusText = `Turn: ${turnLabel}`;
-  if (chessStatus === 'check') statusText = `Turn: ${turnLabel} — Check!`;
-  if (chessStatus === 'checkmate') statusText = `Checkmate! Winner: ${winnerLabel}`;
-  if (chessStatus === 'stalemate') statusText = 'Draw (Stalemate)';
-  if (chessStatus === 'draw') statusText = 'Draw';
+  // Fog of War never announces check/checkmate/stalemate/draw — see LocalGameScreen's identical
+  // statusText for the full rationale.
+  if (!fogOfWar && chessStatus === 'check') statusText = `Turn: ${turnLabel} — Check!`;
+  if (!fogOfWar && chessStatus === 'checkmate') statusText = `Checkmate! Winner: ${winnerLabel}`;
+  if (!fogOfWar && chessStatus === 'stalemate') statusText = 'Draw (Stalemate)';
+  if (!fogOfWar && chessStatus === 'draw') statusText = 'Draw';
   if (clock.timeoutWinner) {
     statusText = `Win on time: ${clock.timeoutWinner === userColor ? 'You' : bot.name}`;
   }
@@ -314,8 +423,20 @@ export default function BotGameScreen({
   if (threeCheckWinner) {
     statusText = `${threeCheckWinner === userColor ? 'You win' : `${bot.name} wins`} by Three-Check!`;
   }
+  if (fogOfWarWinner) {
+    statusText = `${fogOfWarWinner === userColor ? 'You win' : `${bot.name} wins`} by capturing the king!`;
+  }
 
-  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy, false, kingOfTheHillWinner, threeCheckWinner);
+  const outcome = getGameOutcome(
+    chessStatus,
+    turn,
+    clock.timeoutWinner,
+    resignedBy,
+    false,
+    kingOfTheHillWinner,
+    threeCheckWinner,
+    fogOfWarWinner
+  );
   const winnerColor: PieceColor | null =
     outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : winnerColor === userColor ? 'You Won' : 'Bot Won';
@@ -343,16 +464,26 @@ export default function BotGameScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outcome.over]);
 
-  const handleMove = (move: Move, newFen: string) => {
-    if (viewIndex !== null) return;
-    clock.applyIncrement(userColor);
-    playMoveSound(move);
-    triggerMoveHaptics(move);
-    setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
-    setLastMove(move);
-    setFen(newFen);
-    setHintText(null);
-  };
+  // Memoized — passed straight through to ChessBoard (now React.memo'd), so a reference that
+  // changes every render (as a plain inline function would) would force the whole board to
+  // re-render on every clock tick regardless of whether the position actually changed.
+  const handleMove = useCallback(
+    (move: Move, newFen: string) => {
+      if (viewIndex !== null) return;
+      clock.applyIncrement(userColor);
+      playMoveSound(move);
+      triggerMoveHaptics(move);
+      setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
+      setLastMove(move);
+      setFen(newFen);
+      setHintText(null);
+      if (fogOfWar) {
+        const winner = getFogOfWarWinner(move, userColor);
+        if (winner) setFogOfWarWinner(winner);
+      }
+    },
+    [viewIndex, clock.applyIncrement, userColor, fen, fogOfWar]
+  );
 
   // Premove: queued while the bot is "thinking" (see ChessBoard's premoveColor/onPremove), played
   // automatically via handleMove the instant it's actually the user's turn again — same pattern
@@ -361,10 +492,11 @@ export default function BotGameScreen({
   const [premove, setPremove] = useState<PremoveIntent | null>(null);
   const [premoveInvalid, setPremoveInvalid] = useState(false);
 
-  const handleQueuePremove = (intent: PremoveIntent) => {
+  // Memoized for the same reason as handleMove above — also passed straight to ChessBoard.
+  const handleQueuePremove = useCallback((intent: PremoveIntent) => {
     setPremove(intent);
     setPremoveInvalid(false);
-  };
+  }, []);
 
   const handleCancelPremove = () => {
     setPremove(null);
@@ -375,7 +507,9 @@ export default function BotGameScreen({
     if (!premove || turn !== userColor || gameOver) return;
     setPremove(null);
     const premoveEngine = new ChessEngine(fen, { chess960, initialFen });
-    const move = premoveEngine.move(premove.from, premove.to, premove.promotion);
+    const move = fogOfWar
+      ? premoveEngine.movePseudoLegal(premove.from, premove.to, premove.promotion)
+      : premoveEngine.move(premove.from, premove.to, premove.promotion);
     if (move) {
       handleMove(move, premoveEngine.getFen());
     } else {
@@ -399,6 +533,7 @@ export default function BotGameScreen({
     setViewIndex(null);
     setPremove(null);
     setPremoveInvalid(false);
+    setFogOfWarWinner(null);
     wasMaterialDownRef.current = false;
     clock.reset();
   };
@@ -425,8 +560,10 @@ export default function BotGameScreen({
     setHintText(null);
   };
 
+  // Disabled for Fog of War — see LocalGameScreen's identical handleHintPress for why (reads the
+  // true, full position, which would just hand the player a way around the whole variant).
   const handleHintPress = () => {
-    if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing) return;
+    if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar) return;
     setHintText(null);
     setHintLoading(true);
     setHintRequestKey((k) => k + 1);
@@ -441,10 +578,16 @@ export default function BotGameScreen({
   const selectedMoveIndex = isReviewing ? (viewIndex as number) - 1 : history.length - 1;
   const displayLastMove = selectedMoveIndex >= 0 ? history[selectedMoveIndex].move : null;
 
+  // Disabled for Fog of War — see LocalGameScreen's identical handleSelectMove for why (would
+  // expose `positions`' real, unredacted fenAfter snapshots).
   const handleSelectMove = (index: number) => {
+    if (fogOfWar) return;
     const next = index + 1;
     setViewIndex(next >= positions.length - 1 ? null : next);
   };
+
+  const fogMoveListMoves = fogRedactedHistory?.map((entry) => ({ san: entry.revealed ? entry.san : '?' })) ?? [];
+  const lastMoveSanDisplay = lastMoveRevealed ? lastMove?.san : '???';
 
   // Flipping the board also swaps which row (You / the bot) sits on top vs bottom, so each row
   // always stays next to "its own" side of the board.
@@ -467,13 +610,23 @@ export default function BotGameScreen({
       <ScreenHeader
         title="Chess — vs Bot"
         subtitle={
-          chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : threeCheck ? 'Three-Check' : setupChess ? 'Setup Chess' : undefined
+          chess960
+            ? 'Chess960'
+            : kingOfTheHill
+              ? 'King of the Hill'
+              : threeCheck
+                ? 'Three-Check'
+                : setupChess
+                  ? 'Setup Chess'
+                  : fogOfWar
+                    ? 'Fog of War'
+                    : undefined
         }
         onBack={onExit}
         backLabel="‹ Menu"
       />
       <MoveListStrip
-        moves={history.map((h) => ({ san: h.move.san }))}
+        moves={fogOfWar ? fogMoveListMoves : history.map((h) => ({ san: h.move.san }))}
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
         onSelectMove={handleSelectMove}
@@ -490,7 +643,7 @@ export default function BotGameScreen({
                     key: 'hint',
                     label: 'Hint',
                     onPress: handleHintPress,
-                    disabled: gameOver || hintLoading || botThinking || turn !== userColor || isReviewing,
+                    disabled: gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar,
                   },
                   {
                     key: 'undo',
@@ -507,7 +660,7 @@ export default function BotGameScreen({
             </View>
 
             <View style={styles.footer}>
-              {lastMove && <Text style={styles.lastMove}>Last move: {lastMove.san}</Text>}
+              {lastMove && <Text style={styles.lastMove}>Last move: {lastMoveSanDisplay}</Text>}
               <View style={styles.footerButtons}>
                 <Pressable style={styles.resetButton} onPress={handleReset}>
                   <Text style={styles.resetButtonText}>New Game</Text>
@@ -549,7 +702,7 @@ export default function BotGameScreen({
           <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
 
-        {!chess960 && !setupChess && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!chess960 && !setupChess && !fogOfWar && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={resetCount}
@@ -562,6 +715,8 @@ export default function BotGameScreen({
           lastMove={displayLastMove}
           enableAnnotations
           kingOfTheHill={kingOfTheHill}
+          fogOfWar={fogOfWar}
+          visibleSquares={visibleSquares}
           premoveColor={userColor}
           onPremove={handleQueuePremove}
         />
@@ -584,9 +739,10 @@ export default function BotGameScreen({
         subtitle={summarySubtitle}
         initialFen={initialFen}
         chess960={chess960}
+        fogOfWar={fogOfWar}
         history={history}
         players={[{ label: 'You', color: userColor }]}
-        onGameReview={() => onAnalyze({ initialFen, chess960, history })}
+        onGameReview={() => onAnalyze({ initialFen, chess960, fogOfWar, history })}
         onRematch={handleReset}
         onNewGame={onExit}
       />

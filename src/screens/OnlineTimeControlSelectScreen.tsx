@@ -7,7 +7,14 @@ import { getTimeControlsByCategory } from '../logic/timeControls';
 import type { TimeControl, TimeControlCategory } from '../types/timeControl';
 
 interface OnlineTimeControlSelectScreenProps {
-  onSelect: (timeControl: TimeControl, chess960: boolean, kingOfTheHill: boolean, threeCheck: boolean, setupChess: boolean) => void;
+  onSelect: (
+    timeControl: TimeControl,
+    chess960: boolean,
+    kingOfTheHill: boolean,
+    threeCheck: boolean,
+    setupChess: boolean,
+    fogOfWar: boolean
+  ) => void;
   onBack: () => void;
 }
 
@@ -42,7 +49,14 @@ export default function OnlineTimeControlSelectScreen({ onSelect, onBack }: Onli
                   key={tc.id}
                   style={styles.presetButton}
                   onPress={() =>
-                    onSelect(tc, variant === 'chess960', variant === 'kingOfTheHill', variant === 'threeCheck', variant === 'setupChess')
+                    onSelect(
+                      tc,
+                      variant === 'chess960',
+                      variant === 'kingOfTheHill',
+                      variant === 'threeCheck',
+                      variant === 'setupChess',
+                      variant === 'fogOfWar'
+                    )
                   }
                 >
                   <Text style={styles.presetButtonText}>{tc.label}</Text>

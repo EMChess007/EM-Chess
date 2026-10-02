@@ -68,6 +68,7 @@ export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessP
         isKingOfTheHill: variant === 'kingOfTheHill',
         isThreeCheck: variant === 'threeCheck',
         isSetupChess: variant === 'setupChess',
+        isFogOfWar: variant === 'fogOfWar',
       },
       (ack: Ack<{ code: string }>) => {
         if (!ack.ok) {

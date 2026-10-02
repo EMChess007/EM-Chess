@@ -100,7 +100,7 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onOp
       appAlert('Analysis unavailable', 'This game could not be replayed for analysis.');
       return;
     }
-    onAnalyzeGame({ initialFen: replayed.initialFen, chess960: game.isChess960, history: replayed.history });
+    onAnalyzeGame({ initialFen: replayed.initialFen, chess960: game.isChess960, fogOfWar: false, history: replayed.history });
   };
 
   return (

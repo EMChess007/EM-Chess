@@ -48,14 +48,17 @@ export async function computeGameSummary(
   chess960: boolean,
   history: GameHistoryEntry[],
   engine: UciChessEngine,
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  // Fog of War only — see AnalyzeParams's own doc comment: the final position can genuinely be
+  // missing the losing side's king, which the construction below needs skipValidation for.
+  fogOfWar = false
 ): Promise<GameAnalysisSummary> {
   const positions = [initialFen, ...history.map((h) => h.fenAfter)];
   const sanHistory = history.map((h) => h.move.san);
   const evaluations: Awaited<ReturnType<UciChessEngine['analyzePosition']>>[] = [];
 
   for (let i = 0; i < positions.length; i++) {
-    const positionEngine = new ChessEngine(positions[i], { chess960, initialFen });
+    const positionEngine = new ChessEngine(positions[i], { chess960, initialFen, skipValidation: fogOfWar });
     const result = positionEngine.isGameOver()
       ? {
           lines: [

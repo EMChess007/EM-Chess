@@ -7,7 +7,16 @@ export type GameOutcome =
   | {
       over: true;
       result: PgnResult;
-      reason: 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'agreement' | 'kingOfTheHill' | 'threeCheck';
+      reason:
+        | 'checkmate'
+        | 'stalemate'
+        | 'draw'
+        | 'timeout'
+        | 'resignation'
+        | 'agreement'
+        | 'kingOfTheHill'
+        | 'threeCheck'
+        | 'fogOfWar';
     };
 
 /**
@@ -22,9 +31,18 @@ export function getGameOutcome(
   resignedBy: PieceColor | null = null,
   drawnByAgreement = false,
   kingOfTheHillWinner: PieceColor | null = null,
-  threeCheckWinner: PieceColor | null = null
+  threeCheckWinner: PieceColor | null = null,
+  fogOfWarWinner: PieceColor | null = null
 ): GameOutcome {
-  // Checked first — reaching the center (or delivering the third check) wins outright regardless
+  // Checked first of all — Fog of War has no checkmate/stalemate/draw concept whatsoever (see
+  // ChessBoard's own fogOfWar doc comment), so king capture is the ONLY way a Fog of War game
+  // ever ends; every other branch below is unreachable for it, same as kingOfTheHillWinner/
+  // threeCheckWinner for their own variants (all mutually exclusive — one game is only ever one
+  // of these at a time).
+  if (fogOfWarWinner) {
+    return { over: true, result: fogOfWarWinner === 'w' ? '1-0' : '0-1', reason: 'fogOfWar' };
+  }
+  // Checked next — reaching the center (or delivering the third check) wins outright regardless
   // of the rest of the position (check/material/whose turn it technically is don't matter), and
   // chess.js has no idea either rule exists, so neither can ever surface via `chessStatus` on its
   // own. The two are mutually exclusive variants, so both being set at once never happens.

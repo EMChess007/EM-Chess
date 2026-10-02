@@ -64,7 +64,7 @@ export default function PgnImportScreen({ onBack, onAnalyze }: PgnImportScreenPr
 
   const handleContinue = () => {
     if (!parsed) return;
-    onAnalyze({ initialFen: parsed.initialFen, chess960: parsed.chess960, history: parsed.history });
+    onAnalyze({ initialFen: parsed.initialFen, chess960: parsed.chess960, fogOfWar: false, history: parsed.history });
   };
 
   const summaryLine =

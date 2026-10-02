@@ -43,6 +43,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
         isKingOfTheHill: payload.isKingOfTheHill,
         isThreeCheck: payload.isThreeCheck,
         isSetupChess: false, // Tournaments don't support Setup Chess yet
+        isFogOfWar: false, // Tournaments don't support Fog of War either
         fen: payload.fen,
         whiteMs: payload.whiteMs,
         blackMs: payload.blackMs,
@@ -80,6 +81,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
       isKingOfTheHill: match.isKingOfTheHill,
       isThreeCheck: match.isThreeCheck,
       isSetupChess: false, // Tournaments don't support Setup Chess yet
+      isFogOfWar: false, // Tournaments don't support Fog of War either
       fen: match.fen,
       whiteMs: match.whiteMs ?? 0,
       blackMs: match.blackMs ?? 0,

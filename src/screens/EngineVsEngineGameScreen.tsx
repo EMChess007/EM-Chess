@@ -31,6 +31,12 @@ import type { BotPersonality } from '../types/bot';
 import type { AnalyzeParams, GameHistoryEntry } from '../types/history';
 import type { TimeControl } from '../types/timeControl';
 
+// A stable, module-level reference — this screen never lets ChessBoard actually apply a move
+// (it's purely a display of the two engines' own play), but a fresh `() => {}` literal passed
+// inline every render would still break ChessBoard's React.memo just like a changing handler
+// would.
+const noopMove = () => {};
+
 interface EngineVsEngineGameScreenProps {
   engine1: BotPersonality;
   engine2: BotPersonality;
@@ -369,7 +375,7 @@ export default function EngineVsEngineGameScreen({
         <ChessBoard
           key={resetCount}
           fen={displayFen}
-          onMove={() => {}}
+          onMove={noopMove}
           disabled
           chess960={chess960}
           initialFen={initialFen}
@@ -398,7 +404,7 @@ export default function EngineVsEngineGameScreen({
           { label: engine1.name, color: c1 },
           { label: engine2.name, color: c2 },
         ]}
-        onGameReview={() => onAnalyze({ initialFen, chess960, history })}
+        onGameReview={() => onAnalyze({ initialFen, chess960, fogOfWar: false, history })}
         onRematch={handleReset}
         onNewGame={onExit}
       />

@@ -103,7 +103,7 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
       appAlert('Analysis unavailable', 'This game could not be replayed for analysis.');
       return;
     }
-    onAnalyze({ initialFen: replayed.initialFen, chess960: game.isChess960, history: replayed.history });
+    onAnalyze({ initialFen: replayed.initialFen, chess960: game.isChess960, fogOfWar: false, history: replayed.history });
   };
 
   return (

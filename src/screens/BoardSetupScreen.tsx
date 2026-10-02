@@ -112,7 +112,7 @@ export default function BoardSetupScreen({ onBack, onAnalyze }: BoardSetupScreen
       return;
     }
     setError(null);
-    onAnalyze({ initialFen: liveFen, chess960: false, history: [] });
+    onAnalyze({ initialFen: liveFen, chess960: false, fogOfWar: false, history: [] });
   };
 
   const renderPaletteButton = (type: PieceType, color: PieceColor) => {

@@ -16,11 +16,13 @@ interface PlayModeSelectScreenProps {
   onBotKingOfTheHill: () => void;
   onBotThreeCheck: () => void;
   onBotSetupChess: () => void;
+  onBotFogOfWar: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
   onLocalKingOfTheHill: () => void;
   onLocalThreeCheck: () => void;
   onLocalSetupChess: () => void;
+  onLocalFogOfWar: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
@@ -42,11 +44,13 @@ export default function PlayModeSelectScreen({
   onBotKingOfTheHill,
   onBotThreeCheck,
   onBotSetupChess,
+  onBotFogOfWar,
   onLocalClassic,
   onLocalChess960,
   onLocalKingOfTheHill,
   onLocalThreeCheck,
   onLocalSetupChess,
+  onLocalFogOfWar,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
@@ -121,6 +125,9 @@ export default function PlayModeSelectScreen({
             <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotSetupChess}>
               <ModeButtonLabel label="Setup Chess" style={styles.subButtonText} />
             </Pressable>
+            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotFogOfWar}>
+              <ModeButtonLabel label="Fog of War" style={styles.subButtonText} />
+            </Pressable>
           </View>
         </View>
 
@@ -144,6 +151,9 @@ export default function PlayModeSelectScreen({
             </Pressable>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalSetupChess}>
               <ModeButtonLabel label="Setup Chess" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalFogOfWar}>
+              <ModeButtonLabel label="Fog of War" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>

@@ -11,6 +11,10 @@ import { formatTime } from '../logic/time';
 import type { Ack, GameOverPayload, SpectateStatePayload, SpectatorMovePayload } from '../types/multiplayer';
 import type { PieceColor } from '../types/chess';
 
+// A stable, module-level reference — see EngineVsEngineGameScreen's identical noopMove for why
+// this matters even for a disabled, read-only board.
+const noopMove = () => {};
+
 interface SpectatorGameScreenProps {
   authToken: string | null;
   roomId: string;
@@ -41,12 +45,15 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
         return;
       }
       setState(ack.state);
-      setMoves(ack.state.moves.map((m) => ({ san: m.san })));
+      // Spectators always get the full true game (see SpectateStatePayload's own doc comment),
+      // so `san` is only ever optional in the TYPE (it's shared with the redacted player-facing
+      // shape) — never actually missing here; the fallback is just defensive.
+      setMoves(ack.state.moves.map((m) => ({ san: m.san ?? '?' })));
     });
 
     const handleSpectatorMove = (payload: SpectatorMovePayload) => {
       setState((prev) => (prev ? { ...prev, fen: payload.fen, turn: payload.turn, whiteMs: payload.whiteMs, blackMs: payload.blackMs } : prev));
-      setMoves((prev) => [...prev, { san: payload.san }]);
+      setMoves((prev) => [...prev, { san: payload.san ?? '?' }]);
     };
     const handleGameOver = (payload: GameOverPayload) => setGameOver(payload);
 
@@ -107,7 +114,9 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
                 ? ' · Three-Check'
                 : state.isSetupChess
                   ? ' · Setup Chess'
-                  : ''}
+                  : state.isFogOfWar
+                    ? ' · Fog of War'
+                    : ''}
         </Text>
         <Text style={styles.status}>{statusText}</Text>
 
@@ -118,7 +127,14 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
           </Text>
         </View>
 
-        <ChessBoard fen={state.fen} onMove={() => {}} disabled chess960={state.isChess960} kingOfTheHill={state.isKingOfTheHill} />
+        <ChessBoard
+          fen={state.fen}
+          onMove={noopMove}
+          disabled
+          chess960={state.isChess960}
+          kingOfTheHill={state.isKingOfTheHill}
+          fogOfWar={state.isFogOfWar}
+        />
 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === 'w' && !gameOver && styles.clockActive]}>

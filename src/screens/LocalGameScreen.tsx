@@ -19,6 +19,13 @@ import { DEFAULT_ENGINE_ID } from '../logic/engines';
 import { buildGamePayload } from '../logic/gamePayload';
 import { getGameOutcome } from '../logic/gameResult';
 import { describeEndReason } from '../logic/gameOutcomeText';
+import {
+  getFogOfWarWinner,
+  getVisibleSquares,
+  logFogOfWarGameStart,
+  logFogOfWarPly,
+  useIncrementalFogRedaction,
+} from '../logic/fogOfWar';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
@@ -39,6 +46,7 @@ interface LocalGameScreenProps {
   kingOfTheHill?: boolean;
   threeCheck?: boolean;
   setupChess?: boolean;
+  fogOfWar?: boolean;
   /** The merged starting position from the Setup Chess builder flow — used instead of
    * self-generating one when present (setupChess games always pass this). */
   initialFen?: string;
@@ -53,6 +61,7 @@ export default function LocalGameScreen({
   kingOfTheHill = false,
   threeCheck = false,
   setupChess = false,
+  fogOfWar = false,
   initialFen: initialFenProp,
   authToken,
   onExit,
@@ -75,6 +84,12 @@ export default function LocalGameScreen({
   const [hintActive, setHintActive] = useState(false);
   const [hintRequestKey, setHintRequestKey] = useState(0);
   const [viewIndex, setViewIndex] = useState<number | null>(null); // null = live position
+  const [fogOfWarWinner, setFogOfWarWinner] = useState<PieceColor | null>(null);
+  // True right after a move, before the next player has confirmed they're looking at the device
+  // — hides the board/controls behind a "pass the device" interstitial (see the render below) so
+  // the mover never keeps seeing their own just-played position once it's no longer their turn.
+  // Starts false: White is assumed to already be holding the device at the start of the game.
+  const [awaitingPass, setAwaitingPass] = useState(false);
 
   // A scratch engine used only for on-demand hints — unlike BotGameScreen, a local 2-player game
   // has no engine wired in already, so this mounts its own (the strongest available one, same as
@@ -120,14 +135,17 @@ export default function LocalGameScreen({
   // any further named position, no later position will match either, so this naturally stops
   // updating on its own.
   useEffect(() => {
-    if (chess960 || setupChess) return;
+    if (chess960 || setupChess || fogOfWar) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960, setupChess]);
+  }, [fen, chess960, setupChess, fogOfWar]);
 
+  // skipValidation: once a Fog of War game ends via king capture, `fen` genuinely has no king
+  // for the losing side — see ChessEngine's own doc comment on the option (this is the exact
+  // crash category already found/fixed in cloneWithTurn, caught again here by a systematic grep).
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen }),
-    [fen, chess960, initialFen]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar }),
+    [fen, chess960, initialFen, fogOfWar]
   );
   const turn = engine.getTurn();
   const chessStatus = engine.getStatus();
@@ -140,14 +158,66 @@ export default function LocalGameScreen({
   const threeCheckWinner = threeCheck ? getThreeCheckWinner(historyMoves) : null;
   const checkCounts = threeCheck ? getThreeCheckCounts(historyMoves) : null;
 
-  const clock = useChessClock(timeControl, turn, engine.isGameOver());
+  // Fog of War has no checkmate/stalemate/draw concept at all — king capture (fogOfWarWinner,
+  // set from handleMove below) is the only way such a game ends, so chess.js's own isGameOver()
+  // is ignored entirely here: moves go through movePseudoLegal (see ChessBoard), which can
+  // perfectly well reach a position that LOOKS like checkmate/stalemate to chess.js without
+  // anyone's king ever having been captured, and that must NOT stop the game.
+  const engineGameOver = fogOfWar ? false : engine.isGameOver();
+  const clock = useChessClock(timeControl, turn, engineGameOver);
   const gameOver =
-    engine.isGameOver() ||
+    engineGameOver ||
     clock.timeoutWinner !== null ||
     resignedBy !== null ||
     drawAgreed ||
     kingOfTheHillWinner !== null ||
-    threeCheckWinner !== null;
+    threeCheckWinner !== null ||
+    fogOfWarWinner !== null;
+
+  // Fog of War only — the squares visible to whoever currently holds the device (the side to
+  // move; see awaitingPass above for why that's always who's actually looking). Memoized on
+  // [engine, turn] — without this, both this and fogRedactedHistory below were recomputing (the
+  // history one replaying the ENTIRE game from scratch via chess.js move generation) on EVERY
+  // render, not just after a move — the chess clock alone re-renders this screen every second,
+  // so the cost was being repaid dozens of times per actual move, worse ever move the game went
+  // on; this is what was causing both the reported lag and the fog appearing to fall behind.
+  const visibleSquares = useMemo(() => (fogOfWar ? getVisibleSquares(engine, turn) : undefined), [fogOfWar, engine, turn]);
+  // Incremental, not a full replay-from-scratch per render — see useIncrementalFogRedaction's own
+  // doc comment (and this session's profiling: a full replay cost ~230ms by move 40, run
+  // synchronously inside the very render handleMove triggers). Tracks both colors so the device
+  // alternating hands every ply (see awaitingPass above) doesn't throw the cache away each time.
+  const fogRedactedByColor = useIncrementalFogRedaction(fogOfWar, initialFen, history, engine);
+  const fogRedactedHistory = fogOfWar ? fogRedactedByColor[turn] : null;
+  const lastMoveRevealed = !fogOfWar || (fogRedactedHistory?.[fogRedactedHistory.length - 1]?.revealed ?? true);
+
+  // Fog of War only — see BotGameScreen's identical pair of effects/logFogOfWarGameStart's and
+  // logFogOfWarPly's own doc comments (diagnosticLog.ts, reachable via More > Diagnostics): never
+  // shown in gameplay UI. Logs BOTH seats' perspectives every ply (not just "the current turn"),
+  // since Local is hotseat — either side might be the one who later spots something that looks
+  // wrong, long after it was actually their turn to look.
+  useEffect(() => {
+    if (!fogOfWar) return;
+    logFogOfWarGameStart('LocalGame', initialFen, chess960);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fogOfWar, resetCount]);
+
+  useEffect(() => {
+    if (!fogOfWar || history.length === 0) return;
+    const entry = history[history.length - 1];
+    const mover: PieceColor = (history.length - 1) % 2 === 0 ? 'w' : 'b';
+    logFogOfWarPly({
+      ply: history.length,
+      mover,
+      san: entry.move.san,
+      to: entry.move.to,
+      perspectives: (['w', 'b'] as const).map((color) => ({
+        label: `visibleTo(${color})`,
+        revealed: fogRedactedByColor[color][fogRedactedByColor[color].length - 1]?.revealed ?? false,
+        visible: getVisibleSquares(engine, color),
+      })),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fogOfWar, history.length]);
 
   // See BotGameScreen's identical effect — fires once per game, resetting when gameOver next
   // goes back to false (the next "New Game").
@@ -171,6 +241,7 @@ export default function LocalGameScreen({
         drawnByAgreement: drawAgreed,
         kingOfTheHillWinner,
         threeCheckWinner,
+        fogOfWarWinner,
         history,
         initialFen,
         chess960,
@@ -186,6 +257,7 @@ export default function LocalGameScreen({
       drawAgreed,
       kingOfTheHillWinner,
       threeCheckWinner,
+      fogOfWarWinner,
       history,
       initialFen,
       chess960,
@@ -204,32 +276,56 @@ export default function LocalGameScreen({
   const winnerLabel = turn === 'w' ? 'Black' : 'White';
 
   let statusText = `${turnLabel} to move`;
-  if (chessStatus === 'check') statusText = `${turnLabel} to move — Check!`;
-  if (chessStatus === 'checkmate') statusText = `Checkmate! Winner: ${winnerLabel}`;
-  if (chessStatus === 'stalemate') statusText = 'Draw (Stalemate)';
-  if (chessStatus === 'draw') statusText = 'Draw';
+  // Fog of War never announces check/checkmate/stalemate/draw at all (rule: no such concept) —
+  // chessStatus is still computed above (ChessBoard needs it for other things), just never
+  // surfaced here in this mode.
+  if (!fogOfWar && chessStatus === 'check') statusText = `${turnLabel} to move — Check!`;
+  if (!fogOfWar && chessStatus === 'checkmate') statusText = `Checkmate! Winner: ${winnerLabel}`;
+  if (!fogOfWar && chessStatus === 'stalemate') statusText = 'Draw (Stalemate)';
+  if (!fogOfWar && chessStatus === 'draw') statusText = 'Draw';
   if (clock.timeoutWinner) statusText = `Win on time: ${clock.timeoutWinner === 'w' ? 'White' : 'Black'}`;
   if (resignedBy) statusText = `${resignedBy === 'w' ? 'White' : 'Black'} resigned — ${resignedBy === 'w' ? 'Black' : 'White'} wins`;
   if (drawAgreed) statusText = 'Draw by agreement';
   if (kingOfTheHillWinner) statusText = `${kingOfTheHillWinner === 'w' ? 'White' : 'Black'} wins by King of the Hill!`;
   if (threeCheckWinner) statusText = `${threeCheckWinner === 'w' ? 'White' : 'Black'} wins by Three-Check!`;
+  if (fogOfWarWinner) statusText = `${fogOfWarWinner === 'w' ? 'White' : 'Black'} wins by capturing the king!`;
 
   // No personal point of view here (two players share one device) — matches the plain
   // White/Black wording `statusText` above already uses.
-  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, resignedBy, drawAgreed, kingOfTheHillWinner, threeCheckWinner);
+  const outcome = getGameOutcome(
+    chessStatus,
+    turn,
+    clock.timeoutWinner,
+    resignedBy,
+    drawAgreed,
+    kingOfTheHillWinner,
+    threeCheckWinner,
+    fogOfWarWinner
+  );
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : outcome.result === '1-0' ? 'White Won' : 'Black Won';
   const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';
 
-  const handleMove = (move: Move, newFen: string) => {
-    if (viewIndex !== null) return;
-    clock.applyIncrement(turn);
-    playMoveSound(move);
-    triggerMoveHaptics(move);
-    setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
-    setLastMove(move);
-    setFen(newFen);
-    setHintText(null);
-  };
+  // Memoized — passed straight through to ChessBoard (now React.memo'd), so a reference that
+  // changes every render (as a plain inline function would) would force the whole board to
+  // re-render on every clock tick regardless of whether the position actually changed.
+  const handleMove = useCallback(
+    (move: Move, newFen: string) => {
+      if (viewIndex !== null) return;
+      clock.applyIncrement(turn);
+      playMoveSound(move);
+      triggerMoveHaptics(move);
+      setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
+      setLastMove(move);
+      setFen(newFen);
+      setHintText(null);
+      if (fogOfWar) {
+        const winner = getFogOfWarWinner(move, turn);
+        if (winner) setFogOfWarWinner(winner);
+        else setAwaitingPass(true);
+      }
+    },
+    [viewIndex, clock.applyIncrement, turn, fen, fogOfWar]
+  );
 
   const handleReset = () => {
     const nextInitialFen = initialFenProp ?? (chess960 ? generateChess960Position() : START_FEN);
@@ -244,11 +340,13 @@ export default function LocalGameScreen({
     setHintText(null);
     setShowOptions(false);
     setViewIndex(null);
+    setFogOfWarWinner(null);
+    setAwaitingPass(false);
     clock.reset();
   };
 
   const handleResign = () => {
-    if (gameOver) return;
+    if (gameOver || awaitingPass) return;
     setShowOptions(false);
     appAlert(`${turnLabel} resigns?`, 'This ends the game as a loss.', [
       { text: 'Cancel', style: 'cancel' },
@@ -261,7 +359,7 @@ export default function LocalGameScreen({
   // both sides agreeing, the same way OnlineGameScreen's draw offer needs the other side's
   // explicit accept but there's no "other side" to ask here.
   const handleDrawOffer = () => {
-    if (gameOver) return;
+    if (gameOver || awaitingPass) return;
     setShowOptions(false);
     appAlert('Draw by agreement?', 'Both players agree to end the game as a draw.', [
       { text: 'Cancel', style: 'cancel' },
@@ -270,7 +368,7 @@ export default function LocalGameScreen({
   };
 
   const handleUndo = () => {
-    if (gameOver || history.length === 0 || isReviewing) return;
+    if (gameOver || history.length === 0 || isReviewing || awaitingPass) return;
     const previous = history[history.length - 1];
     setHistory((h) => h.slice(0, -1));
     setFen(previous.fenBefore);
@@ -279,8 +377,11 @@ export default function LocalGameScreen({
     setHintText(null);
   };
 
+  // Hints read the true, full position via the local hint engine — handing the player a hint
+  // computed from information Fog of War says they shouldn't have yet would be a straightforward
+  // way around the entire variant, so this is disabled outright rather than merely hidden.
   const handleHintPress = () => {
-    if (gameOver || hintLoading || isReviewing) return;
+    if (gameOver || hintLoading || isReviewing || fogOfWar) return;
     setHintText(null);
     setHintLoading(true);
     setHintActive(true);
@@ -297,10 +398,19 @@ export default function LocalGameScreen({
   const selectedMoveIndex = isReviewing ? (viewIndex as number) - 1 : history.length - 1;
   const displayLastMove = selectedMoveIndex >= 0 ? history[selectedMoveIndex].move : null;
 
+  // Disabled entirely in Fog of War — scrubbing back would show `positions`' real, unredacted
+  // fenAfter snapshots, which would hand either player the exact true position at any past point
+  // in the game, defeating the whole variant.
   const handleSelectMove = (index: number) => {
+    if (fogOfWar) return;
     const next = index + 1;
     setViewIndex(next >= positions.length - 1 ? null : next);
   };
+
+  // Fog of War move-list/footer text — redacted per the CURRENT device-holder's own visibility
+  // (see fogRedactedHistory above); "?" stands in for a move they never actually witnessed.
+  const fogMoveListMoves = fogRedactedHistory?.map((entry) => ({ san: entry.revealed ? entry.san : '?' })) ?? [];
+  const lastMoveSanDisplay = lastMoveRevealed ? lastMove?.san : '???';
 
   // Flipping the board also swaps which player's clock/captured-pieces row sits on top vs
   // bottom, so each row always stays next to "its own" side of the board.
@@ -319,13 +429,23 @@ export default function LocalGameScreen({
       <ScreenHeader
         title="Chess — Local Game"
         subtitle={
-          chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : threeCheck ? 'Three-Check' : setupChess ? 'Setup Chess' : undefined
+          chess960
+            ? 'Chess960'
+            : kingOfTheHill
+              ? 'King of the Hill'
+              : threeCheck
+                ? 'Three-Check'
+                : setupChess
+                  ? 'Setup Chess'
+                  : fogOfWar
+                    ? 'Fog of War'
+                    : undefined
         }
         onBack={onExit}
         backLabel="‹ Menu"
       />
       <MoveListStrip
-        moves={history.map((h) => ({ san: h.move.san }))}
+        moves={fogOfWar ? fogMoveListMoves : history.map((h) => ({ san: h.move.san }))}
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
         onSelectMove={handleSelectMove}
@@ -337,10 +457,15 @@ export default function LocalGameScreen({
               <GameControlBar
                 items={[
                   { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
-                  { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver },
-                  { key: 'draw', label: 'Draw', onPress: handleDrawOffer, disabled: gameOver },
-                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing },
-                  { key: 'undo', label: 'Undo', onPress: handleUndo, disabled: gameOver || history.length === 0 || isReviewing },
+                  { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver || awaitingPass },
+                  { key: 'draw', label: 'Draw', onPress: handleDrawOffer, disabled: gameOver || awaitingPass },
+                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing || fogOfWar },
+                  {
+                    key: 'undo',
+                    label: 'Undo',
+                    onPress: handleUndo,
+                    disabled: gameOver || history.length === 0 || isReviewing || awaitingPass,
+                  },
                 ]}
               />
               <GameOptionsMenu
@@ -350,7 +475,7 @@ export default function LocalGameScreen({
             </View>
 
             <View style={styles.footer}>
-              {lastMove && <Text style={styles.lastMove}>Last move: {lastMove.san}</Text>}
+              {lastMove && !awaitingPass && <Text style={styles.lastMove}>Last move: {lastMoveSanDisplay}</Text>}
               <View style={styles.footerButtons}>
                 <Pressable style={styles.resetButton} onPress={handleReset}>
                   <Text style={styles.resetButtonText}>New Game</Text>
@@ -361,48 +486,63 @@ export default function LocalGameScreen({
         }
       >
         <Text style={styles.timeControlLabel}>{timeControl.label}</Text>
-        {!gameOver && <Text style={styles.status}>{statusText}</Text>}
-        {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
 
-        {hintActive && (
-          <StockfishBridge ref={handleHintBridgeRef} onLine={handleHintBridgeLine} html={hintRuntime.buildHtml()} />
+        {fogOfWar && awaitingPass && !gameOver ? (
+          <View style={styles.passContainer}>
+            <Text style={styles.passTitle}>{turnLabel}'s turn</Text>
+            <Text style={styles.passMessage}>Pass the device to {turnLabel}, then continue.</Text>
+            <Pressable style={styles.continueButton} onPress={() => setAwaitingPass(false)}>
+              <Text style={styles.continueButtonText}>{turnLabel} is ready — Continue</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <>
+            {!gameOver && <Text style={styles.status}>{statusText}</Text>}
+            {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
+
+            {hintActive && (
+              <StockfishBridge ref={handleHintBridgeRef} onLine={handleHintBridgeLine} html={hintRuntime.buildHtml()} />
+            )}
+
+            <View style={styles.playerRow}>
+              <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
+                {topColor === 'w' ? 'White' : 'Black'}
+                {clock.hasClock ? `: ${formatTime(topColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
+                {checkCounts ? ` · Checks: ${checkCounts[topColor]}/${THREE_CHECK_TARGET}` : ''}
+              </Text>
+              <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
+            </View>
+
+            {!chess960 && !setupChess && !fogOfWar && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+
+            <ChessBoard
+              key={resetCount}
+              fen={displayFen}
+              onMove={handleMove}
+              disabled={gameOver || isReviewing}
+              chess960={chess960}
+              initialFen={initialFen}
+              orientation={flipped ? 'b' : 'w'}
+              lastMove={displayLastMove}
+              enableAnnotations
+              kingOfTheHill={kingOfTheHill}
+              fogOfWar={fogOfWar}
+              visibleSquares={visibleSquares}
+            />
+
+            <View style={styles.playerRow}>
+              <Text style={[styles.clock, turn === bottomColor && !gameOver && styles.clockActive]}>
+                {bottomColor === 'w' ? 'White' : 'Black'}
+                {clock.hasClock ? `: ${formatTime(bottomColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
+                {checkCounts ? ` · Checks: ${checkCounts[bottomColor]}/${THREE_CHECK_TARGET}` : ''}
+              </Text>
+              <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
+            </View>
+
+            {hintLoading && <Text style={styles.hintText}>Thinking of a hint...</Text>}
+            {!hintLoading && hintText && <Text style={styles.hintText}>Hint: {hintText}</Text>}
+          </>
         )}
-
-        <View style={styles.playerRow}>
-          <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
-            {topColor === 'w' ? 'White' : 'Black'}
-            {clock.hasClock ? `: ${formatTime(topColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
-            {checkCounts ? ` · Checks: ${checkCounts[topColor]}/${THREE_CHECK_TARGET}` : ''}
-          </Text>
-          <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
-        </View>
-
-        {!chess960 && !setupChess && openingName && <Text style={styles.openingName}>{openingName}</Text>}
-
-        <ChessBoard
-          key={resetCount}
-          fen={displayFen}
-          onMove={handleMove}
-          disabled={gameOver || isReviewing}
-          chess960={chess960}
-          initialFen={initialFen}
-          orientation={flipped ? 'b' : 'w'}
-          lastMove={displayLastMove}
-          enableAnnotations
-          kingOfTheHill={kingOfTheHill}
-        />
-
-        <View style={styles.playerRow}>
-          <Text style={[styles.clock, turn === bottomColor && !gameOver && styles.clockActive]}>
-            {bottomColor === 'w' ? 'White' : 'Black'}
-            {clock.hasClock ? `: ${formatTime(bottomColor === 'w' ? clock.whiteSeconds : clock.blackSeconds)}` : ''}
-            {checkCounts ? ` · Checks: ${checkCounts[bottomColor]}/${THREE_CHECK_TARGET}` : ''}
-          </Text>
-          <CapturedPieces pieces={bottom.captured} color={bottom.iconColor} advantage={bottom.advantage} />
-        </View>
-
-        {hintLoading && <Text style={styles.hintText}>Thinking of a hint...</Text>}
-        {!hintLoading && hintText && <Text style={styles.hintText}>Hint: {hintText}</Text>}
       </GameScreenBody>
 
       <PostGameSummaryModal
@@ -411,12 +551,13 @@ export default function LocalGameScreen({
         subtitle={summarySubtitle}
         initialFen={initialFen}
         chess960={chess960}
+        fogOfWar={fogOfWar}
         history={history}
         players={[
           { label: 'White', color: 'w' },
           { label: 'Black', color: 'b' },
         ]}
-        onGameReview={() => onAnalyze({ initialFen, chess960, history })}
+        onGameReview={() => onAnalyze({ initialFen, chess960, fogOfWar, history })}
         onRematch={handleReset}
         onNewGame={onExit}
       />
@@ -429,6 +570,36 @@ function createStyles(colors: AppColors) {
     container: {
       flex: 1,
       backgroundColor: colors.background,
+    },
+    passContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+      paddingVertical: 60,
+      gap: 14,
+    },
+    passTitle: {
+      fontSize: 22,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    passMessage: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    continueButton: {
+      marginTop: 10,
+      paddingVertical: 14,
+      paddingHorizontal: 24,
+      backgroundColor: colors.buttonBackground,
+      borderRadius: 10,
+    },
+    continueButtonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '700',
     },
     timeControlLabel: {
       fontSize: 13,

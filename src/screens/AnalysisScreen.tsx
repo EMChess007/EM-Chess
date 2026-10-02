@@ -33,9 +33,19 @@ import { parseUciMove, uciMoveToSan, uciSequenceToSan } from '../logic/uciMove';
 import type { PieceColor } from '../types/chess';
 import type { GameHistoryEntry } from '../types/history';
 
+// A stable, module-level reference — see EngineVsEngineGameScreen's identical noopMove for why
+// this matters even for a disabled, read-only board: a fresh `() => {}` literal passed inline
+// every render would still break ChessBoard's React.memo during the (frequent, background)
+// re-renders this screen does while analysis is progressing.
+const noopMove = () => {};
+
 interface AnalysisScreenProps {
   initialFen: string;
   chess960: boolean;
+  /** Fog of War only — see AnalyzeParams's own doc comment: a finished Fog of War game's final
+   * position genuinely has no king for the losing side, which every ChessEngine construction in
+   * this screen (and the generateExplanation calls it makes) needs skipValidation for. */
+  fogOfWar: boolean;
   history: GameHistoryEntry[];
   onExit: () => void;
 }
@@ -56,7 +66,7 @@ const ANALYSIS_MOVETIME_MS = 1000;
 const MULTI_PV = 3;
 const PV_DISPLAY_PLIES = 6;
 
-export default function AnalysisScreen({ initialFen, chess960, history, onExit }: AnalysisScreenProps) {
+export default function AnalysisScreen({ initialFen, chess960, fogOfWar, history, onExit }: AnalysisScreenProps) {
   const { width } = useWindowDimensions();
   const boardSize = getBoardSize(width);
   const colors = useAppColors();
@@ -111,7 +121,7 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
           // A checkmate/stalemate position has no legal moves, so the engine has nothing to
           // search — "go" returns "bestmove (none)" with no score/pv at all. Synthesize the
           // (unambiguous) result ourselves instead of asking the engine.
-          const positionEngine = new ChessEngine(positions[i], { chess960, initialFen });
+          const positionEngine = new ChessEngine(positions[i], { chess960, initialFen, skipValidation: fogOfWar });
           const result: AnalysisResult = positionEngine.isGameOver()
             ? {
                 lines: [
@@ -147,7 +157,7 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
     // Re-runs whenever the game itself changes (shouldn't happen mid-screen) or the player
     // switches the analysis engine via the toggle below — both cases should restart analysis
     // from scratch with whichever engine is now current.
-  }, [positions, engineRuntime, chess960, initialFen]);
+  }, [positions, engineRuntime, chess960, initialFen, fogOfWar]);
 
   useEffect(() => {
     setPreviewLineIndex(null);
@@ -190,6 +200,7 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
         bestOpponentReplyUci: after.lines[0]?.moves[0] ?? null,
         chess960,
         initialFen,
+        fogOfWar,
       });
 
       return {
@@ -200,12 +211,12 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
         explanation,
       };
     });
-  }, [history, evaluations, chess960, initialFen, sanHistory]);
+  }, [history, evaluations, chess960, initialFen, sanHistory, fogOfWar]);
 
   const currentResult = evaluations[currentIndex];
   const currentTurn = useMemo<PieceColor>(
-    () => new ChessEngine(positions[currentIndex]).getTurn(),
-    [positions, currentIndex]
+    () => new ChessEngine(positions[currentIndex], { skipValidation: fogOfWar }).getTurn(),
+    [positions, currentIndex, fogOfWar]
   );
   const whiteEval = currentResult ? toWhitePerspective(currentResult.lines[0].evaluation, currentTurn) : null;
   const currentPlyAnalysis = currentIndex > 0 ? plyAnalyses[currentIndex - 1] : null;
@@ -214,13 +225,13 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
     if (previewLineIndex === null || !currentResult) return null;
     const line = currentResult.lines[previewLineIndex];
     if (!line) return null;
-    const engine = new ChessEngine(positions[currentIndex], { chess960, initialFen });
+    const engine = new ChessEngine(positions[currentIndex], { chess960, initialFen, skipValidation: fogOfWar });
     for (const uci of line.moves) {
       const parsed = parseUciMove(uci);
       if (!parsed || !engine.move(parsed.from, parsed.to, parsed.promotion)) break;
     }
     return engine.getFen();
-  }, [previewLineIndex, currentResult, positions, currentIndex, chess960, initialFen]);
+  }, [previewLineIndex, currentResult, positions, currentIndex, chess960, initialFen, fogOfWar]);
 
   const goTo = (index: number) => setCurrentIndex(Math.max(0, Math.min(positions.length - 1, index)));
   const atStart = currentIndex === 0;
@@ -287,10 +298,11 @@ export default function AnalysisScreen({ initialFen, chess960, history, onExit }
           )}
           <ChessBoard
             fen={previewFen ?? positions[currentIndex]}
-            onMove={() => {}}
+            onMove={noopMove}
             disabled
             chess960={chess960}
             initialFen={initialFen}
+            fogOfWar={fogOfWar}
             lastMove={!previewFen && currentIndex > 0 ? history[currentIndex - 1].move : null}
             enableAnnotations
           />

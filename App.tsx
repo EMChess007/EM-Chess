@@ -61,14 +61,14 @@ import type { ActiveGameSummary, MatchFoundPayload, SetupChessPairedPayload } fr
 import type { TimeControl } from './src/types/timeControl';
 
 type TimeControlFlowMode =
-  | { kind: 'local'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean }
-  | { kind: 'bot'; bot: BotPersonality; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean }
+  | { kind: 'local'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean }
+  | { kind: 'bot'; bot: BotPersonality; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean }
   | { kind: 'engineVsEngine'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean };
 
 type Screen =
   | { name: 'main' }
   | { name: 'playModeSelect' }
-  | { name: 'botSelect'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean }
+  | { name: 'botSelect'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean }
   | { name: 'timeControlSelect'; mode: TimeControlFlowMode }
   | {
       name: 'game';
@@ -77,6 +77,7 @@ type Screen =
       kingOfTheHill: boolean;
       threeCheck: boolean;
       setupChess: boolean;
+      fogOfWar: boolean;
       initialFen?: string;
     }
   | {
@@ -87,6 +88,7 @@ type Screen =
       kingOfTheHill: boolean;
       threeCheck: boolean;
       setupChess: boolean;
+      fogOfWar: boolean;
       initialFen?: string;
       colorChoice: ColorChoice;
     }
@@ -106,6 +108,7 @@ type Screen =
       kingOfTheHill: boolean;
       threeCheck: boolean;
       setupChess: boolean;
+      fogOfWar: boolean;
     }
   | { name: 'setupChessOnline'; token: string; pairingId: string; color: PieceColor }
   | { name: 'challenge'; token: string }
@@ -304,43 +307,58 @@ export default function App() {
         onChallengeFriend={() => authSession && setScreen({ name: 'challenge', token: authSession.token })}
         onTournaments={() => authSession && setScreen({ name: 'tournament', token: authSession.token })}
         onSpectate={() => setScreen({ name: 'spectateList', token: authSession?.token ?? null })}
-        onBotClassic={() => setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false })}
-        onBotChess960={() => setScreen({ name: 'botSelect', chess960: true, kingOfTheHill: false, threeCheck: false, setupChess: false })}
-        onBotKingOfTheHill={() =>
-          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: true, threeCheck: false, setupChess: false })
+        onBotClassic={() =>
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false })
         }
-        onBotThreeCheck={() => setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: true, setupChess: false })}
+        onBotChess960={() =>
+          setScreen({ name: 'botSelect', chess960: true, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false })
+        }
+        onBotKingOfTheHill={() =>
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: true, threeCheck: false, setupChess: false, fogOfWar: false })
+        }
+        onBotThreeCheck={() =>
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: true, setupChess: false, fogOfWar: false })
+        }
         onBotSetupChess={() =>
-          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: true })
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: true, fogOfWar: false })
+        }
+        onBotFogOfWar={() =>
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: true })
         }
         onLocalClassic={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false },
           })
         }
         onLocalChess960={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: true, kingOfTheHill: false, threeCheck: false, setupChess: false },
+            mode: { kind: 'local', chess960: true, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false },
           })
         }
         onLocalKingOfTheHill={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: true, threeCheck: false, setupChess: false },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: true, threeCheck: false, setupChess: false, fogOfWar: false },
           })
         }
         onLocalThreeCheck={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: true, setupChess: false },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: true, setupChess: false, fogOfWar: false },
           })
         }
         onLocalSetupChess={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: true },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: true, fogOfWar: false },
+          })
+        }
+        onLocalFogOfWar={() =>
+          setScreen({
+            name: 'timeControlSelect',
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: true },
           })
         }
         onEngineVsEngineClassic={() =>
@@ -377,8 +395,8 @@ export default function App() {
     const { token } = screen;
     content = (
       <OnlineTimeControlSelectScreen
-        onSelect={(timeControl, chess960, kingOfTheHill, threeCheck, setupChess) =>
-          setScreen({ name: 'matchmaking', token, timeControl, chess960, kingOfTheHill, threeCheck, setupChess })
+        onSelect={(timeControl, chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar) =>
+          setScreen({ name: 'matchmaking', token, timeControl, chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar })
         }
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
@@ -393,6 +411,7 @@ export default function App() {
         kingOfTheHill={screen.kingOfTheHill}
         threeCheck={screen.threeCheck}
         setupChess={screen.setupChess}
+        fogOfWar={screen.fogOfWar}
         onMatchFound={(match) => setScreen({ name: 'onlineGame', token, match })}
         onSetupChessPaired={(paired) => setScreen({ name: 'setupChessOnline', token, pairingId: paired.pairingId, color: paired.color })}
         onCancel={() => setScreen({ name: 'main' })}
@@ -502,15 +521,19 @@ export default function App() {
       />
     );
   } else if (screen.name === 'botSelect') {
-    const { chess960, kingOfTheHill, threeCheck, setupChess } = screen;
+    const { chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar } = screen;
     content = (
       <BotSelectScreen
         chess960={chess960}
         kingOfTheHill={kingOfTheHill}
         threeCheck={threeCheck}
         setupChess={setupChess}
+        fogOfWar={fogOfWar}
         onSelect={(bot) =>
-          setScreen({ name: 'timeControlSelect', mode: { kind: 'bot', bot, chess960, kingOfTheHill, threeCheck, setupChess } })
+          setScreen({
+            name: 'timeControlSelect',
+            mode: { kind: 'bot', bot, chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar },
+          })
         }
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
@@ -525,7 +548,9 @@ export default function App() {
           ? 'Three-Check'
           : mode.setupChess
             ? 'Setup Chess'
-            : undefined;
+            : mode.kind !== 'engineVsEngine' && mode.fogOfWar
+              ? 'Fog of War'
+              : undefined;
     const subtitle =
       mode.kind === 'bot'
         ? variantLabel
@@ -562,6 +587,7 @@ export default function App() {
                   kingOfTheHill: mode.kingOfTheHill,
                   threeCheck: mode.threeCheck,
                   setupChess: false,
+                  fogOfWar: mode.fogOfWar,
                 }
               : mode.kind === 'bot'
                 ? {
@@ -572,6 +598,7 @@ export default function App() {
                     kingOfTheHill: mode.kingOfTheHill,
                     threeCheck: mode.threeCheck,
                     setupChess: false,
+                    fogOfWar: mode.fogOfWar,
                     colorChoice: colorChoice ?? 'random',
                   }
                 : {
@@ -596,6 +623,7 @@ export default function App() {
                   kingOfTheHill: mode.kingOfTheHill,
                   threeCheck: mode.threeCheck,
                   setupChess: mode.setupChess,
+                  fogOfWar: mode.fogOfWar,
                 }
               : { name: 'playModeSelect' }
           )
@@ -710,6 +738,7 @@ export default function App() {
         kingOfTheHill={screen.kingOfTheHill}
         threeCheck={screen.threeCheck}
         setupChess={screen.setupChess}
+        fogOfWar={screen.fogOfWar}
         initialFen={screen.initialFen}
         colorChoice={screen.colorChoice}
         authToken={authSession?.token ?? null}
@@ -722,7 +751,16 @@ export default function App() {
     content = (
       <LocalSetupChessFlowScreen
         onDone={(initialFen) =>
-          setScreen({ name: 'game', timeControl, chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: true, initialFen })
+          setScreen({
+            name: 'game',
+            timeControl,
+            chess960: false,
+            kingOfTheHill: false,
+            threeCheck: false,
+            setupChess: true,
+            fogOfWar: false,
+            initialFen,
+          })
         }
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
@@ -742,6 +780,7 @@ export default function App() {
             kingOfTheHill: false,
             threeCheck: false,
             setupChess: true,
+            fogOfWar: false,
             initialFen,
             colorChoice: color,
           })
@@ -757,6 +796,7 @@ export default function App() {
         kingOfTheHill={screen.kingOfTheHill}
         threeCheck={screen.threeCheck}
         setupChess={screen.setupChess}
+        fogOfWar={screen.fogOfWar}
         initialFen={screen.initialFen}
         authToken={authSession?.token ?? null}
         onExit={() => setScreen({ name: 'main' })}
