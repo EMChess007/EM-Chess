@@ -5,9 +5,12 @@ name: CI
 # engine's Fog of War-specific coverage (en passant, performance, visibility ground truth,
 # redaction history) lives in the backend repo instead, since those scripts also test the
 # server's own twin implementation side by side — see that repo's ci.yml.
+# Pushes to ANY branch run CI too (not just master): with branch protection requiring the `test`
+# check on master, a commit can only reach master once that exact commit already has a passing
+# check — so it has to be validated on a branch first.
 on:
   push:
-    branches: [master]
+    branches: ['**']
   pull_request:
     branches: [master]
 
