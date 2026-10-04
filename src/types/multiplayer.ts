@@ -20,7 +20,8 @@ export type GameOverReason =
   | 'threeCheck'
   | 'fogOfWar'
   | 'giveaway'
-  | 'atomic';
+  | 'atomic'
+  | 'duckChess';
 
 export interface JoinQueuePayload {
   timeControl: OnlineTimeControl;
@@ -31,6 +32,7 @@ export interface JoinQueuePayload {
   isFogOfWar?: boolean;
   isGiveaway?: boolean;
   isAtomic?: boolean;
+  isDuckChess?: boolean;
 }
 
 export interface MakeMovePayload {
@@ -39,6 +41,9 @@ export interface MakeMovePayload {
   to: string;
   /** 'k' is only ever legal in Giveaway (a pawn may promote to a king there). */
   promotion?: 'n' | 'b' | 'r' | 'q' | 'k';
+  /** Duck Chess only — where the duck goes as the second half of the turn; required with every move that does
+   * not capture a king (the server refuses the whole turn otherwise). */
+  duckTo?: string;
 }
 
 export interface RejoinGamePayload {
@@ -77,6 +82,7 @@ export interface MatchFoundPayload {
   isFogOfWar: boolean;
   isGiveaway: boolean;
   isAtomic: boolean;
+  isDuckChess: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;
@@ -95,6 +101,10 @@ export interface OpponentMovePayload {
   to?: string;
   promotion?: 'n' | 'b' | 'r' | 'q' | 'k';
   san?: string;
+  /** Duck Chess only — the square the duck was just placed on (absent after a king capture) and where it now
+   * stands. */
+  duck?: string;
+  duckSquare?: string | null;
   fen: string;
   turn: PieceColor;
   whiteMs: number;
@@ -130,11 +140,14 @@ export interface RejoinStatePayload {
   isFogOfWar: boolean;
   isGiveaway: boolean;
   isAtomic: boolean;
+  isDuckChess: boolean;
+  /** Duck Chess only — where the duck stands now. */
+  duckSquare?: string | null;
   whiteMs: number;
   blackMs: number;
   /** Each entry's fields are all omitted together for a Fog of War move this viewer never
    * witnessed — always fully populated outside Fog of War. */
-  moves: { from?: string; to?: string; promotion?: string; san?: string }[];
+  moves: { from?: string; to?: string; promotion?: string; san?: string; duck?: string }[];
   /** Fog of War only — see MatchFoundPayload.visibleSquares. */
   visibleSquares?: string[];
   opponentConnected: boolean;
@@ -165,6 +178,7 @@ export interface CreateChallengePayload {
   isFogOfWar?: boolean;
   isGiveaway?: boolean;
   isAtomic?: boolean;
+  isDuckChess?: boolean;
   timeControlLabel?: string;
 }
 

@@ -16,6 +16,7 @@ import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { describeEndReason } from '../logic/gameOutcomeText';
 import { logDiagnostic } from '../logic/diagnosticLog';
 import { getVisibleSquares, logFogOfWarGameStart, logFogOfWarPly } from '../logic/fogOfWar';
+import { duckMoveNotation } from '../logic/duckChess';
 import { getGiveawayMoves } from '../logic/giveaway';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
@@ -73,8 +74,19 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // Atomic chess — likewise server-owned; the engines here are built with the atomic option so they understand
   // explosions (and the board can animate them), but the server decides what is legal and who has won.
   const atomic = match.isAtomic === true;
+  // Duck Chess — server-owned too. A turn is a move AND the duck's new square: ChessBoard collects both before
+  // handing the move over (move.duck), and make_move carries them together as duckTo. The duck's square is not in
+  // the FEN, so it is tracked next to it (and per move in the history, for review).
+  const duckChess = match.isDuckChess === true;
 
   const [fen, setFen] = useState(match.fen);
+  const [duckSquare, setDuckSquare] = useState<string | null>(null);
+  const [placingDuck, setPlacingDuck] = useState(false);
+  // Read by the (stable-deps) socket handlers below, like fenRef.
+  const duckRef = useRef<string | null>(null);
+  useEffect(() => {
+    duckRef.current = duckSquare;
+  }, [duckSquare]);
   const [turn, setTurn] = useState<PieceColor>('w');
   const [whiteMs, setWhiteMs] = useState(match.whiteMs);
   const [blackMs, setBlackMs] = useState(match.blackMs);
@@ -158,10 +170,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // state sync after reconnecting) rather than being threaded through each individual handler
   // below. See LocalGameScreen's identical effect for why a miss here doesn't clear the name.
   useEffect(() => {
-    if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway || atomic) return;
+    if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway || atomic || duckChess) return;
     const openingMatch = lookupOpening(fen);
     if (openingMatch) setOpeningName(openingMatch.name);
-  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway, atomic]);
+  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway, atomic, duckChess]);
 
   // Wire up every server -> client event for this game once, for the lifetime of the screen.
   useEffect(() => {
@@ -173,6 +185,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       setWhiteMs(payload.whiteMs);
       setBlackMs(payload.blackMs);
       if (match.isFogOfWar) setVisibleSquares(new Set(payload.visibleSquares ?? []));
+      const duckBeforeOpponentMove = duckRef.current;
+      if (duckChess && payload.duckSquare !== undefined) setDuckSquare(payload.duckSquare);
 
       // Fog of War: the opponent's move might genuinely be outside this player's own visibility
       // (payload.from/to/san all omitted together in that case — see OpponentMovePayload's own
@@ -200,16 +214,20 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       const replayEngine = new ChessEngine(fenRef.current, {
         chess960: match.isChess960,
         initialFen: match.fen,
-        skipValidation: match.isFogOfWar || giveaway,
+        skipValidation: match.isFogOfWar || giveaway || duckChess,
         giveaway,
         atomic,
+        duckChess,
+        duckSquare: duckBeforeOpponentMove,
       });
-      const replayed =
-        match.isFogOfWar || giveaway
+      const replayedMove =
+        match.isFogOfWar || giveaway || duckChess
           ? replayEngine.movePseudoLegal(payload.from!, payload.to!, payload.promotion)
           : replayEngine.move(payload.from!, payload.to!, payload.promotion);
+      // Duck Chess: the replay only knows the move; the duck's destination comes from the server.
+      const replayed = replayedMove && payload.duck ? { ...replayedMove, duck: payload.duck } : replayedMove;
 
-      setLastMoveSan(payload.san!);
+      setLastMoveSan(duckChess && payload.duck ? duckMoveNotation({ san: payload.san!, duck: payload.duck }) : payload.san!);
       playMoveSound(replayed);
       triggerMoveHaptics(replayed);
       if (match.isFogOfWar) {
@@ -227,10 +245,11 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           // Falls back to a minimal synthetic Move if the local replay itself failed (an
           // extremely rare desync) — still enough to show the SAN in the move list; classifyMove
           // just won't be able to match it against the engine's best line for that one ply.
-          move: replayed ?? { from: '', to: '', san: payload.san! },
+          move: replayed ?? { from: '', to: '', san: payload.san!, ...(payload.duck ? { duck: payload.duck } : {}) },
           mover: opponentColor,
           fenBefore: fenRef.current,
           fenAfter: payload.fen,
+          ...(duckChess ? { duckSquare: payload.duckSquare ?? duckBeforeOpponentMove } : {}),
         },
       ]);
     };
@@ -248,9 +267,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       const result = payload.winner === null ? 0.5 : payload.winner === myColor ? 1 : 0;
       const ratingCategory = toRatingCategory(categoryForInitialSeconds(match.timeControl.initialSeconds) ?? '');
       // Giveaway and Atomic are different games — they must not move the player's chess rating.
-      if (ratingCategory && !giveaway && !atomic) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
+      if (ratingCategory && !giveaway && !atomic && !duckChess) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
 
-      if (result === 1 && wasMaterialDownRef.current && !giveaway && !atomic) unlockAchievement('comeback_win');
+      if (result === 1 && wasMaterialDownRef.current && !giveaway && !atomic && !duckChess) unlockAchievement('comeback_win');
     };
 
     const handleDrawOffered = (_payload: DrawOfferedPayload) => {
@@ -297,6 +316,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             setConnectionState('connected');
             setViewIndex(null);
             if (match.isFogOfWar) setVisibleSquares(new Set(ack.state.visibleSquares ?? []));
+            if (duckChess) setDuckSquare(ack.state.duckSquare ?? null);
 
             // Rebuild the full move list (and with it, captured pieces) from scratch — we may
             // have missed one or more opponent_move events entirely while disconnected, so
@@ -304,11 +324,15 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             const replayEngine = new ChessEngine(match.fen, {
               chess960: match.isChess960,
               initialFen: match.fen,
-              skipValidation: match.isFogOfWar || giveaway,
+              skipValidation: match.isFogOfWar || giveaway || duckChess,
               giveaway,
               atomic,
             });
             const rebuilt: MoveRecord[] = [];
+            // Duck Chess: the duck's square is not part of the engine's state, so each ply is replayed on a fresh
+            // engine built from the running { fen, duck } pair (the duck moves with every turn).
+            let replayFen = match.fen;
+            let replayDuck: string | null = null;
             // Fog of War only — a move this player never witnessed (see RejoinStatePayload's own
             // doc comment) can't be replayed at all (no from/to to replay with), which permanently
             // desyncs `replayEngine` from the true position from that point on. Rather than guess,
@@ -318,11 +342,22 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             let replayBroken = false;
             ack.state.moves.forEach((m, i) => {
               const mover: PieceColor = i % 2 === 0 ? 'w' : 'b';
-              const fenBefore = replayEngine.getFen();
+              const fenBefore = duckChess ? replayFen : replayEngine.getFen();
 
               if (!m.san || replayBroken) {
                 replayBroken = true;
                 rebuilt.push({ move: { from: m.from ?? '', to: m.to ?? '', san: m.san ?? '?' }, mover, fenBefore, fenAfter: fenBefore });
+                return;
+              }
+
+              if (duckChess) {
+                const stepEngine = new ChessEngine(replayFen, { chess960: match.isChess960, initialFen: match.fen, skipValidation: true, duckChess: true, duckSquare: replayDuck });
+                const stepped = stepEngine.movePseudoLegal(m.from!, m.to!, m.promotion as Move['promotion']);
+                if (stepped) {
+                  replayFen = stepEngine.getFen();
+                  if (m.duck) replayDuck = m.duck;
+                  rebuilt.push({ move: m.duck ? { ...stepped, duck: m.duck } : stepped, mover, fenBefore, fenAfter: replayFen, duckSquare: replayDuck });
+                }
                 return;
               }
 
@@ -338,7 +373,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
               }
             });
             setMoveList(rebuilt);
-            if (rebuilt.length > 0) setLastMoveSan(rebuilt[rebuilt.length - 1].move.san);
+            if (rebuilt.length > 0) setLastMoveSan(duckChess ? duckMoveNotation(rebuilt[rebuilt.length - 1].move) : rebuilt[rebuilt.length - 1].move.san);
           }
           // If it failed (e.g. the game already ended while we were offline), leave
           // connectionState as "reconnecting" — a game_over we missed would already be
@@ -390,13 +425,17 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
 
       const fenBeforeMove = fen; // closure snapshot, for reverting if the server disagrees
       const visibleSquaresBeforeMove = visibleSquares;
+      const duckBeforeMove = duckSquare;
       setMoveError(null);
       setFen(newFen);
       setTurn(opponentColor); // optimistic — the ack below confirms/corrects this
-      setLastMoveSan(move.san);
+      // Duck Chess: ChessBoard hands over the whole turn — the move already carries where the duck went (nothing
+      // when the move captured a king, which ends the game with no placement).
+      if (duckChess) setDuckSquare(move.duck ?? duckSquare);
+      setLastMoveSan(duckChess ? duckMoveNotation(move) : move.san);
       playMoveSound(move);
       triggerMoveHaptics(move);
-      setMoveList((list) => [...list, { move, mover: myColor, fenBefore: fenBeforeMove, fenAfter: newFen }]);
+      setMoveList((list) => [...list, { move, mover: myColor, fenBefore: fenBeforeMove, fenAfter: newFen, ...(duckChess ? { duckSquare: move.duck ?? duckSquare } : {}) }]);
       // Fog of War: computed straight from `newFen` — ChessBoard already built it via this same
       // player's own movePseudoLegal, and a player's own pseudo-legal move generation never depends
       // on currently-invisible information (see fogOfWar.ts), so this is just as correct as waiting
@@ -418,10 +457,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         .timeout(8000)
         .emit(
           'make_move',
-          { roomId: match.roomId, from: move.from, to: move.to, promotion: move.promotion },
+          { roomId: match.roomId, from: move.from, to: move.to, promotion: move.promotion, ...(duckChess && move.duck ? { duckTo: move.duck } : {}) },
           (
             err: unknown,
-            ack?: Ack<{ fen: string; san: string; turn: PieceColor; whiteMs: number; blackMs: number; visibleSquares?: string[] }>
+            ack?: Ack<{ fen: string; san: string; turn: PieceColor; whiteMs: number; blackMs: number; visibleSquares?: string[]; duckSquare?: string | null }>
           ) => {
             if (err || !ack || !ack.ok) {
               // The server disagreed with a move our own board thought was legal — extremely
@@ -435,6 +474,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
               setMoveError(ack && !ack.ok ? ack.error : 'The move was not confirmed by the server.');
               setFen(fenBeforeMove);
               setTurn(myColor);
+              if (duckChess) setDuckSquare(duckBeforeMove);
               setMoveList((list) => list.slice(0, -1));
               setBoardKey((k) => k + 1);
               if (match.isFogOfWar) setVisibleSquares(visibleSquaresBeforeMove);
@@ -445,10 +485,11 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             setWhiteMs(ack.whiteMs);
             setBlackMs(ack.blackMs);
             if (match.isFogOfWar) setVisibleSquares(new Set(ack.visibleSquares ?? []));
+            if (duckChess && ack.duckSquare !== undefined) setDuckSquare(ack.duckSquare);
           }
         );
     },
-    [gameOver, turn, myColor, connectionState, viewIndex, fen, visibleSquares, opponentColor, match, authToken]
+    [gameOver, turn, myColor, connectionState, viewIndex, fen, visibleSquares, opponentColor, match, authToken, duckChess, duckSquare]
   );
 
   // Premove: queued while it's the opponent's turn (see ChessBoard's premoveColor/onPremove),
@@ -566,6 +607,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   };
 
   const selectedMoveIndex = isReviewing ? (viewIndex as number) - 1 : moveList.length - 1;
+  // Duck Chess: where the duck stood in the position being DISPLAYED (position 0 = the start, with no duck yet).
+  const displayDuck = duckChess ? (isReviewing ? (viewIndex === 0 ? null : moveList[(viewIndex as number) - 1]?.duckSquare ?? null) : duckSquare) : null;
   const displayLastMove = selectedMoveIndex >= 0 ? moveList[selectedMoveIndex].move : null;
 
   // Tapping a move in the strip drives the exact same viewIndex the Back/Forward buttons do —
@@ -604,7 +647,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     () => giveaway && isMyTurn && getGiveawayMoves(new ChessEngine(fen, { skipValidation: true, giveaway: true })).some((m) => m.captured),
     [giveaway, isMyTurn, fen]
   );
-  let statusText = isMyTurn ? (mustCapture ? 'Your turn — must capture' : 'Your turn') : `${opponentName}'s turn`;
+  let statusText = isMyTurn ? (mustCapture ? 'Your turn — must capture' : placingDuck ? 'Your turn — place the duck 🦆' : 'Your turn') : `${opponentName}'s turn`;
   if (connectionState === 'reconnecting') statusText = 'Reconnecting...';
 
   const summaryTitle = !gameOver ? '' : gameOver.winner === null ? 'Draw' : gameOver.winner === myColor ? 'You Won' : 'You Lost';
@@ -629,13 +672,15 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                       ? 'Giveaway'
                       : atomic
                         ? 'Atomic'
-                        : undefined
+                        : duckChess
+                          ? 'Duck Chess'
+                          : undefined
         }
         onBack={handleExit}
         backLabel="‹ Menu"
       />
       <MoveListStrip
-        moves={moveList.map((m) => ({ san: m.move.san }))}
+        moves={moveList.map((m) => ({ san: duckChess ? duckMoveNotation(m.move) : m.move.san }))}
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
         onSelectMove={handleSelectMove}
@@ -721,7 +766,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
         </View>
 
-        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && !giveaway && !atomic && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && !giveaway && !atomic && !duckChess && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={boardKey}
@@ -736,11 +781,14 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           fogOfWar={match.isFogOfWar}
           giveaway={giveaway}
           atomic={atomic}
+          duckChess={duckChess}
+          duckSquare={displayDuck}
+          onDuckPlacementChange={setPlacingDuck}
           visibleSquares={visibleSquares}
           // No premoves in Giveaway or Atomic: mandatory capture / explosions change which moves are legal
           // after the opponent's reply, so a queued move is almost never still valid when its turn comes.
-          premoveColor={giveaway || atomic ? undefined : myColor}
-          onPremove={giveaway || atomic ? undefined : handleQueuePremove}
+          premoveColor={giveaway || atomic || duckChess ? undefined : myColor}
+          onPremove={giveaway || atomic || duckChess ? undefined : handleQueuePremove}
         />
 
         <View style={styles.playerRow}>
@@ -788,6 +836,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         fogOfWar={match.isFogOfWar}
         giveaway={giveaway}
         atomic={atomic}
+        duckChess={duckChess}
         history={moveList}
         players={[{ label: 'You', color: myColor }]}
         onGameReview={() => onAnalyze({ initialFen: match.fen, chess960: match.isChess960, fogOfWar: match.isFogOfWar, history: moveList })}

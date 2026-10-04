@@ -82,9 +82,9 @@ describe('Online wiring (no React Native renderer available)', () => {
   });
 
   it('Online Atomic has no premoves, no opening names, no rating change and no Game Review', () => {
-    expect(online).toContain('premoveColor={giveaway || atomic ? undefined : myColor}');
-    expect(online).toContain('onPremove={giveaway || atomic ? undefined : handleQueuePremove}');
-    expect(online).toContain('!giveaway && !atomic && openingName');
+    expect(online).toContain('premoveColor={giveaway || atomic || duckChess ? undefined : myColor}');
+    expect(online).toContain('onPremove={giveaway || atomic || duckChess ? undefined : handleQueuePremove}');
+    expect(online).toContain('!giveaway && !atomic && !duckChess && openingName');
     expect(online).toContain('ratingCategory && !giveaway && !atomic');
     expect(online).toContain('wasMaterialDownRef.current && !giveaway && !atomic');
     expect(online).toContain('atomic={atomic}'); // ChessBoard (animation, capture-promotion) and PostGameSummaryModal

@@ -6,6 +6,7 @@ import MoveListStrip from '../components/MoveListStrip';
 import ScreenHeader from '../components/ScreenHeader';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import { duckMoveNotation } from '../logic/duckChess';
 import { THREE_CHECK_TARGET, getThreeCheckCounts } from '../logic/threeCheck';
 import { formatTime } from '../logic/time';
 import type { Ack, GameOverPayload, SpectateStatePayload, SpectatorMovePayload } from '../types/multiplayer';
@@ -48,12 +49,17 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
       // Spectators always get the full true game (see SpectateStatePayload's own doc comment),
       // so `san` is only ever optional in the TYPE (it's shared with the redacted player-facing
       // shape) — never actually missing here; the fallback is just defensive.
-      setMoves(ack.state.moves.map((m) => ({ san: m.san ?? '?' })));
+      setMoves(ack.state.moves.map((m) => ({ san: ack.state.isDuckChess ? duckMoveNotation({ san: m.san ?? '?', duck: m.duck }) : (m.san ?? '?') })));
     });
 
     const handleSpectatorMove = (payload: SpectatorMovePayload) => {
-      setState((prev) => (prev ? { ...prev, fen: payload.fen, turn: payload.turn, whiteMs: payload.whiteMs, blackMs: payload.blackMs } : prev));
-      setMoves((prev) => [...prev, { san: payload.san ?? '?' }]);
+      setState((prev) =>
+        prev
+          ? { ...prev, fen: payload.fen, turn: payload.turn, whiteMs: payload.whiteMs, blackMs: payload.blackMs, ...(payload.duckSquare !== undefined ? { duckSquare: payload.duckSquare } : {}) }
+          : prev
+      );
+      // Duck Chess: where the duck went rides along with the move, "e4 @g6".
+      setMoves((prev) => [...prev, { san: payload.duck ? duckMoveNotation({ san: payload.san ?? '?', duck: payload.duck }) : (payload.san ?? '?') }]);
     };
     const handleGameOver = (payload: GameOverPayload) => setGameOver(payload);
 
@@ -120,7 +126,9 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
                       ? ' · Giveaway'
                       : state.isAtomic
                         ? ' · Atomic'
-                        : ''}
+                        : state.isDuckChess
+                          ? ' · Duck Chess'
+                          : ''}
         </Text>
         <Text style={styles.status}>{statusText}</Text>
 
@@ -140,6 +148,8 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
           fogOfWar={state.isFogOfWar}
           giveaway={state.isGiveaway}
           atomic={state.isAtomic}
+          duckChess={state.isDuckChess}
+          duckSquare={state.duckSquare ?? null}
         />
 
         <View style={styles.playerRow}>
