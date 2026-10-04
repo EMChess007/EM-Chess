@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { START_FEN } from '../../types/chess';
 import { ChessEngine } from '../ChessEngine';
 import { getLegalDuckPlacementSquares } from '../duckChess';
@@ -83,6 +83,38 @@ describe('replaying a Duck Chess game the way the Online screen does', () => {
   });
 });
 
+describe('dev-only switch for Duck Chess in the Online pickers', () => {
+  const load = async (isDev: boolean, flag: string | undefined) => {
+    vi.resetModules();
+    vi.stubGlobal('__DEV__', isDev);
+    if (flag === undefined) vi.stubEnv('EXPO_PUBLIC_ENABLE_ONLINE_DUCK', '');
+    else vi.stubEnv('EXPO_PUBLIC_ENABLE_ONLINE_DUCK', flag);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    return (await import('../../config/devFlags')).ONLINE_EXCLUDED_VARIANTS;
+  };
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps Duck Chess excluded by default', async () => {
+    expect(await load(true, undefined)).toEqual(['duckChess']);
+    expect(await load(true, 'false')).toEqual(['duckChess']);
+  });
+  it('shows Duck Chess only in a dev build with the flag set to "true"', async () => {
+    expect(await load(true, 'true')).toEqual([]);
+  });
+  it('never shows it in a release build, even with the flag set', async () => {
+    expect(await load(false, 'true')).toEqual(['duckChess']);
+  });
+  it('does not touch the Tournament picker', () => {
+    const read = (rel: string) => readFileSync(join(__dirname, '../../', rel), 'utf8').replace(/\r\n/g, '\n');
+    expect(read('screens/TournamentScreen.tsx')).not.toContain('ONLINE_EXCLUDED_VARIANTS');
+    expect(read('screens/TournamentScreen.tsx')).toContain("'duckChess'");
+  });
+});
+
 describe('Online wiring (no React Native renderer available)', () => {
   const read = (rel: string) => readFileSync(join(__dirname, '../../', rel), 'utf8').replace(/\r\n/g, '\n');
   const online = read('screens/OnlineGameScreen.tsx');
@@ -135,7 +167,7 @@ describe('Online wiring (no React Native renderer available)', () => {
   });
 
   it('the Online pickers still exclude Duck Chess until the online path is verified end to end', () => {
-    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).toContain("excludeVariants={['duckChess']}");
-    expect(read('screens/ChallengeScreen.tsx')).toContain("excludeVariants={['duckChess']}");
+    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).toContain('excludeVariants={ONLINE_EXCLUDED_VARIANTS}');
+    expect(read('screens/ChallengeScreen.tsx')).toContain('excludeVariants={ONLINE_EXCLUDED_VARIANTS}');
   });
 });

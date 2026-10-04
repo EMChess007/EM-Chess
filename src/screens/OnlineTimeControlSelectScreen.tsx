@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import ScreenHeader from '../components/ScreenHeader';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';
+import { ONLINE_EXCLUDED_VARIANTS } from '../config/devFlags';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getTimeControlsByCategory } from '../logic/timeControls';
 import type { TimeControl, TimeControlCategory } from '../types/timeControl';
@@ -29,7 +30,7 @@ export default function OnlineTimeControlSelectScreen({ onSelect, onBack }: Onli
       <ScreenHeader title="Play Online" onBack={onBack} />
 
       <View style={styles.variantRow}>
-        <VariantSelector value={variant} onChange={setVariant} excludeVariants={['duckChess']} />
+        <VariantSelector value={variant} onChange={setVariant} excludeVariants={ONLINE_EXCLUDED_VARIANTS} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
