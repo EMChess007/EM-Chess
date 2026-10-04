@@ -23,7 +23,7 @@ const OPTIONS: { value: GameVariant; label: string }[] = [
   { value: 'threeCheck', label: 'Three-\nCheck' },
   { value: 'setupChess', label: 'Setup\nChess' },
   { value: 'fogOfWar', label: 'Fog of\nWar' },
-  { value: 'giveaway', label: 'Give-\naway' },
+  { value: 'giveaway', label: 'Giveaway' },
   { value: 'atomic', label: 'Atomic' },
   { value: 'duckChess', label: 'Duck\nChess' },
 ];

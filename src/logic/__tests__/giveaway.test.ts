@@ -288,6 +288,10 @@ describe('wiring (no RN renderer available)', () => {
   const read = (rel: string) => readFileSync(join(__dirname, '../../', rel), 'utf8').replace(/\r\n/g, '\n');
   const board = read('components/ChessBoard.tsx');
 
+  it('the Giveaway chip is the single word "Giveaway" — no manual hyphen/line break in the label', () => {
+    expect(read('components/VariantSelector.tsx')).toContain("{ value: 'giveaway', label: 'Giveaway' }");
+  });
+
   it("ChessBoard gates a tapped move on getGiveawayMoves BEFORE executing it (movePseudoLegal alone isn't strict enough)", () => {
     const gate = board.indexOf('getGiveawayMoves(moveEngine, from)');
     const execute = board.indexOf('moveEngine.movePseudoLegal(from, to, promotion)');
