@@ -138,6 +138,41 @@ describe('promotion', () => {
     expect(engine.getPieceAt('f8')).toEqual({ type: 'k', color: 'w' });
   });
 
+  it('a SECOND king (promoting while your own king is alive) survives the FEN reload every ply goes through', () => {
+    // chess.js refuses to place a second king of one colour when loading a FEN, so without special
+    // handling the promoted king silently vanished on the very next move (screens and bots rebuild
+    // their engine from the FEN every ply).
+    const start = giveawayEngine('7k/4P3/8/8/8/8/8/K7 w - - 0 1');
+    start.movePseudoLegal('e7', 'e8', 'k');
+    const fen = start.getFen();
+    expect(fen.split(' ')[0]).toBe('4K2k/8/8/8/8/8/8/K7');
+
+    const reloaded = giveawayEngine(fen);
+    const whiteKings = reloaded.getBoard().flat().filter((s) => s.piece?.type === 'k' && s.piece.color === 'w').map((s) => s.square).sort();
+    expect(whiteKings).toEqual(['a1', 'e8']);
+    expect(reloaded.getFen()).toBe(fen);
+
+    // Both of White's kings can still move, and either may be captured like any piece.
+    const whiteToMove = giveawayEngine('4K2k/8/8/8/8/8/8/K7 w - - 0 1');
+    expect(getGiveawayMoves(whiteToMove, 'e8').length).toBeGreaterThan(0);
+    expect(getGiveawayMoves(whiteToMove, 'a1').length).toBeGreaterThan(0);
+    const blackToMove = giveawayEngine('4K2k/8/8/8/8/8/8/K7 b - - 0 1');
+    expect(blackToMove.getPieceAt('e8')).toEqual({ type: 'k', color: 'w' });
+    expect(blackToMove.getPieceAt('a1')).toEqual({ type: 'k', color: 'w' });
+  });
+
+  it('the same holds for Black, and when the extra king is the one found first in FEN order', () => {
+    const black = giveawayEngine('k7/8/8/8/8/8/4p3/7K b - - 0 1');
+    black.movePseudoLegal('e2', 'e1', 'k');
+    const reloaded = giveawayEngine(black.getFen());
+    const blackKings = reloaded.getBoard().flat().filter((s) => s.piece?.type === 'k' && s.piece.color === 'b').map((s) => s.square).sort();
+    expect(blackKings).toEqual(['a8', 'e1']);
+
+    // Two white kings with the "extra" one on an earlier rank than the original.
+    const rebuilt = giveawayEngine('8/8/3K4/8/8/8/8/K6k w - - 0 1');
+    expect(rebuilt.getBoard().flat().filter((s) => s.piece?.type === 'k' && s.piece.color === 'w')).toHaveLength(2);
+  });
+
   it('black pawns promote on rank 1, also to a king', () => {
     const promos = getGiveawayMoves(giveawayEngine('8/8/8/8/8/8/4p3/8 b - - 0 1'), 'e2').map((m) => m.promotion);
     expect(promos.sort()).toEqual(['b', 'k', 'n', 'q', 'r']);

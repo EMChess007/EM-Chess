@@ -159,6 +159,10 @@ Engine vs Engine do NOT offer Giveaway — the Online setup screens exclude it f
 **Decisions worth knowing**
 - Castling is forbidden (standard Antichess; chess.js would otherwise offer it).
 - A pawn may promote to a king (picker shows 5 pieces in Giveaway).
+  A promoted king may be a SECOND king of that colour (own king still alive). chess.js refuses a second
+  king when loading a FEN, which used to make it vanish on the next ply (screens/bots rebuild their engine
+  from the FEN every move); `loadGiveawayFen` in `ChessEngine.ts` re-adds it, with regression tests in
+  `giveaway.test.ts`. The server's `RoomChessEngine` does the same.
 - Bots do NOT use Stockfish (`chooseGiveawayBotMove` in `bots.ts`): a 1-ply heuristic that scores a
   move by the material it hands the opponent, avoids moves that leave them with no legal move (that
   wins THEM the game), and uses ELO only as a "chance to play the best-scoring move" dial

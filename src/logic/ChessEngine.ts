@@ -51,6 +51,59 @@ interface InternalMove {
 interface ChessInternals {
   _moves(options?: { legal?: boolean; square?: ChessJsSquare; piece?: string }): InternalMove[];
   _makeMove(move: InternalMove): void;
+  /** Places a piece on a 0x88 square index with no validation at all — unlike the public put()/load(),
+   * which refuse a second king of one colour. See loadGiveawayFen. */
+  _set(square: number, piece: { type: 'k'; color: PieceColor }): void;
+}
+
+/** Inverse of squareFromIndex: algebraic square to chess.js's 0x88 board index. */
+function indexFromSquare(square: string): number {
+  return (8 - Number(square[1])) * 16 + FILES.indexOf(square[0]);
+}
+
+/**
+ * Loads a Giveaway FEN, keeping a SECOND king of one colour. In Giveaway a pawn may promote to a king
+ * while the side's own king is still alive, so a position can legitimately hold two kings of a colour —
+ * but chess.js's load()/put() refuse to place more than one (the first found in FEN order wins and the
+ * rest are silently dropped), so a promoted king used to vanish on the very next move (every screen and
+ * bot rebuilds its engine from the FEN each ply; the original king could even be the one dropped).
+ * The extra kings are therefore taken out of the FEN before loading and put back afterwards through
+ * chess.js's unvalidated internal _set(). Giveaway has no king-safety logic, so which king chess.js
+ * tracks as "the" king never matters.
+ */
+function loadGiveawayFen(fen: string): Chess {
+  const [placement, ...rest] = fen.split(' ');
+  const seen: Record<PieceColor, boolean> = { w: false, b: false };
+  const extras: { square: string; color: PieceColor }[] = [];
+  const ranks = placement.split('/').map((rank, rankIndex) => {
+    let file = 0;
+    let out = '';
+    for (const ch of rank) {
+      if (ch >= '1' && ch <= '8') {
+        out += ch;
+        file += Number(ch);
+        continue;
+      }
+      if (ch === 'K' || ch === 'k') {
+        const color: PieceColor = ch === 'K' ? 'w' : 'b';
+        if (seen[color]) {
+          extras.push({ square: `${FILES[file]}${8 - rankIndex}`, color });
+          out += '1';
+          file += 1;
+          continue;
+        }
+        seen[color] = true;
+      }
+      out += ch;
+      file += 1;
+    }
+    return out;
+  });
+  const chess = new Chess([ranks.join('/'), ...rest].join(' '), { skipValidation: true });
+  for (const extra of extras) {
+    (chess as unknown as ChessInternals)._set(indexFromSquare(extra.square), { type: 'k', color: extra.color });
+  }
+  return chess;
 }
 
 function toAppMove(pretty: ChessJsMove): Move {
@@ -157,10 +210,10 @@ export class ChessEngine {
 
   constructor(fen?: string, options?: ChessEngineOptions) {
     this.atomic = options?.atomic ?? false;
-    const skipValidation = (options?.skipValidation ?? false) || this.atomic;
-    this.chess = fen ? new Chess(fen, { skipValidation }) : new Chess();
-    this.chess960 = options?.chess960 ?? false;
     this.giveaway = options?.giveaway ?? false;
+    const skipValidation = (options?.skipValidation ?? false) || this.atomic;
+    this.chess = fen ? (this.giveaway ? loadGiveawayFen(fen) : new Chess(fen, { skipValidation })) : new Chess();
+    this.chess960 = options?.chess960 ?? false;
     this.atomicCurrentFen = fen ?? START_FEN;
     this.files = getChess960BackRankFiles(options?.initialFen ?? fen ?? START_FEN);
   }
