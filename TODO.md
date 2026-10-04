@@ -44,3 +44,23 @@ unannounced.
 `gameModes.test.ts`, a check of what the backend's `RoomChessEngine` does for Online games (not
 verified whether the server tracks repetition itself), and a decision on whether Fog of War / Giveaway /
 King of the Hill / Three-Check also want it (Fog of War and Giveaway probably not).
+
+## Daily (correspondence) games Online
+
+**What's wrong / what's missing.** Online play is live-only. Daily time controls (1–14 days) exist for Local and Bot
+games but cannot be played Online: quick match pairs two players who are connected to the queue at the same moment,
+and a room only lives while both sockets stay connected. Making Daily real is its own feature, not a picker entry:
+
+- **Persisted game state.** `RoomManager` rooms are in-memory (lost on a server restart or a Render sleep). A Daily
+  game needs the position, move list, clocks and players stored in Postgres and reloaded.
+- **Abandonment exemption.** `ABANDONMENT_GRACE_MS` (45 s) forfeits a player who disconnects, whatever the time
+  control — Daily must be exempt (the move clock is the only deadline).
+- **Move timers across restarts.** `scheduleTimeout` uses `setTimeout`, which is neither persisted nor safe for very
+  long delays; Daily needs a persisted deadline checked by a job.
+- **Async pairing.** A challenge/queue entry has to survive while its owner is offline.
+- **Move notifications** (push) so the opponent knows it is their turn.
+- **A "my games" list** to find, resume and spectate ongoing Daily games.
+
+**Found while adding "No time limit".** That one *is* offered Online now, as live-only play with hidden clocks
+(see `isUnlimitedTimeControl` in the backend's `rooms.ts` and `playerClockText` in `src/logic/time.ts`). The
+Challenge screen does not offer it (nor Daily) yet — a small follow-up since the server already accepts it.

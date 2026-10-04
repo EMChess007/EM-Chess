@@ -26,7 +26,7 @@ import { toRatingCategory } from '../logic/rating';
 import { getRatings, recordRatedGame } from '../logic/ratingStorage';
 import { categoryForInitialSeconds } from '../logic/timeControls';
 import { THREE_CHECK_TARGET, getThreeCheckCounts } from '../logic/threeCheck';
-import { formatTime } from '../logic/time';
+import { isUnlimitedClock, playerClockText } from '../logic/time';
 import type { Move, PieceColor } from '../types/chess';
 import type { AnalyzeParams, GameHistoryEntry } from '../types/history';
 import type {
@@ -146,7 +146,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // authoritative whiteMs/blackMs only update on a server message, so without this the shown
   // clock would otherwise sit frozen between moves instead of counting down live.
   useEffect(() => {
-    if (gameOver || connectionState !== 'connected') return;
+    if (gameOver || connectionState !== 'connected' || isUnlimitedClock(match.timeControl.initialSeconds)) return;
     const interval = setInterval(() => {
       if (turn === 'w') setDisplayWhiteMs((ms) => Math.max(0, ms - 1000));
       else setDisplayBlackMs((ms) => Math.max(0, ms - 1000));
@@ -760,7 +760,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === opponentColor && !gameOver && styles.clockActive]}>
-            {opponentName}: {formatTime(opponentMs / 1000)}
+            {playerClockText(opponentName, opponentMs, match.timeControl.initialSeconds)}
             {checkCounts ? ` · Checks: ${checkCounts[opponentColor]}/${THREE_CHECK_TARGET}` : ''}
           </Text>
           <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
@@ -793,7 +793,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === myColor && !gameOver && styles.clockActive]}>
-            {myName}: {formatTime(myMs / 1000)}
+            {playerClockText(myName, myMs, match.timeControl.initialSeconds)}
             {checkCounts ? ` · Checks: ${checkCounts[myColor]}/${THREE_CHECK_TARGET}` : ''}
           </Text>
           <CapturedPieces pieces={myCaptured} color={opponentColor} advantage={myAdvantage} />

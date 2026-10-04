@@ -12,12 +12,14 @@ interface OnlineTimeControlSelectScreenProps {
   onBack: () => void;
 }
 
-// Daily/unlimited controls don't fit a live "find an opponent now" match — those exist for
-// correspondence-style play, which is a different UX (no matchmaking queue) than this screen.
+// "No time limit" is live-only play with no clock — both players stay connected, and the server still
+// forfeits a player who disconnects for 45 s. Daily is NOT offered: it needs correspondence-style play
+// (persisted games, no abandonment, notifications) which the live matchmaking queue cannot provide.
 const ONLINE_CATEGORIES: { category: TimeControlCategory; label: string }[] = [
   { category: 'bullet', label: 'Bullet' },
   { category: 'blitz', label: 'Blitz' },
   { category: 'rapid', label: 'Rapid' },
+  { category: 'unlimited', label: 'No time limit' },
 ];
 
 export default function OnlineTimeControlSelectScreen({ onSelect, onBack }: OnlineTimeControlSelectScreenProps) {

@@ -8,7 +8,7 @@ import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { duckMoveNotation } from '../logic/duckChess';
 import { THREE_CHECK_TARGET, getThreeCheckCounts } from '../logic/threeCheck';
-import { formatTime } from '../logic/time';
+import { playerClockText } from '../logic/time';
 import type { Ack, GameOverPayload, SpectateStatePayload, SpectatorMovePayload } from '../types/multiplayer';
 import type { PieceColor } from '../types/chess';
 
@@ -134,7 +134,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === 'b' && !gameOver && styles.clockActive]}>
-            {blackUsername}: {formatTime(state.blackMs / 1000)}
+            {playerClockText(blackUsername, state.blackMs, state.timeControl.initialSeconds)}
             {checkCounts ? ` · Checks: ${checkCounts.b}/${THREE_CHECK_TARGET}` : ''}
           </Text>
         </View>
@@ -154,7 +154,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === 'w' && !gameOver && styles.clockActive]}>
-            {whiteUsername}: {formatTime(state.whiteMs / 1000)}
+            {playerClockText(whiteUsername, state.whiteMs, state.timeControl.initialSeconds)}
             {checkCounts ? ` · Checks: ${checkCounts.w}/${THREE_CHECK_TARGET}` : ''}
           </Text>
         </View>
