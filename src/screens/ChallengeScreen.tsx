@@ -4,6 +4,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import { variantWireFlags } from '../logic/onlineVariants';
 import { getTimeControlsByCategory } from '../logic/timeControls';
 import type { Ack, MatchFoundPayload, SetupChessPairedPayload } from '../types/multiplayer';
 import type { TimeControl, TimeControlCategory } from '../types/timeControl';
@@ -64,11 +65,7 @@ export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessP
       {
         timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
         timeControlLabel: timeControl.label,
-        isChess960: variant === 'chess960',
-        isKingOfTheHill: variant === 'kingOfTheHill',
-        isThreeCheck: variant === 'threeCheck',
-        isSetupChess: variant === 'setupChess',
-        isFogOfWar: variant === 'fogOfWar',
+        ...variantWireFlags(variant),
       },
       (ack: Ack<{ code: string }>) => {
         if (!ack.ok) {
@@ -132,7 +129,7 @@ export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessP
 
       {phase === 'setup' && (
         <View style={styles.setupContainer}>
-          <VariantSelector value={variant} onChange={setVariant} excludeVariants={['giveaway', 'atomic']} />
+          <VariantSelector value={variant} onChange={setVariant} excludeVariants={['atomic']} />
           {error && <Text style={styles.errorText}>{error}</Text>}
           <ScrollView contentContainerStyle={styles.setupScrollContent}>
             {CATEGORIES.map(({ category, label }) => (

@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { AppState, Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { setSessionExpiredHandler } from './src/api/client';
+import type { GameVariant } from './src/components/VariantSelector';
 import { notifyScreenTouch } from './src/logic/screenTouches';
 import { clearAuthSession, loadAuthSession, type AuthSession } from './src/api/authStorage';
 import AppAlertHost, { appAlert } from './src/components/AppAlert';
@@ -109,11 +110,7 @@ type Screen =
       name: 'matchmaking';
       token: string;
       timeControl: TimeControl;
-      chess960: boolean;
-      kingOfTheHill: boolean;
-      threeCheck: boolean;
-      setupChess: boolean;
-      fogOfWar: boolean;
+      variant: GameVariant;
     }
   | { name: 'setupChessOnline'; token: string; pairingId: string; color: PieceColor }
   | { name: 'challenge'; token: string }
@@ -418,9 +415,7 @@ export default function App() {
     const { token } = screen;
     content = (
       <OnlineTimeControlSelectScreen
-        onSelect={(timeControl, chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar) =>
-          setScreen({ name: 'matchmaking', token, timeControl, chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar })
-        }
+        onSelect={(timeControl, variant) => setScreen({ name: 'matchmaking', token, timeControl, variant })}
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
     );
@@ -430,11 +425,7 @@ export default function App() {
       <MatchmakingScreen
         authToken={token}
         timeControl={screen.timeControl}
-        chess960={screen.chess960}
-        kingOfTheHill={screen.kingOfTheHill}
-        threeCheck={screen.threeCheck}
-        setupChess={screen.setupChess}
-        fogOfWar={screen.fogOfWar}
+        variant={screen.variant}
         onMatchFound={(match) => setScreen({ name: 'onlineGame', token, match })}
         onSetupChessPaired={(paired) => setScreen({ name: 'setupChessOnline', token, pairingId: paired.pairingId, color: paired.color })}
         onCancel={() => setScreen({ name: 'main' })}

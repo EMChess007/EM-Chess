@@ -16,6 +16,7 @@ import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { describeEndReason } from '../logic/gameOutcomeText';
 import { logDiagnostic } from '../logic/diagnosticLog';
 import { getVisibleSquares, logFogOfWarGameStart, logFogOfWarPly } from '../logic/fogOfWar';
+import { getGiveawayMoves } from '../logic/giveaway';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
@@ -66,6 +67,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   const styles = createStyles(colors);
   const myColor = match.color;
   const opponentColor: PieceColor = myColor === 'w' ? 'b' : 'w';
+  // Giveaway (Antichess) — the server owns the rules (mandatory capture, stuck-wins); this screen only needs
+  // its engines built the Giveaway way so they understand kingless positions, king promotion and no castling.
+  const giveaway = match.isGiveaway === true;
 
   const [fen, setFen] = useState(match.fen);
   const [turn, setTurn] = useState<PieceColor>('w');
@@ -151,10 +155,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // state sync after reconnecting) rather than being threaded through each individual handler
   // below. See LocalGameScreen's identical effect for why a miss here doesn't clear the name.
   useEffect(() => {
-    if (match.isChess960 || match.isSetupChess || match.isFogOfWar) return;
+    if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway) return;
     const openingMatch = lookupOpening(fen);
     if (openingMatch) setOpeningName(openingMatch.name);
-  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar]);
+  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway]);
 
   // Wire up every server -> client event for this game once, for the lifetime of the screen.
   useEffect(() => {
@@ -193,11 +197,13 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       const replayEngine = new ChessEngine(fenRef.current, {
         chess960: match.isChess960,
         initialFen: match.fen,
-        skipValidation: match.isFogOfWar,
+        skipValidation: match.isFogOfWar || giveaway,
+        giveaway,
       });
-      const replayed = match.isFogOfWar
-        ? replayEngine.movePseudoLegal(payload.from!, payload.to!, payload.promotion)
-        : replayEngine.move(payload.from!, payload.to!, payload.promotion);
+      const replayed =
+        match.isFogOfWar || giveaway
+          ? replayEngine.movePseudoLegal(payload.from!, payload.to!, payload.promotion)
+          : replayEngine.move(payload.from!, payload.to!, payload.promotion);
 
       setLastMoveSan(payload.san!);
       playMoveSound(replayed);
@@ -237,9 +243,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       // doc comment) — a common simplifying assumption for a casual, non-competitive rating.
       const result = payload.winner === null ? 0.5 : payload.winner === myColor ? 1 : 0;
       const ratingCategory = toRatingCategory(categoryForInitialSeconds(match.timeControl.initialSeconds) ?? '');
-      if (ratingCategory) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
+      // Giveaway is a different game — it must not move the player's chess rating.
+      if (ratingCategory && !giveaway) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
 
-      if (result === 1 && wasMaterialDownRef.current) unlockAchievement('comeback_win');
+      if (result === 1 && wasMaterialDownRef.current && !giveaway) unlockAchievement('comeback_win');
     };
 
     const handleDrawOffered = (_payload: DrawOfferedPayload) => {
@@ -293,7 +300,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             const replayEngine = new ChessEngine(match.fen, {
               chess960: match.isChess960,
               initialFen: match.fen,
-              skipValidation: match.isFogOfWar,
+              skipValidation: match.isFogOfWar || giveaway,
+              giveaway,
             });
             const rebuilt: MoveRecord[] = [];
             // Fog of War only — a move this player never witnessed (see RejoinStatePayload's own
@@ -313,9 +321,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                 return;
               }
 
-              const result = match.isFogOfWar
-                ? replayEngine.movePseudoLegal(m.from!, m.to!, m.promotion as Move['promotion'])
-                : replayEngine.move(m.from!, m.to!, m.promotion as Move['promotion']);
+              const result =
+                match.isFogOfWar || giveaway
+                  ? replayEngine.movePseudoLegal(m.from!, m.to!, m.promotion as Move['promotion'])
+                  : replayEngine.move(m.from!, m.to!, m.promotion as Move['promotion']);
               if (result) {
                 rebuilt.push({ move: result, mover, fenBefore, fenAfter: replayEngine.getFen() });
               } else if (match.isFogOfWar) {
@@ -585,7 +594,12 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // (see handleGameOver's `gameOver.reason === 'threeCheck'`), never by this count.
   const checkCounts = match.isThreeCheck ? getThreeCheckCounts(moveList.map((m) => m.move)) : null;
 
-  let statusText = isMyTurn ? 'Your turn' : `${opponentName}'s turn`;
+  // Giveaway: tell a player who finds only some pieces movable why (a capture is mandatory this turn).
+  const mustCapture = useMemo(
+    () => giveaway && isMyTurn && getGiveawayMoves(new ChessEngine(fen, { skipValidation: true, giveaway: true })).some((m) => m.captured),
+    [giveaway, isMyTurn, fen]
+  );
+  let statusText = isMyTurn ? (mustCapture ? 'Your turn — must capture' : 'Your turn') : `${opponentName}'s turn`;
   if (connectionState === 'reconnecting') statusText = 'Reconnecting...';
 
   const summaryTitle = !gameOver ? '' : gameOver.winner === null ? 'Draw' : gameOver.winner === myColor ? 'You Won' : 'You Lost';
@@ -606,7 +620,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                   ? 'Setup Chess'
                   : match.isFogOfWar
                     ? 'Fog of War'
-                    : undefined
+                    : giveaway
+                      ? 'Giveaway'
+                      : undefined
         }
         onBack={handleExit}
         backLabel="‹ Menu"
@@ -698,7 +714,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
         </View>
 
-        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && !giveaway && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={boardKey}
@@ -711,9 +727,12 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           lastMove={displayLastMove}
           kingOfTheHill={match.isKingOfTheHill}
           fogOfWar={match.isFogOfWar}
+          giveaway={giveaway}
           visibleSquares={visibleSquares}
-          premoveColor={myColor}
-          onPremove={handleQueuePremove}
+          // No premoves in Giveaway: mandatory capture changes which moves are legal after the
+          // opponent's reply, so a queued move is almost never still valid when its turn comes.
+          premoveColor={giveaway ? undefined : myColor}
+          onPremove={giveaway ? undefined : handleQueuePremove}
         />
 
         <View style={styles.playerRow}>
@@ -759,6 +778,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         initialFen={match.fen}
         chess960={match.isChess960}
         fogOfWar={match.isFogOfWar}
+        giveaway={giveaway}
         history={moveList}
         players={[{ label: 'You', color: myColor }]}
         onGameReview={() => onAnalyze({ initialFen: match.fen, chess960: match.isChess960, fogOfWar: match.isFogOfWar, history: moveList })}

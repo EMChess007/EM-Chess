@@ -116,7 +116,9 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
                   ? ' · Setup Chess'
                   : state.isFogOfWar
                     ? ' · Fog of War'
-                    : ''}
+                    : state.isGiveaway
+                      ? ' · Giveaway'
+                      : ''}
         </Text>
         <Text style={styles.status}>{statusText}</Text>
 
@@ -134,6 +136,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
           chess960={state.isChess960}
           kingOfTheHill={state.isKingOfTheHill}
           fogOfWar={state.isFogOfWar}
+          giveaway={state.isGiveaway}
         />
 
         <View style={styles.playerRow}>

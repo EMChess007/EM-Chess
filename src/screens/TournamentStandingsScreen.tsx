@@ -44,6 +44,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
         isThreeCheck: payload.isThreeCheck,
         isSetupChess: false, // Tournaments don't support Setup Chess yet
         isFogOfWar: false, // Tournaments don't support Fog of War either
+        isGiveaway: false, // ...nor Giveaway
         fen: payload.fen,
         whiteMs: payload.whiteMs,
         blackMs: payload.blackMs,
@@ -82,6 +83,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
       isThreeCheck: match.isThreeCheck,
       isSetupChess: false, // Tournaments don't support Setup Chess yet
       isFogOfWar: false, // Tournaments don't support Fog of War either
+        isGiveaway: false, // ...nor Giveaway
       fen: match.fen,
       whiteMs: match.whiteMs ?? 0,
       blackMs: match.blackMs ?? 0,

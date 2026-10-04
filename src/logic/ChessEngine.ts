@@ -433,7 +433,15 @@ export class ChessEngine {
     const pretty = new ChessJsMove(this.chess, raw);
     internals._makeMove(raw);
     const applied = toAppMove(pretty);
-    return this.giveaway ? { ...applied, san: applied.san.replace(/[+#]$/, '') } : applied;
+    if (!this.giveaway) return applied;
+    // Giveaway only: a game CARRIES ON after a king is captured, and chess.js's live internal state does not
+    // cope — its _kings entry for the captured side keeps pointing at the old square and the castling rights
+    // survive, so the next move's SAN computation throws ("Cannot read properties of undefined (reading
+    // 'type')"). Almost every caller builds a fresh engine from the FEN per move, which sidestepped it, but
+    // OnlineGameScreen's reconnect replays a whole game on ONE engine (and so does the server's twin). Rebuild
+    // from our own FEN after every move, exactly as a fresh engine would.
+    this.chess = loadGiveawayFen(this.chess.fen({ forceEnpassantSquare: true }));
+    return { ...applied, san: applied.san.replace(/[+#]$/, '') };
   }
 
   /** chess.js's raw pseudo-legal candidates for `source`'s side to move, adjusted for Giveaway when

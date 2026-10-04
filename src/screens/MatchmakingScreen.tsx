@@ -1,18 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text } from 'react-native';
 import { connectSocket, disconnectSocket } from '../api/socket';
+import type { GameVariant } from '../components/VariantSelector';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import { variantTitlePrefix, variantWireFlags } from '../logic/onlineVariants';
 import type { Ack, MatchFoundPayload, SetupChessPairedPayload } from '../types/multiplayer';
 import type { TimeControl } from '../types/timeControl';
 
 interface MatchmakingScreenProps {
   authToken: string;
   timeControl: TimeControl;
-  chess960: boolean;
-  kingOfTheHill: boolean;
-  threeCheck: boolean;
-  setupChess: boolean;
-  fogOfWar: boolean;
+  variant: GameVariant;
   onMatchFound: (match: MatchFoundPayload) => void;
   /** Fires instead of onMatchFound when setupChess is true — there's no room yet, just a paired
    * opponent and an assigned color, so the caller hands off to the Setup Chess builder flow
@@ -24,11 +22,7 @@ interface MatchmakingScreenProps {
 export default function MatchmakingScreen({
   authToken,
   timeControl,
-  chess960,
-  kingOfTheHill,
-  threeCheck,
-  setupChess,
-  fogOfWar,
+  variant,
   onMatchFound,
   onSetupChessPaired,
   onCancel,
@@ -52,11 +46,7 @@ export default function MatchmakingScreen({
         {
           timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
           timeControlLabel: timeControl.label,
-          isChess960: chess960,
-          isKingOfTheHill: kingOfTheHill,
-          isThreeCheck: threeCheck,
-          isSetupChess: setupChess,
-          isFogOfWar: fogOfWar,
+          ...variantWireFlags(variant),
         },
         (ack: Ack) => {
           if (!ack.ok) setError(ack.error);
@@ -85,11 +75,7 @@ export default function MatchmakingScreen({
       {
         timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
         timeControlLabel: timeControl.label,
-        isChess960: chess960,
-        isKingOfTheHill: kingOfTheHill,
-        isThreeCheck: threeCheck,
-        isSetupChess: setupChess,
-        isFogOfWar: fogOfWar,
+        ...variantWireFlags(variant),
       },
       (ack: Ack) => {
         if (!ack.ok) setError(ack.error);
@@ -121,17 +107,7 @@ export default function MatchmakingScreen({
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.title}>
-        {chess960
-          ? 'Chess960 · '
-          : kingOfTheHill
-            ? 'King of the Hill · '
-            : threeCheck
-              ? 'Three-Check · '
-              : setupChess
-                ? 'Setup Chess · '
-                : fogOfWar
-                  ? 'Fog of War · '
-                  : ''}
+        {variantTitlePrefix(variant)}
         {timeControl.label}
       </Text>
 

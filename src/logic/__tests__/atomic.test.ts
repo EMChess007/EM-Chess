@@ -469,8 +469,8 @@ describe('isolation and wiring (no React Native renderer available)', () => {
   }
 
   it('Atomic is Local + Bots only: every Online setup screen excludes it', () => {
-    expect(read('screens/ChallengeScreen.tsx')).toContain("excludeVariants={['giveaway', 'atomic']}");
-    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).toContain("excludeVariants={['giveaway', 'atomic']}");
+    expect(read('screens/ChallengeScreen.tsx')).toContain("excludeVariants={['atomic']}");
+    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).toContain("excludeVariants={['atomic']}");
     expect(read('screens/TournamentScreen.tsx')).toContain("'atomic'");
   });
 
