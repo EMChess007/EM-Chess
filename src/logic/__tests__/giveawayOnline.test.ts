@@ -38,6 +38,7 @@ describe('variantWireFlags (what join_queue / create_challenge send)', () => {
       isFogOfWar: false,
       isGiveaway: true,
       isAtomic: false,
+      isDuckChess: false,
     });
   });
 

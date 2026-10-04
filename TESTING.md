@@ -242,3 +242,54 @@ server twin exists, so CHECKLIST §4 parity doesn't apply until Online is added 
 - No React Native renderer in this project: the explosion animation and screen wiring are guarded by source-level
   tests and were verified by hand in the web build (Local and Bot), not on a device. The animation needs a running
   `requestAnimationFrame` loop, so it only plays while the app window is visible.
+
+## 8. Duck Chess — scope, decisions and known limits
+
+Added following CHECKLIST.md. Rules and helpers live in `src/logic/duckChess.ts`; the engine-level pieces sit behind
+`ChessEngine`'s opt-in `duckChess`/`duckSquare` options (move generation drops every candidate the duck blocks).
+The duck's square is NOT in the FEN, so every engine is built from `{ fen, duckSquare }`; the game state derives it
+from `GameHistoryEntry.duckSquare` (one entry = one TURN: a regular move + the duck's new square, which is also what
+makes Undo atomic). Mirrored on the server in `backend/src/game/duckChess.ts`.
+
+**Rules as built.** No check/checkmate: the game ends the instant a king is CAPTURED (reason `duckChess`), the
+capturing move needs no duck placement. One neutral duck blocks every piece (no landing on it; sliders and double pawn
+steps cannot pass over it; castling is blocked when it sits on a square the king or rook crosses). A turn is a move,
+then the duck on any OTHER empty square (it must move every turn); there is no duck before White's first move. A side
+with no regular move at all is a draw (blockade).
+
+**Scope (decided with the maintainer): Local + Bots + Online.** Online is a separate change on top of this one (the
+server must understand the protocol first); until it lands the Online/Challenge/Tournament pickers exclude it.
+
+**Decisions worth knowing**
+- **Castling has no attack restriction** ("no check at all"): chess.js's generator withholds O-O/O-O-O when the king's
+  squares are attacked, so `ChessEngine.generateRaw` adds back every castle whose right remains and whose squares are
+  merely empty (and not under the duck). This deliberately differs from Fog of War, which still inherits chess.js's
+  attack-based castling restriction.
+- The duck-placement UI lives in `ChessBoard`: after a regular move it shows the post-move position with the legal
+  duck squares highlighted and only calls `onMove` (with `move.duck`) once the duck is placed, so clocks, history and
+  the opponent only ever see complete turns. Tapping the piece that just moved takes the move back.
+- Notation is `e4 @g6` in the move list and last-move text; saved PGNs carry it as a comment (`1.e4 {@g6} d5 {@c4}`)
+  with `[Variant "Duck"]`, and replay/import refuse such games. No hints, premoves, rating changes or Game Review.
+- Bots do NOT use Stockfish (`chooseDuckBotMove`): a whole turn is chosen at once — take a king if possible, otherwise
+  score a move by what it captures minus the most valuable thing the opponent could then capture AFTER the best duck
+  placement, and put the duck where it minimises that biggest threat (random among ties, so the first placement is
+  random). ELO is the chance of playing the searched turn vs a random one (~20% at 400 up to ~90% at 3000).
+
+**How it is tested**
+- `duckChess.test.ts` — the geometry helpers, every blocking rule through the engine, castling (duck and no attack
+  restriction), en passant, no-check behaviour, placement squares, blockade, and a **friendly-blocker oracle**: random
+  Duck games are checked at every ply for both colours against plain chess.js with the duck replaced by an ordinary piece
+  of the side to move (castling compared against the plain rule, since chess.js restricts it by attack).
+- `duckChessGame.test.ts` — whole turns as the screens commit them (first-turn duck, atomic Undo, king capture,
+  `getGameOutcome`), saved-PGN tagging, replay/import refusal and source-level wiring guards.
+- `duckBot.test.ts` — the bot takes a king, uses the duck to block the line to its own king, always names a legal duck
+  square, scales with ELO, and bot-vs-bot games stay legal and terminate.
+- Mutation-checked: eight deliberate breakages (slides over the duck, knight landing on it, castling across it, the duck
+  staying put, no attack-free castling, check marks in SAN, a king capture needing a duck, the bot ignoring a king) each
+  fail at least one test.
+
+**Known limits**
+- SAN disambiguation is computed by chess.js from its own legal-move list, which assumes ordinary king safety and ignores
+  the duck, so in rare positions a move could carry an unnecessary disambiguator. Cosmetic only.
+- The duck animation is a plain emoji on the square; the placement UI and the duck rendering were verified in the web
+  build, not on a device.

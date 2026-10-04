@@ -115,7 +115,7 @@ export function replayPgn(pgn: string, chess960: boolean): { initialFen: string;
   // promotion), so replaying or analysing one with ordinary chess rules would be wrong even when it
   // happens not to fail outright — see buildPgn's variant tag.
   // Atomic (explosions, adjacent kings never in check) is refused for the same reason.
-  if (/\[Variant\s+"(Antichess|Atomic)"\]/i.test(pgn)) return null;
+  if (/\[Variant\s+"(Antichess|Atomic|Duck)"\]/i.test(pgn)) return null;
   const initialFen = extractInitialFen(pgn);
   const history = replaySanTokens(initialFen, chess960, extractSanTokens(pgn));
   return history ? { initialFen, history } : null;

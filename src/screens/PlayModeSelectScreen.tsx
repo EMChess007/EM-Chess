@@ -19,6 +19,7 @@ interface PlayModeSelectScreenProps {
   onBotFogOfWar: () => void;
   onBotGiveaway: () => void;
   onBotAtomic: () => void;
+  onBotDuckChess: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
   onLocalKingOfTheHill: () => void;
@@ -27,6 +28,7 @@ interface PlayModeSelectScreenProps {
   onLocalFogOfWar: () => void;
   onLocalGiveaway: () => void;
   onLocalAtomic: () => void;
+  onLocalDuckChess: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
@@ -51,6 +53,7 @@ export default function PlayModeSelectScreen({
   onBotFogOfWar,
   onBotGiveaway,
   onBotAtomic,
+  onBotDuckChess,
   onLocalClassic,
   onLocalChess960,
   onLocalKingOfTheHill,
@@ -59,6 +62,7 @@ export default function PlayModeSelectScreen({
   onLocalFogOfWar,
   onLocalGiveaway,
   onLocalAtomic,
+  onLocalDuckChess,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
@@ -145,6 +149,11 @@ export default function PlayModeSelectScreen({
               <ModeButtonLabel label="Atomic" style={styles.subButtonText} />
             </Pressable>
           </View>
+          <View style={styles.subButtonRow}>
+            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotDuckChess}>
+              <ModeButtonLabel label="Duck Chess" style={styles.subButtonText} />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.categoryCard}>
@@ -178,6 +187,11 @@ export default function PlayModeSelectScreen({
             </Pressable>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalAtomic}>
               <ModeButtonLabel label="Atomic" style={styles.subButtonText} />
+            </Pressable>
+          </View>
+          <View style={styles.subButtonRow}>
+            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalDuckChess}>
+              <ModeButtonLabel label="Duck Chess" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>

@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
-export type GameVariant = 'classic' | 'chess960' | 'kingOfTheHill' | 'threeCheck' | 'setupChess' | 'fogOfWar' | 'giveaway' | 'atomic';
+export type GameVariant = 'classic' | 'chess960' | 'kingOfTheHill' | 'threeCheck' | 'setupChess' | 'fogOfWar' | 'giveaway' | 'atomic' | 'duckChess';
 
 interface VariantSelectorProps {
   value: GameVariant;
@@ -25,6 +25,7 @@ const OPTIONS: { value: GameVariant; label: string }[] = [
   { value: 'fogOfWar', label: 'Fog of\nWar' },
   { value: 'giveaway', label: 'Give-\naway' },
   { value: 'atomic', label: 'Atomic' },
+  { value: 'duckChess', label: 'Duck\nChess' },
 ];
 
 /** Mutually-exclusive Classic / Chess960 / King of the Hill / Three-Check / Setup Chess picker —

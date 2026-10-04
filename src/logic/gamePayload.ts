@@ -22,6 +22,10 @@ interface BuildGamePayloadArgs {
   atomicWinner?: PieceColor | null;
   /** Tags the saved PGN as Atomic for the same reason as `giveaway` above. */
   atomic?: boolean;
+  /** Duck Chess: the side that captured the enemy king, if any (see duckChess.ts). */
+  duckChessWinner?: PieceColor | null;
+  /** Tags the saved PGN [Variant "Duck"] for the same reason as `giveaway`/`atomic` above. */
+  duckChess?: boolean;
   history: GameHistoryEntry[];
   initialFen: string;
   chess960: boolean;
@@ -46,7 +50,8 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
     args.threeCheckWinner ?? null,
     args.fogOfWarWinner ?? null,
     args.giveawayWinner ?? null,
-    args.atomicWinner ?? null
+    args.atomicWinner ?? null,
+    args.duckChessWinner ?? null
   );
   if (!outcome.over || args.history.length === 0) return null;
 
@@ -54,7 +59,7 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
     opponentType: args.opponentType,
     opponentElo: args.opponentElo ?? null,
     result: outcome.result,
-    pgn: buildPgn(args.initialFen, args.history, outcome.result, args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : undefined),
+    pgn: buildPgn(args.initialFen, args.history, outcome.result, args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : args.duckChess ? 'Duck' : undefined),
     timeControl: args.timeControl.label,
     isChess960: args.chess960,
   };

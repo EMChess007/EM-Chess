@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import type { BoardSquare } from '../types/chess';
 import type { PieceImageMap } from '../types/theme';
 import Piece from './Piece';
@@ -33,6 +33,9 @@ interface SquareProps {
    * and leak exactly the kind of information (e.g. "a move just landed here") Fog of War exists
    * to hide. */
   isFogged?: boolean;
+  /** Duck Chess only — true for the square the neutral duck stands on (see duckChess.ts); drawn over
+   * whatever the (always empty) square shows. */
+  isDuck?: boolean;
   size: number;
   /** The active board theme's colors and the active piece theme's images — see ChessBoard.tsx. */
   lightColor: string;
@@ -52,6 +55,7 @@ export default function Square({
   isKingOfTheHillTarget,
   hidePiece,
   isFogged,
+  isDuck,
   size,
   lightColor,
   darkColor,
@@ -74,6 +78,11 @@ export default function Square({
         <>
           {isLegalTarget && <View style={styles.legalDot} />}
           {data.piece && !hidePiece && <Piece piece={data.piece} images={pieceImages} />}
+          {isDuck && (
+            <View style={[styles.duck, { width: size * 0.78, height: size * 0.78, borderRadius: size * 0.39 }]}>
+              <Text style={[styles.duckGlyph, { fontSize: size * 0.56 }]}>🦆</Text>
+            </View>
+          )}
         </>
       )}
     </View>
@@ -106,5 +115,15 @@ const styles = StyleSheet.create({
   },
   fog: {
     backgroundColor: '#23201c',
+  },
+  duck: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 214, 10, 0.55)',
+    borderWidth: 2,
+    borderColor: 'rgba(120, 85, 0, 0.8)',
+  },
+  duckGlyph: {
+    textAlign: 'center',
   },
 });

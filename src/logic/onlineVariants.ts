@@ -10,6 +10,7 @@ export interface OnlineVariantFlags {
   isFogOfWar: boolean;
   isGiveaway: boolean;
   isAtomic: boolean;
+  isDuckChess: boolean;
 }
 
 /** Turns the single-select VariantSelector value into the wire flags — one place instead of a
@@ -23,6 +24,7 @@ export function variantWireFlags(variant: GameVariant): OnlineVariantFlags {
     isFogOfWar: variant === 'fogOfWar',
     isGiveaway: variant === 'giveaway',
     isAtomic: variant === 'atomic',
+    isDuckChess: variant === 'duckChess',
   };
 }
 
@@ -43,6 +45,8 @@ export function variantTitlePrefix(variant: GameVariant): string {
       return 'Giveaway · ';
     case 'atomic':
       return 'Atomic · ';
+    case 'duckChess':
+      return 'Duck Chess · ';
     default:
       return '';
   }

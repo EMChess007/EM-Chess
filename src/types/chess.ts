@@ -38,6 +38,10 @@ export interface Move {
    * pawn of an en passant capture is on its own square, not the landing square). Absent for every
    * other mode and for non-capturing moves. */
   exploded?: ExplodedPiece[];
+  /** Duck Chess only — the square the duck was placed on as the second half of this turn (see
+   * duckChess.ts); shown after the move as "e4 @g6" and carried per ply in GameHistoryEntry.duckSquare.
+   * Absent for every other mode, and for the move that captures a king (the game ends with no placement). */
+  duck?: string;
 }
 
 export type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'check';

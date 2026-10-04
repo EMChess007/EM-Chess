@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { ChessEngine } from '../logic/ChessEngine';
+import { getLegalDuckPlacementSquares } from '../logic/duckChess';
 import { getGiveawayMoves } from '../logic/giveaway';
 import { isTouchInside, subscribeToScreenTouches } from '../logic/screenTouches';
 import { PROMOTION_LABELS, type PromotionPiece, getPromotionChoices, isPromotionMove } from '../logic/promotion';
@@ -77,6 +78,19 @@ interface ChessBoardProps {
    * capturer, so every choice is identical), and a move's `exploded` pieces get a short flash/fade.
    * Mutually exclusive with every other variant. */
   atomic?: boolean;
+  /** Duck Chess only — see duckChess.ts. A turn is TWO actions: after a regular move commits, the board
+   * enters a "placing the duck" state (the post-move position is shown, every empty square except the
+   * duck's own is highlighted) and only once a square is tapped does `onMove` fire — with the duck's
+   * square on `move.duck`, as one atomic turn (nothing is handed to the caller before that, so clocks,
+   * history and the opponent only ever see complete turns). A move that captures a king ends the game at
+   * once, with no placement. Tapping the piece that just moved takes the move back. Like Fog of War this
+   * uses the pseudo-legal generator (no check concept), with the duck blocking. */
+  duckChess?: boolean;
+  /** Duck Chess: where the duck stands in the position `fen` (null before White's first move). */
+  duckSquare?: string | null;
+  /** Duck Chess: told whenever the board enters/leaves the "placing the duck" state, so the screen can
+   * say so in its status line. */
+  onDuckPlacementChange?: (placing: boolean) => void;
   /** Fog of War only — the squares currently visible to the LOCAL viewer. Squares outside this
    * set render fogged (see Square's isFogged) regardless of what `fen`/the engine actually has
    * there: for Local/Bot this is still the true fen client-side (there's no network boundary to
@@ -130,6 +144,9 @@ function ChessBoard({
   fogOfWar = false,
   giveaway = false,
   atomic = false,
+  duckChess = false,
+  duckSquare = null,
+  onDuckPlacementChange,
   visibleSquares,
 }: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
@@ -141,10 +158,14 @@ function ChessBoard({
   // skipValidation: Online Fog of War's `fen` is server-redacted and can legitimately be missing
   // a king the viewer can't currently see — see ChessEngine's own doc comment on the option.
   // Giveaway also skips validation: a captured king leaves later fens without one, like Fog of War.
-  const usesPseudoLegalMoves = fogOfWar || giveaway;
+  const usesPseudoLegalMoves = fogOfWar || giveaway || duckChess;
+  // Duck Chess: while the duck is being placed the board shows the position AFTER the just-made move (which
+  // the caller has not been told about yet — see pendingDuck below); otherwise it is simply `fen`.
+  const [pendingDuck, setPendingDuck] = useState<{ move: Move; fen: string } | null>(null);
+  const shownFen = pendingDuck ? pendingDuck.fen : fen;
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic }),
-    [fen, chess960, initialFen, usesPseudoLegalMoves, giveaway, atomic]
+    () => new ChessEngine(shownFen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic, duckChess, duckSquare }),
+    [shownFen, chess960, initialFen, usesPseudoLegalMoves, giveaway, atomic, duckChess, duckSquare]
   );
   const board = useMemo(() => engine.getBoard(), [engine]);
   // Reversing both axes together preserves each square's light/dark identity (a 180° rotation
@@ -190,7 +211,17 @@ function ChessBoard({
   useEffect(() => {
     setSelectedSquare(null);
     setPendingPromotion(null);
+    setPendingDuck(null);
   }, [fen]);
+
+  // Lets the screen show "place the duck" while a turn is half-made.
+  const placingDuck = pendingDuck !== null;
+  useEffect(() => {
+    onDuckPlacementChange?.(placingDuck);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placingDuck]);
+  // The previewed move is already on the board when the turn is committed, so its slide animation is skipped.
+  const skipAnimationRef = useRef(false);
 
   // Arrows/highlights (see BoardAnnotations) — always reset on a real position change (a move
   // played, a rewind/forward through history, a "New Game"), same as selectedSquare above.
@@ -221,6 +252,10 @@ function ChessBoard({
   useEffect(() => {
     const prevFen = prevFenRef.current;
     prevFenRef.current = fen;
+    if (skipAnimationRef.current) {
+      skipAnimationRef.current = false;
+      return;
+    }
     if (!lastMove || prevFen === fen) return;
 
     // Fog of War: the sliding sprite below is a separate overlay rendered on top of the whole
@@ -239,7 +274,7 @@ function ChessBoard({
     // flag through every caller.
     let movingPiece: PieceModel | null = null;
     try {
-      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic }).getPieceAt(lastMove.from);
+      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic, duckChess }).getPieceAt(lastMove.from);
     } catch {
       movingPiece = null;
     }
@@ -294,11 +329,14 @@ function ChessBoard({
   // king-safety-filtered legal ones — getPseudoLegalMoves already generates for `selectableColor`
   // regardless of whose turn it actually is, which is also what makes this correct in premove mode.
   // Giveaway: the same pseudo-legal primitive, collapsed to mandatory captures when any exist.
-  const legalTargets =
-    selectedSquare && !isPremoveMode
+  // Duck Chess: while the duck is being placed the "targets" are the squares it may go to instead.
+  const duckTargets = pendingDuck ? getLegalDuckPlacementSquares(engine, duckSquare) : [];
+  const legalTargets = pendingDuck
+    ? duckTargets
+    : selectedSquare && !isPremoveMode
       ? giveaway
         ? getGiveawayMoves(engine, selectedSquare).map((m) => m.to)
-        : fogOfWar
+        : fogOfWar || duckChess
         ? engine
             .getPseudoLegalMoves(selectableColor)
             .filter((m) => m.from === selectedSquare)
@@ -312,10 +350,34 @@ function ChessBoard({
    * pseudo-legal move is legal there (mandatory capture can rule it out), so movePseudoLegal alone
    * would be too permissive a gate. */
   const tryMove = (from: string, to: string, promotion?: Move['promotion']): { move: Move; fen: string } | null => {
-    const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic });
+    const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic, duckChess, duckSquare });
     if (giveaway && !getGiveawayMoves(moveEngine, from).some((m) => m.to === to && m.promotion === promotion)) return null;
     const move = usesPseudoLegalMoves ? moveEngine.movePseudoLegal(from, to, promotion) : moveEngine.move(from, to, promotion);
     return move ? { move, fen: moveEngine.getFen() } : null;
+  };
+
+  /** Duck Chess: a regular move was just made — a king capture ends the game (no placement), anything else
+   * freezes the turn until the duck is put somewhere (see handleDuckPlacementPress). */
+  const finishRegularMove = (result: { move: Move; fen: string }) => {
+    setSelectedSquare(null);
+    if (duckChess && result.move.captured !== 'k') {
+      setPendingDuck(result);
+      return;
+    }
+    onMove(result.move, result.fen);
+  };
+
+  const handleDuckPlacementPress = (square: string) => {
+    if (!pendingDuck) return;
+    if (square === pendingDuck.move.to) {
+      setPendingDuck(null); // the player took the move back
+      return;
+    }
+    if (!duckTargets.includes(square)) return;
+    const committed: Move = { ...pendingDuck.move, duck: square };
+    skipAnimationRef.current = true;
+    setPendingDuck(null);
+    onMove(committed, pendingDuck.fen);
   };
 
   const selectOwnPiece = (square: string) => {
@@ -329,6 +391,11 @@ function ChessBoard({
 
   const handleSquarePress = (square: string) => {
     if (disabled || gameOver || pendingPromotion) return;
+
+    if (pendingDuck) {
+      handleDuckPlacementPress(square);
+      return;
+    }
 
     if (!selectedSquare) {
       selectOwnPiece(square);
@@ -384,8 +451,7 @@ function ChessBoard({
       // memoized one untouched until the parent legitimately updates `fen`.
       const result = tryMove(selectedSquare, square, autoPromotion);
       if (result) {
-        setSelectedSquare(null);
-        onMove(result.move, result.fen);
+        finishRegularMove(result);
         return;
       }
     }
@@ -427,10 +493,7 @@ function ChessBoard({
     }
     // A scratch engine, never the memoized one — see handleSquarePress's own explanation above.
     const result = tryMove(from, to, piece);
-    if (result) {
-      setSelectedSquare(null);
-      onMove(result.move, result.fen);
-    }
+    if (result) finishRegularMove(result);
   };
 
   // --- Unified touch handling for the whole grid: a quick tap behaves exactly like the old
@@ -676,6 +739,7 @@ function ChessBoard({
               isKingOfTheHillTarget={kingOfTheHill && KING_OF_THE_HILL_SQUARES.includes(square.square)}
               hidePiece={slidingMove !== null && square.square === slidingMove.to}
               isFogged={visibleSquares !== undefined && !visibleSquares.has(square.square)}
+              isDuck={duckChess && square.square === duckSquare}
               size={squareSize}
               lightColor={boardTheme.lightColor}
               darkColor={boardTheme.darkColor}

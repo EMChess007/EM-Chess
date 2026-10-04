@@ -304,15 +304,15 @@ describe('wiring (no RN renderer available)', () => {
     it(`${screen} feeds the Giveaway winner into getGameOutcome and the saved-game payload`, () => {
       const src = read(screen);
       // atomicWinner follows giveawayWinner as getGameOutcome's last argument (see the Atomic variant).
-      expect(src).toMatch(/getGameOutcome\([\s\S]*?giveawayWinner,\s*atomicWinner\s*\)/);
+      expect(src).toMatch(/getGameOutcome\([\s\S]*?giveawayWinner,\s*atomicWinner,\s*duckWinner\s*\)/);
       expect(src).toContain('giveawayWinner,\n        giveaway,');
     });
   }
 
   it('Giveaway is online for 1v1 (quick match + challenges) but still excluded from tournaments', () => {
     // See giveawayOnline.test.ts for the online wiring; the Online pickers no longer exclude it.
-    expect(read('screens/ChallengeScreen.tsx')).not.toContain('excludeVariants');
-    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).not.toContain('excludeVariants');
+    expect(read('screens/ChallengeScreen.tsx')).toContain("excludeVariants={['duckChess']}");
+    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).toContain("excludeVariants={['duckChess']}");
     expect(read('screens/TournamentScreen.tsx')).toContain("'giveaway'");
   });
 

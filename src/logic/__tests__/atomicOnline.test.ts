@@ -27,6 +27,7 @@ describe('Atomic wire flags', () => {
       isFogOfWar: false,
       isGiveaway: false,
       isAtomic: true,
+      isDuckChess: false,
     });
     expect(Object.values(variantWireFlags('classic')).filter(Boolean)).toHaveLength(0);
     expect(variantTitlePrefix('atomic')).toBe('Atomic · ');

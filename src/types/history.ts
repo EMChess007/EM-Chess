@@ -4,6 +4,10 @@ export interface GameHistoryEntry {
   move: Move;
   fenBefore: string;
   fenAfter: string;
+  /** Duck Chess only — where the duck stood AFTER this ply (the second half of the turn). The duck before
+   * the ply is the previous entry's duckSquare (none before White's first move), which is what Undo and
+   * position review restore. Undefined in every other mode. */
+  duckSquare?: string | null;
 }
 
 export interface AnalyzeParams {

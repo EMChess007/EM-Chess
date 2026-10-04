@@ -27,6 +27,7 @@ import {
   useIncrementalFogRedaction,
 } from '../logic/fogOfWar';
 import { getAtomicWinner, isAtomicThreefoldRepetition } from '../logic/atomic';
+import { duckMoveNotation, getDuckChessWinner, hasNoDuckMoves } from '../logic/duckChess';
 import { getGiveawayMoves, getGiveawayWinner } from '../logic/giveaway';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
@@ -53,6 +54,8 @@ interface LocalGameScreenProps {
   giveaway?: boolean;
   /** Atomic chess — see atomic.ts. Mutually exclusive with every other variant. */
   atomic?: boolean;
+  /** Duck Chess — see duckChess.ts. Mutually exclusive with every other variant. */
+  duckChess?: boolean;
   /** The merged starting position from the Setup Chess builder flow — used instead of
    * self-generating one when present (setupChess games always pass this). */
   initialFen?: string;
@@ -70,6 +73,7 @@ export default function LocalGameScreen({
   fogOfWar = false,
   giveaway = false,
   atomic = false,
+  duckChess = false,
   initialFen: initialFenProp,
   authToken,
   onExit,
@@ -143,18 +147,22 @@ export default function LocalGameScreen({
   // any further named position, no later position will match either, so this naturally stops
   // updating on its own.
   useEffect(() => {
-    if (chess960 || setupChess || fogOfWar || giveaway || atomic) return;
+    if (chess960 || setupChess || fogOfWar || giveaway || atomic || duckChess) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic]);
+  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic, duckChess]);
 
   // skipValidation: once a Fog of War game ends via king capture, `fen` genuinely has no king
   // for the losing side — see ChessEngine's own doc comment on the option (this is the exact
   // crash category already found/fixed in cloneWithTurn, caught again here by a systematic grep).
   // Giveaway: same reason (a captured king is just a missing piece) plus its own move generation.
+  // Duck Chess (see duckChess.ts): the duck's square is NOT in the FEN, so it is derived from the history — the
+  // last turn's duck — which also makes Undo restore it for free (a turn is one history entry: move + duck).
+  const duckSquare = useMemo(() => (duckChess && history.length > 0 ? history[history.length - 1].duckSquare ?? null : null), [duckChess, history]);
+  const [placingDuck, setPlacingDuck] = useState(false);
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway, giveaway, atomic }),
-    [fen, chess960, initialFen, fogOfWar, giveaway, atomic]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess, giveaway, atomic, duckChess, duckSquare }),
+    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare]
   );
   const turn = engine.getTurn();
   // Atomic: the engine answers check/mate/stalemate/50-move/insufficient material from atomic.ts. A king
@@ -166,7 +174,14 @@ export default function LocalGameScreen({
     () => atomic && isAtomicThreefoldRepetition([initialFen, ...history.map((h) => h.fenAfter)]),
     [atomic, initialFen, history]
   );
-  const chessStatus = atomicRepetition ? 'draw' : engine.getStatus();
+  // Duck Chess has no check/checkmate/stalemate: the only decisive result is a king capture (read off the last
+  // turn, so it is right after Undo), and a side to move with no regular move at all is a blockade — a draw.
+  const duckWinner = useMemo(
+    () => (duckChess && history.length > 0 ? getDuckChessWinner(history[history.length - 1].move, (history.length - 1) % 2 === 0 ? 'w' : 'b') : null),
+    [duckChess, history]
+  );
+  const duckBlockade = useMemo(() => duckChess && duckWinner === null && history.length > 0 && hasNoDuckMoves(engine), [duckChess, duckWinner, history.length, engine]);
+  const chessStatus = duckChess ? (duckBlockade ? 'draw' : 'playing') : atomicRepetition ? 'draw' : engine.getStatus();
   // Chess.js has no idea this rule exists — checked independently, only when actually playing
   // this variant (see kingOfTheHill.ts).
   const kingOfTheHillWinner = kingOfTheHill ? getKingOfTheHillWinner(engine) : null;
@@ -187,7 +202,13 @@ export default function LocalGameScreen({
   // Whether the side to move must capture this turn — surfaced in the status line so a player who
   // finds only one piece movable understands why.
   const mustCapture = useMemo(() => giveaway && !giveawayWinner && getGiveawayMoves(engine).some((m) => m.captured), [giveaway, giveawayWinner, engine]);
-  const engineGameOver = giveaway ? giveawayWinner !== null : fogOfWar ? false : engine.isGameOver() || atomicRepetition;
+  const engineGameOver = duckChess
+    ? duckWinner !== null || duckBlockade
+    : giveaway
+      ? giveawayWinner !== null
+      : fogOfWar
+        ? false
+        : engine.isGameOver() || atomicRepetition;
   const clock = useChessClock(timeControl, turn, engineGameOver);
   const gameOver =
     engineGameOver ||
@@ -270,6 +291,8 @@ export default function LocalGameScreen({
         giveaway,
         atomicWinner,
         atomic,
+        duckChessWinner: duckWinner,
+        duckChess,
         history,
         initialFen,
         chess960,
@@ -290,6 +313,8 @@ export default function LocalGameScreen({
       giveaway,
       atomicWinner,
       atomic,
+      duckWinner,
+      duckChess,
       history,
       initialFen,
       chess960,
@@ -324,6 +349,9 @@ export default function LocalGameScreen({
   if (fogOfWarWinner) statusText = `${fogOfWarWinner === 'w' ? 'White' : 'Black'} wins by capturing the king!`;
   if (giveawayWinner) statusText = `${giveawayWinner === 'w' ? 'White' : 'Black'} wins — no legal moves left!`;
   if (atomicWinner) statusText = `${atomicWinner === 'w' ? 'White' : 'Black'} wins by exploding the king!`;
+  if (placingDuck && !duckWinner) statusText = `${turnLabel} — place the duck 🦆`;
+  if (duckBlockade) statusText = 'Draw — no legal moves (blockaded by the duck)';
+  if (duckWinner) statusText = `${duckWinner === 'w' ? 'White' : 'Black'} wins by capturing the king!`;
 
   // No personal point of view here (two players share one device) — matches the plain
   // White/Black wording `statusText` above already uses.
@@ -337,7 +365,8 @@ export default function LocalGameScreen({
     threeCheckWinner,
     fogOfWarWinner,
     giveawayWinner,
-    atomicWinner
+    atomicWinner,
+    duckWinner
   );
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : outcome.result === '1-0' ? 'White Won' : 'Black Won';
   const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';
@@ -351,7 +380,8 @@ export default function LocalGameScreen({
       clock.applyIncrement(turn);
       playMoveSound(move);
       triggerMoveHaptics(move);
-      setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen }]);
+      // Duck Chess: one history entry is one TURN (move + duck); a king capture ends the game with no duck move.
+      setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen, ...(duckChess ? { duckSquare: move.duck ?? duckSquare } : {}) }]);
       setLastMove(move);
       setFen(newFen);
       setHintText(null);
@@ -361,7 +391,7 @@ export default function LocalGameScreen({
         else setAwaitingPass(true);
       }
     },
-    [viewIndex, clock.applyIncrement, turn, fen, fogOfWar]
+    [viewIndex, clock.applyIncrement, turn, fen, fogOfWar, duckChess, duckSquare]
   );
 
   const handleReset = () => {
@@ -418,7 +448,7 @@ export default function LocalGameScreen({
   // computed from information Fog of War says they shouldn't have yet would be a straightforward
   // way around the entire variant, so this is disabled outright rather than merely hidden.
   const handleHintPress = () => {
-    if (gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic) return;
+    if (gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess) return;
     setHintText(null);
     setHintLoading(true);
     setHintActive(true);
@@ -447,7 +477,9 @@ export default function LocalGameScreen({
   // Fog of War move-list/footer text — redacted per the CURRENT device-holder's own visibility
   // (see fogRedactedHistory above); "?" stands in for a move they never actually witnessed.
   const fogMoveListMoves = fogRedactedHistory?.map((entry) => ({ san: entry.revealed ? entry.san : '?' })) ?? [];
-  const lastMoveSanDisplay = lastMoveRevealed ? lastMove?.san : '???';
+  const lastMoveSanDisplay = lastMoveRevealed ? (lastMove && duckChess ? duckMoveNotation(lastMove) : lastMove?.san) : '???';
+  // Duck Chess: where the duck stood in the position being DISPLAYED (position 0 = the start, with no duck yet).
+  const displayDuck = duckChess ? (isReviewing ? (viewIndex === 0 ? null : history[(viewIndex as number) - 1]?.duckSquare ?? null) : duckSquare) : null;
 
   // Flipping the board also swaps which player's clock/captured-pieces row sits on top vs
   // bottom, so each row always stays next to "its own" side of the board.
@@ -480,13 +512,15 @@ export default function LocalGameScreen({
                       ? 'Giveaway'
                       : atomic
                         ? 'Atomic'
-                        : undefined
+                        : duckChess
+                          ? 'Duck Chess'
+                          : undefined
         }
         onBack={onExit}
         backLabel="‹ Menu"
       />
       <MoveListStrip
-        moves={fogOfWar ? fogMoveListMoves : history.map((h) => ({ san: h.move.san }))}
+        moves={fogOfWar ? fogMoveListMoves : history.map((h) => ({ san: duckChess ? duckMoveNotation(h.move) : h.move.san }))}
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
         onSelectMove={handleSelectMove}
@@ -500,7 +534,7 @@ export default function LocalGameScreen({
                   { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
                   { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver || awaitingPass },
                   { key: 'draw', label: 'Draw', onPress: handleDrawOffer, disabled: gameOver || awaitingPass },
-                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic },
+                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess },
                   {
                     key: 'undo',
                     label: 'Undo',
@@ -554,7 +588,7 @@ export default function LocalGameScreen({
               <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
             </View>
 
-            {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+            {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && !duckChess && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
             <ChessBoard
               key={resetCount}
@@ -570,6 +604,9 @@ export default function LocalGameScreen({
               fogOfWar={fogOfWar}
               giveaway={giveaway}
               atomic={atomic}
+              duckChess={duckChess}
+              duckSquare={displayDuck}
+              onDuckPlacementChange={setPlacingDuck}
               visibleSquares={visibleSquares}
             />
 
@@ -597,6 +634,7 @@ export default function LocalGameScreen({
         fogOfWar={fogOfWar}
         giveaway={giveaway}
         atomic={atomic}
+        duckChess={duckChess}
         history={history}
         players={[
           { label: 'White', color: 'w' },

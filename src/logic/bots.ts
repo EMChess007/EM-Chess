@@ -4,6 +4,7 @@ import type { TimeControl } from '../types/timeControl';
 import { PIECE_VALUES } from './analysis';
 import { ChessEngine } from './ChessEngine';
 import { applyAtomicMove, generateAtomicMoves, getAtomicKingWinner, isAtomicCheck, squareName, type AtomicMove, type AtomicPosition } from './atomic';
+import { getLegalDuckPlacementSquares } from './duckChess';
 import { getGiveawayMoves } from './giveaway';
 
 export const BOT_CATEGORIES: { category: BotCategory; label: string }[] = [
@@ -314,4 +315,93 @@ export function chooseAtomicBotMove(engine: ChessEngine, elo: number, rng: () =>
   const top = Math.max(...scored.map((s) => s.score));
   const best = scored.filter((s) => s.score === top);
   return describeAtomicMove(pos, best[Math.floor(rng() * best.length)].move);
+}
+
+// --- Duck Chess ---------------------------------------------------------------------------
+
+/** Piece values for Duck Chess scoring; the king is worth "the game" — capturing it wins, losing it loses. */
+const DUCK_VALUES: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 1000 };
+
+/** The most valuable piece the side to move in `fen` could capture next, given the duck on `duckSquare`. */
+function biggestThreat(fen: string, duckSquare: string): number {
+  const scratch = new ChessEngine(fen, { skipValidation: true, duckChess: true, duckSquare });
+  let best = 0;
+  for (const m of scratch.getPseudoLegalMoves(scratch.getTurn())) {
+    if (m.captured) best = Math.max(best, DUCK_VALUES[m.captured]);
+  }
+  return best;
+}
+
+/**
+ * Picks a whole Duck Chess TURN for a bot — a regular move AND where to put the duck. Deliberately NOT
+ * Stockfish: it has no concept of the duck, nor of a game with no check where the king is simply captured.
+ * A lightweight heuristic over the duck-aware pseudo-legal set:
+ *  - Taking the enemy king wins on the spot (no duck is placed); otherwise a move is scored by the value it
+ *    captures MINUS the most valuable piece (the king above all) the opponent could then capture, judged
+ *    AFTER the best duck placement for it — so the duck is used to blunt the opponent's best threat (the line
+ *    toward the bot's king, or its most valuable hanging piece), and a move that leaves the king capturable
+ *    with no way to block it is avoided.
+ *  - The duck goes where it minimises that biggest threat (ties broken at random, which also makes the very
+ *    first placement, when nothing is threatened yet, a random empty square).
+ *  - ELO is the only strength dial, as for Giveaway/Atomic: the chance of playing the best-scoring move
+ *    (rather than a random one) rises from ~20% at 400 ELO to ~90% at 3000, and a bot that gambles on a random
+ *    move also places the duck at random.
+ * Returns null only when the bot has no regular move (a draw by blockade — see duckChess.hasNoDuckMoves).
+ */
+export function chooseDuckBotMove(
+  engine: ChessEngine,
+  elo: number,
+  rng: () => number = Math.random
+): { move: Move; duck: string | null } | null {
+  const moves = engine.getPseudoLegalMoves(engine.getTurn());
+  if (moves.length === 0) return null;
+  const fen = engine.getFen();
+  const currentDuck = engine.getDuckSquare();
+
+  const randomDuck = (after: ChessEngine): string | null => {
+    const squares = getLegalDuckPlacementSquares(after, currentDuck);
+    return squares.length === 0 ? null : squares[Math.floor(rng() * squares.length)];
+  };
+  const play = (m: Move) => {
+    const scratch = new ChessEngine(fen, { skipValidation: true, duckChess: true, duckSquare: currentDuck });
+    const applied = scratch.movePseudoLegal(m.from, m.to, m.promotion);
+    return { scratch, applied };
+  };
+
+  const bestChance = 0.2 + 0.7 * Math.min(1, Math.max(0, (elo - 400) / 2600));
+  if (rng() >= bestChance) {
+    const pick = moves[Math.floor(rng() * moves.length)];
+    const { scratch, applied } = play(pick);
+    if (!applied) return null;
+    return { move: applied, duck: applied.captured === 'k' ? null : randomDuck(scratch) };
+  }
+
+  // Cheap pass: the move's own gain. Only the most promising few get the (costlier) duck look-ahead.
+  const ranked = moves
+    .map((m) => ({ m, gain: m.captured ? DUCK_VALUES[m.captured] : 0, tie: rng() }))
+    .sort((a, b) => b.gain - a.gain || a.tie - b.tie);
+  const candidates = ranked.slice(0, 8);
+
+  let best: { move: Move; duck: string | null; score: number } | null = null;
+  for (const { m, gain } of candidates) {
+    const { scratch, applied } = play(m);
+    if (!applied) continue;
+    if (applied.captured === 'k') return { move: applied, duck: null }; // the game is over — take it
+    const afterFen = scratch.getFen();
+    const squares = getLegalDuckPlacementSquares(scratch, currentDuck);
+    let bestThreat = Infinity;
+    const bestSquares: string[] = [];
+    for (const d of squares) {
+      const threat = biggestThreat(afterFen, d);
+      if (threat < bestThreat) {
+        bestThreat = threat;
+        bestSquares.length = 0;
+        bestSquares.push(d);
+      } else if (threat === bestThreat) bestSquares.push(d);
+    }
+    const duck = bestSquares.length > 0 ? bestSquares[Math.floor(rng() * bestSquares.length)] : null;
+    const score = gain - (bestThreat === Infinity ? 0 : bestThreat);
+    if (!best || score > best.score) best = { move: applied, duck, score };
+  }
+  return best ? { move: best.move, duck: best.duck } : null;
 }

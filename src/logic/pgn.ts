@@ -17,7 +17,9 @@ export function buildPgn(initialFen: string, history: GameHistoryEntry[], result
   const movetext = formatSanMoves(
     startTurn,
     startMoveNumber,
-    history.map((entry) => entry.move.san)
+    // Duck Chess: where the duck went rides along as a standard PGN comment, "e4 {@g6}" — a bare "e4 @g6" would
+    // break the movetext grammar for any tool that reads the export.
+    history.map((entry) => (entry.move.duck ? `${entry.move.san} {@${entry.move.duck}}` : entry.move.san))
   );
 
   const tags = [`[Result "${result}"]`];

@@ -452,7 +452,7 @@ describe('isolation and wiring (no React Native renderer available)', () => {
   const board = read('components/ChessBoard.tsx');
 
   it('ChessBoard builds every engine with the atomic option and skips the picker only for capture-promotions', () => {
-    expect(board.match(/giveaway, atomic \}/g)?.length).toBe(3);
+    expect(board.match(/\{[^}]*giveaway, atomic, duckChess/g)?.length).toBe(3); // memoized, animation and tryMove engines
     expect(board).toContain("autoPromotion = 'q'");
     expect(board).toContain('atomic && board.flat().some((s) => s.square === square && s.piece !== null)');
   });
@@ -460,7 +460,7 @@ describe('isolation and wiring (no React Native renderer available)', () => {
   for (const screen of ['screens/LocalGameScreen.tsx', 'screens/BotGameScreen.tsx']) {
     it(`${screen} feeds the Atomic winner into getGameOutcome and the saved-game payload, and passes the flag on`, () => {
       const src = read(screen);
-      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner\s*\n?\s*\)/);
+      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner,\s*duckWinner\s*\)/);
       expect(src).toContain('atomicWinner,\n        atomic,');
       expect(src).toContain('atomic={atomic}');
       expect(src).toContain('isAtomicThreefoldRepetition');
@@ -469,8 +469,9 @@ describe('isolation and wiring (no React Native renderer available)', () => {
   }
 
   it('Atomic is online for 1v1 (quick match + challenges, see atomicOnline.test.ts) but excluded from tournaments', () => {
-    expect(read('screens/ChallengeScreen.tsx')).not.toContain('excludeVariants');
-    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).not.toContain('excludeVariants');
+    // (Duck Chess is not online yet in this change, so it is the only variant the Online pickers exclude.)
+    expect(read('screens/ChallengeScreen.tsx')).toContain("excludeVariants={['duckChess']}");
+    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).toContain("excludeVariants={['duckChess']}");
     expect(read('screens/TournamentScreen.tsx')).toContain("'atomic'");
   });
 
@@ -481,9 +482,9 @@ describe('isolation and wiring (no React Native renderer available)', () => {
     expect(atomicBranch).toBeGreaterThan(-1);
     expect(bot).toContain('chooseAtomicBotMove(moveEngine');
     expect(stockfishCall).toBeGreaterThan(atomicBranch);
-    expect(bot).toContain('premoveColor={giveaway || atomic ? undefined : userColor}');
-    expect(bot).toContain('onPremove={giveaway || atomic ? undefined : handleQueuePremove}');
-    expect(bot).toContain('!giveaway && !atomic) recordRatedGame');
+    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess ? undefined : userColor}');
+    expect(bot).toContain('onPremove={giveaway || atomic || duckChess ? undefined : handleQueuePremove}');
+    expect(bot).toContain('!giveaway && !atomic && !duckChess) recordRatedGame');
   });
 
   it('hints and Game Review are off for Atomic (Stockfish knows nothing of explosions)', () => {
