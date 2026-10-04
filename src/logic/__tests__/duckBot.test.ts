@@ -92,7 +92,7 @@ describe('chooseDuckBotMove', () => {
       return hit / 150;
     };
     expect(frequency(3000)).toBeGreaterThan(frequency(400) + 0.3);
-  });
+  }, 20_000); // ~3 s alone; the default 5 s timeout can trip on a loaded machine
 
   it('bot-vs-bot games stay legal and end by a king capture or a blockade', () => {
     let kingCaptures = 0;

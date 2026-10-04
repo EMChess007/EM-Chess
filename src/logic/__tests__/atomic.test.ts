@@ -469,9 +469,9 @@ describe('isolation and wiring (no React Native renderer available)', () => {
   }
 
   it('Atomic is online for 1v1 (quick match + challenges, see atomicOnline.test.ts) but excluded from tournaments', () => {
-    // (Duck Chess is not online yet in this change, so it is the only variant the Online pickers exclude.)
-    expect(read('screens/ChallengeScreen.tsx')).toContain('excludeVariants={ONLINE_EXCLUDED_VARIANTS}');
-    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).toContain('excludeVariants={ONLINE_EXCLUDED_VARIANTS}');
+    // The Online pickers exclude no variant (Duck Chess went online last); only tournaments are restricted.
+    expect(read('screens/ChallengeScreen.tsx')).not.toContain('excludeVariants');
+    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).not.toContain('excludeVariants');
     expect(read('screens/TournamentScreen.tsx')).toContain("'atomic'");
   });
 

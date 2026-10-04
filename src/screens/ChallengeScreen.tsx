@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import ScreenHeader from '../components/ScreenHeader';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';
-import { ONLINE_EXCLUDED_VARIANTS } from '../config/devFlags';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { variantWireFlags } from '../logic/onlineVariants';
@@ -130,7 +129,7 @@ export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessP
 
       {phase === 'setup' && (
         <View style={styles.setupContainer}>
-          <VariantSelector value={variant} onChange={setVariant} excludeVariants={ONLINE_EXCLUDED_VARIANTS} />
+          <VariantSelector value={variant} onChange={setVariant} />
           {error && <Text style={styles.errorText}>{error}</Text>}
           <ScrollView contentContainerStyle={styles.setupScrollContent}>
             {CATEGORIES.map(({ category, label }) => (
