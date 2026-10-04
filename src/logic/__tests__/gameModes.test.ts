@@ -59,6 +59,33 @@ describe('getGameOutcome', () => {
     });
   });
 
+  describe('Atomic', () => {
+    it('a blown-up king reports the winner and the atomic reason, for either color', () => {
+      expect(getGameOutcome('playing', 'b', null, null, false, null, null, null, null, 'w')).toEqual({ over: true, result: '1-0', reason: 'atomic' });
+      expect(getGameOutcome('playing', 'w', null, null, false, null, null, null, null, 'b')).toEqual({ over: true, result: '0-1', reason: 'atomic' });
+    });
+
+    it('sits in the top tier: outranks timeout, resignation, agreement, checkmate and the other variants', () => {
+      const outcome = getGameOutcome('checkmate', 'b', 'b', 'b', true, 'b', 'b', null, null, 'w');
+      expect(outcome).toEqual({ over: true, result: '1-0', reason: 'atomic' });
+    });
+
+    it('ordinary checkmate / stalemate / draws inside Atomic keep the existing reasons (they come in via chessStatus)', () => {
+      expect(getGameOutcome('checkmate', 'b', null)).toEqual({ over: true, result: '1-0', reason: 'checkmate' });
+      expect(getGameOutcome('stalemate', 'w', null)).toEqual({ over: true, result: '1/2-1/2', reason: 'stalemate' });
+      expect(getGameOutcome('draw', 'w', null)).toEqual({ over: true, result: '1/2-1/2', reason: 'draw' });
+    });
+
+    it('does not end the game on its own when no king has exploded, and a clock loss still ends it', () => {
+      expect(getGameOutcome('playing', 'w', null, null, false, null, null, null, null, null)).toEqual({ over: false });
+      expect(getGameOutcome('playing', 'w', 'b', null, false, null, null, null, null, null)).toEqual({ over: true, result: '0-1', reason: 'timeout' });
+    });
+
+    it('has a human-readable end reason', () => {
+      expect(describeEndReason('atomic')).toMatch(/explod/i);
+    });
+  });
+
   it('king of the hill / three-check outrank ordinary chess.js status', () => {
     expect(getGameOutcome('checkmate', 'w', null, null, false, 'b')).toEqual({ over: true, result: '0-1', reason: 'kingOfTheHill' });
     expect(getGameOutcome('checkmate', 'w', null, null, false, null, 'w')).toEqual({ over: true, result: '1-0', reason: 'threeCheck' });
@@ -111,6 +138,50 @@ describe('computeCapturedMaterial / materialValue', () => {
     const { whiteCaptured, blackCaptured } = computeCapturedMaterial(moves);
     expect(whiteCaptured).toEqual(['p']); // White captured a black pawn
     expect(blackCaptured).toEqual(['n']); // Black captured a white knight
+  });
+
+  it('Atomic: every removed piece counts as a loss for its OWNER, read from move.exploded (own capturer and collateral included)', () => {
+    // White's rook takes a pawn and blows up a black knight too: Black loses pawn + knight, White loses the rook.
+    const moves = [
+      {
+        captured: 'p' as const,
+        moverColor: 'w' as const,
+        exploded: [
+          { square: 'd5', piece: { type: 'r' as const, color: 'w' as const } },
+          { square: 'd5', piece: { type: 'p' as const, color: 'b' as const } },
+          { square: 'c6', piece: { type: 'n' as const, color: 'b' as const } },
+        ],
+      },
+    ];
+    const { whiteCaptured, blackCaptured } = computeCapturedMaterial(moves);
+    expect(whiteCaptured).toEqual(['p', 'n']); // White's row = what Black lost (existing convention)
+    expect(blackCaptured).toEqual(['r']); // Black's row = what White lost
+    expect(materialValue(whiteCaptured) - materialValue(blackCaptured)).toBe(1 + 3 - 5); // White is down 1 point
+  });
+
+  it('Atomic: a king in the blast ends the game and is not counted as material', () => {
+    const { whiteCaptured, blackCaptured } = computeCapturedMaterial([
+      {
+        captured: 'p' as const,
+        moverColor: 'w' as const,
+        exploded: [
+          { square: 'd7', piece: { type: 'q' as const, color: 'w' as const } },
+          { square: 'd7', piece: { type: 'p' as const, color: 'b' as const } },
+          { square: 'e8', piece: { type: 'k' as const, color: 'b' as const } },
+        ],
+      },
+    ]);
+    expect(whiteCaptured).toEqual(['p']);
+    expect(blackCaptured).toEqual(['q']);
+  });
+
+  it('moves without an explosion keep the old behaviour even when mixed into an Atomic game', () => {
+    const { whiteCaptured, blackCaptured } = computeCapturedMaterial([
+      { captured: undefined, moverColor: 'w' as const },
+      { captured: 'n' as const, moverColor: 'b' as const, exploded: [] },
+    ]);
+    expect(whiteCaptured).toEqual([]);
+    expect(blackCaptured).toEqual(['n']);
   });
 
   it('standard point values: pawn=1, knight=3, bishop=3, rook=5, queen=9', () => {

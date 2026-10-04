@@ -1,6 +1,20 @@
 import { Chess, Move as ChessJsMove, type Square as ChessJsSquare } from 'chess.js';
 import type { BoardSquare, GameStatus, Move, Piece, PieceColor } from '../types/chess';
 import { START_FEN } from '../types/chess';
+import {
+  applyAtomicMove,
+  atomicFen,
+  atomicSan,
+  findAtomicMove,
+  generateAtomicMoves,
+  getAtomicStatus,
+  getAtomicKingWinner,
+  parseAtomicFen,
+  squareIndex,
+  squareName,
+  type AtomicMove,
+  type AtomicPosition,
+} from './atomic';
 import { collapseFenRank, expandFenRank, getChess960BackRankFiles } from './chess960';
 
 const FILES = 'abcdefgh';
@@ -116,6 +130,17 @@ export interface ChessEngineOptions {
    * Every other mode leaves this off (the default), so its move generation is untouched.
    */
   giveaway?: boolean;
+  /**
+   * Atomic chess only — see atomic.ts for the rules. Unlike `giveaway`, this does not tweak chess.js's
+   * generator: the engine's public move API (getLegalMoves/move/getStatus/isGameOver/getLegalMoveCount/
+   * getFen) is answered by atomic.ts instead, because Atomic changes legality itself (explosions,
+   * adjacent kings are never in check, its own castling). chess.js is kept only as the board model
+   * (getBoard/getPieceAt/getTurn), reloaded from the new FEN after every move — the same FEN-surgery
+   * approach performChess960Castle uses. A finished game's FEN has no king for the loser, so this
+   * always implies skipValidation. Every other mode leaves this off, so nothing about it changes.
+   * Not combinable with chess960 or any other variant.
+   */
+  atomic?: boolean;
 }
 
 export class ChessEngine {
@@ -123,12 +148,20 @@ export class ChessEngine {
   private chess960: boolean;
   private files: { kingFile: number; queenRookFile: number; kingRookFile: number };
   private giveaway: boolean;
+  private atomic: boolean;
+  /** Atomic only: the position's FEN as produced by atomic.ts (the source of truth in that mode). */
+  private atomicCurrentFen: string;
+  private atomicPosCache: AtomicPosition | null = null;
+  private atomicLegalCache: AtomicMove[] | null = null;
+  private atomicStatusCache: GameStatus | null = null;
 
   constructor(fen?: string, options?: ChessEngineOptions) {
-    const skipValidation = options?.skipValidation ?? false;
+    this.atomic = options?.atomic ?? false;
+    const skipValidation = (options?.skipValidation ?? false) || this.atomic;
     this.chess = fen ? new Chess(fen, { skipValidation }) : new Chess();
     this.chess960 = options?.chess960 ?? false;
     this.giveaway = options?.giveaway ?? false;
+    this.atomicCurrentFen = fen ?? START_FEN;
     this.files = getChess960BackRankFiles(options?.initialFen ?? fen ?? START_FEN);
   }
 
@@ -146,6 +179,10 @@ export class ChessEngine {
   }
 
   getLegalMoves(square: string): string[] {
+    if (this.atomic) {
+      const from = squareIndex(square);
+      return [...new Set(this.getAtomicLegal().filter((m) => m.from === from).map((m) => squareName(m.to)))];
+    }
     const verboseMoves = this.chess.moves({ square: square as ChessJsSquare, verbose: true });
 
     if (!this.chess960) {
@@ -160,6 +197,7 @@ export class ChessEngine {
   }
 
   move(from: string, to: string, promotion?: Move['promotion']): Move | null {
+    if (this.atomic) return this.moveAtomic(from, to, promotion);
     if (this.chess960) {
       const side = this.matchChess960CastleAttempt(from, to);
       if (side) {
@@ -194,9 +232,14 @@ export class ChessEngine {
 
   reset(): void {
     this.chess.reset();
+    this.setAtomicFen(START_FEN);
   }
 
   getStatus(): GameStatus {
+    if (this.atomic) {
+      this.atomicStatusCache ??= getAtomicStatus(this.getAtomicPosition(), this.getAtomicLegal());
+      return this.atomicStatusCache;
+    }
     if (this.chess.isCheckmate()) return 'checkmate';
     if (this.chess.isStalemate()) return 'stalemate';
     if (this.chess.isDraw()) return 'draw';
@@ -205,10 +248,16 @@ export class ChessEngine {
   }
 
   isGameOver(): boolean {
+    if (this.atomic) {
+      if (getAtomicKingWinner(this.getAtomicPosition())) return true;
+      const status = this.getStatus();
+      return status === 'checkmate' || status === 'stalemate' || status === 'draw';
+    }
     return this.chess.isGameOver();
   }
 
   getFen(): string {
+    if (this.atomic) return this.atomicCurrentFen;
     // forceEnpassantSquare: chess.js's own .fen() silently omits the ep-target field whenever
     // playing it would expose the capturing side's king (it simulates the capture and checks
     // king safety before deciding whether to print it) — but _moves({legal:false}), which
@@ -230,6 +279,7 @@ export class ChessEngine {
   /** Total number of legal moves for the side to move in the current position — used as a
    * cheap "how complex is this position" proxy (e.g. for scaling bot thinking time). */
   getLegalMoveCount(): number {
+    if (this.atomic) return this.getAtomicLegal().length;
     return this.chess.moves().length;
   }
 
@@ -242,6 +292,51 @@ export class ChessEngine {
   getPieceAt(square: string): Piece | null {
     const piece = this.chess.get(square as ChessJsSquare);
     return piece ? { type: piece.type, color: piece.color } : null;
+  }
+
+  // --- Atomic (see atomic.ts) --------------------------------------------
+
+  /** The current position in atomic.ts's representation (parsed once per position and cached). Only
+   * meaningful for an engine constructed with { atomic: true }. Treat as read-only. */
+  getAtomicPosition(): AtomicPosition {
+    this.atomicPosCache ??= parseAtomicFen(this.atomicCurrentFen);
+    return this.atomicPosCache;
+  }
+
+  private getAtomicLegal(): AtomicMove[] {
+    this.atomicLegalCache ??= generateAtomicMoves(this.getAtomicPosition());
+    return this.atomicLegalCache;
+  }
+
+  private setAtomicFen(fen: string): void {
+    this.atomicCurrentFen = fen;
+    this.atomicPosCache = null;
+    this.atomicLegalCache = null;
+    this.atomicStatusCache = null;
+  }
+
+  /** Applies a legal Atomic move: atomic.ts computes the whole resulting position (explosion, castling
+   * rights, clocks, en passant square) and chess.js is simply reloaded from the new FEN, the same
+   * approach performChess960Castle takes. Returns null for an illegal move, like move(). */
+  private moveAtomic(from: string, to: string, promotion?: Move['promotion']): Move | null {
+    const pos = this.getAtomicPosition();
+    const legal = this.getAtomicLegal();
+    const found = findAtomicMove(pos, from, to, promotion);
+    if (!found) return null;
+
+    const result = applyAtomicMove(pos, found);
+    const san = atomicSan(pos, found, legal, result.position);
+    const newFen = atomicFen(result.position);
+    this.chess.load(newFen, { skipValidation: true });
+    this.setAtomicFen(newFen);
+    return {
+      from,
+      to,
+      promotion: found.promotion,
+      san,
+      captured: result.captured,
+      exploded: result.exploded.length > 0 ? result.exploded : undefined,
+    };
   }
 
   // --- Fog of War (see ChessInternals above) -----------------------------

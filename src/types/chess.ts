@@ -18,6 +18,12 @@ export interface BoardSquare {
   piece: Piece | null;
 }
 
+/** A piece an Atomic explosion removed from the board, and where it stood — see Move.exploded. */
+export interface ExplodedPiece {
+  square: Square;
+  piece: Piece;
+}
+
 export interface Move {
   from: Square;
   to: Square;
@@ -27,6 +33,11 @@ export interface Move {
   san: string;
   /** The type of piece captured by this move (regular capture or en passant), if any. */
   captured?: PieceType;
+  /** Atomic only — every piece the move's explosion removed: the capturing piece, the captured piece
+   * and every non-pawn neighbour of the landing square, each on the square it stood on (the captured
+   * pawn of an en passant capture is on its own square, not the landing square). Absent for every
+   * other mode and for non-capturing moves. */
+  exploded?: ExplodedPiece[];
 }
 
 export type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'check';

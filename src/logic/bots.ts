@@ -3,6 +3,7 @@ import type { Move } from '../types/chess';
 import type { TimeControl } from '../types/timeControl';
 import { PIECE_VALUES } from './analysis';
 import { ChessEngine } from './ChessEngine';
+import { applyAtomicMove, generateAtomicMoves, getAtomicKingWinner, isAtomicCheck, squareName, type AtomicMove, type AtomicPosition } from './atomic';
 import { getGiveawayMoves } from './giveaway';
 
 export const BOT_CATEGORIES: { category: BotCategory; label: string }[] = [
@@ -177,4 +178,140 @@ export function chooseGiveawayBotMove(engine: ChessEngine, elo: number, rng: () 
   const top = Math.max(...scored.map((s) => s.score));
   const best = scored.filter((s) => s.score === top);
   return best[Math.floor(rng() * best.length)].move;
+}
+
+// --- Atomic -------------------------------------------------------------------------------
+
+/** Centipawn value per piece code (1 pawn … 6 king, see atomic.ts); kings carry no material value. */
+const ATOMIC_CP = [0, 100, 300, 300, 500, 900, 0];
+/** Score for "the enemy king is blown up" — far above any material total; ply is subtracted so a
+ * quicker win scores higher and a slower loss scores better. */
+const ATOMIC_WIN = 100000;
+/** Positions the search may visit in one move, a safety valve so a slow device never stalls the bot. */
+const ATOMIC_NODE_BUDGET = 12000;
+
+/** Material from the side to move's point of view, in centipawns. */
+function atomicMaterial(pos: AtomicPosition): number {
+  let white = 0;
+  for (let i = 0; i < 64; i++) {
+    const v = pos.squares[i];
+    if (v > 0) white += ATOMIC_CP[v];
+    else if (v < 0) white -= ATOMIC_CP[-v];
+  }
+  return pos.turn === 'w' ? white : -white;
+}
+
+interface AtomicSearchState {
+  nodes: number;
+  aborted: boolean;
+}
+
+/** Captures first (biggest victim first), then promotions, then quiet moves. Under-promotions are
+ * dropped: a capture-promotion explodes the new piece so every choice is identical, and the rest are
+ * rarely right. */
+function orderAtomicMoves(pos: AtomicPosition, moves: AtomicMove[]): AtomicMove[] {
+  const keyed: { move: AtomicMove; key: number }[] = [];
+  for (const move of moves) {
+    if (move.promotion && move.promotion !== 'q') continue;
+    const victim = move.enPassant ? 1 : Math.abs(pos.squares[move.to]);
+    keyed.push({ move, key: victim > 0 ? 1000 + ATOMIC_CP[victim] : move.promotion ? 500 : 0 });
+  }
+  keyed.sort((a, b) => b.key - a.key);
+  return keyed.map((k) => k.move);
+}
+
+/** Score at the horizon: a side that can explode the enemy king right now has already won (this is
+ * what stops even a 1-ply bot from leaving its own king blastable), otherwise plain material. */
+function atomicLeafScore(pos: AtomicPosition, moves: AtomicMove[], ply: number): number {
+  for (const move of moves) {
+    if (!move.enPassant && pos.squares[move.to] === 0) continue;
+    const after = applyAtomicMove(pos, move);
+    if (getAtomicKingWinner(after.position)) return ATOMIC_WIN - ply;
+  }
+  return atomicMaterial(pos);
+}
+
+/** Negamax with alpha-beta over atomic.ts's legal moves; scores are from the side to move's view. */
+function searchAtomic(pos: AtomicPosition, depth: number, alpha: number, beta: number, ply: number, state: AtomicSearchState, budget: number): number {
+  state.nodes += 1;
+  if (state.nodes > budget) {
+    state.aborted = true;
+    return 0;
+  }
+  const moves = generateAtomicMoves(pos);
+  if (moves.length === 0) return isAtomicCheck(pos) ? -(ATOMIC_WIN - ply) : 0;
+  if (depth <= 0) return atomicLeafScore(pos, moves, ply);
+
+  let best = -Infinity;
+  for (const move of orderAtomicMoves(pos, moves)) {
+    const after = applyAtomicMove(pos, move);
+    const wins = after.exploded.length > 0 && getAtomicKingWinner(after.position) !== null;
+    const score = wins ? ATOMIC_WIN - ply : -searchAtomic(after.position, depth - 1, -beta, -alpha, ply + 1, state, budget);
+    if (state.aborted) return 0;
+    if (score > best) best = score;
+    if (best > alpha) alpha = best;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+function describeAtomicMove(pos: AtomicPosition, m: AtomicMove): Move {
+  const victim = m.enPassant ? 1 : Math.abs(pos.squares[m.to]);
+  return {
+    from: squareName(m.from),
+    to: squareName(m.to),
+    promotion: m.promotion,
+    san: '',
+    captured: victim > 0 ? (['p', 'n', 'b', 'r', 'q', 'k'] as const)[victim - 1] : undefined,
+  };
+}
+
+/**
+ * Picks a move for a bot playing Atomic. Deliberately NOT Stockfish: it has no concept of explosions,
+ * so its moves are routinely illegal or suicidal here (and a WASM variant engine — Fairy-Stockfish — is
+ * out of scope for now). This is a shallow alpha-beta search over atomic.ts's legal moves (always
+ * rule-legal, explosions included) with a simple material evaluation; explosions need no special
+ * evaluation because the search itself plays the blast out. Exploding the enemy king is scored as a
+ * win, losing your own as a loss, so even the shallowest bot never leaves its king blastable.
+ *
+ * ELO is the only strength dial, as for Giveaway: the chance of playing the searched best move
+ * (rather than a random legal one) rises from ~20% at 400 ELO to ~90% at 3000, and the search deepens
+ * with ELO (1 ply below 1000, 2 below 2000, otherwise 3), capped by a node budget so a slow device
+ * can't stall. Returns null only when there is no legal move (the game is already over).
+ */
+export function chooseAtomicBotMove(engine: ChessEngine, elo: number, rng: () => number = Math.random): Move | null {
+  const pos = engine.getAtomicPosition();
+  const moves = generateAtomicMoves(pos);
+  if (moves.length === 0) return null;
+  if (moves.length === 1) return describeAtomicMove(pos, moves[0]);
+
+  const bestChance = 0.2 + 0.7 * Math.min(1, Math.max(0, (elo - 400) / 2600));
+  if (rng() >= bestChance) return describeAtomicMove(pos, moves[Math.floor(rng() * moves.length)]);
+
+  const maxDepth = elo < 1000 ? 1 : elo < 2000 ? 2 : 3;
+  let rootMoves = orderAtomicMoves(pos, moves);
+  let scored: { move: AtomicMove; score: number }[] = rootMoves.map((move) => ({ move, score: 0 }));
+
+  // Iterative deepening: each completed depth reorders the next; an iteration cut off by the node
+  // budget is discarded in favour of the last complete one.
+  const state: AtomicSearchState = { nodes: 0, aborted: false };
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    const iteration: { move: AtomicMove; score: number }[] = [];
+    for (const move of rootMoves) {
+      const after = applyAtomicMove(pos, move);
+      const wins = after.exploded.length > 0 && getAtomicKingWinner(after.position) !== null;
+      // Full window at the root: every root score is exact, so ties below are genuine ties.
+      const score = wins ? ATOMIC_WIN : -searchAtomic(after.position, depth - 1, -Infinity, Infinity, 1, state, ATOMIC_NODE_BUDGET);
+      if (state.aborted) break;
+      iteration.push({ move, score });
+    }
+    if (state.aborted) break;
+    scored = iteration;
+    iteration.sort((a, b) => b.score - a.score);
+    rootMoves = iteration.map((s) => s.move);
+  }
+
+  const top = Math.max(...scored.map((s) => s.score));
+  const best = scored.filter((s) => s.score === top);
+  return describeAtomicMove(pos, best[Math.floor(rng() * best.length)].move);
 }

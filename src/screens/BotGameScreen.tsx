@@ -13,7 +13,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { unlockAchievement } from '../logic/achievementStorage';
-import { chooseGiveawayBotMove, getBotThinkTimeMs } from '../logic/bots';
+import { chooseAtomicBotMove, chooseGiveawayBotMove, getBotThinkTimeMs } from '../logic/bots';
 import { logDiagnostic } from '../logic/diagnosticLog';
 import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
@@ -30,6 +30,7 @@ import {
   useIncrementalFogRedaction,
 } from '../logic/fogOfWar';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
+import { getAtomicWinner, isAtomicThreefoldRepetition } from '../logic/atomic';
 import { getGiveawayMoves, getGiveawayWinner } from '../logic/giveaway';
 import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
@@ -58,6 +59,10 @@ interface BotGameScreenProps {
   /** Giveaway (Antichess) — see giveaway.ts. Bots play it with chooseGiveawayBotMove, NOT Stockfish
    * (which knows nothing of mandatory captures). Mutually exclusive with every other variant. */
   giveaway?: boolean;
+  /** Atomic chess — see atomic.ts. Bots play it with chooseAtomicBotMove (a shallow search over Atomic's
+   * own legal moves), NOT Stockfish (which knows nothing of explosions). Mutually exclusive with every
+   * other variant. */
+  atomic?: boolean;
   /** The merged starting position from the Setup Chess builder flow — used instead of
    * self-generating one when present. `colorChoice` must already be the concrete color the human
    * built their army as (not 'random') when this is set, see BotSetupChessFlowScreen. */
@@ -77,6 +82,7 @@ export default function BotGameScreen({
   setupChess = false,
   fogOfWar = false,
   giveaway = false,
+  atomic = false,
   initialFen: initialFenProp,
   colorChoice = 'random',
   authToken,
@@ -118,20 +124,27 @@ export default function BotGameScreen({
   // See LocalGameScreen's identical effect for why a miss here doesn't clear the name — it only
   // ever upgrades to a deeper/more specific match as the game continues.
   useEffect(() => {
-    if (chess960 || setupChess || fogOfWar || giveaway) return;
+    if (chess960 || setupChess || fogOfWar || giveaway || atomic) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960, setupChess, fogOfWar, giveaway]);
+  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic]);
 
   // skipValidation: once a Fog of War game ends via king capture, `fen` genuinely has no king
   // for the losing side — see ChessEngine's own doc comment on the option (this is the exact
   // crash category already found/fixed in cloneWithTurn, caught again here by a systematic grep).
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway, giveaway }),
-    [fen, chess960, initialFen, fogOfWar, giveaway]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway, giveaway, atomic }),
+    [fen, chess960, initialFen, fogOfWar, giveaway, atomic]
   );
   const turn = engine.getTurn();
-  const chessStatus = engine.getStatus();
+  // Atomic: see LocalGameScreen's identical block — the engine answers status from atomic.ts, a blown-up
+  // king is atomicWinner, and threefold repetition comes from the history's FENs.
+  const atomicWinner = useMemo(() => (atomic ? getAtomicWinner(engine) : null), [atomic, engine]);
+  const atomicRepetition = useMemo(
+    () => atomic && isAtomicThreefoldRepetition([initialFen, ...history.map((h) => h.fenAfter)]),
+    [atomic, initialFen, history]
+  );
+  const chessStatus = atomicRepetition ? 'draw' : engine.getStatus();
   // Chess.js has no idea this rule exists — checked independently, only when actually playing
   // this variant (see kingOfTheHill.ts).
   const kingOfTheHillWinner = kingOfTheHill ? getKingOfTheHillWinner(engine) : null;
@@ -147,7 +160,7 @@ export default function BotGameScreen({
   // Giveaway: no checkmate/stalemate/draw either — whoever is to move with no legal move WINS (see
   // giveaway.ts). Derived from the position rather than stored, so it is right after Undo too.
   const giveawayWinner = useMemo(() => (giveaway ? getGiveawayWinner(engine) : null), [giveaway, engine]);
-  const engineGameOver = giveaway ? giveawayWinner !== null : fogOfWar ? false : engine.isGameOver();
+  const engineGameOver = giveaway ? giveawayWinner !== null : fogOfWar ? false : engine.isGameOver() || atomicRepetition;
   // Auto-tick runs for whichever side's turn it is — including the bot's — so its clock counts
   // down live, second by second, in real wall-clock time while it "thinks" (the engine really
   // does take approximately thinkTimeMs to respond), exactly like the human side already did.
@@ -235,6 +248,8 @@ export default function BotGameScreen({
         fogOfWarWinner,
         giveawayWinner,
         giveaway,
+        atomicWinner,
+        atomic,
         history,
         initialFen,
         chess960,
@@ -252,6 +267,8 @@ export default function BotGameScreen({
       fogOfWarWinner,
       giveawayWinner,
       giveaway,
+      atomicWinner,
+      atomic,
       history,
       initialFen,
       chess960,
@@ -319,7 +336,7 @@ export default function BotGameScreen({
       try {
         // Giveaway positions can legitimately lack a king (kings are capturable pieces there), so
         // this engine needs skipValidation too — the other variants never reach a kingless fen here.
-        const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: giveaway, giveaway });
+        const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: giveaway, giveaway, atomic });
         let move: Move | null = null;
 
         // Giveaway: Stockfish is bypassed entirely (see chooseGiveawayBotMove) — a normal engine move
@@ -337,6 +354,23 @@ export default function BotGameScreen({
           if (!choice) throw new Error('Giveaway bot has no legal move');
           move = moveEngine.movePseudoLegal(choice.from, choice.to, choice.promotion);
           if (!move) throw new Error(`Invalid Giveaway move: ${choice.from}${choice.to}`);
+        }
+
+        // Atomic: Stockfish is bypassed entirely too (see chooseAtomicBotMove) — it has no concept of
+        // explosions, so its moves are routinely illegal or suicidal here. The short capped pause stands in
+        // for thinking, with the bot's clock ticking meanwhile like any other bot's.
+        if (atomic) {
+          const thinkTimeMs = getBotThinkTimeMs({
+            timeControl,
+            remainingSeconds: botColor === 'w' ? clock.whiteSeconds : clock.blackSeconds,
+            legalMoveCount: engine.getLegalMoveCount(),
+          });
+          await new Promise((resolve) => setTimeout(resolve, Math.min(thinkTimeMs, 2500)));
+          if (cancelled) return;
+          const choice = chooseAtomicBotMove(moveEngine, bot.elo);
+          if (!choice) throw new Error('Atomic bot has no legal move');
+          move = moveEngine.move(choice.from, choice.to, choice.promotion);
+          if (!move) throw new Error(`Invalid Atomic move: ${choice.from}${choice.to}`);
         }
 
         // Fog of War only — Stockfish (like every standard UCI engine) can never suggest
@@ -420,7 +454,7 @@ export default function BotGameScreen({
   }, [fen, gameOver]);
 
   const { whiteCaptured, blackCaptured } = useMemo(
-    () => computeCapturedMaterial(history.map((h, i) => ({ captured: h.move.captured, moverColor: i % 2 === 0 ? 'w' : 'b' }))),
+    () => computeCapturedMaterial(history.map((h, i) => ({ captured: h.move.captured, exploded: h.move.exploded, moverColor: i % 2 === 0 ? 'w' : 'b' }))),
     [history]
   );
   const materialDiff = materialValue(whiteCaptured) - materialValue(blackCaptured);
@@ -464,6 +498,9 @@ export default function BotGameScreen({
   if (giveawayWinner) {
     statusText = `${giveawayWinner === userColor ? 'You win' : `${bot.name} wins`} — no legal moves left!`;
   }
+  if (atomicWinner) {
+    statusText = `${atomicWinner === userColor ? 'You win' : `${bot.name} wins`} by exploding the king!`;
+  }
   if (fogOfWarWinner) {
     statusText = `${fogOfWarWinner === userColor ? 'You win' : `${bot.name} wins`} by capturing the king!`;
   }
@@ -477,7 +514,8 @@ export default function BotGameScreen({
     kingOfTheHillWinner,
     threeCheckWinner,
     fogOfWarWinner,
-    giveawayWinner
+    giveawayWinner,
+    atomicWinner
   );
   const winnerColor: PieceColor | null =
     outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
@@ -497,11 +535,11 @@ export default function BotGameScreen({
     ratingRecordedRef.current = true;
     const result = outcome.result === '1/2-1/2' ? 0.5 : winnerColor === userColor ? 1 : 0;
     const ratingCategory = toRatingCategory(timeControl.category);
-    // Giveaway is a different game with a heuristic (not ELO-calibrated) opponent — it must not move
-    // the player's chess rating or unlock rating-based achievements.
-    if (ratingCategory && !giveaway) recordRatedGame(ratingCategory, bot.elo, result, authToken);
+    // Giveaway and Atomic are different games with a heuristic (not ELO-calibrated) opponent — they must
+    // not move the player's chess rating or unlock rating-based achievements.
+    if (ratingCategory && !giveaway && !atomic) recordRatedGame(ratingCategory, bot.elo, result, authToken);
 
-    if (result === 1 && !giveaway) {
+    if (result === 1 && !giveaway && !atomic) {
       if (bot.elo >= 2000) unlockAchievement('giant_slayer');
       if (wasMaterialDownRef.current) unlockAchievement('comeback_win');
     }
@@ -607,7 +645,7 @@ export default function BotGameScreen({
   // Disabled for Fog of War — see LocalGameScreen's identical handleHintPress for why (reads the
   // true, full position, which would just hand the player a way around the whole variant).
   const handleHintPress = () => {
-    if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway) return;
+    if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic) return;
     setHintText(null);
     setHintLoading(true);
     setHintRequestKey((k) => k + 1);
@@ -666,7 +704,9 @@ export default function BotGameScreen({
                     ? 'Fog of War'
                     : giveaway
                       ? 'Giveaway'
-                      : undefined
+                      : atomic
+                        ? 'Atomic'
+                        : undefined
         }
         onBack={onExit}
         backLabel="‹ Menu"
@@ -689,7 +729,7 @@ export default function BotGameScreen({
                     key: 'hint',
                     label: 'Hint',
                     onPress: handleHintPress,
-                    disabled: gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway,
+                    disabled: gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic,
                   },
                   {
                     key: 'undo',
@@ -717,7 +757,7 @@ export default function BotGameScreen({
         }
       >
         <Text style={styles.subtitle}>
-          {giveaway ? 'Giveaway bot' : getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
+          {giveaway ? 'Giveaway bot' : atomic ? 'Atomic bot' : getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
         </Text>
         {!gameOver && <Text style={styles.status}>{statusText}</Text>}
         {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
@@ -748,7 +788,7 @@ export default function BotGameScreen({
           <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
 
-        {!chess960 && !setupChess && !fogOfWar && !giveaway && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={resetCount}
@@ -763,11 +803,14 @@ export default function BotGameScreen({
           kingOfTheHill={kingOfTheHill}
           fogOfWar={fogOfWar}
           giveaway={giveaway}
+          atomic={atomic}
           visibleSquares={visibleSquares}
           // No premoves in Giveaway: mandatory capture changes which moves are legal after the
-          // opponent's reply, so a queued move is almost never still valid when its turn comes.
-          premoveColor={giveaway ? undefined : userColor}
-          onPremove={giveaway ? undefined : handleQueuePremove}
+          // opponent's reply, so a queued move is almost never still valid when its turn comes. Atomic
+          // has none either: explosions change the legal moves just as drastically, and the premove
+          // executor (see the premove effect) builds a plain engine that knows nothing of its rules.
+          premoveColor={giveaway || atomic ? undefined : userColor}
+          onPremove={giveaway || atomic ? undefined : handleQueuePremove}
         />
 
         <View style={styles.playerRow}>
@@ -790,6 +833,7 @@ export default function BotGameScreen({
         chess960={chess960}
         fogOfWar={fogOfWar}
         giveaway={giveaway}
+        atomic={atomic}
         history={history}
         players={[{ label: 'You', color: userColor }]}
         onGameReview={() => onAnalyze({ initialFen, chess960, fogOfWar, history })}

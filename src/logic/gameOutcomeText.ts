@@ -13,7 +13,8 @@ export type EndReason =
   | 'kingOfTheHill'
   | 'threeCheck'
   | 'fogOfWar'
-  | 'giveaway';
+  | 'giveaway'
+  | 'atomic';
 
 export function describeEndReason(reason: EndReason): string {
   switch (reason) {
@@ -27,6 +28,8 @@ export function describeEndReason(reason: EndReason): string {
       return 'by King Capture';
     case 'giveaway':
       return 'by Having No Legal Moves';
+    case 'atomic':
+      return 'by Exploding the King';
     case 'timeout':
       return 'by Timeout';
     case 'resignation':

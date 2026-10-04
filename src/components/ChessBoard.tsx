@@ -5,7 +5,7 @@ import { getGiveawayMoves } from '../logic/giveaway';
 import { isTouchInside, subscribeToScreenTouches } from '../logic/screenTouches';
 import { PROMOTION_LABELS, type PromotionPiece, getPromotionChoices, isPromotionMove } from '../logic/promotion';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
-import type { Move, PieceColor, Piece as PieceModel } from '../types/chess';
+import type { ExplodedPiece, Move, PieceColor, Piece as PieceModel } from '../types/chess';
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
 import { getBoardSize } from './boardSize';
 import Piece from './Piece';
@@ -70,6 +70,13 @@ interface ChessBoardProps {
    * offers a king. Also drops the normal isGameOver()/check highlighting; the caller decides when
    * the game ends (getGiveawayWinner). Mutually exclusive with every other variant. */
   giveaway?: boolean;
+  /** Atomic chess only — see atomic.ts. The engine (constructed with { atomic: true }) answers
+   * legal moves, check and game state itself, so unlike fogOfWar/giveaway this does NOT switch to the
+   * pseudo-legal generator and normal check highlighting stays on (it is Atomic-aware). Capture-
+   * promotions skip the piece picker (a queen is auto-picked: the new piece explodes with the
+   * capturer, so every choice is identical), and a move's `exploded` pieces get a short flash/fade.
+   * Mutually exclusive with every other variant. */
+  atomic?: boolean;
   /** Fog of War only — the squares currently visible to the LOCAL viewer. Squares outside this
    * set render fogged (see Square's isFogged) regardless of what `fen`/the engine actually has
    * there: for Local/Bot this is still the true fen client-side (there's no network boundary to
@@ -84,6 +91,8 @@ interface ChessBoardProps {
 const KING_OF_THE_HILL_SQUARES = ['d4', 'd5', 'e4', 'e5'];
 
 const ANIMATION_DURATION_MS = 200;
+// Atomic explosion flash/fade: starts when the sliding piece lands, then fades out over this long.
+const EXPLOSION_DURATION_MS = 450;
 
 function squareToRowCol(square: string, orientation: PieceColor): { row: number; col: number } {
   const file = square.charCodeAt(0) - 97; // 'a' -> 0
@@ -120,6 +129,7 @@ function ChessBoard({
   kingOfTheHill = false,
   fogOfWar = false,
   giveaway = false,
+  atomic = false,
   visibleSquares,
 }: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
@@ -133,8 +143,8 @@ function ChessBoard({
   // Giveaway also skips validation: a captured king leaves later fens without one, like Fog of War.
   const usesPseudoLegalMoves = fogOfWar || giveaway;
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway }),
-    [fen, chess960, initialFen, usesPseudoLegalMoves, giveaway]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic }),
+    [fen, chess960, initialFen, usesPseudoLegalMoves, giveaway, atomic]
   );
   const board = useMemo(() => engine.getBoard(), [engine]);
   // Reversing both axes together preserves each square's light/dark identity (a 180° rotation
@@ -202,6 +212,12 @@ function ChessBoard({
   const [slidingMove, setSlidingMove] = useState<{ to: string; piece: PieceModel } | null>(null);
   const prevFenRef = useRef(fen);
 
+  // Atomic explosion overlay (see the animation effect below): the pieces a capture just removed, one
+  // per square (a later entry wins a shared square), shown fading out under a flash.
+  const explosionProgress = useRef(new Animated.Value(0)).current;
+  const explosionRunRef = useRef(0);
+  const [explosion, setExplosion] = useState<ExplodedPiece[] | null>(null);
+
   useEffect(() => {
     const prevFen = prevFenRef.current;
     prevFenRef.current = fen;
@@ -223,7 +239,7 @@ function ChessBoard({
     // flag through every caller.
     let movingPiece: PieceModel | null = null;
     try {
-      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway }).getPieceAt(lastMove.from);
+      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic }).getPieceAt(lastMove.from);
     } catch {
       movingPiece = null;
     }
@@ -243,6 +259,26 @@ function ChessBoard({
       // to log a dev warning on every single move.
       useNativeDriver: Platform.OS !== 'web',
     }).start(() => setSlidingMove(null));
+
+    // Atomic: once the capturing piece has landed, flash the blast and fade out what it destroyed.
+    // Purely visual — the board underneath already shows the post-explosion position.
+    if (lastMove.exploded && lastMove.exploded.length > 0) {
+      const run = ++explosionRunRef.current;
+      explosionProgress.stopAnimation();
+      explosionProgress.setValue(0);
+      setExplosion(lastMove.exploded);
+      Animated.sequence([
+        Animated.delay(ANIMATION_DURATION_MS),
+        Animated.timing(explosionProgress, {
+          toValue: 1,
+          duration: EXPLOSION_DURATION_MS,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+      ]).start(() => {
+        if (explosionRunRef.current === run) setExplosion(null);
+      });
+    }
     // Only `fen` actually needs to retrigger this — lastMove/chess960/initialFen/orientation/
     // squareSize are all read fresh from the closure at the moment `fen` changes, which is
     // exactly when they're relevant (the move that produced this new fen).
@@ -276,7 +312,7 @@ function ChessBoard({
    * pseudo-legal move is legal there (mandatory capture can rule it out), so movePseudoLegal alone
    * would be too permissive a gate. */
   const tryMove = (from: string, to: string, promotion?: Move['promotion']): { move: Move; fen: string } | null => {
-    const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway });
+    const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic });
     if (giveaway && !getGiveawayMoves(moveEngine, from).some((m) => m.to === to && m.promotion === promotion)) return null;
     const move = usesPseudoLegalMoves ? moveEngine.movePseudoLegal(from, to, promotion) : moveEngine.move(from, to, promotion);
     return move ? { move, fen: moveEngine.getFen() } : null;
@@ -324,9 +360,16 @@ function ChessBoard({
       // A pawn reaching its last rank — by a plain push or a capture alike — is never completed
       // automatically: the move is held until the player picks the promotion piece.
       const movingPiece = board.flat().find((s) => s.square === selectedSquare)?.piece;
+      // Atomic: a promoting CAPTURE explodes the new piece with the capturer, so every choice gives the
+      // same board — skip the picker and promote to a queen. Quiet promotions still ask.
+      let autoPromotion: Move['promotion'];
       if (movingPiece && isPromotionMove(movingPiece, square)) {
-        setPendingPromotion({ from: selectedSquare, to: square, color: movingPiece.color, kind: 'move' });
-        return;
+        if (atomic && board.flat().some((s) => s.square === square && s.piece !== null)) {
+          autoPromotion = 'q';
+        } else {
+          setPendingPromotion({ from: selectedSquare, to: square, color: movingPiece.color, kind: 'move' });
+          return;
+        }
       }
 
       // A scratch engine, NOT the memoized `engine` above — ChessEngine.move()/movePseudoLegal()
@@ -339,7 +382,7 @@ function ChessBoard({
       // reading the NEW position's data while every other derived value on this render still
       // reflects the OLD `fen`. A disposable engine built from the same fen/options keeps the
       // memoized one untouched until the parent legitimately updates `fen`.
-      const result = tryMove(selectedSquare, square);
+      const result = tryMove(selectedSquare, square, autoPromotion);
       if (result) {
         setSelectedSquare(null);
         onMove(result.move, result.fen);
@@ -606,6 +649,12 @@ function ChessBoard({
       onPanResponderTerminate: clearGesture,
   });
 
+  // Atomic explosion overlay values (see the animation effect): one cell per square the blast cleared.
+  const explosionCells = explosion ? [...new Map(explosion.map((e) => [e.square, e])).values()] : [];
+  const flashOpacity = explosionProgress.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.9, 0] });
+  const flashScale = explosionProgress.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.6] });
+  const ghostOpacity = explosionProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+
   return (
     <View style={styles.border}>
       <View
@@ -638,6 +687,33 @@ function ChessBoard({
         {enableAnnotations && (
           <BoardAnnotations squareSize={squareSize} arrows={arrows} highlights={highlights} liveArrow={liveArrow} />
         )}
+
+        {explosionCells.map(({ square, piece }) => {
+          const { row, col } = squareToRowCol(square, orientation);
+          return (
+            <Animated.View
+              key={`explosion-${square}`}
+              pointerEvents="none"
+              style={[styles.explosionCell, { left: col * squareSize, top: row * squareSize, width: squareSize, height: squareSize }]}
+            >
+              <Animated.View
+                style={[
+                  styles.explosionFlash,
+                  {
+                    width: squareSize * 0.9,
+                    height: squareSize * 0.9,
+                    borderRadius: squareSize * 0.45,
+                    opacity: flashOpacity,
+                    transform: [{ scale: flashScale }],
+                  },
+                ]}
+              />
+              <Animated.View style={[styles.explosionGhost, { opacity: ghostOpacity }]}>
+                <Piece piece={piece} images={pieceTheme.images} />
+              </Animated.View>
+            </Animated.View>
+          );
+        })}
 
         {slidingMove && (
           <Animated.View
@@ -737,6 +813,24 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  explosionCell: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  explosionFlash: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255, 140, 0, 0.85)',
+  },
+  explosionGhost: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },

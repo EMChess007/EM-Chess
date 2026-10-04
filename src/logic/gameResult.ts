@@ -17,7 +17,8 @@ export type GameOutcome =
         | 'kingOfTheHill'
         | 'threeCheck'
         | 'fogOfWar'
-        | 'giveaway';
+        | 'giveaway'
+        | 'atomic';
     };
 
 /**
@@ -34,7 +35,8 @@ export function getGameOutcome(
   kingOfTheHillWinner: PieceColor | null = null,
   threeCheckWinner: PieceColor | null = null,
   fogOfWarWinner: PieceColor | null = null,
-  giveawayWinner: PieceColor | null = null
+  giveawayWinner: PieceColor | null = null,
+  atomicWinner: PieceColor | null = null
 ): GameOutcome {
   // Checked first of all — Fog of War has no checkmate/stalemate/draw concept whatsoever (see
   // ChessBoard's own fogOfWar doc comment), so king capture is the ONLY way a Fog of War game
@@ -44,6 +46,12 @@ export function getGameOutcome(
   // Giveaway (Antichess) sits in this same top tier: it has no checkmate/stalemate/draw concept
   // either (running out of legal moves is a WIN for whoever is stuck — see giveaway.ts), and the
   // variants are mutually exclusive, so at most one of this and fogOfWarWinner is ever set.
+  // Atomic sits in this tier too, for its king-exploded win only: a king blown up ends the game on the
+  // spot, whatever else the position says. Ordinary Atomic checkmate/stalemate/draws come in through
+  // `chessStatus` (ChessEngine.getStatus answers from atomic.ts there) under the usual reasons.
+  if (atomicWinner) {
+    return { over: true, result: atomicWinner === 'w' ? '1-0' : '0-1', reason: 'atomic' };
+  }
   if (giveawayWinner) {
     return { over: true, result: giveawayWinner === 'w' ? '1-0' : '0-1', reason: 'giveaway' };
   }

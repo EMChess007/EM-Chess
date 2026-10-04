@@ -18,6 +18,10 @@ interface BuildGamePayloadArgs {
   /** Tags the saved PGN as Antichess so replay/analysis (which assume ordinary chess rules) refuse
    * it instead of mis-replaying a game whose moves aren't legal chess. */
   giveaway?: boolean;
+  /** Atomic: the side that blew up the enemy king, if any (see atomic.ts). */
+  atomicWinner?: PieceColor | null;
+  /** Tags the saved PGN as Atomic for the same reason as `giveaway` above. */
+  atomic?: boolean;
   history: GameHistoryEntry[];
   initialFen: string;
   chess960: boolean;
@@ -41,7 +45,8 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
     args.kingOfTheHillWinner ?? null,
     args.threeCheckWinner ?? null,
     args.fogOfWarWinner ?? null,
-    args.giveawayWinner ?? null
+    args.giveawayWinner ?? null,
+    args.atomicWinner ?? null
   );
   if (!outcome.over || args.history.length === 0) return null;
 
@@ -49,7 +54,7 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
     opponentType: args.opponentType,
     opponentElo: args.opponentElo ?? null,
     result: outcome.result,
-    pgn: buildPgn(args.initialFen, args.history, outcome.result, args.giveaway ? 'Antichess' : undefined),
+    pgn: buildPgn(args.initialFen, args.history, outcome.result, args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : undefined),
     timeControl: args.timeControl.label,
     isChess960: args.chess960,
   };

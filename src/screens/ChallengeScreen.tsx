@@ -132,7 +132,7 @@ export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessP
 
       {phase === 'setup' && (
         <View style={styles.setupContainer}>
-          <VariantSelector value={variant} onChange={setVariant} excludeVariants={['giveaway']} />
+          <VariantSelector value={variant} onChange={setVariant} excludeVariants={['giveaway', 'atomic']} />
           {error && <Text style={styles.errorText}>{error}</Text>}
           <ScrollView contentContainerStyle={styles.setupScrollContent}>
             {CATEGORIES.map(({ category, label }) => (

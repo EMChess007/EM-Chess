@@ -29,6 +29,10 @@ interface PostGameSummaryModalProps {
    * capturable kings, no check) and can misbehave on its kingless positions, so no accuracy
    * analysis runs and Game Review is not offered. */
   giveaway?: boolean;
+  /** Atomic only — same reasoning as `giveaway`: Stockfish knows nothing of explosions and can
+   * misbehave on its kingless final positions, so no accuracy analysis runs and Game Review is not
+   * offered. */
+  atomic?: boolean;
   history: GameHistoryEntry[];
   /** One entry (Bot/Online: just the user) or two (Local: White and Black). */
   players: SummaryPlayer[];
@@ -57,6 +61,7 @@ export default function PostGameSummaryModal({
   chess960,
   fogOfWar = false,
   giveaway = false,
+  atomic = false,
   history,
   players,
   onGameReview,
@@ -74,7 +79,7 @@ export default function PostGameSummaryModal({
   // attachBridge() on the same engine, and the second one silently steals the connection from the
   // first (same reasoning EngineVsEngineGameScreen documents for reusing one runtime across two
   // engines that happen to share an id — except here we specifically want isolation, not sharing).
-  const scratchEngine = useMemo(() => (visible && !giveaway ? new StockfishEngineAdapter() : null), [visible, giveaway]);
+  const scratchEngine = useMemo(() => (visible && !giveaway && !atomic ? new StockfishEngineAdapter() : null), [visible, giveaway, atomic]);
   const bridgeRef = useRef<StockfishBridgeHandle>(null);
   const handleBridgeRef = useCallback(
     (handle: StockfishBridgeHandle | null) => {
@@ -133,6 +138,7 @@ export default function PostGameSummaryModal({
 
         {history.length > 0 &&
           !giveaway &&
+          !atomic &&
           (!summary ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color={colors.text} />
@@ -165,7 +171,7 @@ export default function PostGameSummaryModal({
           ))}
 
         <View style={styles.buttonColumn}>
-          {!giveaway && (
+          {!giveaway && !atomic && (
             <Pressable style={styles.primaryButton} onPress={onGameReview}>
               <Text style={styles.primaryButtonText}>Game Review</Text>
             </Pressable>

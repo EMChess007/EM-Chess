@@ -26,6 +26,7 @@ import {
   logFogOfWarPly,
   useIncrementalFogRedaction,
 } from '../logic/fogOfWar';
+import { getAtomicWinner, isAtomicThreefoldRepetition } from '../logic/atomic';
 import { getGiveawayMoves, getGiveawayWinner } from '../logic/giveaway';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
@@ -50,6 +51,8 @@ interface LocalGameScreenProps {
   fogOfWar?: boolean;
   /** Giveaway (Antichess) — see giveaway.ts. Mutually exclusive with every other variant. */
   giveaway?: boolean;
+  /** Atomic chess — see atomic.ts. Mutually exclusive with every other variant. */
+  atomic?: boolean;
   /** The merged starting position from the Setup Chess builder flow — used instead of
    * self-generating one when present (setupChess games always pass this). */
   initialFen?: string;
@@ -66,6 +69,7 @@ export default function LocalGameScreen({
   setupChess = false,
   fogOfWar = false,
   giveaway = false,
+  atomic = false,
   initialFen: initialFenProp,
   authToken,
   onExit,
@@ -139,21 +143,30 @@ export default function LocalGameScreen({
   // any further named position, no later position will match either, so this naturally stops
   // updating on its own.
   useEffect(() => {
-    if (chess960 || setupChess || fogOfWar || giveaway) return;
+    if (chess960 || setupChess || fogOfWar || giveaway || atomic) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960, setupChess, fogOfWar, giveaway]);
+  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic]);
 
   // skipValidation: once a Fog of War game ends via king capture, `fen` genuinely has no king
   // for the losing side — see ChessEngine's own doc comment on the option (this is the exact
   // crash category already found/fixed in cloneWithTurn, caught again here by a systematic grep).
   // Giveaway: same reason (a captured king is just a missing piece) plus its own move generation.
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway, giveaway }),
-    [fen, chess960, initialFen, fogOfWar, giveaway]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway, giveaway, atomic }),
+    [fen, chess960, initialFen, fogOfWar, giveaway, atomic]
   );
   const turn = engine.getTurn();
-  const chessStatus = engine.getStatus();
+  // Atomic: the engine answers check/mate/stalemate/50-move/insufficient material from atomic.ts. A king
+  // blown up is the one end that is not a status (atomicWinner); threefold repetition is derived from
+  // the history's FENs (the engine is rebuilt from FEN every render, so it can never see repetitions),
+  // which also keeps it right after Undo.
+  const atomicWinner = useMemo(() => (atomic ? getAtomicWinner(engine) : null), [atomic, engine]);
+  const atomicRepetition = useMemo(
+    () => atomic && isAtomicThreefoldRepetition([initialFen, ...history.map((h) => h.fenAfter)]),
+    [atomic, initialFen, history]
+  );
+  const chessStatus = atomicRepetition ? 'draw' : engine.getStatus();
   // Chess.js has no idea this rule exists — checked independently, only when actually playing
   // this variant (see kingOfTheHill.ts).
   const kingOfTheHillWinner = kingOfTheHill ? getKingOfTheHillWinner(engine) : null;
@@ -174,7 +187,7 @@ export default function LocalGameScreen({
   // Whether the side to move must capture this turn — surfaced in the status line so a player who
   // finds only one piece movable understands why.
   const mustCapture = useMemo(() => giveaway && !giveawayWinner && getGiveawayMoves(engine).some((m) => m.captured), [giveaway, giveawayWinner, engine]);
-  const engineGameOver = giveaway ? giveawayWinner !== null : fogOfWar ? false : engine.isGameOver();
+  const engineGameOver = giveaway ? giveawayWinner !== null : fogOfWar ? false : engine.isGameOver() || atomicRepetition;
   const clock = useChessClock(timeControl, turn, engineGameOver);
   const gameOver =
     engineGameOver ||
@@ -255,6 +268,8 @@ export default function LocalGameScreen({
         fogOfWarWinner,
         giveawayWinner,
         giveaway,
+        atomicWinner,
+        atomic,
         history,
         initialFen,
         chess960,
@@ -273,6 +288,8 @@ export default function LocalGameScreen({
       fogOfWarWinner,
       giveawayWinner,
       giveaway,
+      atomicWinner,
+      atomic,
       history,
       initialFen,
       chess960,
@@ -282,7 +299,7 @@ export default function LocalGameScreen({
   useSaveGameOnEnd(authToken, resetCount, savePayload);
 
   const { whiteCaptured, blackCaptured } = useMemo(
-    () => computeCapturedMaterial(history.map((h, i) => ({ captured: h.move.captured, moverColor: i % 2 === 0 ? 'w' : 'b' }))),
+    () => computeCapturedMaterial(history.map((h, i) => ({ captured: h.move.captured, exploded: h.move.exploded, moverColor: i % 2 === 0 ? 'w' : 'b' }))),
     [history]
   );
   const materialDiff = materialValue(whiteCaptured) - materialValue(blackCaptured);
@@ -306,6 +323,7 @@ export default function LocalGameScreen({
   if (threeCheckWinner) statusText = `${threeCheckWinner === 'w' ? 'White' : 'Black'} wins by Three-Check!`;
   if (fogOfWarWinner) statusText = `${fogOfWarWinner === 'w' ? 'White' : 'Black'} wins by capturing the king!`;
   if (giveawayWinner) statusText = `${giveawayWinner === 'w' ? 'White' : 'Black'} wins — no legal moves left!`;
+  if (atomicWinner) statusText = `${atomicWinner === 'w' ? 'White' : 'Black'} wins by exploding the king!`;
 
   // No personal point of view here (two players share one device) — matches the plain
   // White/Black wording `statusText` above already uses.
@@ -318,7 +336,8 @@ export default function LocalGameScreen({
     kingOfTheHillWinner,
     threeCheckWinner,
     fogOfWarWinner,
-    giveawayWinner
+    giveawayWinner,
+    atomicWinner
   );
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : outcome.result === '1-0' ? 'White Won' : 'Black Won';
   const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';
@@ -399,7 +418,7 @@ export default function LocalGameScreen({
   // computed from information Fog of War says they shouldn't have yet would be a straightforward
   // way around the entire variant, so this is disabled outright rather than merely hidden.
   const handleHintPress = () => {
-    if (gameOver || hintLoading || isReviewing || fogOfWar || giveaway) return;
+    if (gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic) return;
     setHintText(null);
     setHintLoading(true);
     setHintActive(true);
@@ -459,7 +478,9 @@ export default function LocalGameScreen({
                     ? 'Fog of War'
                     : giveaway
                       ? 'Giveaway'
-                      : undefined
+                      : atomic
+                        ? 'Atomic'
+                        : undefined
         }
         onBack={onExit}
         backLabel="‹ Menu"
@@ -479,7 +500,7 @@ export default function LocalGameScreen({
                   { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
                   { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver || awaitingPass },
                   { key: 'draw', label: 'Draw', onPress: handleDrawOffer, disabled: gameOver || awaitingPass },
-                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing || fogOfWar || giveaway },
+                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic },
                   {
                     key: 'undo',
                     label: 'Undo',
@@ -533,7 +554,7 @@ export default function LocalGameScreen({
               <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
             </View>
 
-            {!chess960 && !setupChess && !fogOfWar && !giveaway && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+            {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
             <ChessBoard
               key={resetCount}
@@ -548,6 +569,7 @@ export default function LocalGameScreen({
               kingOfTheHill={kingOfTheHill}
               fogOfWar={fogOfWar}
               giveaway={giveaway}
+              atomic={atomic}
               visibleSquares={visibleSquares}
             />
 
@@ -574,6 +596,7 @@ export default function LocalGameScreen({
         chess960={chess960}
         fogOfWar={fogOfWar}
         giveaway={giveaway}
+        atomic={atomic}
         history={history}
         players={[
           { label: 'White', color: 'w' },

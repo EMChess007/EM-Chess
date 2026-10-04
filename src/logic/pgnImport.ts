@@ -110,6 +110,12 @@ export function parsePgn(pgn: string): PgnParseResult {
   // plays through the movetext, so both are populated correctly even when loadPgn goes on to
   // throw on a later move it can't resolve.
   const headers = probe.getHeaders();
+  // Atomic and Antichess games (this app's own saved ones are tagged the same way, see buildPgn) follow
+  // different rules, so loading them with ordinary chess rules would either fail or — worse — quietly
+  // succeed and be analysed wrongly. Refused with a clear message instead.
+  if (headers.Variant && /^\s*(atomic|antichess)\s*$/i.test(headers.Variant)) {
+    return { ok: false, error: `${headers.Variant.trim()} games can't be analysed — only standard chess and Chess960.` };
+  }
   const initialFen = headers.FEN ?? START_FEN;
   const chess960 = detectChess960(headers);
 

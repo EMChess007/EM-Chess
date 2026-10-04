@@ -14,6 +14,7 @@ interface BotSelectScreenProps {
   setupChess?: boolean;
   fogOfWar?: boolean;
   giveaway?: boolean;
+  atomic?: boolean;
 }
 
 /** A placeholder ELO shown for custom-engine cards — irrelevant to actual play, since
@@ -39,6 +40,7 @@ export default function BotSelectScreen({
   setupChess,
   fogOfWar,
   giveaway,
+  atomic,
 }: BotSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
@@ -55,7 +57,9 @@ export default function BotSelectScreen({
             ? 'Fog of War'
             : giveaway
               ? 'Giveaway'
-              : undefined;
+              : atomic
+                ? 'Atomic'
+                : undefined;
 
   return (
     <View style={styles.container}>
@@ -74,7 +78,9 @@ export default function BotSelectScreen({
                     {/* Which engine plays this bot is decided automatically from its ELO — see
                         getEngineIdForElo in src/logic/engines.ts — shown here only for
                         transparency, not as something to pick. */}
-                    <Text style={styles.cardEngine}>{getEngineName(getEngineIdForElo(bot.elo))}</Text>
+                    {/* Atomic bots never use a UCI engine (see chooseAtomicBotMove), so naming one here
+                        would be wrong. */}
+                    <Text style={styles.cardEngine}>{atomic ? 'Atomic search bot' : getEngineName(getEngineIdForElo(bot.elo))}</Text>
                   </View>
                 </Pressable>
               ))}

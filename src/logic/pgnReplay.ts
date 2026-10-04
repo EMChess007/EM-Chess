@@ -114,7 +114,8 @@ export function replayPgn(pgn: string, chess960: boolean): { initialFen: string;
   // Giveaway (Antichess) games play by different rules (mandatory captures, capturable kings, king
   // promotion), so replaying or analysing one with ordinary chess rules would be wrong even when it
   // happens not to fail outright — see buildPgn's variant tag.
-  if (/\[Variant\s+"Antichess"\]/i.test(pgn)) return null;
+  // Atomic (explosions, adjacent kings never in check) is refused for the same reason.
+  if (/\[Variant\s+"(Antichess|Atomic)"\]/i.test(pgn)) return null;
   const initialFen = extractInitialFen(pgn);
   const history = replaySanTokens(initialFen, chess960, extractSanTokens(pgn));
   return history ? { initialFen, history } : null;

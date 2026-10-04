@@ -18,6 +18,7 @@ interface PlayModeSelectScreenProps {
   onBotSetupChess: () => void;
   onBotFogOfWar: () => void;
   onBotGiveaway: () => void;
+  onBotAtomic: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
   onLocalKingOfTheHill: () => void;
@@ -25,6 +26,7 @@ interface PlayModeSelectScreenProps {
   onLocalSetupChess: () => void;
   onLocalFogOfWar: () => void;
   onLocalGiveaway: () => void;
+  onLocalAtomic: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
@@ -48,6 +50,7 @@ export default function PlayModeSelectScreen({
   onBotSetupChess,
   onBotFogOfWar,
   onBotGiveaway,
+  onBotAtomic,
   onLocalClassic,
   onLocalChess960,
   onLocalKingOfTheHill,
@@ -55,6 +58,7 @@ export default function PlayModeSelectScreen({
   onLocalSetupChess,
   onLocalFogOfWar,
   onLocalGiveaway,
+  onLocalAtomic,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
@@ -137,6 +141,9 @@ export default function PlayModeSelectScreen({
             <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotGiveaway}>
               <ModeButtonLabel label="Giveaway" style={styles.subButtonText} />
             </Pressable>
+            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotAtomic}>
+              <ModeButtonLabel label="Atomic" style={styles.subButtonText} />
+            </Pressable>
           </View>
         </View>
 
@@ -168,6 +175,9 @@ export default function PlayModeSelectScreen({
           <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalGiveaway}>
               <ModeButtonLabel label="Giveaway" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalAtomic}>
+              <ModeButtonLabel label="Atomic" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>

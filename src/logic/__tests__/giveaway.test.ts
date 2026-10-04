@@ -268,14 +268,15 @@ describe('wiring (no RN renderer available)', () => {
   for (const screen of ['screens/LocalGameScreen.tsx', 'screens/BotGameScreen.tsx']) {
     it(`${screen} feeds the Giveaway winner into getGameOutcome and the saved-game payload`, () => {
       const src = read(screen);
-      expect(src).toMatch(/getGameOutcome\([\s\S]*?giveawayWinner\s*\n?\s*\)/);
+      // atomicWinner follows giveawayWinner as getGameOutcome's last argument (see the Atomic variant).
+      expect(src).toMatch(/getGameOutcome\([\s\S]*?giveawayWinner,\s*atomicWinner\s*\)/);
       expect(src).toContain('giveawayWinner,\n        giveaway,');
     });
   }
 
   it('Giveaway is Local + Bots only: every Online setup screen excludes it from its variant picker', () => {
-    expect(read('screens/ChallengeScreen.tsx')).toContain("excludeVariants={['giveaway']}");
-    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).toContain("excludeVariants={['giveaway']}");
+    expect(read('screens/ChallengeScreen.tsx')).toContain("excludeVariants={['giveaway', 'atomic']}");
+    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).toContain("excludeVariants={['giveaway', 'atomic']}");
     expect(read('screens/TournamentScreen.tsx')).toContain("'giveaway'");
   });
 

@@ -20,6 +20,12 @@ was called "done" — don't repeat that on anything else.
   skipValidation precedent).
 - New or updated tests in the matching __tests__ file; add cases to gameModes.test.ts if this
   changes getGameOutcome.
+- For any new self-contained rules engine (a variant that reimplements move legality, a new
+  draw/insufficient-material rule, …): do a mutation check before calling it done — deliberately
+  break one real invariant (e.g. Atomic's pawn immunity to explosions) and confirm the suite
+  actually FAILS, not just that it passes when the code is right. Surviving mutants are test gaps
+  (the Atomic insufficient-material rule had two on the first pass); note any that are genuinely
+  equivalent (cannot change behaviour) instead of silently ignoring them.
 
 ## 3. Performance
 - Anything on a hot path (every render, every move, every keystroke, a long list) tested against

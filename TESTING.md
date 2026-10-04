@@ -131,6 +131,7 @@ that specific log can still get it via a cable, same as before this round.
 | Puzzle mode | Good (pure logic) | `puzzles.test.ts` above. Puzzle *solving* UI (move validation against the puzzle's solution sequence) is screen-level, not covered. |
 | Analysis mode | Partial | `analysis.test.ts` covers the evaluation/formatting math. `classifyMove`'s move-quality classification (brilliant/blunder/etc.) itself, and `gameSummary.ts`/`moveExplanations.ts`'s narrative generation, remain untested — a known gap; they're more integration-shaped (depend on real engine analysis lines) and would need either a mocked engine or a slower, closer-to-E2E test than this round's time budget covered. |
 | Engine-vs-Engine, Spectator | **None** | Thin, mostly network/orchestration-driven screens with little pure logic of their own to unit-test; would need the same RN-renderer investment as touch/gesture above. |
+| Draw by threefold repetition (every mode except Atomic) | **Not working** | Engines are rebuilt from FEN every render, so chess.js never sees repetitions — tracked in `TODO.md`, not fixed here. |
 | Premoves, Undo | Partial | Exercised incidentally by the backend's E2E tests (premove resolution is tested as part of Online Fog of War flows) and by this session's own manual verification earlier, but no dedicated regression test for either as a standalone feature. |
 
 As in the backend's audit: this is not equal-depth coverage everywhere, by design — the chess
@@ -174,3 +175,66 @@ Engine vs Engine do NOT offer Giveaway — the Online setup screens exclude it f
   disambiguator. Cosmetic only — the moves themselves come from the Giveaway generator.
 - No React Native renderer in this project: board/screen wiring is guarded by source-level tests in
   `giveaway.test.ts`, and was verified by hand in the web build (Local and Bot), not on a device.
+
+## 7. Atomic chess — scope, decisions and known limits
+
+Added following CHECKLIST.md. Unlike Giveaway (a filter over chess.js's pseudo-legal moves), Atomic changes
+legality itself, so its rules are a **self-contained implementation in `src/logic/atomic.ts`** (no chess.js
+move generation): explosions, own-king-explosion = illegal, enemy-king-explosion = win, adjacent kings are
+never in check, its own castling, SAN/'+'/'#', status, repetition. `ChessEngine` gets one opt-in option,
+`atomic: true`, which routes `getLegalMoves`/`move`/`getStatus`/`isGameOver`/`getLegalMoveCount`/`getFen` to
+`atomic.ts` (chess.js is kept only as the board model, reloaded from the new FEN after every move — the same
+FEN-surgery approach as `performChess960Castle`). The option forces `skipValidation` (a finished game's FEN
+has no king for the loser). With it off, no other mode's behaviour changes.
+
+**Scope (decided with the maintainer): Local + Bots only**, mutually exclusive with every other variant. Online,
+Challenges and Tournaments exclude it from their `VariantSelector`; Engine vs Engine has no Atomic entry; no
+server twin exists, so CHECKLIST §4 parity doesn't apply until Online is added (it would need a server copy of
+`atomic.ts` plus side-by-side tests).
+
+**Decisions worth knowing**
+- A king-exploded win has outcome reason `'atomic'`; ordinary mate/stalemate/draws inside Atomic keep
+  `'checkmate'`/`'stalemate'`/`'draw'`. Draws: 50-move rule, stalemate, Atomic insufficient material and
+  history-based threefold repetition (Atomic only — the app-wide repetition bug is tracked in `TODO.md`).
+- Capture-promotions skip the picker and auto-pick a queen (the new piece explodes with the capturer, so every
+  choice gives the same board); quiet promotions still ask.
+- Every removed piece is a loss for its owner in the captured-pieces tray (`Move.exploded`); each row keeps the
+  existing convention (it lists the opponent's losses).
+- Explosion visuals: a flash plus fading ghosts of the removed pieces (`ChessBoard`), no new assets.
+- Bots do NOT use Stockfish (`chooseAtomicBotMove` in `bots.ts`): shallow alpha-beta (1/2/3 plies by ELO, node
+  budget) over Atomic's own legal moves with a material evaluation; blowing up the enemy king scores as a win and
+  losing your own as a loss. ELO is also the chance of playing the searched move vs a random legal one
+  (~20% at 400 up to ~90% at 3000). Fairy-Stockfish (WASM) was explicitly ruled out for this round.
+- No hints, premoves, accuracy review or rating changes; saved PGNs carry `[Variant "Atomic"]` and both the
+  Game History replay and PGN import refuse Atomic/Antichess PGNs instead of mis-analysing them.
+
+**How it is tested**
+- `atomic.test.ts` — every rule above on hand-written positions through the real `ChessEngine` API, FEN
+  round-trips, a random-play consistency fuzz, a performance budget, and source-level wiring guards (including
+  that `chessops` is never imported outside tests).
+- `atomicOracle.test.ts` — differential tests against **chessops**'s `Atomic` class (a GPL-3.0 dev/test-only
+  dependency, `devDependencies` only, never imported by shipped code): perft from the start position
+  (depths 1–4, computed live from chessops — 20, 400, 8902, 197326 at the time of writing), five capture-heavy
+  positions, ~6,500 plies of capture-biased random play comparing legal moves, resulting position, check/mate/
+  stalemate/king-explosion state and SAN at every ply, and random small endgames for insufficient material (see Known limits).
+- Mutation-checked: deliberately breaking pawn immunity in explosions makes 6 of the 9 oracle tests fail, and each
+  insufficient-material mutation tried (dropping the bishop-colour or blocking-pawn conditions, loosening the piece
+  caps) fails at least one test — the first attempt left two mutants alive, which is what led to the hand-written
+  bishop/pawnitised cases. One mutant survives because it is equivalent (the opposite-coloured-bishops guard in the
+  3-piece branch can never matter).
+- `atomicBot.test.ts` — the bot always finds an immediate king explosion, never leaves its own king blastable when
+  a safe move exists, ELO scales the chance of the best move, and bot-vs-bot games stay legal and terminate.
+- `gameModes.test.ts` — `getGameOutcome`'s Atomic slot/priority and the exploded-piece tray accounting.
+
+**Known limits**
+- Insufficient material follows **lichess's scalachess** rule (`isAtomicInsufficientMaterial`), chosen over
+  chessops's per-side rule after comparing them on ~71,000 positions. They disagree in three documented ways:
+  closed pawn positions (scalachess: draw), a bare king vs K + 2+ same-coloured bishops (scalachess: draw), and
+  K + 2 same-coloured bishops vs K + an opposite-coloured bishop (chessops: draw, scalachess plays on because a
+  help-mate exists). scalachess is right in all three. `atomicOracle.test.ts` asserts exact agreement outside those
+  categories and that each category really occurs. The rule was transcribed by hand from the Scala source (it was
+  not executed), so the closed-position and bishop cases also have hand-written tests in `atomic.test.ts`.
+- The tray shows kings never (a king in the blast ends the game and carries no material value).
+- No React Native renderer in this project: the explosion animation and screen wiring are guarded by source-level
+  tests and were verified by hand in the web build (Local and Bot), not on a device. The animation needs a running
+  `requestAnimationFrame` loop, so it only plays while the app window is visible.
