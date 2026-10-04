@@ -70,6 +70,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // Giveaway (Antichess) — the server owns the rules (mandatory capture, stuck-wins); this screen only needs
   // its engines built the Giveaway way so they understand kingless positions, king promotion and no castling.
   const giveaway = match.isGiveaway === true;
+  // Atomic chess — likewise server-owned; the engines here are built with the atomic option so they understand
+  // explosions (and the board can animate them), but the server decides what is legal and who has won.
+  const atomic = match.isAtomic === true;
 
   const [fen, setFen] = useState(match.fen);
   const [turn, setTurn] = useState<PieceColor>('w');
@@ -155,10 +158,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // state sync after reconnecting) rather than being threaded through each individual handler
   // below. See LocalGameScreen's identical effect for why a miss here doesn't clear the name.
   useEffect(() => {
-    if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway) return;
+    if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway || atomic) return;
     const openingMatch = lookupOpening(fen);
     if (openingMatch) setOpeningName(openingMatch.name);
-  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway]);
+  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway, atomic]);
 
   // Wire up every server -> client event for this game once, for the lifetime of the screen.
   useEffect(() => {
@@ -199,6 +202,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         initialFen: match.fen,
         skipValidation: match.isFogOfWar || giveaway,
         giveaway,
+        atomic,
       });
       const replayed =
         match.isFogOfWar || giveaway
@@ -243,10 +247,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       // doc comment) — a common simplifying assumption for a casual, non-competitive rating.
       const result = payload.winner === null ? 0.5 : payload.winner === myColor ? 1 : 0;
       const ratingCategory = toRatingCategory(categoryForInitialSeconds(match.timeControl.initialSeconds) ?? '');
-      // Giveaway is a different game — it must not move the player's chess rating.
-      if (ratingCategory && !giveaway) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
+      // Giveaway and Atomic are different games — they must not move the player's chess rating.
+      if (ratingCategory && !giveaway && !atomic) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
 
-      if (result === 1 && wasMaterialDownRef.current && !giveaway) unlockAchievement('comeback_win');
+      if (result === 1 && wasMaterialDownRef.current && !giveaway && !atomic) unlockAchievement('comeback_win');
     };
 
     const handleDrawOffered = (_payload: DrawOfferedPayload) => {
@@ -302,6 +306,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
               initialFen: match.fen,
               skipValidation: match.isFogOfWar || giveaway,
               giveaway,
+              atomic,
             });
             const rebuilt: MoveRecord[] = [];
             // Fog of War only — a move this player never witnessed (see RejoinStatePayload's own
@@ -571,7 +576,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   };
 
   const { whiteCaptured, blackCaptured } = useMemo(
-    () => computeCapturedMaterial(moveList.map((m) => ({ captured: m.move.captured, moverColor: m.mover }))),
+    () => computeCapturedMaterial(moveList.map((m) => ({ captured: m.move.captured, exploded: m.move.exploded, moverColor: m.mover }))),
     [moveList]
   );
   const materialDiff = materialValue(whiteCaptured) - materialValue(blackCaptured);
@@ -622,7 +627,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                     ? 'Fog of War'
                     : giveaway
                       ? 'Giveaway'
-                      : undefined
+                      : atomic
+                        ? 'Atomic'
+                        : undefined
         }
         onBack={handleExit}
         backLabel="‹ Menu"
@@ -714,7 +721,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
         </View>
 
-        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && !giveaway && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && !giveaway && !atomic && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={boardKey}
@@ -728,11 +735,12 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           kingOfTheHill={match.isKingOfTheHill}
           fogOfWar={match.isFogOfWar}
           giveaway={giveaway}
+          atomic={atomic}
           visibleSquares={visibleSquares}
-          // No premoves in Giveaway: mandatory capture changes which moves are legal after the
-          // opponent's reply, so a queued move is almost never still valid when its turn comes.
-          premoveColor={giveaway ? undefined : myColor}
-          onPremove={giveaway ? undefined : handleQueuePremove}
+          // No premoves in Giveaway or Atomic: mandatory capture / explosions change which moves are legal
+          // after the opponent's reply, so a queued move is almost never still valid when its turn comes.
+          premoveColor={giveaway || atomic ? undefined : myColor}
+          onPremove={giveaway || atomic ? undefined : handleQueuePremove}
         />
 
         <View style={styles.playerRow}>
@@ -779,6 +787,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         chess960={match.isChess960}
         fogOfWar={match.isFogOfWar}
         giveaway={giveaway}
+        atomic={atomic}
         history={moveList}
         players={[{ label: 'You', color: myColor }]}
         onGameReview={() => onAnalyze({ initialFen: match.fen, chess960: match.isChess960, fogOfWar: match.isFogOfWar, history: moveList })}

@@ -29,7 +29,7 @@ export default function OnlineTimeControlSelectScreen({ onSelect, onBack }: Onli
       <ScreenHeader title="Play Online" onBack={onBack} />
 
       <View style={styles.variantRow}>
-        <VariantSelector value={variant} onChange={setVariant} excludeVariants={['atomic']} />
+        <VariantSelector value={variant} onChange={setVariant} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>

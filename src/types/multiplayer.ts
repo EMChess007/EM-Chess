@@ -19,7 +19,8 @@ export type GameOverReason =
   | 'kingOfTheHill'
   | 'threeCheck'
   | 'fogOfWar'
-  | 'giveaway';
+  | 'giveaway'
+  | 'atomic';
 
 export interface JoinQueuePayload {
   timeControl: OnlineTimeControl;
@@ -29,6 +30,7 @@ export interface JoinQueuePayload {
   isSetupChess?: boolean;
   isFogOfWar?: boolean;
   isGiveaway?: boolean;
+  isAtomic?: boolean;
 }
 
 export interface MakeMovePayload {
@@ -74,6 +76,7 @@ export interface MatchFoundPayload {
   isSetupChess: boolean;
   isFogOfWar: boolean;
   isGiveaway: boolean;
+  isAtomic: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;
@@ -126,6 +129,7 @@ export interface RejoinStatePayload {
   isSetupChess: boolean;
   isFogOfWar: boolean;
   isGiveaway: boolean;
+  isAtomic: boolean;
   whiteMs: number;
   blackMs: number;
   /** Each entry's fields are all omitted together for a Fog of War move this viewer never
@@ -160,6 +164,7 @@ export interface CreateChallengePayload {
   isSetupChess?: boolean;
   isFogOfWar?: boolean;
   isGiveaway?: boolean;
+  isAtomic?: boolean;
   timeControlLabel?: string;
 }
 

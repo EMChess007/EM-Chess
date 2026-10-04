@@ -37,6 +37,7 @@ describe('variantWireFlags (what join_queue / create_challenge send)', () => {
       isSetupChess: false,
       isFogOfWar: false,
       isGiveaway: true,
+      isAtomic: false,
     });
   });
 
@@ -97,9 +98,9 @@ describe('Online wiring (no React Native renderer available)', () => {
   });
 
   it('Online Giveaway has no premoves, no opening names, no rating change and no Game Review', () => {
-    expect(online).toContain('premoveColor={giveaway ? undefined : myColor}');
-    expect(online).toContain('onPremove={giveaway ? undefined : handleQueuePremove}');
-    expect(online).toContain('!giveaway && openingName');
+    expect(online).toContain('premoveColor={giveaway || atomic ? undefined : myColor}');
+    expect(online).toContain('onPremove={giveaway || atomic ? undefined : handleQueuePremove}');
+    expect(online).toContain('!giveaway && !atomic && openingName');
     expect(online).toContain('ratingCategory && !giveaway');
     expect(online).toContain('wasMaterialDownRef.current && !giveaway');
     expect(online).toMatch(/PostGameSummaryModal[\s\S]*?giveaway=\{giveaway\}/);

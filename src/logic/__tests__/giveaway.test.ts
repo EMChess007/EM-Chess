@@ -311,8 +311,8 @@ describe('wiring (no RN renderer available)', () => {
 
   it('Giveaway is online for 1v1 (quick match + challenges) but still excluded from tournaments', () => {
     // See giveawayOnline.test.ts for the online wiring; the Online pickers no longer exclude it.
-    expect(read('screens/ChallengeScreen.tsx')).toContain("excludeVariants={['atomic']}");
-    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).toContain("excludeVariants={['atomic']}");
+    expect(read('screens/ChallengeScreen.tsx')).not.toContain('excludeVariants');
+    expect(read('screens/OnlineTimeControlSelectScreen.tsx')).not.toContain('excludeVariants');
     expect(read('screens/TournamentScreen.tsx')).toContain("'giveaway'");
   });
 

@@ -118,7 +118,9 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
                     ? ' · Fog of War'
                     : state.isGiveaway
                       ? ' · Giveaway'
-                      : ''}
+                      : state.isAtomic
+                        ? ' · Atomic'
+                        : ''}
         </Text>
         <Text style={styles.status}>{statusText}</Text>
 
@@ -137,6 +139,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
           kingOfTheHill={state.isKingOfTheHill}
           fogOfWar={state.isFogOfWar}
           giveaway={state.isGiveaway}
+          atomic={state.isAtomic}
         />
 
         <View style={styles.playerRow}>
