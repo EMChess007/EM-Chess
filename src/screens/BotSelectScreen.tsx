@@ -16,6 +16,7 @@ interface BotSelectScreenProps {
   giveaway?: boolean;
   atomic?: boolean;
   duckChess?: boolean;
+  spellChess?: boolean;
 }
 
 /** A placeholder ELO shown for custom-engine cards — irrelevant to actual play, since
@@ -43,6 +44,7 @@ export default function BotSelectScreen({
   giveaway,
   atomic,
   duckChess,
+  spellChess,
 }: BotSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
@@ -63,7 +65,9 @@ export default function BotSelectScreen({
                 ? 'Atomic'
                 : duckChess
                   ? 'Duck Chess'
-                  : undefined;
+                  : spellChess
+                    ? 'Spell Chess'
+                    : undefined;
 
   return (
     <View style={styles.container}>

@@ -29,6 +29,7 @@ import {
 import { getAtomicWinner, isAtomicThreefoldRepetition } from '../logic/atomic';
 import { duckMoveNotation, getDuckChessWinner, hasNoDuckMoves } from '../logic/duckChess';
 import { getGiveawayMoves, getGiveawayWinner } from '../logic/giveaway';
+import { castFreeze, castJump, afterSpellChessMove, getSpellChessWinner, initialSpellChessState, spellMoveNotation } from '../logic/spellChess';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
@@ -56,6 +57,8 @@ interface LocalGameScreenProps {
   atomic?: boolean;
   /** Duck Chess — see duckChess.ts. Mutually exclusive with every other variant. */
   duckChess?: boolean;
+  /** Spell Chess — see spellChess.ts. Mutually exclusive with every other variant. */
+  spellChess?: boolean;
   /** The merged starting position from the Setup Chess builder flow — used instead of
    * self-generating one when present (setupChess games always pass this). */
   initialFen?: string;
@@ -74,6 +77,7 @@ export default function LocalGameScreen({
   giveaway = false,
   atomic = false,
   duckChess = false,
+  spellChess = false,
   initialFen: initialFenProp,
   authToken,
   onExit,
@@ -160,9 +164,20 @@ export default function LocalGameScreen({
   // last turn's duck — which also makes Undo restore it for free (a turn is one history entry: move + duck).
   const duckSquare = useMemo(() => (duckChess && history.length > 0 ? history[history.length - 1].duckSquare ?? null : null), [duckChess, history]);
   const [placingDuck, setPlacingDuck] = useState(false);
+  // Spell Chess (see spellChess.ts): the charges/cooldowns/pending freeze+jump carried per ply, same
+  // shape as duckSquare above — the previous entry's spellState, or the fresh initial state before
+  // White's first move. Only skipValidation is actually needed on THIS screen's own `engine` (used
+  // below only for getTurn/getStatus/isGameOver, none of which read the spellChess flag at all — the
+  // frozenSquares/jumpSquare options only matter for move GENERATION, which ChessBoard does on its own
+  // scratch engine); a Jump-captured king leaves a kingless fen the same way Duck Chess/Fog of
+  // War/Giveaway already do here.
+  const spellState = useMemo(
+    () => (spellChess ? history[history.length - 1]?.spellState ?? initialSpellChessState() : initialSpellChessState()),
+    [spellChess, history]
+  );
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess, giveaway, atomic, duckChess, duckSquare }),
-    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess || spellChess, giveaway, atomic, duckChess, duckSquare }),
+    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare, spellChess]
   );
   const turn = engine.getTurn();
   // Atomic: the engine answers check/mate/stalemate/50-move/insufficient material from atomic.ts. A king
@@ -181,7 +196,26 @@ export default function LocalGameScreen({
     [duckChess, history]
   );
   const duckBlockade = useMemo(() => duckChess && duckWinner === null && history.length > 0 && hasNoDuckMoves(engine), [duckChess, duckWinner, history.length, engine]);
-  const chessStatus = duckChess ? (duckBlockade ? 'draw' : 'playing') : atomicRepetition ? 'draw' : engine.getStatus();
+  // Spell Chess has normal checkmate/stalemate/draw PLUS one extra win path: capturing the enemy king
+  // outright via a Jump-augmented move (see spellChess.ts). Read off the last turn, so it's right after
+  // Undo too, mirroring duckWinner above exactly.
+  const spellChessWinner = useMemo(
+    () => (spellChess && history.length > 0 ? getSpellChessWinner(history[history.length - 1].move, (history.length - 1) % 2 === 0 ? 'w' : 'b') : null),
+    [spellChess, history]
+  );
+  // Explicit short-circuit, not relying on chess.js's own behavior on the kingless fen a Jump-king-
+  // capture leaves behind — empirically, chess.js's isStalemate()/isDraw() both return true there (no
+  // legal moves for a side with no king, but also no checkmate/check), which would otherwise report
+  // this decisive win as a draw. 'playing' is a safe placeholder: nothing below reads chessStatus as a
+  // win condition for Spell Chess (spellChessWinner is checked directly instead, same as
+  // duckWinner/atomicWinner are) — it only needs to not be 'checkmate'/'stalemate'/'draw'/'check'.
+  const chessStatus = duckChess
+    ? (duckBlockade ? 'draw' : 'playing')
+    : spellChess && spellChessWinner
+      ? 'playing'
+      : atomicRepetition
+        ? 'draw'
+        : engine.getStatus();
   // Chess.js has no idea this rule exists — checked independently, only when actually playing
   // this variant (see kingOfTheHill.ts).
   const kingOfTheHillWinner = kingOfTheHill ? getKingOfTheHillWinner(engine) : null;
@@ -208,7 +242,9 @@ export default function LocalGameScreen({
       ? giveawayWinner !== null
       : fogOfWar
         ? false
-        : engine.isGameOver() || atomicRepetition;
+        : spellChess
+          ? spellChessWinner !== null || engine.isGameOver()
+          : engine.isGameOver() || atomicRepetition;
   const clock = useChessClock(timeControl, turn, engineGameOver);
   const gameOver =
     engineGameOver ||
@@ -293,6 +329,8 @@ export default function LocalGameScreen({
         atomic,
         duckChessWinner: duckWinner,
         duckChess,
+        spellChessWinner,
+        spellChess,
         history,
         initialFen,
         chess960,
@@ -315,6 +353,8 @@ export default function LocalGameScreen({
       atomic,
       duckWinner,
       duckChess,
+      spellChessWinner,
+      spellChess,
       history,
       initialFen,
       chess960,
@@ -352,6 +392,7 @@ export default function LocalGameScreen({
   if (placingDuck && !duckWinner) statusText = `${turnLabel} — place the duck 🦆`;
   if (duckBlockade) statusText = 'Draw — no legal moves (blockaded by the duck)';
   if (duckWinner) statusText = `${duckWinner === 'w' ? 'White' : 'Black'} wins by capturing the king!`;
+  if (spellChessWinner) statusText = `${spellChessWinner === 'w' ? 'White' : 'Black'} wins by capturing the king!`;
 
   // No personal point of view here (two players share one device) — matches the plain
   // White/Black wording `statusText` above already uses.
@@ -366,7 +407,8 @@ export default function LocalGameScreen({
     fogOfWarWinner,
     giveawayWinner,
     atomicWinner,
-    duckWinner
+    duckWinner,
+    spellChessWinner
   );
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : outcome.result === '1-0' ? 'White Won' : 'Black Won';
   const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';
@@ -380,8 +422,31 @@ export default function LocalGameScreen({
       clock.applyIncrement(turn);
       playMoveSound(move);
       triggerMoveHaptics(move);
+      // Spell Chess: a cast (if any) is applied first — spending the charge/starting the cooldown and
+      // arming pendingFreeze/pendingJump — THEN afterSpellChessMove advances cooldowns/expires whatever
+      // was still pending from an earlier turn, exactly once per ply either way (even a turn with no
+      // cast still ticks cooldowns down).
+      const spellStateAfter = spellChess
+        ? afterSpellChessMove(
+            move.spell
+              ? move.spell.type === 'freeze'
+                ? castFreeze(spellState, turn, move.spell.center)
+                : castJump(spellState, turn, move.spell.square)
+              : spellState,
+            turn
+          )
+        : spellState;
       // Duck Chess: one history entry is one TURN (move + duck); a king capture ends the game with no duck move.
-      setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen, ...(duckChess ? { duckSquare: move.duck ?? duckSquare } : {}) }]);
+      setHistory((h) => [
+        ...h,
+        {
+          move,
+          fenBefore: fen,
+          fenAfter: newFen,
+          ...(duckChess ? { duckSquare: move.duck ?? duckSquare } : {}),
+          ...(spellChess ? { spellState: spellStateAfter } : {}),
+        },
+      ]);
       setLastMove(move);
       setFen(newFen);
       setHintText(null);
@@ -391,7 +456,7 @@ export default function LocalGameScreen({
         else setAwaitingPass(true);
       }
     },
-    [viewIndex, clock.applyIncrement, turn, fen, fogOfWar, duckChess, duckSquare]
+    [viewIndex, clock.applyIncrement, turn, fen, fogOfWar, duckChess, duckSquare, spellChess, spellState]
   );
 
   const handleReset = () => {
@@ -448,7 +513,7 @@ export default function LocalGameScreen({
   // computed from information Fog of War says they shouldn't have yet would be a straightforward
   // way around the entire variant, so this is disabled outright rather than merely hidden.
   const handleHintPress = () => {
-    if (gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess) return;
+    if (gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess) return;
     setHintText(null);
     setHintLoading(true);
     setHintActive(true);
@@ -477,9 +542,24 @@ export default function LocalGameScreen({
   // Fog of War move-list/footer text — redacted per the CURRENT device-holder's own visibility
   // (see fogRedactedHistory above); "?" stands in for a move they never actually witnessed.
   const fogMoveListMoves = fogRedactedHistory?.map((entry) => ({ san: entry.revealed ? entry.san : '?' })) ?? [];
-  const lastMoveSanDisplay = lastMoveRevealed ? (lastMove && duckChess ? duckMoveNotation(lastMove) : lastMove?.san) : '???';
+  const lastMoveSanDisplay = lastMoveRevealed
+    ? lastMove && duckChess
+      ? duckMoveNotation(lastMove)
+      : lastMove && spellChess
+        ? spellMoveNotation(lastMove, lastMove.spell ?? null)
+        : lastMove?.san
+    : '???';
   // Duck Chess: where the duck stood in the position being DISPLAYED (position 0 = the start, with no duck yet).
   const displayDuck = duckChess ? (isReviewing ? (viewIndex === 0 ? null : history[(viewIndex as number) - 1]?.duckSquare ?? null) : duckSquare) : null;
+  // Spell Chess: the state feeding ChessBoard's frozenSquares/jumpSquare for the position currently
+  // being DISPLAYED (position 0 = the start, before any cast), mirroring displayDuck exactly.
+  const displaySpellState = spellChess
+    ? isReviewing
+      ? viewIndex === 0
+        ? initialSpellChessState()
+        : history[(viewIndex as number) - 1]?.spellState ?? initialSpellChessState()
+      : spellState
+    : undefined;
 
   // Flipping the board also swaps which player's clock/captured-pieces row sits on top vs
   // bottom, so each row always stays next to "its own" side of the board.
@@ -514,13 +594,19 @@ export default function LocalGameScreen({
                         ? 'Atomic'
                         : duckChess
                           ? 'Duck Chess'
-                          : undefined
+                          : spellChess
+                            ? 'Spell Chess'
+                            : undefined
         }
         onBack={onExit}
         backLabel="‹ Menu"
       />
       <MoveListStrip
-        moves={fogOfWar ? fogMoveListMoves : history.map((h) => ({ san: duckChess ? duckMoveNotation(h.move) : h.move.san }))}
+        moves={
+          fogOfWar
+            ? fogMoveListMoves
+            : history.map((h) => ({ san: duckChess ? duckMoveNotation(h.move) : spellChess ? spellMoveNotation(h.move, h.move.spell ?? null) : h.move.san }))
+        }
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
         onSelectMove={handleSelectMove}
@@ -534,7 +620,7 @@ export default function LocalGameScreen({
                   { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
                   { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver || awaitingPass },
                   { key: 'draw', label: 'Draw', onPress: handleDrawOffer, disabled: gameOver || awaitingPass },
-                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess },
+                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess },
                   {
                     key: 'undo',
                     label: 'Undo',
@@ -607,6 +693,8 @@ export default function LocalGameScreen({
               duckChess={duckChess}
               duckSquare={displayDuck}
               onDuckPlacementChange={setPlacingDuck}
+              spellChess={spellChess}
+              spellState={displaySpellState}
               visibleSquares={visibleSquares}
             />
 
@@ -635,6 +723,7 @@ export default function LocalGameScreen({
         giveaway={giveaway}
         atomic={atomic}
         duckChess={duckChess}
+        spellChess={spellChess}
         history={history}
         players={[
           { label: 'White', color: 'w' },
