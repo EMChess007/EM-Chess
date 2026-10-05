@@ -44,6 +44,11 @@ interface SquareProps {
    * spellChess.activeJumpSquare) — the square a slider may now treat as transparent, not the piece
    * it lets through. Same tier as isFrozen. */
   isJumpSquare?: boolean;
+  /** Spell Chess only — true for a square inside the Freeze zone the player has just picked but not yet played
+   * (ChessBoard's pendingCast): "about to freeze", as opposed to isFrozen's "frozen right now". An icy OUTLINE
+   * plus a faint tint rather than a fill, so it reads differently from isFrozen's solid overlay and from the
+   * legal-move dot, and still shows if an isFrozen square happens to sit under it. Cleared with the cast. */
+  isPendingFreeze?: boolean;
   size: number;
   /** The active board theme's colors and the active piece theme's images — see ChessBoard.tsx. */
   lightColor: string;
@@ -66,6 +71,7 @@ export default function Square({
   isDuck,
   isFrozen,
   isJumpSquare,
+  isPendingFreeze,
   size,
   lightColor,
   darkColor,
@@ -77,6 +83,7 @@ export default function Square({
         styles.square,
         { width: size, height: size, backgroundColor: isLight ? lightColor : darkColor },
         isKingOfTheHillTarget && styles.kingOfTheHillTarget,
+        isPendingFreeze && styles.pendingFreeze,
         isFrozen && styles.frozen,
         isJumpSquare && styles.jumpSquare,
         isLastMove && styles.lastMove,
@@ -111,6 +118,11 @@ const styles = StyleSheet.create({
   },
   frozen: {
     backgroundColor: 'rgba(100, 181, 246, 0.45)',
+  },
+  pendingFreeze: {
+    backgroundColor: 'rgba(129, 212, 250, 0.28)',
+    borderWidth: 2,
+    borderColor: '#0288d1',
   },
   jumpSquare: {
     backgroundColor: 'rgba(171, 71, 188, 0.4)',

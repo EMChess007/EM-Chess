@@ -864,6 +864,7 @@ function ChessBoard({
               isFogged={visibleSquares !== undefined && !visibleSquares.has(square.square)}
               isDuck={duckChess && square.square === duckSquare}
               isFrozen={spellChess && spellFrozenSquares.includes(square.square)}
+              isPendingFreeze={spellChess && pendingFreezeZone !== null && pendingFreezeZone.includes(square.square)}
               isJumpSquare={spellChess && square.square === spellJumpSquare}
               size={squareSize}
               lightColor={boardTheme.lightColor}

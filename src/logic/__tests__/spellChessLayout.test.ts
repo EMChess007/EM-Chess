@@ -59,3 +59,33 @@ describe('the room for the Freeze/Jump row comes from tighter spacing, not from 
     expect(read('screens/OnlineGameScreen.tsx')).toContain('!duckChess && !spellChess && openingName');
   });
 });
+
+describe('Freeze zone preview while picking the center (no React Native renderer available)', () => {
+  const read = (rel: string) => readFileSync(join(__dirname, '../../', rel), 'utf8').replace(/\r\n/g, '\n');
+
+  it('ChessBoard highlights the pending cast\'s zone — and only while a Freeze is pending, so cancelling or playing the move clears it', () => {
+    const board = read('components/ChessBoard.tsx');
+    // pendingFreezeZone is null unless pendingCast is a freeze; both finishRegularMove and the cancel chip reset pendingCast.
+    expect(board).toContain("const pendingFreezeZone = pendingCast?.type === 'freeze' ? pendingCast.squares : null;");
+    expect(board).toContain('isPendingFreeze={spellChess && pendingFreezeZone !== null && pendingFreezeZone.includes(square.square)}');
+    expect(board).toMatch(/finishRegularMove[\s\S]*?setPendingCast\(null\)/);
+    expect(board).toContain('onPress={() => setPendingCast(null)}');
+  });
+
+  it('"about to freeze" is drawn differently from "frozen now" (an outline + tint, composing with the solid fill)', () => {
+    const square = read('components/Square.tsx');
+    expect(square).toContain('isPendingFreeze && styles.pendingFreeze');
+    expect(square).toMatch(/pendingFreeze: \{[^}]*borderWidth: 2,[^}]*borderColor: '#0288d1'/);
+    expect(square.indexOf('isPendingFreeze && styles.pendingFreeze')).toBeLessThan(square.indexOf('isFrozen && styles.frozen')); // the frozen fill wins on overlap, the outline stays
+  });
+});
+
+describe('Bot rating guard documentation', () => {
+  it('records that Spell Chess was deliberately left OUT of the rating exclusion, so it is not "fixed" again as an oversight', () => {
+    const bot = readFileSync(join(__dirname, '../../screens/BotGameScreen.tsx'), 'utf8').replace(/\r\n/g, '\n');
+    expect(bot).toContain('Spell Chess was deliberately');
+    expect(bot).toContain('do not add !spellChess here');
+    // ...and the guard itself is unchanged.
+    expect(bot).toContain('if (ratingCategory && !giveaway && !atomic && !duckChess) recordRatedGame(');
+  });
+});

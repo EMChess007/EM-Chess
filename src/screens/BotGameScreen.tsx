@@ -716,7 +716,10 @@ export default function BotGameScreen({
     const result = outcome.result === '1/2-1/2' ? 0.5 : winnerColor === userColor ? 1 : 0;
     const ratingCategory = toRatingCategory(timeControl.category);
     // Giveaway and Atomic are different games with a heuristic (not ELO-calibrated) opponent — they must
-    // not move the player's chess rating or unlock rating-based achievements.
+    // not move the player's chess rating or unlock rating-based achievements. Spell Chess was deliberately
+    // considered and left OUT of this exclusion: its base move comes from the real Stockfish call like Classic's
+    // (only the spell CAST is heuristic, chooseSpellChessBotCast), so the opponent IS ELO-calibrated. Not an
+    // oversight — do not add !spellChess here.
     if (ratingCategory && !giveaway && !atomic && !duckChess) recordRatedGame(ratingCategory, bot.elo, result, authToken);
 
     if (result === 1 && !giveaway && !atomic && !duckChess) {
