@@ -6,6 +6,14 @@
 const RESERVED_CHROME_HEIGHT = 450;
 const MIN_SQUARE_SIZE = 24;
 
+/** Spell Chess renders its Freeze/Jump row inside ChessBoard (right under the board), so it is chrome the 450 px
+ * budget above does not include. The row has a FIXED height (ChessBoard's spellBar style uses these same constants,
+ * and never wraps) so the board can reserve exactly this much — a row that could wrap onto a second line would
+ * push the bottom player row out of GameScreenBody's non-scrolling, overflow-hidden content area. */
+export const SPELL_BAR_MARGIN_TOP = 8;
+export const SPELL_BAR_HEIGHT = 32;
+export const SPELL_BAR_RESERVED_HEIGHT = SPELL_BAR_MARGIN_TOP + SPELL_BAR_HEIGHT;
+
 /** The pixel size an 8x8 ChessBoard renders at for a given viewport width (and, optionally,
  * available height) — shared with anything that needs to visually align to the board, like the
  * analysis eval bar.
@@ -13,10 +21,13 @@ const MIN_SQUARE_SIZE = 24;
  * Passing `viewportHeight` keeps the board from sizing itself taller than what's actually visible
  * on a short window — otherwise a wide-but-short viewport (e.g. ~720px tall) still renders the
  * board at its full width-driven size, pushing the board's own bottom row down behind the
- * screen's bottom action bar. */
-export function getBoardSize(viewportWidth: number, viewportHeight?: number): number {
+ * screen's bottom action bar. `extraReservedHeight` is chrome beyond the typical budget that a particular board
+ * brings with it (the Spell Chess row — see SPELL_BAR_RESERVED_HEIGHT); it only matters when the height is the
+ * binding constraint. */
+export function getBoardSize(viewportWidth: number, viewportHeight?: number, extraReservedHeight = 0): number {
   const widthBudget = Math.min(viewportWidth - 32, 400);
-  const budget = viewportHeight === undefined ? widthBudget : Math.min(widthBudget, viewportHeight - RESERVED_CHROME_HEIGHT);
+  const budget =
+    viewportHeight === undefined ? widthBudget : Math.min(widthBudget, viewportHeight - RESERVED_CHROME_HEIGHT - extraReservedHeight);
   const squareSize = Math.max(Math.floor(budget / 8), MIN_SQUARE_SIZE);
   return squareSize * 8;
 }

@@ -17,7 +17,7 @@ import {
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { ExplodedPiece, Move, PieceColor, Piece as PieceModel, SpellCast } from '../types/chess';
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
-import { getBoardSize } from './boardSize';
+import { SPELL_BAR_HEIGHT, SPELL_BAR_MARGIN_TOP, SPELL_BAR_RESERVED_HEIGHT, getBoardSize } from './boardSize';
 import Piece from './Piece';
 import Square from './Square';
 
@@ -185,7 +185,9 @@ function ChessBoard({
   visibleSquares,
 }: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
-  const boardSize = getBoardSize(width, height);
+  // Spell Chess's Freeze/Jump row sits under the board (rendered below), so the board shrinks by its fixed height to
+  // keep the whole stack within the non-scrolling GameScreenBody — see boardSize.SPELL_BAR_RESERVED_HEIGHT.
+  const boardSize = getBoardSize(width, height, spellChess && spellState ? SPELL_BAR_RESERVED_HEIGHT : 0);
   const squareSize = boardSize / 8;
   const boardTheme = useActiveBoardTheme();
   const pieceTheme = useActivePieceTheme();
@@ -956,8 +958,8 @@ function ChessBoard({
             <Text style={styles.spellButtonText}>🌀 Jump ({spellState[turn].charges.jump})</Text>
           </Pressable>
           {castMode && (
-            <Text style={styles.spellHint}>
-              {castMode === 'freeze' ? 'Tap a square to center the freeze' : 'Tap a piece to jump over'}
+            <Text style={styles.spellHint} numberOfLines={1}>
+              {castMode === 'freeze' ? 'Tap the center square' : 'Tap a piece to jump over'}
             </Text>
           )}
           {pendingCast && (
@@ -1072,10 +1074,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Fixed height and no wrapping: the board reserves exactly SPELL_BAR_RESERVED_HEIGHT for this row (see boardSize.ts),
+  // so it must never grow to a second line. The hint text shrinks/ellipsizes instead (spellHint).
   spellBar: {
-    marginTop: 8,
+    marginTop: SPELL_BAR_MARGIN_TOP,
+    height: SPELL_BAR_HEIGHT,
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     alignItems: 'center',
     gap: 8,
   },
@@ -1103,6 +1108,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   spellHint: {
+    flexShrink: 1,
     color: '#3a2618',
     fontSize: 12,
     fontStyle: 'italic',
