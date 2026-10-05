@@ -431,11 +431,14 @@ function findFreezeZoneCovering(checkers: string[]): string | null {
 /**
  * A Spell Chess bot's own "should I cast something, and what" decision for its turn — kept entirely
  * SEPARATE from picking the move itself. Unlike Giveaway/Atomic/Duck Chess, Spell Chess keeps normal
- * checkmate/stalemate (see spellChess.ts's own doc comment), so Stockfish's move IS always legal chess
- * here and there is no reason to replace it with a custom search for the base move — only the spell
- * decision, which Stockfish has no concept of at all, needs one. Call this BEFORE asking Stockfish for a
- * move; if it returns a cast, apply it to the shared SpellChessState first (see castFreeze/castJump) so
- * the move that follows sees the right frozenSquares/jumpSquare on its engine.
+ * checkmate/stalemate (see spellChess.ts's own doc comment), so Stockfish's move is always legal ORDINARY
+ * chess and there is no reason to replace it with a custom search for the base move in general — only the
+ * spell decision, which Stockfish has no concept of at all, needs one. Stockfish CAN still suggest a move
+ * that is illegal specifically because of an active Freeze (a frozen origin square) — it has no concept of
+ * that either — so BotGameScreen falls back to getSpellChessLegalMoves below for that one case instead of
+ * surfacing an engine error. Call this BEFORE asking Stockfish for a move; if it returns a cast, apply it
+ * to the shared SpellChessState first (see castFreeze/castJump) so the move that follows sees the right
+ * frozenSquares/jumpSquare on its engine.
  *
  *  - Defensive Freeze always comes first: if the bot is currently in check and every checking piece fits
  *    inside one 3x3 zone, casting it there turns a forced response into a free move (checkIsWaivedByFreeze
@@ -500,4 +503,39 @@ export function chooseSpellChessBotCast(
   }
 
   return null;
+}
+
+/**
+ * Every Spell-Chess-legal move the bot can make right now (frozen squares, freeze-escape and normal
+ * check safety all respected) -- NOT the bot's everyday move source. BotGameScreen still asks Stockfish
+ * first, same as any other bot game; this is only the fallback for the one case Stockfish can get wrong
+ * here: it has no concept of Freeze, so it can suggest moving a piece that's immobilized this turn (see
+ * chooseSpellChessBotCast's own doc comment). When that happens, BotGameScreen calls this instead of
+ * throwing, and plays a random move from the result so the bot never stalls the game over it.
+ */
+export function getSpellChessLegalMoves(
+  fen: string,
+  color: PieceColor,
+  options: { chess960: boolean; initialFen?: string; frozenSquares: string[]; jumpSquare: string | null; freezeEscapeActive: boolean }
+): Move[] {
+  const engineOptions = {
+    chess960: options.chess960,
+    initialFen: options.initialFen,
+    skipValidation: true,
+    spellChess: true,
+    frozenSquares: options.frozenSquares,
+    jumpSquare: options.jumpSquare,
+    freezeEscapeActive: options.freezeEscapeActive,
+  };
+  const probe = new ChessEngine(fen, engineOptions);
+  const legal: Move[] = [];
+  for (const candidate of probe.getPseudoLegalMoves(color)) {
+    // .move() needs a fresh engine per candidate: a successful move mutates the instance, and a
+    // rejected one is guaranteed not to (see ChessEngine.moveSpellChess), but there's no reason to
+    // rely on that here when a clean scratch instance is cheap.
+    const scratch = new ChessEngine(fen, engineOptions);
+    const played = scratch.move(candidate.from, candidate.to, candidate.promotion);
+    if (played) legal.push(played);
+  }
+  return legal;
 }

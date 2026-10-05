@@ -13,7 +13,14 @@ import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { unlockAchievement } from '../logic/achievementStorage';
-import { chooseAtomicBotMove, chooseDuckBotMove, chooseGiveawayBotMove, chooseSpellChessBotCast, getBotThinkTimeMs } from '../logic/bots';
+import {
+  chooseAtomicBotMove,
+  chooseDuckBotMove,
+  chooseGiveawayBotMove,
+  chooseSpellChessBotCast,
+  getBotThinkTimeMs,
+  getSpellChessLegalMoves,
+} from '../logic/bots';
 import { logDiagnostic } from '../logic/diagnosticLog';
 import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
@@ -78,9 +85,11 @@ interface BotGameScreenProps {
   /** Duck Chess — see duckChess.ts. Bots play it with chooseDuckBotMove (a regular move plus where to put the
    * duck), NOT Stockfish (which knows nothing of the duck). Mutually exclusive with every other variant. */
   duckChess?: boolean;
-  /** Spell Chess — see spellChess.ts. The move itself is plain legal chess, so the bot still plays it
-   * with real Stockfish — only the spell-cast decision (if any) is chooseSpellChessBotCast's own
-   * heuristic, layered on top before the move. Mutually exclusive with every other variant. */
+  /** Spell Chess — see spellChess.ts. The move itself is ordinary legal chess, so the bot still plays
+   * it with real Stockfish — the spell-cast decision (if any) is chooseSpellChessBotCast's own
+   * heuristic, layered on top before the move. Stockfish can still suggest a move that's illegal only
+   * because of an active Freeze (it has no concept of the frozen zone); see the getSpellChessLegalMoves
+   * fallback below for that one case. Mutually exclusive with every other variant. */
   spellChess?: boolean;
   /** The merged starting position from the Setup Chess builder flow — used instead of
    * self-generating one when present. `colorChoice` must already be the concrete color the human
@@ -535,6 +544,25 @@ export default function BotGameScreen({
           move = fogOfWar
             ? moveEngine.movePseudoLegal(parsed.from, parsed.to, parsed.promotion)
             : moveEngine.move(parsed.from, parsed.to, parsed.promotion);
+
+          // Spell Chess only: Stockfish has no concept of the frozen zone, so its suggested move can be
+          // ordinary-legal chess yet still illegal here because its origin square is frozen (an earlier
+          // Freeze cast against the bot). Rather than surface that as a crash, fall back to a random
+          // still-legal move for this ply — see getSpellChessLegalMoves's own doc comment.
+          if (!move && spellChess) {
+            const fallbackMoves = getSpellChessLegalMoves(fen, botColor, {
+              chess960,
+              initialFen,
+              frozenSquares: spellFrozenForBot,
+              jumpSquare: spellJumpForBot,
+              freezeEscapeActive: spellFreezeEscapeForBot,
+            });
+            if (fallbackMoves.length > 0) {
+              const picked = fallbackMoves[Math.floor(Math.random() * fallbackMoves.length)];
+              move = moveEngine.move(picked.from, picked.to, picked.promotion);
+            }
+          }
+
           if (!move) throw new Error(`Invalid move from engine: "${uciMove}"`);
         }
         if (cancelled) return;
