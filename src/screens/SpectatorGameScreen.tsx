@@ -157,7 +157,9 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
                           ? ' · Duck Chess'
                           : state.isSpellChess
                             ? ' · Spell Chess'
-                            : ''}
+                            : state.isHorde
+                              ? ' · Horde'
+                              : ''}
         </Text>
         <Text style={styles.status}>{statusText}</Text>
 
@@ -180,6 +182,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
           duckChess={state.isDuckChess}
           duckSquare={state.duckSquare ?? null}
           spellChess={state.isSpellChess}
+          horde={state.isHorde}
           spellState={state.spellState ?? initialSpellChessState()}
         />
 

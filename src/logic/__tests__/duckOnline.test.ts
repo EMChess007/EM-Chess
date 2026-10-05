@@ -29,6 +29,7 @@ describe('Duck Chess wire flags', () => {
       isAtomic: false,
       isDuckChess: true,
       isSpellChess: false,
+      isHorde: false,
     });
     expect(variantTitlePrefix('duckChess')).toBe('Duck Chess · ');
   });
@@ -118,8 +119,8 @@ describe('Online wiring (no React Native renderer available)', () => {
   });
 
   it('Online Duck Chess has no premoves, no opening names, no rating change and no Game Review, and shows the notation', () => {
-    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess ? undefined : myColor}');
-    expect(online).toContain('!duckChess && !spellChess && openingName');
+    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde ? undefined : myColor}');
+    expect(online).toContain('!duckChess && !spellChess && !horde && openingName');
     expect(online).toContain('ratingCategory && !giveaway && !atomic && !duckChess');
     expect(online).toContain('onDuckPlacementChange={setPlacingDuck}');
     expect(online).toContain('duckSquare={displayDuck}');

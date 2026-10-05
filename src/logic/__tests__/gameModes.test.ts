@@ -86,6 +86,39 @@ describe('getGameOutcome', () => {
     });
   });
 
+  describe('Horde', () => {
+    // hordeWinner is getGameOutcome's 13th argument (after spellChessWinner).
+    const horde = (status: Parameters<typeof getGameOutcome>[0], turn: 'w' | 'b', hordeWinner: 'w' | 'b' | null) =>
+      getGameOutcome(status, turn, null, null, false, null, null, null, null, null, null, null, hordeWinner);
+
+    it("Black capturing every White piece reports Black's win with the horde reason", () => {
+      expect(horde('playing', 'w', 'b')).toEqual({ over: true, result: '0-1', reason: 'horde' });
+    });
+
+    it("sits ABOVE chessStatus: the position it leaves behind is 'stalemate' to chess.js (no White pieces, no moves, no check) and must not read as a draw", () => {
+      expect(horde('stalemate', 'w', 'b')).toEqual({ over: true, result: '0-1', reason: 'horde' });
+      expect(horde('stalemate', 'w', null)).toEqual({ over: true, result: '1/2-1/2', reason: 'stalemate' }); // a genuine stalemate is still a draw
+    });
+
+    it('sits in the top tier: outranks agreement, resignation, timeout and checkmate', () => {
+      expect(getGameOutcome('checkmate', 'b', 'b', 'b', true, null, null, null, null, null, null, null, 'b')).toEqual({ over: true, result: '0-1', reason: 'horde' });
+    });
+
+    it("White's win is an ordinary checkmate of Black's king (it arrives through chessStatus, with the usual reason)", () => {
+      expect(horde('checkmate', 'b', null)).toEqual({ over: true, result: '1-0', reason: 'checkmate' });
+    });
+
+    it('a stalemate or a fifty-move draw is a draw, and a game with nothing decided goes on', () => {
+      expect(horde('draw', 'w', null)).toEqual({ over: true, result: '1/2-1/2', reason: 'draw' });
+      expect(horde('playing', 'w', null)).toEqual({ over: false });
+      expect(horde('check', 'b', null)).toEqual({ over: false });
+    });
+
+    it('has a human-readable end reason', () => {
+      expect(describeEndReason('horde')).toMatch(/horde/i);
+    });
+  });
+
   it('king of the hill / three-check outrank ordinary chess.js status', () => {
     expect(getGameOutcome('checkmate', 'w', null, null, false, 'b')).toEqual({ over: true, result: '0-1', reason: 'kingOfTheHill' });
     expect(getGameOutcome('checkmate', 'w', null, null, false, null, 'w')).toEqual({ over: true, result: '1-0', reason: 'threeCheck' });

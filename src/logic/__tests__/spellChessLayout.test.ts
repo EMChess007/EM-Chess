@@ -53,10 +53,10 @@ describe('the room for the Freeze/Jump row comes from tighter spacing, not from 
   it('Bot and Local hide the opening name for Spell Chess, as Online does (opening names do not apply with spells)', () => {
     for (const screen of ['BotGameScreen', 'LocalGameScreen']) {
       const src = read(`screens/${screen}.tsx`);
-      expect(src, screen).toContain('!duckChess && !spellChess && openingName');
-      expect(src, screen).toContain('duckChess || spellChess) return;');
+      expect(src, screen).toContain('!duckChess && !spellChess && !horde && openingName');
+      expect(src, screen).toContain('duckChess || spellChess || horde) return;');
     }
-    expect(read('screens/OnlineGameScreen.tsx')).toContain('!duckChess && !spellChess && openingName');
+    expect(read('screens/OnlineGameScreen.tsx')).toContain('!duckChess && !spellChess && !horde && openingName');
   });
 });
 
@@ -86,6 +86,6 @@ describe('Bot rating guard documentation', () => {
     expect(bot).toContain('Spell Chess was deliberately');
     expect(bot).toContain('do not add !spellChess here');
     // ...and the guard itself is unchanged.
-    expect(bot).toContain('if (ratingCategory && !giveaway && !atomic && !duckChess) recordRatedGame(');
+    expect(bot).toContain('if (ratingCategory && !giveaway && !atomic && !duckChess && !horde) recordRatedGame(');
   });
 });

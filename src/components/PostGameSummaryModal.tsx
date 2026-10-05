@@ -40,6 +40,9 @@ interface PostGameSummaryModalProps {
    * frozen squares, jump transparency, or a kingless position after a Jump-king-capture, so no
    * accuracy analysis runs and Game Review is not offered. */
   spellChess?: boolean;
+  /** Horde only — same reasoning: Stockfish cannot be given a position with no White king, so no accuracy analysis
+   * runs and Game Review is not offered. */
+  horde?: boolean;
   history: GameHistoryEntry[];
   /** One entry (Bot/Online: just the user) or two (Local: White and Black). */
   players: SummaryPlayer[];
@@ -71,6 +74,7 @@ export default function PostGameSummaryModal({
   atomic = false,
   duckChess = false,
   spellChess = false,
+  horde = false,
   history,
   players,
   onGameReview,
@@ -89,8 +93,8 @@ export default function PostGameSummaryModal({
   // first (same reasoning EngineVsEngineGameScreen documents for reusing one runtime across two
   // engines that happen to share an id — except here we specifically want isolation, not sharing).
   const scratchEngine = useMemo(
-    () => (visible && !giveaway && !atomic && !duckChess && !spellChess ? new StockfishEngineAdapter() : null),
-    [visible, giveaway, atomic, duckChess, spellChess]
+    () => (visible && !giveaway && !atomic && !duckChess && !spellChess && !horde ? new StockfishEngineAdapter() : null),
+    [visible, giveaway, atomic, duckChess, spellChess, horde]
   );
   const bridgeRef = useRef<StockfishBridgeHandle>(null);
   const handleBridgeRef = useCallback(
@@ -153,6 +157,7 @@ export default function PostGameSummaryModal({
           !atomic &&
           !duckChess &&
           !spellChess &&
+          !horde &&
           (!summary ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color={colors.text} />
@@ -185,7 +190,7 @@ export default function PostGameSummaryModal({
           ))}
 
         <View style={styles.buttonColumn}>
-          {!giveaway && !atomic && !duckChess && !spellChess && (
+          {!giveaway && !atomic && !duckChess && !spellChess && !horde && (
             <Pressable style={styles.primaryButton} onPress={onGameReview}>
               <Text style={styles.primaryButtonText}>Game Review</Text>
             </Pressable>

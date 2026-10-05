@@ -11,7 +11,8 @@ export type GameVariant =
   | 'giveaway'
   | 'atomic'
   | 'duckChess'
-  | 'spellChess';
+  | 'spellChess'
+  | 'horde';
 
 interface VariantSelectorProps {
   value: GameVariant;
@@ -37,6 +38,7 @@ const OPTIONS: { value: GameVariant; label: string }[] = [
   { value: 'atomic', label: 'Atomic' },
   { value: 'duckChess', label: 'Duck\nChess' },
   { value: 'spellChess', label: 'Spell\nChess' },
+  { value: 'horde', label: 'Horde' },
 ];
 
 /** Mutually-exclusive Classic / Chess960 / King of the Hill / Three-Check / Setup Chess picker —

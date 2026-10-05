@@ -122,7 +122,7 @@ describe('wiring (no React Native renderer available)', () => {
     it(`${screen} derives the duck from the history (so Undo restores it), feeds the winner into getGameOutcome and the payload`, () => {
       const src = read(screen);
       expect(src).toContain('history[history.length - 1].duckSquare ?? null');
-      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner,\s*duckWinner,\s*spellChessWinner\s*\)/);
+      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner,\s*duckWinner,\s*spellChessWinner,\s*hordeWinner\s*\)/);
       expect(src).toContain('duckChessWinner: duckWinner,\n        duckChess,');
       expect(src).toContain('duckChess={duckChess}');
       expect(src).toContain('onDuckPlacementChange={setPlacingDuck}');
@@ -137,8 +137,8 @@ describe('wiring (no React Native renderer available)', () => {
     expect(duckBranch).toBeGreaterThan(-1);
     expect(bot).toContain('chooseDuckBotMove(moveEngine');
     expect(stockfishCall).toBeGreaterThan(duckBranch);
-    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess ? undefined : userColor}');
-    expect(bot).toContain('!giveaway && !atomic && !duckChess) recordRatedGame');
+    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde ? undefined : userColor}');
+    expect(bot).toContain('!giveaway && !atomic && !duckChess && !horde) recordRatedGame');
   });
 
   it('is reachable from the play-mode menu for Local and Bots, and is a variant-selector option', () => {

@@ -113,6 +113,9 @@ interface ChessBoardProps {
    * already derive duckSquare from history). Mutually exclusive with every other variant. */
   spellChess?: boolean;
   spellState?: SpellChessState;
+  /** Horde only — see horde.ts. Every engine this board builds gets { horde: true } (which implies skipValidation: a
+   * Horde FEN has no White king), so the rank-1 double step is offered and chess.js's draw rules are not trusted. */
+  horde?: boolean;
   /** Fog of War only — the squares currently visible to the LOCAL viewer. Squares outside this
    * set render fogged (see Square's isFogged) regardless of what `fen`/the engine actually has
    * there: for Local/Bot this is still the true fen client-side (there's no network boundary to
@@ -181,6 +184,7 @@ function ChessBoard({
   duckSquare = null,
   onDuckPlacementChange,
   spellChess = false,
+  horde = false,
   spellState,
   visibleSquares,
 }: ChessBoardProps) {
@@ -199,7 +203,7 @@ function ChessBoard({
   // Spell Chess: a king captured via Jump leaves a FEN missing a king, same as Duck Chess/Fog of
   // War/Giveaway — see ChessEngine's own doc comment on skipValidation. Ordinary moves otherwise
   // still go through chess.js's own strict legality (see moveSpellChess), unaffected by this.
-  const needsSkipValidation = usesPseudoLegalMoves || spellChess;
+  const needsSkipValidation = usesPseudoLegalMoves || spellChess || horde;
   // Duck Chess: while the duck is being placed the board shows the position AFTER the just-made move (which
   // the caller has not been told about yet — see pendingDuck below); otherwise it is simply `fen`.
   const [pendingDuck, setPendingDuck] = useState<{ move: Move; fen: string } | null>(null);
@@ -247,11 +251,12 @@ function ChessBoard({
         duckChess,
         duckSquare,
         spellChess,
+        horde,
         frozenSquares: spellFrozenSquares,
         jumpSquare: spellJumpSquare,
         freezeEscapeActive: spellFreezeEscapeActive,
       }),
-    [shownFen, chess960, initialFen, needsSkipValidation, giveaway, atomic, duckChess, duckSquare, spellChess, spellFrozenSquares, spellJumpSquare, spellFreezeEscapeActive]
+    [shownFen, chess960, initialFen, needsSkipValidation, giveaway, atomic, duckChess, duckSquare, spellChess, horde, spellFrozenSquares, spellJumpSquare, spellFreezeEscapeActive]
   );
   const board = useMemo(() => engine.getBoard(), [engine]);
   // Reversing both axes together preserves each square's light/dark identity (a 180° rotation
@@ -362,7 +367,7 @@ function ChessBoard({
     // flag through every caller.
     let movingPiece: PieceModel | null = null;
     try {
-      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: needsSkipValidation, giveaway, atomic, duckChess }).getPieceAt(lastMove.from);
+      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: needsSkipValidation, giveaway, atomic, duckChess, horde }).getPieceAt(lastMove.from);
     } catch {
       movingPiece = null;
     }
@@ -447,6 +452,7 @@ function ChessBoard({
       duckChess,
       duckSquare,
       spellChess,
+      horde,
       frozenSquares: spellFrozenSquares,
       jumpSquare: spellJumpSquare,
       freezeEscapeActive: spellFreezeEscapeActive,

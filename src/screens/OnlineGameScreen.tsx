@@ -93,6 +93,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // alongside it. Unlike Duck Chess's duckSquare, the server echoes the WHOLE SpellChessState back out (charges/
   // cooldowns/pending effects), since there's materially more of it than one square.
   const spellChess = match.isSpellChess === true;
+  const horde = match.isHorde === true;
 
   const [fen, setFen] = useState(match.fen);
   const [duckSquare, setDuckSquare] = useState<string | null>(null);
@@ -190,10 +191,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // state sync after reconnecting) rather than being threaded through each individual handler
   // below. See LocalGameScreen's identical effect for why a miss here doesn't clear the name.
   useEffect(() => {
-    if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway || atomic || duckChess || spellChess) return;
+    if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway || atomic || duckChess || spellChess || horde) return;
     const openingMatch = lookupOpening(fen);
     if (openingMatch) setOpeningName(openingMatch.name);
-  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway, atomic, duckChess, spellChess]);
+  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway, atomic, duckChess, spellChess, horde]);
 
   // Wire up every server -> client event for this game once, for the lifetime of the screen.
   useEffect(() => {
@@ -245,12 +246,13 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       const replayEngine = new ChessEngine(fenRef.current, {
         chess960: match.isChess960,
         initialFen: match.fen,
-        skipValidation: match.isFogOfWar || giveaway || duckChess || spellChess,
+        skipValidation: match.isFogOfWar || giveaway || duckChess || spellChess || horde,
         giveaway,
         atomic,
         duckChess,
         duckSquare: duckBeforeOpponentMove,
         spellChess,
+        horde,
         frozenSquares: spellFrozenForOpponent,
         jumpSquare: spellJumpForOpponent,
         freezeEscapeActive: spellFreezeEscapeForOpponent,
@@ -321,9 +323,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       const result = payload.winner === null ? 0.5 : payload.winner === myColor ? 1 : 0;
       const ratingCategory = toRatingCategory(categoryForInitialSeconds(match.timeControl.initialSeconds) ?? '');
       // Giveaway and Atomic are different games — they must not move the player's chess rating.
-      if (ratingCategory && !giveaway && !atomic && !duckChess && !spellChess) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
+      if (ratingCategory && !giveaway && !atomic && !duckChess && !spellChess && !horde) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
 
-      if (result === 1 && wasMaterialDownRef.current && !giveaway && !atomic && !duckChess && !spellChess) unlockAchievement('comeback_win');
+      if (result === 1 && wasMaterialDownRef.current && !giveaway && !atomic && !duckChess && !spellChess && !horde) unlockAchievement('comeback_win');
     };
 
     const handleDrawOffered = (_payload: DrawOfferedPayload) => {
@@ -379,9 +381,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             const replayEngine = new ChessEngine(match.fen, {
               chess960: match.isChess960,
               initialFen: match.fen,
-              skipValidation: match.isFogOfWar || giveaway || duckChess,
+              skipValidation: match.isFogOfWar || giveaway || duckChess || horde,
               giveaway,
               atomic,
+              horde,
             });
             const rebuilt: MoveRecord[] = [];
             // Duck Chess: the duck's square is not part of the engine's state, so each ply is replayed on a fresh
@@ -813,7 +816,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                           ? 'Duck Chess'
                           : spellChess
                             ? 'Spell Chess'
-                            : undefined
+                            : horde
+                              ? 'Horde'
+                              : undefined
         }
         onBack={handleExit}
         backLabel="‹ Menu"
@@ -906,7 +911,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
         </View>
 
-        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && !giveaway && !atomic && !duckChess && !spellChess && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={boardKey}
@@ -925,13 +930,14 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           duckSquare={displayDuck}
           onDuckPlacementChange={setPlacingDuck}
           spellChess={spellChess}
+          horde={horde}
           spellState={displaySpellState}
           visibleSquares={visibleSquares}
           // No premoves in Giveaway, Atomic or Spell Chess: mandatory capture / explosions / a possible cast
           // change which moves are legal after the opponent's reply, so a queued move is almost never still
           // valid when its turn comes.
-          premoveColor={giveaway || atomic || duckChess || spellChess ? undefined : myColor}
-          onPremove={giveaway || atomic || duckChess || spellChess ? undefined : handleQueuePremove}
+          premoveColor={giveaway || atomic || duckChess || spellChess || horde ? undefined : myColor}
+          onPremove={giveaway || atomic || duckChess || spellChess || horde ? undefined : handleQueuePremove}
         />
 
         <View style={styles.playerRow}>
@@ -981,6 +987,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         atomic={atomic}
         duckChess={duckChess}
         spellChess={spellChess}
+        horde={horde}
         history={moveList}
         players={[{ label: 'You', color: myColor }]}
         onGameReview={() => onAnalyze({ initialFen: match.fen, chess960: match.isChess960, fogOfWar: match.isFogOfWar, history: moveList })}

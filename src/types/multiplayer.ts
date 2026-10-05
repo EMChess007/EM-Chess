@@ -23,7 +23,8 @@ export type GameOverReason =
   | 'giveaway'
   | 'atomic'
   | 'duckChess'
-  | 'spellChess';
+  | 'spellChess'
+  | 'horde';
 
 export interface JoinQueuePayload {
   timeControl: OnlineTimeControl;
@@ -36,6 +37,7 @@ export interface JoinQueuePayload {
   isAtomic?: boolean;
   isDuckChess?: boolean;
   isSpellChess?: boolean;
+  isHorde?: boolean;
 }
 
 export interface MakeMovePayload {
@@ -90,6 +92,8 @@ export interface MatchFoundPayload {
   isAtomic: boolean;
   isDuckChess: boolean;
   isSpellChess: boolean;
+  /** Horde — see horde.ts: the room started from the Horde position (36 White pawns, no White king). */
+  isHorde: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;
@@ -155,6 +159,8 @@ export interface RejoinStatePayload {
   /** Duck Chess only — where the duck stands now. */
   duckSquare?: string | null;
   isSpellChess: boolean;
+  /** Horde — see horde.ts: the room started from the Horde position (36 White pawns, no White king). */
+  isHorde: boolean;
   /** Spell Chess only — charges/cooldowns/pending effects right now. */
   spellState?: SpellChessState;
   whiteMs: number;
@@ -194,6 +200,7 @@ export interface CreateChallengePayload {
   isAtomic?: boolean;
   isDuckChess?: boolean;
   isSpellChess?: boolean;
+  isHorde?: boolean;
   timeControlLabel?: string;
 }
 
