@@ -1,11 +1,19 @@
 import type { BotCategory, BotPersonality } from '../types/bot';
-import type { Move } from '../types/chess';
+import type { Move, PieceColor, SpellCast } from '../types/chess';
 import type { TimeControl } from '../types/timeControl';
 import { PIECE_VALUES } from './analysis';
 import { ChessEngine } from './ChessEngine';
 import { applyAtomicMove, generateAtomicMoves, getAtomicKingWinner, isAtomicCheck, squareName, type AtomicMove, type AtomicPosition } from './atomic';
 import { getLegalDuckPlacementSquares } from './duckChess';
 import { getGiveawayMoves } from './giveaway';
+import {
+  canCastFreeze,
+  canCastJump,
+  getCheckingPieceSquares,
+  getFreezeZoneSquares,
+  getJumpAugmentedCaptures,
+  type SpellChessState,
+} from './spellChess';
 
 export const BOT_CATEGORIES: { category: BotCategory; label: string }[] = [
   { category: 'absoluteBeginner', label: 'Kid / Absolute Beginner' },
@@ -404,4 +412,92 @@ export function chooseDuckBotMove(
     if (!best || score > best.score) best = { move: applied, duck, score };
   }
   return best ? { move: best.move, duck: best.duck } : null;
+}
+
+// --- Spell Chess ----------------------------------------------------------------------------
+
+/** The freeze zone that covers every one of `checkers` — a checking piece is always itself a valid
+ * center for its own zone, so trying each as a candidate center and keeping the first that also covers
+ * every OTHER checker is enough; returns null if no single 3x3 zone can cover all of them (a double check
+ * from two pieces too far apart — Freeze alone can never fully neutralise that). */
+function findFreezeZoneCovering(checkers: string[]): string | null {
+  for (const candidate of checkers) {
+    const zone = getFreezeZoneSquares(candidate);
+    if (checkers.every((sq) => zone.includes(sq))) return candidate;
+  }
+  return null;
+}
+
+/**
+ * A Spell Chess bot's own "should I cast something, and what" decision for its turn — kept entirely
+ * SEPARATE from picking the move itself. Unlike Giveaway/Atomic/Duck Chess, Spell Chess keeps normal
+ * checkmate/stalemate (see spellChess.ts's own doc comment), so Stockfish's move IS always legal chess
+ * here and there is no reason to replace it with a custom search for the base move — only the spell
+ * decision, which Stockfish has no concept of at all, needs one. Call this BEFORE asking Stockfish for a
+ * move; if it returns a cast, apply it to the shared SpellChessState first (see castFreeze/castJump) so
+ * the move that follows sees the right frozenSquares/jumpSquare on its engine.
+ *
+ *  - Defensive Freeze always comes first: if the bot is currently in check and every checking piece fits
+ *    inside one 3x3 zone, casting it there turns a forced response into a free move (checkIsWaivedByFreeze
+ *    is what the move-generation side then relies on) — essentially free value whenever it's available.
+ *  - Offensive Jump: cast only with a CONCRETE capture in hand right now — tries every occupied square on
+ *    the board as the jump target and keeps the best getJumpAugmentedCaptures result, requiring at least a
+ *    minor piece's worth of material (or the enemy king outright) before spending a charge. Jump's 3-turn
+ *    cooldown is too expensive to burn on a guess, so this never casts speculatively.
+ *  - Offensive Freeze: a deliberately simple first cut (tuning bot strength is a product decision, not
+ *    just engineering — same framing chooseGiveawayBotMove's own doc comment uses) — cast around the enemy
+ *    king when the bot already has at least one capture available this very turn to follow up with,
+ *    denying the opponent's defenders a response next turn.
+ *  - ELO is the only strength dial, as for every other heuristic in this file: the chance the bot acts on
+ *    any of the above at all (rather than skipping its spell this turn even when one looks good) rises
+ *    from ~20% at 400 ELO to ~90% at 3000 — a weak bot mostly forgets it has spells, a strong one uses them
+ *    close to optimally. A spell with no charge left or still on cooldown is simply never offered (see
+ *    canCastFreeze/canCastJump).
+ *
+ * Returns null when nothing is worth casting, or the bot has no spell available at all — the caller then
+ * proceeds straight to its normal move selection for that turn, unaffected.
+ */
+export function chooseSpellChessBotCast(
+  engine: ChessEngine,
+  color: PieceColor,
+  spellState: SpellChessState,
+  elo: number,
+  rng: () => number = Math.random
+): SpellCast | null {
+  const actChance = 0.2 + 0.7 * Math.min(1, Math.max(0, (elo - 400) / 2600));
+  if (rng() >= actChance) return null;
+
+  if (canCastFreeze(spellState, color)) {
+    const checkers = getCheckingPieceSquares(engine, color);
+    if (checkers.length > 0) {
+      const zone = findFreezeZoneCovering(checkers);
+      if (zone) return { type: 'freeze', center: zone, squares: getFreezeZoneSquares(zone) };
+    }
+  }
+
+  if (canCastJump(spellState, color)) {
+    let best: { square: string; gain: number } | null = null;
+    for (const row of engine.getBoard()) {
+      for (const sq of row) {
+        if (!sq.piece) continue;
+        for (const capture of getJumpAugmentedCaptures(engine, sq.square, color)) {
+          const gain = capture.captured === 'k' ? 1000 : PIECE_VALUES[capture.captured ?? 'p'];
+          if (!best || gain > best.gain) best = { square: sq.square, gain };
+        }
+      }
+    }
+    if (best && best.gain >= PIECE_VALUES.n) return { type: 'jump', square: best.square };
+  }
+
+  if (canCastFreeze(spellState, color) && engine.getPseudoLegalMoves(color).some((m) => m.captured)) {
+    for (const row of engine.getBoard()) {
+      for (const sq of row) {
+        if (sq.piece?.type === 'k' && sq.piece.color !== color) {
+          return { type: 'freeze', center: sq.square, squares: getFreezeZoneSquares(sq.square) };
+        }
+      }
+    }
+  }
+
+  return null;
 }

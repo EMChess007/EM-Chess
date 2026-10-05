@@ -15,7 +15,8 @@ export type EndReason =
   | 'fogOfWar'
   | 'giveaway'
   | 'atomic'
-  | 'duckChess';
+  | 'duckChess'
+  | 'spellChess';
 
 export function describeEndReason(reason: EndReason): string {
   switch (reason) {
@@ -32,6 +33,8 @@ export function describeEndReason(reason: EndReason): string {
     case 'atomic':
       return 'by Exploding the King';
     case 'duckChess':
+      return 'by King Capture';
+    case 'spellChess':
       return 'by King Capture';
     case 'timeout':
       return 'by Timeout';

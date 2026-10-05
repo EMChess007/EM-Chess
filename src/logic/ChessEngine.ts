@@ -17,6 +17,7 @@ import {
 } from './atomic';
 import { collapseFenRank, expandFenRank, getChess960BackRankFiles } from './chess960';
 import { isCastleBlockedByDuck, isMoveBlockedByDuck } from './duckChess';
+import { getJumpAugmentedCaptures } from './spellChess';
 
 const FILES = 'abcdefgh';
 
@@ -205,6 +206,33 @@ export interface ChessEngineOptions {
    */
   duckChess?: boolean;
   duckSquare?: string | null;
+  /**
+   * Spell Chess only — see spellChess.ts for the rules. UNLIKE Giveaway/Atomic/Duck Chess, checkmate/
+   * stalemate/check/draw all still work NORMALLY: chess.js's own legality stays authoritative for
+   * every move none of the fields below actually touch. Only three things change:
+   *  - `frozenSquares`: origins immobilized for the side to move THIS ply (the opponent's Freeze cast
+   *    last turn — see frozenSquaresFor). Filtered out of both getLegalMoves and move().
+   *  - `jumpSquare`: when set, every rook/bishop/queen of the CURRENT side to move that is blocked only
+   *    by this square along one of its lines gets one extra capturing move layered on top of the normal
+   *    legal set (see getJumpAugmentedCaptures) — including a move that captures the enemy king
+   *    outright, which chess.js's own legality would never offer on its own. Applied straight via
+   *    chess.js's unvalidated `_makeMove` (see ChessInternals), the same primitive movePseudoLegal uses,
+   *    since this move shape never appears in chess.js's own pseudo-legal candidate set.
+   *  - `freezeEscapeActive`: true only when the side to move is currently in check AND every checking
+   *    piece sits in `frozenSquares` (see spellChess.checkIsWaivedByFreeze) — computed by the CALLER
+   *    once per turn and passed in, since it depends on state (what was just cast) this engine doesn't
+   *    track itself. While true, this one move skips chess.js's "must resolve check" filtering entirely
+   *    (falls back to movePseudoLegal, the same primitive Fog of War/Duck/Giveaway already rely on for
+   *    their own no-check-filtering moves), because the checking piece(s) are guaranteed unable to
+   *    capture the king next turn regardless of what's played now.
+   * A finished Spell Chess game (king captured via Jump) has a FEN missing a king, same as Duck Chess —
+   * callers must pass skipValidation when reloading one. Every other mode leaves all of these off/empty,
+   * so nothing about it changes. Not combinable with any other variant.
+   */
+  spellChess?: boolean;
+  frozenSquares?: string[];
+  jumpSquare?: string | null;
+  freezeEscapeActive?: boolean;
 }
 
 export class ChessEngine {
@@ -215,6 +243,10 @@ export class ChessEngine {
   private atomic: boolean;
   private duckChess: boolean;
   private duckSquare: string | null;
+  private spellChess: boolean;
+  private frozenSquares: string[];
+  private jumpSquare: string | null;
+  private freezeEscapeActive: boolean;
   /** Atomic only: the position's FEN as produced by atomic.ts (the source of truth in that mode). */
   private atomicCurrentFen: string;
   private atomicPosCache: AtomicPosition | null = null;
@@ -226,6 +258,10 @@ export class ChessEngine {
     this.giveaway = options?.giveaway ?? false;
     this.duckChess = options?.duckChess ?? false;
     this.duckSquare = options?.duckChess ? (options.duckSquare ?? null) : null;
+    this.spellChess = options?.spellChess ?? false;
+    this.frozenSquares = options?.spellChess ? (options.frozenSquares ?? []) : [];
+    this.jumpSquare = options?.spellChess ? (options.jumpSquare ?? null) : null;
+    this.freezeEscapeActive = options?.spellChess ? (options.freezeEscapeActive ?? false) : false;
     const skipValidation = (options?.skipValidation ?? false) || this.atomic;
     this.chess = fen ? (this.giveaway ? loadGiveawayFen(fen) : new Chess(fen, { skipValidation })) : new Chess();
     this.chess960 = options?.chess960 ?? false;
@@ -251,6 +287,20 @@ export class ChessEngine {
       const from = squareIndex(square);
       return [...new Set(this.getAtomicLegal().filter((m) => m.from === from).map((m) => squareName(m.to)))];
     }
+    if (this.spellChess) {
+      if (this.frozenSquares.includes(square)) return [];
+      const base = this.freezeEscapeActive
+        ? this.getPseudoLegalMoves(this.chess.turn())
+            .filter((m) => m.from === square)
+            .map((m) => m.to)
+        : this.chess.moves({ square: square as ChessJsSquare, verbose: true }).map((m) => m.to);
+      const jumpTargets = this.jumpSquare
+        ? getJumpAugmentedCaptures(this, this.jumpSquare, this.chess.turn())
+            .filter((m) => m.from === square)
+            .map((m) => m.to)
+        : [];
+      return [...new Set([...base, ...jumpTargets])];
+    }
     const verboseMoves = this.chess.moves({ square: square as ChessJsSquare, verbose: true });
 
     if (!this.chess960) {
@@ -266,6 +316,7 @@ export class ChessEngine {
 
   move(from: string, to: string, promotion?: Move['promotion']): Move | null {
     if (this.atomic) return this.moveAtomic(from, to, promotion);
+    if (this.spellChess) return this.moveSpellChess(from, to, promotion);
     if (this.chess960) {
       const side = this.matchChess960CastleAttempt(from, to);
       if (side) {
@@ -512,6 +563,57 @@ export class ChessEngine {
       if (m.promotion === 'q') out.push({ ...m, promotion: 'k' });
     }
     return out;
+  }
+
+  // --- Spell Chess (see spellChess.ts) -----------------------------------
+
+  /** Applies a Spell Chess move: a frozen origin is always rejected; a Jump-augmented capture (if one
+   * matches `from`/`to` exactly) is force-applied via applyRawSpellMove since it is never among chess.js's
+   * own pseudo-legal candidates; while freezeEscapeActive, falls back to movePseudoLegal (no check
+   * filtering at all, like Fog of War/Duck/Giveaway); otherwise this is just an ordinary chess.js move —
+   * checkmate/stalemate/check/draw all still apply exactly as normal. See ChessEngineOptions.spellChess. */
+  private moveSpellChess(from: string, to: string, promotion?: Move['promotion']): Move | null {
+    if (this.frozenSquares.includes(from)) return null;
+
+    if (this.jumpSquare) {
+      const match = getJumpAugmentedCaptures(this, this.jumpSquare, this.chess.turn()).find((m) => m.from === from && m.to === to);
+      if (match) return this.applyRawSpellMove(from, to, match.captured);
+    }
+
+    if (this.freezeEscapeActive) return this.movePseudoLegal(from, to, promotion);
+
+    try {
+      const result = this.chess.move({ from, to, promotion });
+      if (!result) return null;
+      const actualPromotion = result.promotion as 'n' | 'b' | 'r' | 'q' | undefined;
+      return { from: result.from, to: result.to, promotion: actualPromotion, san: result.san, captured: result.captured as Move['captured'] };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Force-applies a Jump-augmented capture straight through chess.js's unvalidated `_makeMove` (see
+   * ChessInternals) — `from`-`to` is a geometrically ordinary rook/bishop/queen move (that's exactly what
+   * makes a Jump capture possible: the mover's own piece and the captured piece are genuinely aligned),
+   * chess.js simply isn't allowed to notice it on its own because the jumped square sits in between.
+   * Nothing but `to` is touched, so the jumped-over piece is correctly left exactly where it stood — it
+   * was bypassed, not captured. Builds the pretty (SAN-bearing) wrapper the same way movePseudoLegal does,
+   * for the same reason: SAN disambiguation only cares about board geometry, which this move genuinely has. */
+  private applyRawSpellMove(from: string, to: string, captured: Move['captured']): Move | null {
+    const piece = this.chess.get(from as ChessJsSquare);
+    if (!piece) return null;
+    const raw: InternalMove = {
+      color: piece.color,
+      from: indexFromSquare(from),
+      to: indexFromSquare(to),
+      piece: piece.type,
+      captured,
+      flags: captured ? 2 /* chess.js's CAPTURE flag */ : 1 /* chess.js's NORMAL flag */,
+    };
+    const internals = this.chess as unknown as ChessInternals;
+    const pretty = new ChessJsMove(this.chess, raw);
+    internals._makeMove(raw);
+    return { ...toAppMove(pretty), captured };
   }
 
   private cloneWithTurn(color: PieceColor): Chess {

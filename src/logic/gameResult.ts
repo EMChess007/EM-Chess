@@ -19,7 +19,8 @@ export type GameOutcome =
         | 'fogOfWar'
         | 'giveaway'
         | 'atomic'
-        | 'duckChess';
+        | 'duckChess'
+        | 'spellChess';
     };
 
 /**
@@ -38,7 +39,8 @@ export function getGameOutcome(
   fogOfWarWinner: PieceColor | null = null,
   giveawayWinner: PieceColor | null = null,
   atomicWinner: PieceColor | null = null,
-  duckChessWinner: PieceColor | null = null
+  duckChessWinner: PieceColor | null = null,
+  spellChessWinner: PieceColor | null = null
 ): GameOutcome {
   // Checked first of all — Fog of War has no checkmate/stalemate/draw concept whatsoever (see
   // ChessBoard's own fogOfWar doc comment), so king capture is the ONLY way a Fog of War game
@@ -53,6 +55,14 @@ export function getGameOutcome(
   // `chessStatus` (ChessEngine.getStatus answers from atomic.ts there) under the usual reasons.
   // Duck Chess likewise: it has no check/checkmate, so capturing the enemy king is its only decisive result
   // (a fully blockaded side to move is reported as a draw through `chessStatus` by the screens).
+  // Spell Chess is the one exception in this tier that ALSO has normal checkmate/stalemate/draw (see
+  // spellChess.ts's own doc comment) — but a king capture (only ever possible via a Jump-augmented move;
+  // chess.js's own legality never allows one) still has to be checked before `chessStatus`, because the
+  // position it leaves behind is missing a king and chessStatus's own checkmate/stalemate detection was
+  // never run against it.
+  if (spellChessWinner) {
+    return { over: true, result: spellChessWinner === 'w' ? '1-0' : '0-1', reason: 'spellChess' };
+  }
   if (duckChessWinner) {
     return { over: true, result: duckChessWinner === 'w' ? '1-0' : '0-1', reason: 'duckChess' };
   }

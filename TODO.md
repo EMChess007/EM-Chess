@@ -45,6 +45,70 @@ unannounced.
 verified whether the server tracks repetition itself), and a decision on whether Fog of War / Giveaway /
 King of the Hill / Three-Check also want it (Fog of War and Giveaway probably not).
 
+## Spell Chess: rules engine done, UI/bots/Online not wired in yet
+
+**What's done, on the `spell-chess` branch.** The rules themselves — confirmed directly against
+chess.com's own Help Center, screenshotted 2026-10-04, not inferred from third-party summaries —
+live in `src/logic/spellChess.ts`: Freeze (3x3 zone, one-ply window, defensive check-escape),
+Jump (transparent square, 2-ply window, augmented captures including the king), charges/cooldowns.
+Wired into `ChessEngine` (`spellChess`/`frozenSquares`/`jumpSquare`/`freezeEscapeActive` options,
+`moveSpellChess`/`applyRawSpellMove`), `gameResult.ts` (`spellChessWinner`, checked before
+`chessStatus` for the same reason `duckChessWinner`/`atomicWinner` are), `gameOutcomeText.ts`,
+`gamePayload.ts` (PGN `[Variant "Spell Chess"]`), `onlineVariants.ts` (`isSpellChess` wire flag,
+ready for when Online exists), `VariantSelector.tsx` (picker chip), `types/chess.ts`
+(`Move.spell`/`SpellCast`), `types/history.ts` (`GameHistoryEntry.spellState`), and a first bot
+heuristic (`chooseSpellChessBotCast` in `bots.ts` — the spell-cast decision only; the move itself is
+plain legal chess, so Stockfish is NOT replaced here the way Giveaway/Atomic/Duck Chess replace it).
+Tests: `spellChess.test.ts` (zone geometry, cooldown timing, the a-file rook/pawn/queen jump trap,
+rook-vs-bishop geometry, double-check `checkIsWaivedByFreeze`) and `spellChessBot.test.ts`.
+
+`ChessBoard.tsx` now has the UI too: `spellChess`/`spellState` props feed `frozenSquares`/
+`jumpSquare`/`freezeEscapeActive` into the `ChessEngine` it builds (and into the scratch engine
+`tryMove` uses for a real human move, and the animation effect's own scratch engine's
+`skipValidation`, since a Jump-captured king leaves a kingless fen the same way Duck Chess/Fog of
+War/Giveaway do). A spell bar renders under the board (Freeze/Jump buttons showing that side's own
+charges, disabled by charges/cooldown/gameOver/disabled and mutually while the other is mid-pick);
+tapping one enters `castMode`, and the next square tap commits a `pendingCast` (any square for
+Freeze's center, only an occupied one for Jump) — intercepted at the very top of
+`handleSquarePress`, before normal piece-selection even runs. `pendingCast` rides along as
+`move.spell` once a real move actually lands (`finishRegularMove`), mirroring Duck Chess's own
+`duck` field the other way round in turn order; `castMode`/`pendingCast` reset on `fen` change same
+as `selectedSquare`/`pendingPromotion`/`pendingDuck`. `Square.tsx` already had `isFrozen`/
+`isJumpSquare` wired through to render them (icy/purple tint).
+
+**Not done — still not a playable feature end-to-end:**
+- **No screen wiring yet.** `LocalGameScreen`/`BotGameScreen` don't own a `SpellChessState`, pass
+  `spellChess`/`spellState` into `ChessBoard`, call `afterSpellChessMove`, or pass
+  `spellChessWinner` into `getGameOutcome`/`buildGamePayload`. `chooseSpellChessBotCast` is written
+  but nothing calls it. `ChessBoard` itself never calls `castFreeze`/`castJump` — it only builds the
+  `SpellCast` object attached to `move.spell`; the caller is the one expected to actually spend the
+  charge via `castFreeze`/`castJump` once it sees that field (see the `spellState` prop doc comment)
+  — not yet exercised by any screen.
+- **Not reachable from the picker's actual game-start flow** even though `VariantSelector` lists
+  it — picking it today would hit a screen with no spell-chess plumbing behind it.
+- **Online/backend untouched.** No `backend/src/game/spellChess.ts` mirror, no `RoomChessEngine`/
+  `rooms.ts`/`socketHandlers.ts`/`types.ts`/`matchmaking.ts`/`challenges.ts` wiring,
+  `SpectatorGameScreen`/`OnlineGameScreen` untouched, no `scripts/test-spell.mjs` parity check.
+- **No CHECKLIST.md "new variant" extras yet**: no explicit mutual-exclusivity declaration checked
+  against the other variants' own UI gating (chess960/Fog of War/Giveaway/Atomic/Duck Chess/Setup
+  Chess each have their own exclusion lists somewhere — Spell Chess isn't in any of them), no
+  mutation-testing pass actually run against `spellChess.ts` (designed for it — see the doc
+  comments — but not executed), and `tsc`/`vitest` still haven't been run for real with the
+  project's own toolchain: this environment's `npm install` 403s on a transitive `zod` tarball
+  (registry/security-policy block, not a project problem), so the `ChessBoard.tsx` changes above
+  were instead checked with a type-stripping `esbuild` parse (catches syntax/JSX-nesting mistakes,
+  not type errors) plus a manual line-by-line check against `ChessEngineOptions`/`SpellCast`/
+  `SpellChessState`'s actual field names and shapes.
+
+**Suggested next step.** Run `npm test -- spellChess` and `npx tsc --noEmit` for real somewhere
+with working registry access first — if anything fails, it's most likely a small mismatch with the
+real chess.js version's internals (`_makeMove`/`_moves` — see `ChessEngine.ts`'s own
+`ChessInternals` comment) or a genuine type slip in the new `ChessBoard.tsx` code, not a design
+error. Once green, the natural next slice is `LocalGameScreen.tsx` (own a `SpellChessState`, pass
+`spellChess`/`spellState` into `ChessBoard`, call `afterSpellChessMove` + the matching
+`castFreeze`/`castJump` when `move.spell` comes back from `onMove`) to get a genuinely playable
+Local game, THEN `BotGameScreen.tsx` (wire `chooseSpellChessBotCast`), THEN Online.
+
 ## Daily (correspondence) games Online
 
 **What's wrong / what's missing.** Online play is live-only. Daily time controls (1–14 days) exist for Local and Bot

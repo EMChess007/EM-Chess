@@ -5,8 +5,17 @@ import { getLegalDuckPlacementSquares } from '../logic/duckChess';
 import { getGiveawayMoves } from '../logic/giveaway';
 import { isTouchInside, subscribeToScreenTouches } from '../logic/screenTouches';
 import { PROMOTION_LABELS, type PromotionPiece, getPromotionChoices, isPromotionMove } from '../logic/promotion';
+import {
+  activeJumpSquare,
+  canCastFreeze,
+  canCastJump,
+  checkIsWaivedByFreeze,
+  frozenSquaresFor,
+  getFreezeZoneSquares,
+  type SpellChessState,
+} from '../logic/spellChess';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
-import type { ExplodedPiece, Move, PieceColor, Piece as PieceModel } from '../types/chess';
+import type { ExplodedPiece, Move, PieceColor, Piece as PieceModel, SpellCast } from '../types/chess';
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
 import { getBoardSize } from './boardSize';
 import Piece from './Piece';
@@ -91,6 +100,19 @@ interface ChessBoardProps {
   /** Duck Chess: told whenever the board enters/leaves the "placing the duck" state, so the screen can
    * say so in its status line. */
   onDuckPlacementChange?: (placing: boolean) => void;
+  /** Spell Chess only — see spellChess.ts. A turn is "optionally cast a spell, THEN make a move" — the
+   * reverse order of Duck Chess's "move, then place the duck", but the same shape: this component owns
+   * the in-progress cast (see pendingCast/castMode below) and only calls `onMove` once a real move is
+   * made, with the cast (if any) attached as `move.spell`. `spellState` is the charges/cooldowns/pending
+   * freeze+jump carried in from the PREVIOUS ply (GameHistoryEntry.spellState, or
+   * spellChess.initialSpellChessState() before White's first move) — this component derives
+   * frozenSquares/jumpSquare/freezeEscapeActive from it (plus whatever is being cast THIS turn) itself,
+   * rather than have the caller duplicate that math. The caller is only responsible for advancing
+   * `spellState` for the NEXT render once `onMove` reports a committed `move.spell` (see
+   * LocalGameScreen/BotGameScreen: castFreeze/castJump then afterSpellChessMove, mirroring how they
+   * already derive duckSquare from history). Mutually exclusive with every other variant. */
+  spellChess?: boolean;
+  spellState?: SpellChessState;
   /** Fog of War only — the squares currently visible to the LOCAL viewer. Squares outside this
    * set render fogged (see Square's isFogged) regardless of what `fen`/the engine actually has
    * there: for Local/Bot this is still the true fen client-side (there's no network boundary to
@@ -103,10 +125,21 @@ interface ChessBoardProps {
 }
 
 const KING_OF_THE_HILL_SQUARES = ['d4', 'd5', 'e4', 'e5'];
+// Stable (never-recreated) empty array for the "nothing frozen" case below — a fresh `[]` literal
+// on every render would be a new reference each time, defeating the `engine` useMemo's dependency
+// check for every variant, not just Spell Chess (see its own `spellFrozenSquares` doc comment).
+const NO_FROZEN_SQUARES: string[] = [];
 
 const ANIMATION_DURATION_MS = 200;
 // Atomic explosion flash/fade: starts when the sliding piece lands, then fades out over this long.
 const EXPLOSION_DURATION_MS = 450;
+
+/** The side to move in a FEN string, read directly off its own 2nd field — far cheaper than
+ * building a whole ChessEngine just to call getTurn() when all that's needed is this one field
+ * (see the Spell Chess derivations above, which need it before `engine` itself exists). */
+function turnFromFen(fen: string): PieceColor {
+  return fen.split(' ')[1] === 'b' ? 'b' : 'w';
+}
 
 function squareToRowCol(square: string, orientation: PieceColor): { row: number; col: number } {
   const file = square.charCodeAt(0) - 97; // 'a' -> 0
@@ -147,6 +180,8 @@ function ChessBoard({
   duckChess = false,
   duckSquare = null,
   onDuckPlacementChange,
+  spellChess = false,
+  spellState,
   visibleSquares,
 }: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
@@ -159,13 +194,62 @@ function ChessBoard({
   // a king the viewer can't currently see — see ChessEngine's own doc comment on the option.
   // Giveaway also skips validation: a captured king leaves later fens without one, like Fog of War.
   const usesPseudoLegalMoves = fogOfWar || giveaway || duckChess;
+  // Spell Chess: a king captured via Jump leaves a FEN missing a king, same as Duck Chess/Fog of
+  // War/Giveaway — see ChessEngine's own doc comment on skipValidation. Ordinary moves otherwise
+  // still go through chess.js's own strict legality (see moveSpellChess), unaffected by this.
+  const needsSkipValidation = usesPseudoLegalMoves || spellChess;
   // Duck Chess: while the duck is being placed the board shows the position AFTER the just-made move (which
   // the caller has not been told about yet — see pendingDuck below); otherwise it is simply `fen`.
   const [pendingDuck, setPendingDuck] = useState<{ move: Move; fen: string } | null>(null);
   const shownFen = pendingDuck ? pendingDuck.fen : fen;
+
+  // Spell Chess only (see spellChess.ts and the `spellChess`/`spellState` prop doc comments above):
+  // a turn here is "optionally cast a spell, THEN make a move", assembled entirely within this
+  // component the same way Duck Chess assembles "move, then place the duck" via pendingDuck above —
+  // `castMode` is "the player just tapped Freeze/Jump and is now picking a target square" (an active
+  // UI mode, nothing committed yet); `pendingCast` is "a target has been picked" (committed to this
+  // turn, but NOT yet to game state — no charge is spent until the move itself actually lands, see
+  // handleSquarePress/finishRegularMove). Both reset whenever `fen` changes (a move actually landed,
+  // the game was reset, Undo, etc.) via the same effect pendingDuck/selectedSquare already use.
+  const [castMode, setCastMode] = useState<'freeze' | 'jump' | null>(null);
+  const [pendingCast, setPendingCast] = useState<SpellCast | null>(null);
+  // The 3x3 zone a committed Freeze cast would cover — only ever read for a `pendingCast` of that
+  // type, computed once here rather than at each of its few call sites below.
+  const pendingFreezeZone = pendingCast?.type === 'freeze' ? pendingCast.squares : null;
+  // Squares immobilized for the CURRENT mover this ply (the opponent's Freeze cast last turn) — see
+  // ChessEngineOptions.spellChess. Never affected by what the mover themselves is casting THIS turn
+  // (Freeze only ever restricts the opponent's NEXT move, never the caster's own current one).
+  const spellFrozenSquares = spellChess && spellState ? frozenSquaresFor(spellState, turnFromFen(shownFen)) : NO_FROZEN_SQUARES;
+  // The square currently "jumpable" for this move: whatever the mover is casting Jump on RIGHT NOW
+  // takes effect immediately for their own upcoming move (see spellChess.ts's own doc comment on
+  // Jump's timing); otherwise whatever is still active from state (an opponent's Jump cast last turn,
+  // still live for this one reply — see spellChess.activeJumpSquare).
+  const spellJumpSquare = !spellChess ? null : pendingCast?.type === 'jump' ? pendingCast.square : spellState ? activeJumpSquare(spellState) : null;
+  // True only when the mover is in check right now AND the Freeze zone they are actively casting (not
+  // one carried over from state — see spellChess.checkIsWaivedByFreeze) covers every checking piece.
+  // Computed from a throwaway engine on the pre-cast position (cheap, and this is already recomputed
+  // on every render regardless) rather than threading the real `engine` through before it exists.
+  const spellFreezeEscapeActive =
+    spellChess && pendingFreezeZone
+      ? checkIsWaivedByFreeze(new ChessEngine(shownFen, { skipValidation: true }), turnFromFen(shownFen), pendingFreezeZone)
+      : false;
+
   const engine = useMemo(
-    () => new ChessEngine(shownFen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic, duckChess, duckSquare }),
-    [shownFen, chess960, initialFen, usesPseudoLegalMoves, giveaway, atomic, duckChess, duckSquare]
+    () =>
+      new ChessEngine(shownFen, {
+        chess960,
+        initialFen,
+        skipValidation: needsSkipValidation,
+        giveaway,
+        atomic,
+        duckChess,
+        duckSquare,
+        spellChess,
+        frozenSquares: spellFrozenSquares,
+        jumpSquare: spellJumpSquare,
+        freezeEscapeActive: spellFreezeEscapeActive,
+      }),
+    [shownFen, chess960, initialFen, needsSkipValidation, giveaway, atomic, duckChess, duckSquare, spellChess, spellFrozenSquares, spellJumpSquare, spellFreezeEscapeActive]
   );
   const board = useMemo(() => engine.getBoard(), [engine]);
   // Reversing both axes together preserves each square's light/dark identity (a 180° rotation
@@ -212,6 +296,8 @@ function ChessBoard({
     setSelectedSquare(null);
     setPendingPromotion(null);
     setPendingDuck(null);
+    setCastMode(null);
+    setPendingCast(null);
   }, [fen]);
 
   // Lets the screen show "place the duck" while a turn is half-made.
@@ -274,7 +360,7 @@ function ChessBoard({
     // flag through every caller.
     let movingPiece: PieceModel | null = null;
     try {
-      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic, duckChess }).getPieceAt(lastMove.from);
+      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: needsSkipValidation, giveaway, atomic, duckChess }).getPieceAt(lastMove.from);
     } catch {
       movingPiece = null;
     }
@@ -350,21 +436,40 @@ function ChessBoard({
    * pseudo-legal move is legal there (mandatory capture can rule it out), so movePseudoLegal alone
    * would be too permissive a gate. */
   const tryMove = (from: string, to: string, promotion?: Move['promotion']): { move: Move; fen: string } | null => {
-    const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: usesPseudoLegalMoves, giveaway, atomic, duckChess, duckSquare });
+    const moveEngine = new ChessEngine(fen, {
+      chess960,
+      initialFen,
+      skipValidation: needsSkipValidation,
+      giveaway,
+      atomic,
+      duckChess,
+      duckSquare,
+      spellChess,
+      frozenSquares: spellFrozenSquares,
+      jumpSquare: spellJumpSquare,
+      freezeEscapeActive: spellFreezeEscapeActive,
+    });
     if (giveaway && !getGiveawayMoves(moveEngine, from).some((m) => m.to === to && m.promotion === promotion)) return null;
     const move = usesPseudoLegalMoves ? moveEngine.movePseudoLegal(from, to, promotion) : moveEngine.move(from, to, promotion);
     return move ? { move, fen: moveEngine.getFen() } : null;
   };
 
   /** Duck Chess: a regular move was just made — a king capture ends the game (no placement), anything else
-   * freezes the turn until the duck is put somewhere (see handleDuckPlacementPress). */
+   * freezes the turn until the duck is put somewhere (see handleDuckPlacementPress). Spell Chess: whatever
+   * was committed to `pendingCast` this turn (if anything) rides along on `move.spell` — nothing is told
+   * to the caller about a cast until the move it preceded actually lands (see the `spellChess`/`spellState`
+   * prop doc comment above), mirroring how Duck Chess's own `duck` field is attached, just the other way
+   * round in turn order. */
   const finishRegularMove = (result: { move: Move; fen: string }) => {
     setSelectedSquare(null);
-    if (duckChess && result.move.captured !== 'k') {
-      setPendingDuck(result);
+    const move = spellChess && pendingCast ? { ...result.move, spell: pendingCast } : result.move;
+    setCastMode(null);
+    setPendingCast(null);
+    if (duckChess && move.captured !== 'k') {
+      setPendingDuck({ move, fen: result.fen });
       return;
     }
-    onMove(result.move, result.fen);
+    onMove(move, result.fen);
   };
 
   const handleDuckPlacementPress = (square: string) => {
@@ -391,6 +496,21 @@ function ChessBoard({
 
   const handleSquarePress = (square: string) => {
     if (disabled || gameOver || pendingPromotion) return;
+
+    // Spell Chess: while picking a target for Freeze/Jump (see the spell bar below), a tap commits
+    // that target to `pendingCast` instead of going anywhere near normal piece selection/movement —
+    // Freeze accepts any square as its 3x3 center; Jump only an occupied one (an empty target just
+    // has nothing to jump over, so the tap is ignored rather than committing a no-op cast).
+    if (castMode) {
+      if (castMode === 'freeze') {
+        setPendingCast({ type: 'freeze', center: square, squares: getFreezeZoneSquares(square) });
+        setCastMode(null);
+      } else if (engine.getPieceAt(square)) {
+        setPendingCast({ type: 'jump', square });
+        setCastMode(null);
+      }
+      return;
+    }
 
     if (pendingDuck) {
       handleDuckPlacementPress(square);
@@ -719,13 +839,14 @@ function ChessBoard({
   const ghostOpacity = explosionProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
 
   return (
-    <View style={styles.border}>
-      <View
-        ref={boardContainerRef}
-        onLayout={remeasureBoardOffset}
-        style={[styles.board, { width: boardSize, height: boardSize }]}
-        {...panResponder.panHandlers}
-      >
+    <>
+      <View style={styles.border}>
+        <View
+          ref={boardContainerRef}
+          onLayout={remeasureBoardOffset}
+          style={[styles.board, { width: boardSize, height: boardSize }]}
+          {...panResponder.panHandlers}
+        >
         {displayRows.map((row, rowIndex) =>
           row.map((square, colIndex) => (
             <Square
@@ -740,6 +861,8 @@ function ChessBoard({
               hidePiece={slidingMove !== null && square.square === slidingMove.to}
               isFogged={visibleSquares !== undefined && !visibleSquares.has(square.square)}
               isDuck={duckChess && square.square === duckSquare}
+              isFrozen={spellChess && spellFrozenSquares.includes(square.square)}
+              isJumpSquare={spellChess && square.square === spellJumpSquare}
               size={squareSize}
               lightColor={boardTheme.lightColor}
               darkColor={boardTheme.darkColor}
@@ -795,6 +918,57 @@ function ChessBoard({
           </Animated.View>
         )}
       </View>
+      </View>
+
+      {/* Spell Chess only — "cast, then move": tap Freeze/Jump to enter castMode and pick a target
+          (see handleSquarePress's own castMode branch above), or tap the pending-cast chip to back
+          out of a cast already committed this turn (before the move that would spend it lands —
+          see finishRegularMove). Charges shown are the side TO MOVE's own (`turn`, not a fixed
+          color), since only they may cast right now. Disabled whenever input generally is
+          (disabled/gameOver), and the OTHER spell button is disabled once one is mid-pick so only
+          one spell is ever in flight, matching the "at most one spell per own turn" rule. */}
+      {spellChess && spellState && (
+        <View style={styles.spellBar}>
+          <Pressable
+            disabled={disabled || gameOver || pendingCast !== null || !canCastFreeze(spellState, turn) || castMode === 'jump'}
+            onPress={() => setCastMode(castMode === 'freeze' ? null : 'freeze')}
+            style={[
+              styles.spellButton,
+              castMode === 'freeze' && styles.spellButtonActive,
+              (disabled || gameOver || pendingCast !== null || !canCastFreeze(spellState, turn) || castMode === 'jump') && styles.spellButtonDisabled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Cast Freeze, ${spellState[turn].charges.freeze} remaining`}
+          >
+            <Text style={styles.spellButtonText}>❄️ Freeze ({spellState[turn].charges.freeze})</Text>
+          </Pressable>
+          <Pressable
+            disabled={disabled || gameOver || pendingCast !== null || !canCastJump(spellState, turn) || castMode === 'freeze'}
+            onPress={() => setCastMode(castMode === 'jump' ? null : 'jump')}
+            style={[
+              styles.spellButton,
+              castMode === 'jump' && styles.spellButtonActive,
+              (disabled || gameOver || pendingCast !== null || !canCastJump(spellState, turn) || castMode === 'freeze') && styles.spellButtonDisabled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Cast Jump, ${spellState[turn].charges.jump} remaining`}
+          >
+            <Text style={styles.spellButtonText}>🌀 Jump ({spellState[turn].charges.jump})</Text>
+          </Pressable>
+          {castMode && (
+            <Text style={styles.spellHint}>
+              {castMode === 'freeze' ? 'Tap a square to center the freeze' : 'Tap a piece to jump over'}
+            </Text>
+          )}
+          {pendingCast && (
+            <Pressable onPress={() => setPendingCast(null)} style={styles.spellCancelButton} accessibilityRole="button" accessibilityLabel="Cancel pending spell cast">
+              <Text style={styles.spellButtonText}>
+                ✕ {pendingCast.type === 'freeze' ? `Freeze @ ${pendingCast.center}` : `Jump @ ${pendingCast.square}`}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
 
       {/* A real Modal, not an overlay inside the board: it covers the WHOLE screen, so a tap
           anywhere outside the four buttons — on the board or off it — lands on the backdrop and
@@ -826,7 +1000,7 @@ function ChessBoard({
           </View>
         </Pressable>
       </Modal>
-    </View>
+    </>
   );
 }
 
@@ -897,6 +1071,41 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  spellBar: {
+    marginTop: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+  },
+  spellButton: {
+    backgroundColor: '#5c4a32',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  spellButtonActive: {
+    backgroundColor: '#8a6d3b',
+  },
+  spellButtonDisabled: {
+    opacity: 0.4,
+  },
+  spellCancelButton: {
+    backgroundColor: '#7a2f2f',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  spellButtonText: {
+    color: '#f4ecd8',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  spellHint: {
+    color: '#3a2618',
+    fontSize: 12,
+    fontStyle: 'italic',
   },
 });
 
