@@ -293,3 +293,53 @@ server must understand the protocol first); until it lands the Online/Challenge/
   the duck, so in rare positions a move could carry an unnecessary disambiguator. Cosmetic only.
 - The duck animation is a plain emoji on the square; the placement UI and the duck rendering were verified in the web
   build, not on a device.
+
+## 9. Horde — scope, decisions and known limits
+
+Added following CHECKLIST.md. Rules and helpers live in `src/logic/horde.ts` (the shared rules block is mirrored VERBATIM in
+`backend/src/game/horde.ts`, guarded by the backend's `test-horde.mjs`); the engine-level pieces sit behind `ChessEngine`'s
+opt-in `horde` option. Local + Bots + Online were built together; Tournaments never offer it.
+
+**Rules as built (chess.com's own documentation).** White has 36 pawns and NO king; Black has the normal army and keeps its
+castling rights (start FEN `rnbqkbnr/pppppppp/8/1PP2PP1/PPPPPPPP/PPPPPPPP/PPPPPPPP/PPPPPPPP w kq - 0 1` — note the `kq`, not `-`:
+only White's king is missing). White wins by checkmating Black's king; Black wins by capturing every White piece (reason `horde`);
+stalemate is a DRAW for either side. En passant works normally; promotion is normal. The one real deviation: **White pawns on
+rank 1 or 2 may double-step** — positional, not a first-move flag, so a pawn that went 1->2 may still go 2->4.
+
+**Much less custom than Giveaway/Atomic/Duck Chess.** chess.js (loaded with skipValidation, which `horde` implies) already
+tolerates a missing White king and plays every rule above except one move: it generates the rank-2 double step but not the
+**rank-1 double step**, which `ChessEngine` synthesizes through chess.js's unvalidated `_makeMove` (BIG_PAWN flag, so the en
+passant square is recorded). It also gets two things WRONG, which `ChessEngine` overrides: **insufficient material** (chess.js
+calls "Black king + one White bishop" king-versus-king, a draw — in Horde Black must capture it, so insufficient material never
+ends a Horde game) and **"White has nothing left"** (no moves, no check = "stalemate" to chess.js; it is Black's WIN, decided by
+`getHordeWinnerFromFen` first — `getGameOutcome` takes it as its 13th argument, in the top tier ABOVE `chessStatus`).
+
+**Decisions worth knowing**
+- **En passant after a rank-1 double step is allowed** (`HORDE_FIRST_RANK_DOUBLE_STEP_ALLOWS_EN_PASSANT`). chess.com says only "en
+  passant captures are allowed" and does not single this case out; Lichess (and the chessops oracle) forbids it for this one case.
+  `hordeOracle.test.ts` allows exactly that divergence and nothing else. Flip the constant in both repos to follow Lichess.
+- Bots do NOT use Stockfish (`chooseHordeBotMove`): it cannot be given a position with no White king. One heuristic plays EITHER
+  side: pass 1 scores every move (captures, promotion gain, White pawn advances, checks; checkmate / taking the last piece are
+  decisive), pass 2 subtracts the opponent's best reply and any mate-in-one for the best eight. ELO is the chance of playing
+  that choice vs a random move (~20% at 400 to ~90% at 3000). Hence the rating guard excludes Horde (unlike Spell Chess).
+- No hints, premoves, rating changes or Game Review (Stockfish cannot analyse a kingless position). The bot list shows "Horde bot"
+  and offers no custom UCI engines. Saved PGNs get `[Variant "Horde"]` plus SetUp/FEN; replay and import refuse them.
+- Not combinable with any other variant (mutual exclusivity is enforced by the single-select `GameVariant` and, on the server,
+  `conflictingVariantError`).
+
+**How it is tested**
+- `horde.test.ts` — start position, no-king behaviour, the positional double step (rank 1 / rank 2 / blocked / not rank 3 / 1->2->4),
+  en passant, promotion, every way a game ends, FEN reload, undo, and a 90-ply performance check.
+- `hordeOracle.test.ts` — **differential tests against chessops's `Horde`** (dev-only, GPL): legal moves, resulting positions and
+  endings agree over random games and hand-picked positions; the one en passant divergence above is pinned.
+- `hordeBot.test.ts`, `hordeGame.test.ts`, `hordeOnline.test.ts`, the Horde cases in `gameModes.test.ts` — the bot (legal moves, mate in
+  one beats winning a queen, takes the last piece, ELO dial, self-play, cost), wiring guards, wire flags, rejoin replay.
+- Mutation-checked: nine deliberate breakages (no rank-1 double step, a blocker on rank 2 ignored, stalemate as a loss,
+  insufficient material trusted, no skipValidation, "nothing left" ignored, winner checked below the draw status, the bot ignoring
+  mate) each fail at least one test; one more (a double step also offered from rank 3) is an equivalent mutant — the helper
+  checks the pawn's own square, so it can never fire — and one test gap (the bot's mate value) was found and closed.
+
+**Known limits**
+- Threefold repetition is never detected (every screen rebuilds the engine from the FEN; see TODO.md).
+- The Horde bot is a shallow heuristic: it is not trying to be strong, and long endgames (a few White pieces against Black's
+  army) can shuffle until the move cap.
