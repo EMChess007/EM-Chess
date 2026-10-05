@@ -7,6 +7,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { duckMoveNotation } from '../logic/duckChess';
+import { initialSpellChessState, spellMoveNotation } from '../logic/spellChess';
 import { THREE_CHECK_TARGET, getThreeCheckCounts } from '../logic/threeCheck';
 import { playerClockText } from '../logic/time';
 import type { Ack, GameOverPayload, SpectateStatePayload, SpectatorMovePayload } from '../types/multiplayer';
@@ -49,17 +50,43 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
       // Spectators always get the full true game (see SpectateStatePayload's own doc comment),
       // so `san` is only ever optional in the TYPE (it's shared with the redacted player-facing
       // shape) — never actually missing here; the fallback is just defensive.
-      setMoves(ack.state.moves.map((m) => ({ san: ack.state.isDuckChess ? duckMoveNotation({ san: m.san ?? '?', duck: m.duck }) : (m.san ?? '?') })));
+      setMoves(
+        ack.state.moves.map((m) => ({
+          san: ack.state.isDuckChess
+            ? duckMoveNotation({ san: m.san ?? '?', duck: m.duck })
+            : ack.state.isSpellChess
+              ? spellMoveNotation({ san: m.san ?? '?' }, m.spell ?? null)
+              : (m.san ?? '?'),
+        }))
+      );
     });
 
     const handleSpectatorMove = (payload: SpectatorMovePayload) => {
       setState((prev) =>
         prev
-          ? { ...prev, fen: payload.fen, turn: payload.turn, whiteMs: payload.whiteMs, blackMs: payload.blackMs, ...(payload.duckSquare !== undefined ? { duckSquare: payload.duckSquare } : {}) }
+          ? {
+              ...prev,
+              fen: payload.fen,
+              turn: payload.turn,
+              whiteMs: payload.whiteMs,
+              blackMs: payload.blackMs,
+              ...(payload.duckSquare !== undefined ? { duckSquare: payload.duckSquare } : {}),
+              ...(payload.spellState !== undefined ? { spellState: payload.spellState } : {}),
+            }
           : prev
       );
-      // Duck Chess: where the duck went rides along with the move, "e4 @g6".
-      setMoves((prev) => [...prev, { san: payload.duck ? duckMoveNotation({ san: payload.san ?? '?', duck: payload.duck }) : (payload.san ?? '?') }]);
+      // Duck Chess: where the duck went rides along with the move, "e4 @g6". Spell Chess: the cast (if any)
+      // rides along the same way, via spellMoveNotation.
+      setMoves((prev) => [
+        ...prev,
+        {
+          san: payload.duck
+            ? duckMoveNotation({ san: payload.san ?? '?', duck: payload.duck })
+            : payload.spell
+              ? spellMoveNotation({ san: payload.san ?? '?' }, payload.spell)
+              : (payload.san ?? '?'),
+        },
+      ]);
     };
     const handleGameOver = (payload: GameOverPayload) => setGameOver(payload);
 
@@ -128,7 +155,9 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
                         ? ' · Atomic'
                         : state.isDuckChess
                           ? ' · Duck Chess'
-                          : ''}
+                          : state.isSpellChess
+                            ? ' · Spell Chess'
+                            : ''}
         </Text>
         <Text style={styles.status}>{statusText}</Text>
 
@@ -150,6 +179,8 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
           atomic={state.isAtomic}
           duckChess={state.isDuckChess}
           duckSquare={state.duckSquare ?? null}
+          spellChess={state.isSpellChess}
+          spellState={state.spellState ?? initialSpellChessState()}
         />
 
         <View style={styles.playerRow}>

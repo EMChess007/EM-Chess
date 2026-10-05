@@ -1,4 +1,5 @@
-import type { PieceColor } from './chess';
+import type { PieceColor, SpellCast } from './chess';
+import type { SpellChessState } from '../logic/spellChess';
 
 // Mirrors backend/src/game/types.ts by hand — the mobile app and backend are separate npm
 // projects with no shared module boundary, so this is a deliberate duplicate of the wire
@@ -21,7 +22,8 @@ export type GameOverReason =
   | 'fogOfWar'
   | 'giveaway'
   | 'atomic'
-  | 'duckChess';
+  | 'duckChess'
+  | 'spellChess';
 
 export interface JoinQueuePayload {
   timeControl: OnlineTimeControl;
@@ -33,6 +35,7 @@ export interface JoinQueuePayload {
   isGiveaway?: boolean;
   isAtomic?: boolean;
   isDuckChess?: boolean;
+  isSpellChess?: boolean;
 }
 
 export interface MakeMovePayload {
@@ -44,6 +47,9 @@ export interface MakeMovePayload {
   /** Duck Chess only — where the duck goes as the second half of the turn; required with every move that does
    * not capture a king (the server refuses the whole turn otherwise). */
   duckTo?: string;
+  /** Spell Chess only — the spell (if any) cast immediately before this move. The server recomputes a Freeze's
+   * `squares` itself, so only `type`+`center`/`square` need to be sent; at most one per turn. */
+  spell?: { type: 'freeze'; center: string } | { type: 'jump'; square: string };
 }
 
 export interface RejoinGamePayload {
@@ -83,6 +89,7 @@ export interface MatchFoundPayload {
   isGiveaway: boolean;
   isAtomic: boolean;
   isDuckChess: boolean;
+  isSpellChess: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;
@@ -105,6 +112,10 @@ export interface OpponentMovePayload {
    * stands. */
   duck?: string;
   duckSquare?: string | null;
+  /** Spell Chess only — the spell (if any) cast immediately before this move, and the full resulting state
+   * (charges/cooldowns/pending effects). */
+  spell?: SpellCast;
+  spellState?: SpellChessState;
   fen: string;
   turn: PieceColor;
   whiteMs: number;
@@ -143,11 +154,14 @@ export interface RejoinStatePayload {
   isDuckChess: boolean;
   /** Duck Chess only — where the duck stands now. */
   duckSquare?: string | null;
+  isSpellChess: boolean;
+  /** Spell Chess only — charges/cooldowns/pending effects right now. */
+  spellState?: SpellChessState;
   whiteMs: number;
   blackMs: number;
   /** Each entry's fields are all omitted together for a Fog of War move this viewer never
    * witnessed — always fully populated outside Fog of War. */
-  moves: { from?: string; to?: string; promotion?: string; san?: string; duck?: string }[];
+  moves: { from?: string; to?: string; promotion?: string; san?: string; duck?: string; spell?: SpellCast }[];
   /** Fog of War only — see MatchFoundPayload.visibleSquares. */
   visibleSquares?: string[];
   opponentConnected: boolean;
@@ -179,6 +193,7 @@ export interface CreateChallengePayload {
   isGiveaway?: boolean;
   isAtomic?: boolean;
   isDuckChess?: boolean;
+  isSpellChess?: boolean;
   timeControlLabel?: string;
 }
 

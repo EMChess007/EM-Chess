@@ -28,6 +28,7 @@ describe('Duck Chess wire flags', () => {
       isGiveaway: false,
       isAtomic: false,
       isDuckChess: true,
+      isSpellChess: false,
     });
     expect(variantTitlePrefix('duckChess')).toBe('Duck Chess · ');
   });

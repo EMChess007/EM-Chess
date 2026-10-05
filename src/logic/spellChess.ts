@@ -38,6 +38,9 @@ import type { Move, Piece, PieceColor, SpellCast } from '../types/chess';
  * VERBATIM in the backend's src/game/spellChess.ts (scripts/test-spell.mjs fails if the two differ).
  */
 
+// --- Shared rules block (mirrored VERBATIM in backend/src/game/spellChess.ts; scripts/test-spell.mjs fails if the
+// two copies differ -- edit both together) --------------------------------------------------------------------
+
 export const FREEZE_INITIAL_CHARGES = 5;
 export const JUMP_INITIAL_CHARGES = 2;
 export const SPELL_COOLDOWN_TURNS = 3;
@@ -179,6 +182,8 @@ export function frozenSquaresFor(state: SpellChessState, color: PieceColor): str
 export function activeJumpSquare(state: SpellChessState): string | null {
   return state.pendingJump?.square ?? null;
 }
+
+// --- End of the shared rules block --------------------------------------------------------------------------------
 
 type SlidingType = 'r' | 'b' | 'q';
 const isSliding = (type: string): type is SlidingType => type === 'r' || type === 'b' || type === 'q';
