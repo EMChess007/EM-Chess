@@ -136,7 +136,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
     <View style={styles.container}>
       <ScreenHeader title="Spectating" onBack={handleExit} backLabel="‹ Back" />
       <MoveListStrip moves={moves} selectedIndex={moves.length - 1} autoScroll onSelectMove={() => {}} />
-      <GameScreenBody bottomBar={<View />}>
+      <GameScreenBody bottomBar={<View />} compact={state.isSpellChess}>
         <Text style={styles.subtitle}>
           {whiteUsername} vs {blackUsername}
           {state.isChess960

@@ -107,7 +107,8 @@ describe('Online wiring (no React Native renderer available)', () => {
   it('opponent moves take the duck from the server, and the replay engine is built with the duck BEFORE that move', () => {
     expect(online).toContain('const duckBeforeOpponentMove = duckRef.current;');
     expect(online).toContain('duckSquare: duckBeforeOpponentMove,');
-    expect(online).toContain('payload.duck ? { ...replayedMove, duck: payload.duck } : replayedMove');
+    expect(online).toContain('replayedMove && payload.duck');
+    expect(online).toContain('{ ...replayedMove, duck: payload.duck }');
   });
 
   it('rejoin restores the duck and replays each ply on a fresh engine from the running pair', () => {
@@ -117,8 +118,8 @@ describe('Online wiring (no React Native renderer available)', () => {
   });
 
   it('Online Duck Chess has no premoves, no opening names, no rating change and no Game Review, and shows the notation', () => {
-    expect(online).toContain('premoveColor={giveaway || atomic || duckChess ? undefined : myColor}');
-    expect(online).toContain('!duckChess && openingName');
+    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess ? undefined : myColor}');
+    expect(online).toContain('!duckChess && !spellChess && openingName');
     expect(online).toContain('ratingCategory && !giveaway && !atomic && !duckChess');
     expect(online).toContain('onDuckPlacementChange={setPlacingDuck}');
     expect(online).toContain('duckSquare={displayDuck}');

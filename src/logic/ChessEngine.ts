@@ -17,7 +17,7 @@ import {
 } from './atomic';
 import { collapseFenRank, expandFenRank, getChess960BackRankFiles } from './chess960';
 import { isCastleBlockedByDuck, isMoveBlockedByDuck } from './duckChess';
-import { getJumpAugmentedCaptures } from './spellChess';
+import { castlingRookOrigin, getJumpAugmentedCaptures } from './spellChess';
 
 const FILES = 'abcdefgh';
 
@@ -299,7 +299,7 @@ export class ChessEngine {
             .filter((m) => m.from === square)
             .map((m) => m.to)
         : [];
-      return [...new Set([...base, ...jumpTargets])];
+      return [...new Set([...base, ...jumpTargets])].filter((to) => !this.castlesWithFrozenRook(square, to));
     }
     const verboseMoves = this.chess.moves({ square: square as ChessJsSquare, verbose: true });
 
@@ -567,6 +567,15 @@ export class ChessEngine {
 
   // --- Spell Chess (see spellChess.ts) -----------------------------------
 
+  /** True when from->to is a castling move whose ROOK sits in a frozen square — castling moves the rook as well as
+   * the king, so it is as illegal as moving the rook directly (see spellChess.castlingRookOrigin). */
+  private castlesWithFrozenRook(from: string, to: string): boolean {
+    if (this.frozenSquares.length === 0) return false;
+    const piece = this.getPieceAt(from);
+    const rook = piece ? castlingRookOrigin(from, to, piece.type) : null;
+    return rook !== null && this.frozenSquares.includes(rook);
+  }
+
   /** Applies a Spell Chess move: a frozen origin is always rejected; a Jump-augmented capture (if one
    * matches `from`/`to` exactly) is force-applied via applyRawSpellMove since it is never among chess.js's
    * own pseudo-legal candidates; while freezeEscapeActive, falls back to movePseudoLegal (no check
@@ -574,6 +583,7 @@ export class ChessEngine {
    * checkmate/stalemate/check/draw all still apply exactly as normal. See ChessEngineOptions.spellChess. */
   private moveSpellChess(from: string, to: string, promotion?: Move['promotion']): Move | null {
     if (this.frozenSquares.includes(from)) return null;
+    if (this.castlesWithFrozenRook(from, to)) return null;
 
     if (this.jumpSquare) {
       const match = getJumpAugmentedCaptures(this, this.jumpSquare, this.chess.turn()).find((m) => m.from === from && m.to === to);

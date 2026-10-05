@@ -12,6 +12,11 @@ interface GameScreenBodyProps {
    * New Game/Analyze Game/Back-to-menu footer) — always anchored near the bottom of the screen,
    * regardless of how much is above it. */
   bottomBar: ReactNode;
+  /** Tighter vertical spacing between (and around) the content rows. For a game whose board comes with extra chrome
+   * of its own — Spell Chess's Freeze/Jump row lives inside ChessBoard — so everything still fits in this
+   * non-scrolling, overflow-hidden area WITHOUT shrinking the board (the board is the same size in every variant)
+   * and without making the area scrollable (that would fight the board's drag-to-move gestures). */
+  compact?: boolean;
 }
 
 /**
@@ -21,12 +26,12 @@ interface GameScreenBodyProps {
  * safe-area inset directly, once, centrally" fix pattern already used by ScreenHeader for the
  * top edge, applied here to the bottom.
  */
-export default function GameScreenBody({ children, bottomBar }: GameScreenBodyProps) {
+export default function GameScreenBody({ children, bottomBar, compact = false }: GameScreenBodyProps) {
   const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.container}>
-      <View style={styles.content}>{children}</View>
+      <View style={[styles.content, compact && styles.contentCompact]}>{children}</View>
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>{bottomBar}</View>
     </View>
   );
@@ -49,6 +54,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     gap: 8,
     paddingVertical: 8,
+  },
+  contentCompact: {
+    gap: 3,
+    paddingVertical: 3,
   },
   bottomBar: {
     alignItems: 'center',

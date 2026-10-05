@@ -452,7 +452,7 @@ describe('isolation and wiring (no React Native renderer available)', () => {
   const board = read('components/ChessBoard.tsx');
 
   it('ChessBoard builds every engine with the atomic option and skips the picker only for capture-promotions', () => {
-    expect(board.match(/\{[^}]*giveaway, atomic, duckChess/g)?.length).toBe(3); // memoized, animation and tryMove engines
+    expect(board.match(/skipValidation: needsSkipValidation,\s*giveaway,\s*atomic,\s*duckChess/g)?.length).toBe(3); // memoized, animation and tryMove engines
     expect(board).toContain("autoPromotion = 'q'");
     expect(board).toContain('atomic && board.flat().some((s) => s.square === square && s.piece !== null)');
   });
@@ -460,7 +460,7 @@ describe('isolation and wiring (no React Native renderer available)', () => {
   for (const screen of ['screens/LocalGameScreen.tsx', 'screens/BotGameScreen.tsx']) {
     it(`${screen} feeds the Atomic winner into getGameOutcome and the saved-game payload, and passes the flag on`, () => {
       const src = read(screen);
-      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner,\s*duckWinner\s*\)/);
+      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner,\s*duckWinner,\s*spellChessWinner\s*\)/);
       expect(src).toContain('atomicWinner,\n        atomic,');
       expect(src).toContain('atomic={atomic}');
       expect(src).toContain('isAtomicThreefoldRepetition');
@@ -482,8 +482,8 @@ describe('isolation and wiring (no React Native renderer available)', () => {
     expect(atomicBranch).toBeGreaterThan(-1);
     expect(bot).toContain('chooseAtomicBotMove(moveEngine');
     expect(stockfishCall).toBeGreaterThan(atomicBranch);
-    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess ? undefined : userColor}');
-    expect(bot).toContain('onPremove={giveaway || atomic || duckChess ? undefined : handleQueuePremove}');
+    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess ? undefined : userColor}');
+    expect(bot).toContain('onPremove={giveaway || atomic || duckChess || spellChess ? undefined : handleQueuePremove}');
     expect(bot).toContain('!giveaway && !atomic && !duckChess) recordRatedGame');
   });
 

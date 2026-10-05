@@ -612,6 +612,7 @@ export default function LocalGameScreen({
         onSelectMove={handleSelectMove}
       />
       <GameScreenBody
+        compact={spellChess}
         bottomBar={
           <>
             <View style={styles.controlsWrap}>

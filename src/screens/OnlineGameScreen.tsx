@@ -20,13 +20,12 @@ import { duckMoveNotation } from '../logic/duckChess';
 import { getGiveawayMoves } from '../logic/giveaway';
 import {
   afterSpellChessMove,
-  activeJumpSquare,
   castFreeze,
   castJump,
   checkIsWaivedByFreeze,
-  frozenSquaresFor,
   initialSpellChessState,
   spellMoveNotation,
+  spellTurnContext,
   type SpellChessState,
 } from '../logic/spellChess';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
@@ -234,20 +233,14 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       // resulting position itself always comes from `payload.fen` below, never from this replay,
       // keeping the server as the sole authority on the actual game state. skipValidation is only
       // ever actually needed for Fog of War (a redacted fen can legitimately be missing a king).
-      // Spell Chess: frozenSquares/jumpSquare/freezeEscapeActive for the replay below come from the state as it
-      // stood BEFORE this move (exactly like the server's own RoomManager.applyMove) — the cast (if any) on
-      // THIS move already affects what that move itself may legally do (see spellChess.ts), so this is derived
-      // from stateAfterCast, not spellBeforeOpponentMove directly.
-      const spellStateAfterCast =
-        spellChess && payload.spell
-          ? payload.spell.type === 'freeze'
-            ? castFreeze(spellBeforeOpponentMove, opponentColor, payload.spell.center)
-            : castJump(spellBeforeOpponentMove, opponentColor, payload.spell.square)
-          : spellBeforeOpponentMove;
-      const spellFrozenForOpponent = spellChess ? frozenSquaresFor(spellStateAfterCast, opponentColor) : [];
-      const spellJumpForOpponent = spellChess ? activeJumpSquare(spellStateAfterCast) : null;
-      const spellFreezeEscapeForOpponent = spellChess
-        ? checkIsWaivedByFreeze(new ChessEngine(fenRef.current, { skipValidation: true }), opponentColor, spellFrozenForOpponent)
+      // Spell Chess: frozenSquares/jumpSquare/freezeEscapeActive for the replay below, derived exactly like the
+      // server's own RoomManager.applyMove — through spellTurnContext, which reads the frozen squares from the state
+      // BEFORE the opponent's cast (see its doc comment for the trap) and the check-waiver from the zone cast now.
+      const spellTurnForOpponent = spellChess ? spellTurnContext(spellBeforeOpponentMove, opponentColor, payload.spell) : null;
+      const spellFrozenForOpponent = spellTurnForOpponent?.frozenSquares ?? [];
+      const spellJumpForOpponent = spellTurnForOpponent?.jumpSquare ?? null;
+      const spellFreezeEscapeForOpponent = spellTurnForOpponent?.freezeZone
+        ? checkIsWaivedByFreeze(new ChessEngine(fenRef.current, { skipValidation: true }), opponentColor, spellTurnForOpponent.freezeZone)
         : false;
       const replayEngine = new ChessEngine(fenRef.current, {
         chess960: match.isChess960,
@@ -429,14 +422,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
               }
 
               if (spellChess) {
-                const stateAfterCast = m.spell
-                  ? m.spell.type === 'freeze'
-                    ? castFreeze(replaySpellState, mover, m.spell.center)
-                    : castJump(replaySpellState, mover, m.spell.square)
-                  : replaySpellState;
-                const frozenSquares = frozenSquaresFor(stateAfterCast, mover);
-                const jumpSquare = activeJumpSquare(stateAfterCast);
-                const freezeEscapeActive = checkIsWaivedByFreeze(new ChessEngine(replayFen, { skipValidation: true }), mover, frozenSquares);
+                const { stateAfterCast, frozenSquares, jumpSquare, freezeZone } = spellTurnContext(replaySpellState, mover, m.spell);
+                const freezeEscapeActive = freezeZone ? checkIsWaivedByFreeze(new ChessEngine(replayFen, { skipValidation: true }), mover, freezeZone) : false;
                 const stepEngine = new ChessEngine(replayFen, {
                   chess960: match.isChess960,
                   initialFen: match.fen,
@@ -838,6 +825,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         onSelectMove={handleSelectMove}
       />
       <GameScreenBody
+        compact={spellChess}
         bottomBar={
           <>
             <View style={styles.controlsWrap}>

@@ -110,8 +110,8 @@ describe('wiring (no React Native renderer available)', () => {
   const board = read('components/ChessBoard.tsx');
 
   it('ChessBoard holds a regular move until the duck is placed, then commits ONE move carrying the duck', () => {
-    expect(board).toContain('setPendingDuck(result)');
-    expect(board).toContain("result.move.captured !== 'k'"); // a king capture needs no placement
+    expect(board).toContain('setPendingDuck({ move, fen: result.fen })');
+    expect(board).toContain("duckChess && move.captured !== 'k'"); // a king capture needs no placement
     expect(board).toContain('const committed: Move = { ...pendingDuck.move, duck: square };');
     expect(board).toContain('onMove(committed, pendingDuck.fen)');
     expect(board).toContain('getLegalDuckPlacementSquares(engine, duckSquare)');
@@ -122,7 +122,7 @@ describe('wiring (no React Native renderer available)', () => {
     it(`${screen} derives the duck from the history (so Undo restores it), feeds the winner into getGameOutcome and the payload`, () => {
       const src = read(screen);
       expect(src).toContain('history[history.length - 1].duckSquare ?? null');
-      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner,\s*duckWinner\s*\)/);
+      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner,\s*duckWinner,\s*spellChessWinner\s*\)/);
       expect(src).toContain('duckChessWinner: duckWinner,\n        duckChess,');
       expect(src).toContain('duckChess={duckChess}');
       expect(src).toContain('onDuckPlacementChange={setPlacingDuck}');
@@ -137,7 +137,7 @@ describe('wiring (no React Native renderer available)', () => {
     expect(duckBranch).toBeGreaterThan(-1);
     expect(bot).toContain('chooseDuckBotMove(moveEngine');
     expect(stockfishCall).toBeGreaterThan(duckBranch);
-    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess ? undefined : userColor}');
+    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess ? undefined : userColor}');
     expect(bot).toContain('!giveaway && !atomic && !duckChess) recordRatedGame');
   });
 

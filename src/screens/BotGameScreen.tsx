@@ -947,6 +947,7 @@ export default function BotGameScreen({
         onSelectMove={handleSelectMove}
       />
       <GameScreenBody
+        compact={spellChess}
         bottomBar={
           <>
             <View style={styles.controlsWrap}>

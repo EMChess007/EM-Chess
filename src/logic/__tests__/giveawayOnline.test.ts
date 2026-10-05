@@ -39,6 +39,7 @@ describe('variantWireFlags (what join_queue / create_challenge send)', () => {
       isGiveaway: true,
       isAtomic: false,
       isDuckChess: false,
+      isSpellChess: false,
     });
   });
 
@@ -94,14 +95,14 @@ describe('Online wiring (no React Native renderer available)', () => {
 
   it('OnlineGameScreen builds BOTH replay engines the Giveaway way and applies moves through movePseudoLegal', () => {
     expect(online).toContain('const giveaway = match.isGiveaway === true;');
-    expect(online.match(/skipValidation: match\.isFogOfWar \|\| giveaway \|\| duckChess,\s*\n\s*giveaway,/g)?.length).toBe(2);
+    expect(online.match(/skipValidation: match\.isFogOfWar \|\| giveaway \|\| duckChess(?: \|\| spellChess)?,\s*\n\s*giveaway,/g)?.length).toBe(2);
     expect(online.match(/match\.isFogOfWar \|\| giveaway(?: \|\| duckChess)?\s*\n?\s*\?\s*(replayEngine)\.movePseudoLegal/g)?.length).toBe(2);
   });
 
   it('Online Giveaway has no premoves, no opening names, no rating change and no Game Review', () => {
-    expect(online).toContain('premoveColor={giveaway || atomic || duckChess ? undefined : myColor}');
-    expect(online).toContain('onPremove={giveaway || atomic || duckChess ? undefined : handleQueuePremove}');
-    expect(online).toContain('!giveaway && !atomic && !duckChess && openingName');
+    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess ? undefined : myColor}');
+    expect(online).toContain('onPremove={giveaway || atomic || duckChess || spellChess ? undefined : handleQueuePremove}');
+    expect(online).toContain('!giveaway && !atomic && !duckChess && !spellChess && openingName');
     expect(online).toContain('ratingCategory && !giveaway');
     expect(online).toContain('wasMaterialDownRef.current && !giveaway');
     expect(online).toMatch(/PostGameSummaryModal[\s\S]*?giveaway=\{giveaway\}/);

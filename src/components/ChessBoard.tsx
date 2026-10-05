@@ -17,7 +17,7 @@ import {
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { ExplodedPiece, Move, PieceColor, Piece as PieceModel, SpellCast } from '../types/chess';
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
-import { SPELL_BAR_HEIGHT, SPELL_BAR_MARGIN_TOP, SPELL_BAR_RESERVED_HEIGHT, getBoardSize } from './boardSize';
+import { getBoardSize } from './boardSize';
 import Piece from './Piece';
 import Square from './Square';
 
@@ -185,9 +185,9 @@ function ChessBoard({
   visibleSquares,
 }: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
-  // Spell Chess's Freeze/Jump row sits under the board (rendered below), so the board shrinks by its fixed height to
-  // keep the whole stack within the non-scrolling GameScreenBody — see boardSize.SPELL_BAR_RESERVED_HEIGHT.
-  const boardSize = getBoardSize(width, height, spellChess && spellState ? SPELL_BAR_RESERVED_HEIGHT : 0);
+  // The board is the SAME size in every variant, Spell Chess included — its Freeze/Jump row is made to fit by trimming
+  // spacing elsewhere (GameScreenBody's `compact`), never by shrinking this. See SPELL_BAR_HEIGHT below.
+  const boardSize = getBoardSize(width, height);
   const squareSize = boardSize / 8;
   const boardTheme = useActiveBoardTheme();
   const pieceTheme = useActivePieceTheme();
@@ -1006,6 +1006,11 @@ function ChessBoard({
   );
 }
 
+/** The Spell Chess Freeze/Jump row has a FIXED height and never wraps (the cast hint ellipsizes), so the layout around
+ * the board is deterministic: GameScreenBody's compact spacing is sized against exactly this much extra chrome. */
+const SPELL_BAR_MARGIN_TOP = 8;
+const SPELL_BAR_HEIGHT = 32;
+
 const styles = StyleSheet.create({
   promotionBackdrop: {
     position: 'absolute',
@@ -1074,8 +1079,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Fixed height and no wrapping: the board reserves exactly SPELL_BAR_RESERVED_HEIGHT for this row (see boardSize.ts),
-  // so it must never grow to a second line. The hint text shrinks/ellipsizes instead (spellHint).
+  // Fixed height and no wrapping, so it can never grow to a second line and push the bottom player row out of the
+  // non-scrolling GameScreenBody. The hint text shrinks/ellipsizes instead (spellHint).
   spellBar: {
     marginTop: SPELL_BAR_MARGIN_TOP,
     height: SPELL_BAR_HEIGHT,
