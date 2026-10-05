@@ -960,14 +960,22 @@ export default function BotGameScreen({
         <Text style={styles.subtitle}>
           {giveaway ? 'Giveaway bot' : atomic ? 'Atomic bot' : duckChess ? 'Duck Chess bot' : getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
         </Text>
-        {!gameOver && <Text style={styles.status}>{statusText}</Text>}
-        {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
-        {botThinking && (
-          <View style={styles.thinkingRow}>
-            <ActivityIndicator size="small" color={colors.text} />
-            <Text style={styles.thinkingText}>The bot is thinking...</Text>
+        {/* The "bot is thinking" indicator rides inline on the status row instead of its own row --
+            giving it a separate row (as before) adds enough height that Spell Chess's extra Freeze/Jump
+            button row inside ChessBoard pushes the bottom clock past GameScreenBody's overflow:hidden
+            content area, clipping it. Keeping everything on one row keeps the height budget unchanged. */}
+        {!gameOver && (
+          <View style={styles.statusRow}>
+            <Text style={styles.status}>{statusText}</Text>
+            {botThinking && (
+              <>
+                <ActivityIndicator size="small" color={colors.text} style={styles.thinkingIndicator} />
+                <Text style={styles.thinkingText}>Thinking...</Text>
+              </>
+            )}
           </View>
         )}
+        {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
         {engineError && <Text style={styles.errorText}>Engine error: {engineError}</Text>}
         {premoveInvalid && <Text style={styles.errorText}>Premove was no longer legal — cancelled.</Text>}
         {premove && turn === botColor && (
@@ -1068,6 +1076,14 @@ function createStyles(colors: AppColors) {
       fontSize: 16,
       color: colors.text,
     },
+    statusRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    thinkingIndicator: {
+      marginLeft: 2,
+    },
     openingName: {
       fontSize: 12,
       fontStyle: 'italic',
@@ -1081,11 +1097,6 @@ function createStyles(colors: AppColors) {
       color: colors.gold,
     },
     playerRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    thinkingRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
