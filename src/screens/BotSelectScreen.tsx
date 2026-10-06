@@ -18,6 +18,7 @@ interface BotSelectScreenProps {
   duckChess?: boolean;
   spellChess?: boolean;
   horde?: boolean;
+  crazyhouse?: boolean;
 }
 
 /** A placeholder ELO shown for custom-engine cards — irrelevant to actual play, since
@@ -47,6 +48,7 @@ export default function BotSelectScreen({
   duckChess,
   spellChess,
   horde,
+  crazyhouse,
 }: BotSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
@@ -71,7 +73,9 @@ export default function BotSelectScreen({
                     ? 'Spell Chess'
                     : horde
                       ? 'Horde'
-                      : undefined;
+                      : crazyhouse
+                        ? 'Crazyhouse'
+                        : undefined;
 
   return (
     <View style={styles.container}>
@@ -92,7 +96,7 @@ export default function BotSelectScreen({
                         transparency, not as something to pick. */}
                     {/* Atomic bots never use a UCI engine (see chooseAtomicBotMove), so naming one here
                         would be wrong. */}
-                    <Text style={styles.cardEngine}>{atomic ? 'Atomic search bot' : duckChess ? 'Duck Chess bot' : horde ? 'Horde bot' : getEngineName(getEngineIdForElo(bot.elo))}</Text>
+                    <Text style={styles.cardEngine}>{atomic ? 'Atomic search bot' : duckChess ? 'Duck Chess bot' : horde ? 'Horde bot' : crazyhouse ? 'Crazyhouse bot' : getEngineName(getEngineIdForElo(bot.elo))}</Text>
                   </View>
                 </Pressable>
               ))}
@@ -100,7 +104,7 @@ export default function BotSelectScreen({
           </View>
         ))}
 
-        {customEngines.length > 0 && !horde && (
+        {customEngines.length > 0 && !horde && !crazyhouse && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>My Engines</Text>
             <View style={styles.cardList}>

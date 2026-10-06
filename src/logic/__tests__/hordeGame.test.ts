@@ -111,8 +111,8 @@ describe('Horde wiring (no React Native renderer available)', () => {
       expect(src).toContain('hordeWinner,\n        horde,');
       expect(src).toContain("? 'playing' // chess.js calls \"White has nothing left\" stalemate");
       expect(src).toContain('horde={horde}');
-      expect(src).toContain('!spellChess && !horde && openingName');
-      expect(src).toContain('spellChess || horde) return;'); // no hints
+      expect(src).toContain('!spellChess && !horde && !crazyhouse && openingName');
+      expect(src).toContain('spellChess || horde || crazyhouse) return;'); // no hints
       expect(src).toContain('isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde');
     });
   }
@@ -124,18 +124,18 @@ describe('Horde wiring (no React Native renderer available)', () => {
     expect(hordeBranch).toBeGreaterThan(-1);
     expect(bot).toContain('chooseHordeBotMove(moveEngine');
     expect(stockfishCall).toBeGreaterThan(hordeBranch);
-    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde ? undefined : userColor}');
-    expect(bot).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde ? undefined : handleQueuePremove}');
+    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : userColor}');
+    expect(bot).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : handleQueuePremove}');
     // Rating: Horde IS excluded (heuristic bot) while Spell Chess deliberately is not.
-    expect(bot).toContain('if (ratingCategory && !giveaway && !atomic && !duckChess && !horde) recordRatedGame(');
-    expect(bot).toContain('if (result === 1 && !giveaway && !atomic && !duckChess && !horde) {');
+    expect(bot).toContain('if (ratingCategory && !giveaway && !atomic && !duckChess && !horde && !crazyhouse) recordRatedGame(');
+    expect(bot).toContain('if (result === 1 && !giveaway && !atomic && !duckChess && !horde && !crazyhouse) {');
     expect(bot).toContain('skipValidation: giveaway || duckChess || spellChess || horde,');
   });
 
   it('Game Review is off for Horde (Stockfish cannot be given a position with no White king)', () => {
     const modal = read('components/PostGameSummaryModal.tsx');
-    expect(modal).toContain('!giveaway && !atomic && !duckChess && !spellChess && !horde ? new StockfishEngineAdapter() : null');
-    expect(modal).toContain('{!giveaway && !atomic && !duckChess && !spellChess && !horde && (');
+    expect(modal).toContain('!giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse ? new StockfishEngineAdapter() : null');
+    expect(modal).toContain('{!giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse && (');
   });
 
   it('the pickers: Horde is a Local and a Bot mode, shown honestly in the bot list, and never offered custom UCI engines', () => {
@@ -144,7 +144,7 @@ describe('Horde wiring (no React Native renderer available)', () => {
     expect(play).toContain('onPress={onLocalHorde}');
     const bots = read('screens/BotSelectScreen.tsx');
     expect(bots).toContain("horde ? 'Horde bot'");
-    expect(bots).toContain('customEngines.length > 0 && !horde && (');
+    expect(bots).toContain('customEngines.length > 0 && !horde && !crazyhouse && (');
     const app = readFileSync(join(SRC, '../App.tsx'), 'utf8').split(/\r?\n/).join(' ');
     expect(app).toContain("mode.kind !== 'engineVsEngine' && mode.horde");
     // Not an Engine-vs-Engine mode either: those need UCI engines.
@@ -152,7 +152,7 @@ describe('Horde wiring (no React Native renderer available)', () => {
   });
 
   it('Horde is excluded from Tournaments (a tournament never creates a Horde room)', () => {
-    expect(read('screens/TournamentScreen.tsx')).toContain("'spellChess', 'horde']");
+    expect(read('screens/TournamentScreen.tsx')).toContain("'spellChess', 'horde', 'crazyhouse']");
     expect(read('screens/TournamentStandingsScreen.tsx').match(/isHorde: false/g)?.length).toBe(2);
   });
 

@@ -5,6 +5,7 @@ import { PIECE_VALUES } from './analysis';
 import { ChessEngine } from './ChessEngine';
 import { applyAtomicMove, generateAtomicMoves, getAtomicKingWinner, isAtomicCheck, squareName, type AtomicMove, type AtomicPosition } from './atomic';
 import { getLegalDuckPlacementSquares } from './duckChess';
+import { getCrazyhouseMoves, reserveTotal, type CrazyhouseState, type ReservePieceType } from './crazyhouse';
 import { getGiveawayMoves } from './giveaway';
 import { getHordeMoves, getHordeWinnerFromFen } from './horde';
 import {
@@ -622,4 +623,158 @@ export function chooseHordeBotMove(engine: ChessEngine, elo: number, rng: () => 
   const top = Math.max(...scored.map((s) => s.score));
   const best = scored.filter((s) => s.score === top);
   return best[Math.floor(rng() * best.length)].move;
+}
+
+// --- Crazyhouse -----------------------------------------------------------------------------
+
+/** A turn the Crazyhouse bot has chosen: an ordinary move, or a drop from its reserve. */
+export type CrazyhouseBotChoice = { type: 'move'; move: Move } | { type: 'drop'; piece: ReservePieceType; square: string };
+
+const CZ_VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+const CZ_WIN = 1000;
+const CZ_STALEMATE = -30;
+/** How many of the cheaply-scored candidates get the (costlier) reply look-ahead. */
+const CZ_LOOKAHEAD_CANDIDATES = 6;
+/** Drop candidates considered per turn (a reserve can offer hundreds of (piece, square) pairs). */
+const CZ_MAX_DROP_CANDIDATES = 18;
+
+/** Material for `color` on the board plus its reserve (a reserve piece is worth what it would be on the board: it can be dropped any time). */
+function czMaterial(engine: ChessEngine, state: CrazyhouseState, color: PieceColor): number {
+  let total = 0;
+  for (const s of engine.getBoard().flat()) if (s.piece?.color === color) total += CZ_VALUE[s.piece.type];
+  for (const t of ['p', 'n', 'b', 'r', 'q'] as const) total += state.reserve[color][t] * CZ_VALUE[t];
+  return total;
+}
+
+const czSquareDistance = (a: string, b: string) => Math.max(Math.abs(a.charCodeAt(0) - b.charCodeAt(0)), Math.abs(Number(a[1]) - Number(b[1])));
+
+/**
+ * Picks a turn for a bot playing Crazyhouse. Deliberately NOT Stockfish: it has no concept of drops or the reserve (and a
+ * position plus a pocket is not a FEN it can read). Chess.js's legality stays authoritative, so every candidate comes from the
+ * engine itself: its legal moves (getCrazyhouseMoves) and its legal drops.
+ *
+ *  - Pass 1 scores each move, and a bounded set of promising drops, on a scratch engine: the change in material (board +
+ *    reserve, so a capture is worth its victim and a promoted victim only a pawn), small rewards for promoting and giving
+ *    check, and the decisive outcomes outright (checkmate +1000, stalemate a mild penalty). Drops are first filtered to
+ *    squares that are safe (not attacked, or defended) or that crowd the enemy king, then the most promising few are scored.
+ *  - Pass 2 takes the best few and subtracts the opponent's best capture in reply, with a large penalty if a reply (an
+ *    ordinary move, or a drop beside our king) is checkmate.
+ *  - ELO is the only strength dial, like the other custom bots: the chance of using that scored choice rather than a random
+ *    legal turn rises from ~20% at 400 ELO to ~90% at 3000. A random pick never under-promotes.
+ *
+ * Returns null only when the bot has no legal turn at all (the game would already be over).
+ */
+export function chooseCrazyhouseBotMove(engine: ChessEngine, elo: number, rng: () => number = Math.random): CrazyhouseBotChoice | null {
+  const moves = getCrazyhouseMoves(engine);
+  const drops = engine.getLegalDrops();
+  if (moves.length + drops.length === 0) return null;
+
+  const bestChance = 0.2 + 0.7 * Math.min(1, Math.max(0, (elo - 400) / 2600));
+  if (rng() >= bestChance) {
+    const plain = moves.filter((m) => !m.promotion || m.promotion === 'q');
+    if (drops.length > 0 && (plain.length === 0 || rng() < 0.3)) {
+      const drop = drops[Math.floor(rng() * drops.length)];
+      return { type: 'drop', piece: drop.piece, square: drop.square };
+    }
+    return { type: 'move', move: plain[Math.floor(rng() * plain.length)] };
+  }
+
+  const me = engine.getTurn();
+  const opponent: PieceColor = me === 'w' ? 'b' : 'w';
+  const fen = engine.getFen();
+  const state = engine.getCrazyhouseState();
+  const options = { crazyhouse: true, crazyhouseState: state } as const;
+  const before = czMaterial(engine, state, me) - czMaterial(engine, state, opponent);
+  const enemyKing = engine.getBoard().flat().find((s) => s.piece?.type === 'k' && s.piece.color === opponent)?.square ?? null;
+
+  // The drops worth scoring: safe squares, or any square beside the enemy king, nearest the king first.
+  const dropCandidates = drops
+    .map((d) => {
+      const attacked = engine.isSquareAttacked(d.square, opponent);
+      const defended = engine.isSquareAttacked(d.square, me);
+      const near = enemyKing ? czSquareDistance(d.square, enemyKing) : 8;
+      const safe = !attacked || defended;
+      return { d, near, safe, rank: (safe ? 0 : 2) + near * 0.5 - (d.piece === 'p' ? 0.4 : 0) + rng() * 0.1 };
+    })
+    .filter((c) => c.safe || c.near <= 2)
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, CZ_MAX_DROP_CANDIDATES);
+
+  type Candidate = { choice: CrazyhouseBotChoice; score: number; fen: string; state: CrazyhouseState; decided: boolean };
+  const evaluate = (choice: CrazyhouseBotChoice): Candidate | null => {
+    const scratch = new ChessEngine(fen, options);
+    let played: Move | null;
+    let bonus = 0;
+    if (choice.type === 'move') {
+      played = scratch.move(choice.move.from, choice.move.to, choice.move.promotion);
+      if (choice.move.promotion) bonus += CZ_VALUE[choice.move.promotion] - 1;
+      if (me === 'w' && !choice.move.captured && choice.move.to[1] > '4') bonus += 0.03;
+    } else {
+      played = scratch.drop(choice.piece, choice.square);
+      if (choice.piece === 'p') bonus -= 0.05; // a pawn is worth more kept for a later promotion race than spent early
+    }
+    if (!played) return null;
+    const afterState = scratch.getCrazyhouseState();
+    let score = czMaterial(scratch, afterState, me) - czMaterial(scratch, afterState, opponent) - before + bonus;
+    // chess.js marks check ('+') and "no legal move" ('#') in the SAN for free; only then is the drop-aware verdict (which
+    // asks whether the mated side has a drop) worth computing — it is the expensive part. Stalemate has no SAN mark and is
+    // checked for the few best candidates in pass 2.
+    let decided = false;
+    if (/[+#]/.test(played.san)) {
+      score += 0.5;
+      if (scratch.getStatus() === 'checkmate') {
+        score += CZ_WIN;
+        decided = true;
+      }
+    }
+    return { choice, score, fen: scratch.getFen(), state: afterState, decided };
+  };
+
+  const pass1: Candidate[] = [];
+  for (const move of moves) {
+    if (move.promotion && move.promotion !== 'q' && move.promotion !== 'n') continue;
+    const candidate = evaluate({ type: 'move', move });
+    if (candidate) pass1.push(candidate);
+  }
+  for (const { d } of dropCandidates) {
+    const candidate = evaluate({ type: 'drop', piece: d.piece, square: d.square });
+    if (candidate) pass1.push(candidate);
+  }
+  if (pass1.length === 0) return null;
+  pass1.sort((a, b) => b.score - a.score || rng() - 0.5);
+  if (pass1[0].decided) return pass1[0].choice;
+
+  // Pass 2: one reply ahead for the best few.
+  const scored = pass1.slice(0, CZ_LOOKAHEAD_CANDIDATES).map((candidate) => {
+    const afterMe = new ChessEngine(candidate.fen, { crazyhouse: true, crazyhouseState: candidate.state });
+    const myKing = afterMe.getBoard().flat().find((s) => s.piece?.type === 'k' && s.piece.color === me)?.square ?? null;
+    let bestReply = 0;
+    let matedInOne = false;
+    const afterStatus = afterMe.getStatus();
+    const stalemated = afterStatus === 'stalemate' || afterStatus === 'draw';
+    for (const reply of getCrazyhouseMoves(afterMe)) {
+      if (reply.captured) bestReply = Math.max(bestReply, CZ_VALUE[reply.captured]);
+      const probe = new ChessEngine(candidate.fen, { crazyhouse: true, crazyhouseState: candidate.state });
+      const played = probe.move(reply.from, reply.to, reply.promotion);
+      if (played && played.san.includes('#') && probe.getStatus() === 'checkmate') {
+        matedInOne = true;
+        break;
+      }
+    }
+    if (!matedInOne && myKing && reserveTotal(candidate.state.reserve[opponent]) > 0) {
+      for (const drop of afterMe.getLegalDrops()) {
+        if (czSquareDistance(drop.square, myKing) > 2) continue;
+        const probe = new ChessEngine(candidate.fen, { crazyhouse: true, crazyhouseState: candidate.state });
+        const played = probe.drop(drop.piece, drop.square);
+        if (played && played.san.includes('#') && probe.getStatus() === 'checkmate') {
+          matedInOne = true;
+          break;
+        }
+      }
+    }
+    return { choice: candidate.choice, score: candidate.score - bestReply - (matedInOne ? CZ_WIN : 0) + (stalemated ? CZ_STALEMATE : 0) };
+  });
+  const top = Math.max(...scored.map((s) => s.score));
+  const best = scored.filter((s) => s.score === top);
+  return best[Math.floor(rng() * best.length)].choice;
 }

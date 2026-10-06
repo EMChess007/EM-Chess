@@ -38,6 +38,9 @@ interface BuildGamePayloadArgs {
   hordeWinner?: PieceColor | null;
   /** Tags the saved PGN [Variant "Horde"] for the same reason as `giveaway`/`atomic`/`duckChess`/`spellChess` above. */
   horde?: boolean;
+  /** Tags the saved PGN [Variant "Crazyhouse"]. There is no Crazyhouse winner argument: checkmate/stalemate/timeout come
+   * through `chessStatus` (ChessEngine.getStatus is drop-aware), so getGameOutcome needs no new slot. */
+  crazyhouse?: boolean;
   history: GameHistoryEntry[];
   initialFen: string;
   chess960: boolean;
@@ -77,7 +80,7 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
       args.initialFen,
       args.history,
       outcome.result,
-      args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : args.duckChess ? 'Duck' : args.spellChess ? 'Spell Chess' : args.horde ? 'Horde' : undefined
+      args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : args.duckChess ? 'Duck' : args.spellChess ? 'Spell Chess' : args.horde ? 'Horde' : args.crazyhouse ? 'Crazyhouse' : undefined
     ),
     timeControl: args.timeControl.label,
     isChess960: args.chess960,

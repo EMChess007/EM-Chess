@@ -166,3 +166,14 @@ and a room only lives while both sockets stay connected. Making Daily real is it
 **Found while adding "No time limit".** That one *is* offered Online now, as live-only play with hidden clocks
 (see `isUnlimitedTimeControl` in the backend's `rooms.ts` and `playerClockText` in `src/logic/time.ts`). The
 Challenge screen does not offer it (nor Daily) yet — a small follow-up since the server already accepts it.
+
+## Crazyhouse: no analysis / Game Review, and per-ply state helpers could be shared
+
+**What's missing.** A saved Crazyhouse game cannot be opened for analysis or Game Review: Stockfish cannot read a reserve or
+play a drop, and `replayPgn` / `parsePgn` refuse `[Variant "Crazyhouse"]` (the `P@e5` drops are not moves, and the reserves and
+promoted pieces are not in a PGN). Supporting it would need a Crazyhouse-capable engine (e.g. Fairy-Stockfish via UCI_Variant) plus a
+PGN/FEN dialect that carries the pockets and the `~` promoted marks (the same dialect lichess/chess.com use).
+
+**Small follow-up.** `src/logic/perPlyState.ts` (`latestPlyState` / `plyStateAtView`) is the shared way to read per-ply side-channel state.
+Crazyhouse uses it; Duck Chess (`displayDuck`) and Spell Chess (`displaySpellState`) still carry equivalent inline copies in each game screen and
+could migrate to it without any behaviour change.

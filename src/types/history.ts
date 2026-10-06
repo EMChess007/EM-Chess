@@ -1,4 +1,5 @@
 import type { Move } from './chess';
+import type { CrazyhouseState } from '../logic/crazyhouse';
 import type { SpellChessState } from '../logic/spellChess';
 
 export interface GameHistoryEntry {
@@ -14,6 +15,10 @@ export interface GameHistoryEntry {
    * exactly the same "carried per ply, restored by Undo/position review" shape as duckSquare above.
    * Undefined in every other mode. */
   spellState?: SpellChessState;
+  /** Crazyhouse only — reserves and promoted pieces AFTER this ply (the state before is the previous entry's, or
+   * crazyhouse.initialCrazyhouseState() before the first move): the same "carried per ply, restored by Undo/position review"
+   * shape as duckSquare/spellState. Undefined in every other mode. */
+  crazyhouse?: CrazyhouseState;
 }
 
 export interface AnalyzeParams {

@@ -7,6 +7,8 @@ import ChessBoard, { type PremoveIntent } from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import GameScreenBody from '../components/GameScreenBody';
+import { initialCrazyhouseState, type CrazyhouseState } from '../logic/crazyhouse';
+import { plyStateAtView } from '../logic/perPlyState';
 import MoveListStrip from '../components/MoveListStrip';
 import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
@@ -94,6 +96,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // cooldowns/pending effects), since there's materially more of it than one square.
   const spellChess = match.isSpellChess === true;
   const horde = match.isHorde === true;
+  // Crazyhouse — server-owned too (crazyhouse.ts). A turn is ONE action, an ordinary move or a drop from the reserve; a drop
+  // rides in make_move as `drop` (from === to === the square). The reserves/promoted squares are not in the FEN: the server
+  // echoes the whole CrazyhouseState back (like spellState), and it is kept next to the FEN and per move for review.
+  const crazyhouse = match.isCrazyhouse === true;
 
   const [fen, setFen] = useState(match.fen);
   const [duckSquare, setDuckSquare] = useState<string | null>(null);
@@ -108,6 +114,11 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   useEffect(() => {
     spellRef.current = spellState;
   }, [spellState]);
+  const [crazyhouseState, setCrazyhouseState] = useState<CrazyhouseState>(initialCrazyhouseState());
+  const crazyhouseRef = useRef<CrazyhouseState>(crazyhouseState);
+  useEffect(() => {
+    crazyhouseRef.current = crazyhouseState;
+  }, [crazyhouseState]);
   const [turn, setTurn] = useState<PieceColor>('w');
   const [whiteMs, setWhiteMs] = useState(match.whiteMs);
   const [blackMs, setBlackMs] = useState(match.blackMs);
@@ -191,10 +202,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // state sync after reconnecting) rather than being threaded through each individual handler
   // below. See LocalGameScreen's identical effect for why a miss here doesn't clear the name.
   useEffect(() => {
-    if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway || atomic || duckChess || spellChess || horde) return;
+    if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway || atomic || duckChess || spellChess || horde || crazyhouse) return;
     const openingMatch = lookupOpening(fen);
     if (openingMatch) setOpeningName(openingMatch.name);
-  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway, atomic, duckChess, spellChess, horde]);
+  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway, atomic, duckChess, spellChess, horde, crazyhouse]);
 
   // Wire up every server -> client event for this game once, for the lifetime of the screen.
   useEffect(() => {
@@ -210,6 +221,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       if (duckChess && payload.duckSquare !== undefined) setDuckSquare(payload.duckSquare);
       const spellBeforeOpponentMove = spellRef.current;
       if (spellChess && payload.spellState !== undefined) setSpellState(payload.spellState);
+      const crazyhouseBeforeOpponentMove = crazyhouseRef.current;
+      if (crazyhouse && payload.crazyhouse !== undefined) setCrazyhouseState(payload.crazyhouse);
 
       // Fog of War: the opponent's move might genuinely be outside this player's own visibility
       // (payload.from/to/san all omitted together in that case — see OpponentMovePayload's own
@@ -253,12 +266,16 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         duckSquare: duckBeforeOpponentMove,
         spellChess,
         horde,
+        crazyhouse,
+        crazyhouseState: crazyhouseBeforeOpponentMove,
         frozenSquares: spellFrozenForOpponent,
         jumpSquare: spellJumpForOpponent,
         freezeEscapeActive: spellFreezeEscapeForOpponent,
       });
       const replayedMove =
-        match.isFogOfWar || giveaway || duckChess
+        crazyhouse && payload.drop
+          ? replayEngine.drop(payload.drop, payload.to!)
+          : match.isFogOfWar || giveaway || duckChess
           ? replayEngine.movePseudoLegal(payload.from!, payload.to!, payload.promotion)
           : replayEngine.move(payload.from!, payload.to!, payload.promotion);
       // Duck Chess: the replay only knows the move; the duck's destination comes from the server. Spell Chess:
@@ -300,12 +317,14 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             san: payload.san!,
             ...(payload.duck ? { duck: payload.duck } : {}),
             ...(payload.spell ? { spell: payload.spell } : {}),
+            ...(payload.drop ? { drop: payload.drop } : {}),
           },
           mover: opponentColor,
           fenBefore: fenRef.current,
           fenAfter: payload.fen,
           ...(duckChess ? { duckSquare: payload.duckSquare ?? duckBeforeOpponentMove } : {}),
           ...(spellChess ? { spellState: payload.spellState ?? spellBeforeOpponentMove } : {}),
+          ...(crazyhouse ? { crazyhouse: payload.crazyhouse ?? crazyhouseBeforeOpponentMove } : {}),
         },
       ]);
     };
@@ -323,9 +342,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       const result = payload.winner === null ? 0.5 : payload.winner === myColor ? 1 : 0;
       const ratingCategory = toRatingCategory(categoryForInitialSeconds(match.timeControl.initialSeconds) ?? '');
       // Giveaway and Atomic are different games — they must not move the player's chess rating.
-      if (ratingCategory && !giveaway && !atomic && !duckChess && !spellChess && !horde) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
+      if (ratingCategory && !giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
 
-      if (result === 1 && wasMaterialDownRef.current && !giveaway && !atomic && !duckChess && !spellChess && !horde) unlockAchievement('comeback_win');
+      if (result === 1 && wasMaterialDownRef.current && !giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse) unlockAchievement('comeback_win');
     };
 
     const handleDrawOffered = (_payload: DrawOfferedPayload) => {
@@ -374,6 +393,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             if (match.isFogOfWar) setVisibleSquares(new Set(ack.state.visibleSquares ?? []));
             if (duckChess) setDuckSquare(ack.state.duckSquare ?? null);
             if (spellChess) setSpellState(ack.state.spellState ?? initialSpellChessState());
+            if (crazyhouse) setCrazyhouseState(ack.state.crazyhouse ?? initialCrazyhouseState());
 
             // Rebuild the full move list (and with it, captured pieces) from scratch — we may
             // have missed one or more opponent_move events entirely while disconnected, so
@@ -385,6 +405,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
               giveaway,
               atomic,
               horde,
+              crazyhouse,
             });
             const rebuilt: MoveRecord[] = [];
             // Duck Chess: the duck's square is not part of the engine's state, so each ply is replayed on a fresh
@@ -445,12 +466,16 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                 return;
               }
 
+              // Crazyhouse: this ONE engine tracks the reserves/promoted squares itself across the replay, so a drop is
+              // replayed with drop() and every ply records the state it left behind.
               const result =
-                match.isFogOfWar || giveaway
+                crazyhouse && m.drop
+                  ? replayEngine.drop(m.drop, m.to!)
+                  : match.isFogOfWar || giveaway
                   ? replayEngine.movePseudoLegal(m.from!, m.to!, m.promotion as Move['promotion'])
                   : replayEngine.move(m.from!, m.to!, m.promotion as Move['promotion']);
               if (result) {
-                rebuilt.push({ move: result, mover, fenBefore, fenAfter: replayEngine.getFen() });
+                rebuilt.push({ move: result, mover, fenBefore, fenAfter: replayEngine.getFen(), ...(crazyhouse ? { crazyhouse: replayEngine.getCrazyhouseState() } : {}) });
               } else if (match.isFogOfWar) {
                 replayBroken = true;
                 rebuilt.push({ move: { from: m.from!, to: m.to!, san: m.san! }, mover, fenBefore, fenAfter: fenBefore });
@@ -516,6 +541,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       const visibleSquaresBeforeMove = visibleSquares;
       const duckBeforeMove = duckSquare;
       const spellStateBeforeMove = spellState;
+      const crazyhouseBeforeMove = crazyhouseState;
       setMoveError(null);
       setFen(newFen);
       setTurn(opponentColor); // optimistic — the ack below confirms/corrects this
@@ -535,6 +561,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           )
         : spellState;
       if (spellChess) setSpellState(spellStateAfterMove);
+      // Crazyhouse: ChessBoard hands over the new reserves/promoted squares on the move itself (move.crazyhouse); the server's echo
+      // below confirms or corrects them.
+      const crazyhouseAfterMove = crazyhouse ? move.crazyhouse ?? crazyhouseState : crazyhouseState;
+      if (crazyhouse) setCrazyhouseState(crazyhouseAfterMove);
       setLastMoveSan(duckChess ? duckMoveNotation(move) : spellChess ? spellMoveNotation(move, move.spell ?? null) : move.san);
       playMoveSound(move);
       triggerMoveHaptics(move);
@@ -547,6 +577,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           fenAfter: newFen,
           ...(duckChess ? { duckSquare: move.duck ?? duckSquare } : {}),
           ...(spellChess ? { spellState: spellStateAfterMove } : {}),
+          ...(crazyhouse ? { crazyhouse: crazyhouseAfterMove } : {}),
         },
       ]);
       // Fog of War: computed straight from `newFen` — ChessBoard already built it via this same
@@ -577,6 +608,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             promotion: move.promotion,
             ...(duckChess && move.duck ? { duckTo: move.duck } : {}),
             ...(spellChess && move.spell ? { spell: move.spell } : {}),
+            ...(crazyhouse && move.drop ? { drop: move.drop } : {}),
           },
           (
             err: unknown,
@@ -589,6 +621,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
               visibleSquares?: string[];
               duckSquare?: string | null;
               spellState?: SpellChessState;
+              crazyhouse?: CrazyhouseState;
             }>
           ) => {
             if (err || !ack || !ack.ok) {
@@ -605,6 +638,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
               setTurn(myColor);
               if (duckChess) setDuckSquare(duckBeforeMove);
               if (spellChess) setSpellState(spellStateBeforeMove);
+              if (crazyhouse) setCrazyhouseState(crazyhouseBeforeMove);
               setMoveList((list) => list.slice(0, -1));
               setBoardKey((k) => k + 1);
               if (match.isFogOfWar) setVisibleSquares(visibleSquaresBeforeMove);
@@ -617,10 +651,11 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             if (match.isFogOfWar) setVisibleSquares(new Set(ack.visibleSquares ?? []));
             if (duckChess && ack.duckSquare !== undefined) setDuckSquare(ack.duckSquare);
             if (spellChess && ack.spellState !== undefined) setSpellState(ack.spellState);
+            if (crazyhouse && ack.crazyhouse !== undefined) setCrazyhouseState(ack.crazyhouse);
           }
         );
     },
-    [gameOver, turn, myColor, connectionState, viewIndex, fen, visibleSquares, opponentColor, match, authToken, duckChess, duckSquare, spellChess, spellState]
+    [gameOver, turn, myColor, connectionState, viewIndex, fen, visibleSquares, opponentColor, match, authToken, duckChess, duckSquare, spellChess, spellState, crazyhouse, crazyhouseState]
   );
 
   // Premove: queued while it's the opponent's turn (see ChessBoard's premoveColor/onPremove),
@@ -749,6 +784,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         : moveList[(viewIndex as number) - 1]?.spellState ?? initialSpellChessState()
       : spellState
     : initialSpellChessState();
+  // Crazyhouse: the reserves/promoted squares of the position being DISPLAYED (live, or the one picked in the move strip).
+  const displayCrazyhouse = crazyhouse ? plyStateAtView(moveList, viewIndex, (m) => m.crazyhouse, initialCrazyhouseState()) : undefined;
   const displayLastMove = selectedMoveIndex >= 0 ? moveList[selectedMoveIndex].move : null;
 
   // Tapping a move in the strip drives the exact same viewIndex the Back/Forward buttons do —
@@ -818,7 +855,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                             ? 'Spell Chess'
                             : horde
                               ? 'Horde'
-                              : undefined
+                              : crazyhouse
+                                ? 'Crazyhouse'
+                                : undefined
         }
         onBack={handleExit}
         backLabel="‹ Menu"
@@ -830,7 +869,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         onSelectMove={handleSelectMove}
       />
       <GameScreenBody
-        compact={spellChess}
+        compact={spellChess || crazyhouse}
         bottomBar={
           <>
             <View style={styles.controlsWrap}>
@@ -911,7 +950,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
         </View>
 
-        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={boardKey}
@@ -931,13 +970,15 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           onDuckPlacementChange={setPlacingDuck}
           spellChess={spellChess}
           horde={horde}
+          crazyhouse={crazyhouse}
+          crazyhouseState={displayCrazyhouse}
           spellState={displaySpellState}
           visibleSquares={visibleSquares}
           // No premoves in Giveaway, Atomic or Spell Chess: mandatory capture / explosions / a possible cast
           // change which moves are legal after the opponent's reply, so a queued move is almost never still
           // valid when its turn comes.
-          premoveColor={giveaway || atomic || duckChess || spellChess || horde ? undefined : myColor}
-          onPremove={giveaway || atomic || duckChess || spellChess || horde ? undefined : handleQueuePremove}
+          premoveColor={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : myColor}
+          onPremove={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : handleQueuePremove}
         />
 
         <View style={styles.playerRow}>
@@ -988,6 +1029,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         duckChess={duckChess}
         spellChess={spellChess}
         horde={horde}
+        crazyhouse={crazyhouse}
         history={moveList}
         players={[{ label: 'You', color: myColor }]}
         onGameReview={() => onAnalyze({ initialFen: match.fen, chess960: match.isChess960, fogOfWar: match.isFogOfWar, history: moveList })}

@@ -28,6 +28,12 @@ export type GameOutcome =
  * Whether a game just ended and, if so, its PGN-style result ("1-0"/"0-1"/"1/2-1/2") — shared
  * by every game screen so "who won" is computed identically everywhere (including for the
  * game-history payload saved to the backend).
+ *
+ * Crazyhouse deliberately has NO slot here: it has no result of its own. Its endings are checkmate / stalemate / draw — which the
+ * engine reports through `chessStatus` (ChessEngine.getStatus is drop-aware: a side that can still drop is neither mated nor
+ * stalemated, and insufficient material never ends it) — plus the clock, resignation and agreement tiers below. Unlike Horde
+ * (extinction, which chess.js calls stalemate) nothing about a Crazyhouse position can be misread as a draw, so no extra winner
+ * has to outrank chessStatus.
  */
 export function getGameOutcome(
   chessStatus: GameStatus,

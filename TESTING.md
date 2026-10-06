@@ -343,3 +343,80 @@ ends a Horde game) and **"White has nothing left"** (no moves, no check = "stale
 - Threefold repetition is never detected (every screen rebuilds the engine from the FEN; see TODO.md).
 - The Horde bot is a shallow heuristic: it is not trying to be strong, and long endgames (a few White pieces against Black's
   army) can shuffle until the move cap.
+
+## 10. Crazyhouse — scope, decisions and known limits
+
+Added following CHECKLIST.md. Rules and helpers live in `src/logic/crazyhouse.ts` (the shared rules block is mirrored VERBATIM in
+`backend/src/game/crazyhouse.ts`, guarded by the backend's `test-crazyhouse.mjs`); the engine-level pieces sit behind `ChessEngine`'s
+opt-in `crazyhouse` option. Local + Bots + Online were built together; Tournaments never offer it.
+
+**Rules as built (chess.com's own documentation).** A captured piece changes colour and goes into the CAPTURER's reserve. A turn is
+ONE action: an ordinary move, or a DROP of a reserve piece on any empty square (pawns never on rank 1 or 8). A captured PROMOTED piece
+goes into the reserve as a PAWN. Drops may give check or mate, and a drop may block a check. Notation is `N@f3` (`P@e5` for a pawn).
+Win/draw conditions are the standard ones — but a side is only checkmated/stalemated if it also has NO legal drop (a drop can interpose),
+and insufficient material never ends a game (a reserve can still be dropped; chess.js's `isDraw()` is never consulted). The fifty-move
+rule stays and a drop resets the halfmove clock.
+
+**State that is not in the FEN.** The reserves and "which pieces are promoted" travel BESIDE the position as a `CrazyhouseState`, the way
+Duck Chess's duck does: `ChessEngine` takes it as an option and updates it on every `move()`/`drop()`; each move carries the state
+AFTER it (`move.crazyhouse`), the screens store that on `GameHistoryEntry.crazyhouse` (one per ply), and the engine is rebuilt from
+`(fen, state)` each ply. Undo, position review and analysis therefore restore reserves for free. The shared helpers `latestPlyState` /
+`plyStateAtView` (`perPlyState.ts`) answer "what is it now" / "what was it in the position displayed" once, instead of re-deriving it
+per screen (Duck Chess and Spell Chess still carry their own inline copies of that logic; they behave the same and could migrate).
+We did NOT use the "Q~" FEN suffix other implementations print: chess.js cannot parse it, and the side-channel gets Undo/Redo right
+without touching the FEN everything else already understands.
+
+**Promoted-piece tracking (the one new mechanism).** `promoted` is the set of SQUARES holding a piece that started as a pawn. A pawn
+promoting marks its target; a marked piece that moves takes the mark with it; a capture ON a marked square banks a pawn and clears the
+mark; castling carries a marked rook; en passant captures on a different square than the landing one (the victim is a pawn, so it is
+never marked). Dropped pieces are never marked.
+
+**Drop legality needs no search.** Placing a piece can never expose your own king (it only adds a blocker), so a drop is legal on any
+empty square when not in check; with exactly one SLIDING checker only the squares between it and the king; against a knight/pawn check
+or a double check, none. `crazyhouseCheckInfo` / `legalDropSquares` implement that; chessops (and a chess.js brute force) confirm it.
+
+**Decisions worth knowing**
+- **`gameResult.ts` needs no new slot.** Crazyhouse has no result of its own: checkmate/stalemate/draw come in through `chessStatus`
+  (the engine's `getStatus()` is drop-aware), unlike Horde, whose extinction win chess.js misreads as a stalemate. Pinned in `gameModes.test.ts`.
+- Castling rights are FEN flags: a rook captured and re-dropped on its home square does NOT restore them (tested at engine and server
+  level). A dropped pawn never creates an en passant square, and a drop clears a stale one.
+- **One tap-pair per drop** (not Duck Chess's two-step turn): pick a piece in the reserve tray, tap a highlighted square, done. The
+  tray is a single fixed-height row under the board (White left, Black right), so the board keeps full size; the Spell Chess compact
+  spacing is reused. Promoted pieces show a small red `~`. With many piece types on both sides the row cannot wrap, so it measures
+  its content and scales down to fit the screen (floor 0.6): the extreme — all five types held by both sides — was checked in the
+  browser at 390x760 and 360x640 and fits inside the gutters (a first version clipped it on both sides; found by that check).
+- Bots do NOT use Stockfish (`chooseCrazyhouseBotMove`): it has no concept of drops or a reserve. One heuristic picks a whole turn
+  (move or drop): pass 1 scores material incl. reserves (a promoted victim is worth a pawn), promotion/check bonuses and mate/stalemate;
+  pass 2 subtracts the opponent's best capture and any mate-in-one reply (including a mating DROP beside the bot's king) for the best six.
+  ELO is the chance of playing that choice vs a random one (~20% at 400, ~90% at 3000). Average decision ~120 ms (max ~400 ms) in self-play.
+  Hence the rating guard excludes Crazyhouse (unlike Spell Chess).
+- No hints, premoves, rating changes or Game Review. The bot list shows "Crazyhouse bot" and offers no custom UCI engines.
+- **PGN: export yes, import refused.** Saved games get `[Variant "Crazyhouse"]` and write drops as `P@e5`; replay (analysis) and import
+  refuse them, because a replay would lose the reserves and chess.js cannot read `@`. `parsePgn` now reads the `[Variant]` tag from the
+  raw text too, so the refusal is clear instead of "could not parse the moves" (chess.js throws before setting any header on `P@e5`).
+- Not combinable with any other variant (single-select `GameVariant`; on the server, `conflictingVariantError`).
+
+**How it is tested**
+- `crazyhouse.test.ts` — reserve banking, promoted tracking incl. a multi-level promote → capture → drop → promote → capture chain, drop
+  squares, the pawn-rank rule, self-check cases (+ a brute force against chess.js), en passant and castling-flag cases, mate/stalemate
+  with and without drops, FEN reload / undo / redo with non-empty reserves, notation, and a performance check over a long game.
+- `crazyhouseOracle.test.ts` — **differential tests against chessops's `Crazyhouse`** (dev-only, GPL): moves, drops, reserves, promoted
+  squares, castling flags and endings agree over random games biased toward promotions and promoted captures. Documented divergence:
+  chessops ends some insufficient-material positions that this app (like chess.com's clock rules) plays on.
+- `crazyhouseBot.test.ts`, `crazyhouseGame.test.ts`, `crazyhouseOnline.test.ts`, the Crazyhouse cases in `gameModes.test.ts` — the bot
+  (legal turns, mate in one by move and by drop, back-rank safety against a mating drop, self-play, cost with 100+ candidate drops),
+  wiring guards, per-ply state restore, PGN tagging/refusal, wire flags, rejoin/opponent_move replay and revert.
+- Mutation-checked (43 mutants over the rules block and the engine, each deliberately breaking one rule: promoted demotion and
+  mark carrying, reserve credit, every drop-legality condition, the pawn-rank rule, check geometry for each piece type, drop-aware
+  status, the fifty-move rule, castling and en passant handling). 35 were killed on the first run. Two genuine gaps were found and
+  closed with new tests (state clones sharing the promoted array; castling not carrying a promoted rook); every other survivor is an
+  equivalent mutant: a double check is excluded twice over (`crazyhouseCheckInfo` AND `legalDropSquares`); a king can never be banked;
+  an en passant victim is always a pawn, which is never marked, so its square is irrelevant to the banking rule; and `drop()`'s explicit
+  "clear the en passant square" is redundant with chess.js's own `put()`, which already clears it (the test stays as a guard in case
+  that library behaviour changes). The server side was mutation-checked separately, see the backend's TESTING.md §11.
+
+**Known limits**
+- Threefold repetition is never detected (every screen rebuilds the engine from the FEN; see TODO.md).
+- The bot is a shallow heuristic (a one-reply look-ahead): it plays legal, sensible Crazyhouse but is not trying to be strong, and it
+  does not plan sacrifices that bank pieces.
+- Analysis of a Crazyhouse game is unavailable (Stockfish cannot read a reserve); history shows the saved PGN with `P@e5`-style drops.

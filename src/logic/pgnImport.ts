@@ -113,8 +113,11 @@ export function parsePgn(pgn: string): PgnParseResult {
   // Atomic and Antichess games (this app's own saved ones are tagged the same way, see buildPgn) follow
   // different rules, so loading them with ordinary chess rules would either fail or — worse — quietly
   // succeed and be analysed wrongly. Refused with a clear message instead.
-  if (headers.Variant && /^\s*(atomic|antichess|duck|duck chess|horde)\s*$/i.test(headers.Variant)) {
-    return { ok: false, error: `${headers.Variant.trim()} games can't be analysed — only standard chess and Chess960.` };
+  // The tag is also read from the raw text: chess.js parses the whole PGN in one go, so movetext it cannot read at all (a
+  // Crazyhouse drop such as "P@e5") throws before ANY header is set, and the refusal would then be a vague "could not parse".
+  const variant = headers.Variant ?? /^\s*\[Variant\s+"([^"]*)"\s*\]/im.exec(trimmed)?.[1];
+  if (variant && /^\s*(atomic|antichess|duck|duck chess|horde|crazyhouse)\s*$/i.test(variant)) {
+    return { ok: false, error: `${variant.trim()} games can't be analysed — only standard chess and Chess960.` };
   }
   const initialFen = headers.FEN ?? START_FEN;
   const chess960 = detectChess960(headers);

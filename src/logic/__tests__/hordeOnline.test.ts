@@ -9,7 +9,7 @@ import { variantTitlePrefix, variantWireFlags } from '../onlineVariants';
 const SRC = join(__dirname, '../..');
 const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8').replace(/\r\n/g, '\n');
 
-const ALL: GameVariant[] = ['classic', 'chess960', 'kingOfTheHill', 'threeCheck', 'setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde'];
+const ALL: GameVariant[] = ['classic', 'chess960', 'kingOfTheHill', 'threeCheck', 'setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'crazyhouse'];
 
 describe('Horde wire flags', () => {
   it('maps Horde to isHorde only, and no other variant sets it', () => {
@@ -24,6 +24,7 @@ describe('Horde wire flags', () => {
       isDuckChess: false,
       isSpellChess: false,
       isHorde: true,
+      isCrazyhouse: false,
     });
     for (const variant of ALL.filter((v) => v !== 'horde')) expect(variantWireFlags(variant).isHorde, variant).toBe(false);
     expect(variantTitlePrefix('horde')).toBe('Horde · ');
@@ -94,9 +95,9 @@ describe('Online wiring (no React Native renderer available)', () => {
     expect(online).toContain('skipValidation: match.isFogOfWar || giveaway || duckChess || spellChess || horde,');
     expect(online).toContain('skipValidation: match.isFogOfWar || giveaway || duckChess || horde,');
     expect(online.match(/\bhorde,\n/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde ? undefined : myColor}');
-    expect(online).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde ? undefined : handleQueuePremove}');
-    expect(online).toContain('!duckChess && !spellChess && !horde && openingName');
+    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : myColor}');
+    expect(online).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : handleQueuePremove}');
+    expect(online).toContain('!duckChess && !spellChess && !horde && !crazyhouse && openingName');
     expect(online).toContain('ratingCategory && !giveaway && !atomic && !duckChess && !spellChess && !horde');
     expect(online).toContain('wasMaterialDownRef.current && !giveaway && !atomic && !duckChess && !spellChess && !horde');
     expect(online).toContain('horde={horde}');

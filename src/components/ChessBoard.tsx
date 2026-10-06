@@ -18,6 +18,8 @@ import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { ExplodedPiece, Move, PieceColor, Piece as PieceModel, SpellCast } from '../types/chess';
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
 import { getBoardSize } from './boardSize';
+import ReserveTray from './ReserveTray';
+import type { CrazyhouseState, ReservePieceType } from '../logic/crazyhouse';
 import Piece from './Piece';
 import Square from './Square';
 
@@ -116,6 +118,13 @@ interface ChessBoardProps {
   /** Horde only — see horde.ts. Every engine this board builds gets { horde: true } (which implies skipValidation: a
    * Horde FEN has no White king), so the rank-1 double step is offered and chess.js's draw rules are not trusted. */
   horde?: boolean;
+  /** Crazyhouse only — see crazyhouse.ts. A turn is ONE action: an ordinary move, or a DROP — tap a piece in the reserve tray under
+   * the board, then a highlighted square (the legal squares come from the engine, so pawn ranks and check-blocking are
+   * honoured). `crazyhouseState` is the reserves/promoted set for the position shown (carried per ply, not in the fen); the
+   * committed Move carries the new state in `move.crazyhouse` (and `move.drop` for a drop). Unlike Duck Chess this is NOT a
+   * two-step turn: a drop commits the instant its square is tapped. */
+  crazyhouse?: boolean;
+  crazyhouseState?: CrazyhouseState;
   /** Fog of War only — the squares currently visible to the LOCAL viewer. Squares outside this
    * set render fogged (see Square's isFogged) regardless of what `fen`/the engine actually has
    * there: for Local/Bot this is still the true fen client-side (there's no network boundary to
@@ -185,6 +194,8 @@ function ChessBoard({
   onDuckPlacementChange,
   spellChess = false,
   horde = false,
+  crazyhouse = false,
+  crazyhouseState,
   spellState,
   visibleSquares,
 }: ChessBoardProps) {
@@ -252,11 +263,13 @@ function ChessBoard({
         duckSquare,
         spellChess,
         horde,
+        crazyhouse,
+        crazyhouseState,
         frozenSquares: spellFrozenSquares,
         jumpSquare: spellJumpSquare,
         freezeEscapeActive: spellFreezeEscapeActive,
       }),
-    [shownFen, chess960, initialFen, needsSkipValidation, giveaway, atomic, duckChess, duckSquare, spellChess, horde, spellFrozenSquares, spellJumpSquare, spellFreezeEscapeActive]
+    [shownFen, chess960, initialFen, needsSkipValidation, giveaway, atomic, duckChess, duckSquare, spellChess, horde, crazyhouse, crazyhouseState, spellFrozenSquares, spellJumpSquare, spellFreezeEscapeActive]
   );
   const board = useMemo(() => engine.getBoard(), [engine]);
   // Reversing both axes together preserves each square's light/dark identity (a 180° rotation
@@ -297,6 +310,8 @@ function ChessBoard({
   // A human move that promotes a pawn is frozen here until they pick the piece — see
   // handleSquarePress/completePromotion. `kind` records whether it resolves into a real move or a
   // queued premove once chosen.
+  // Crazyhouse: the reserve piece picked up to drop, waiting for a square (null = none). Reset whenever the position changes.
+  const [dropPiece, setDropPiece] = useState<ReservePieceType | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string; color: PieceColor; kind: 'move' | 'premove' } | null>(null);
 
   useEffect(() => {
@@ -305,6 +320,7 @@ function ChessBoard({
     setPendingDuck(null);
     setCastMode(null);
     setPendingCast(null);
+    setDropPiece(null);
   }, [fen]);
 
   // Lets the screen show "place the duck" while a turn is half-made.
@@ -424,9 +440,12 @@ function ChessBoard({
   // Giveaway: the same pseudo-legal primitive, collapsed to mandatory captures when any exist.
   // Duck Chess: while the duck is being placed the "targets" are the squares it may go to instead.
   const duckTargets = pendingDuck ? getLegalDuckPlacementSquares(engine, duckSquare) : [];
+  const dropTargets = dropPiece ? engine.getLegalDropSquares(dropPiece) : [];
   const legalTargets = pendingDuck
     ? duckTargets
-    : selectedSquare && !isPremoveMode
+    : dropPiece
+      ? dropTargets
+      : selectedSquare && !isPremoveMode
       ? giveaway
         ? getGiveawayMoves(engine, selectedSquare).map((m) => m.to)
         : fogOfWar || duckChess
@@ -453,6 +472,8 @@ function ChessBoard({
       duckSquare,
       spellChess,
       horde,
+      crazyhouse,
+      crazyhouseState,
       frozenSquares: spellFrozenSquares,
       jumpSquare: spellJumpSquare,
       freezeEscapeActive: spellFreezeEscapeActive,
@@ -494,6 +515,7 @@ function ChessBoard({
   };
 
   const selectOwnPiece = (square: string) => {
+    setDropPiece(null);
     const squareData = board.flat().find((s) => s.square === square);
     if (squareData?.piece && squareData.piece.color === selectableColor) {
       setSelectedSquare(square);
@@ -502,8 +524,29 @@ function ChessBoard({
     }
   };
 
+  /** Crazyhouse: commits a drop. Built on a throwaway engine from the SAME (fen, state) the board shows, like tryMove, so
+   * the engine that validates it is the one the rest of the app agrees with; the move carries the new reserves. */
+  const handleDrop = (piece: ReservePieceType, square: string) => {
+    const dropEngine = new ChessEngine(fen, { crazyhouse: true, crazyhouseState });
+    const move = dropEngine.drop(piece, square);
+    if (!move) return;
+    setDropPiece(null);
+    skipAnimationRef.current = true;
+    onMove(move, dropEngine.getFen());
+  };
+
   const handleSquarePress = (square: string) => {
     if (disabled || gameOver || pendingPromotion) return;
+
+    // Crazyhouse: a reserve piece is picked up — a tap on one of its legal squares drops it; a tap anywhere else puts it
+    // back and carries on as an ordinary tap (so tapping one of your own pieces selects it in one go).
+    if (dropPiece) {
+      if (dropTargets.includes(square)) {
+        handleDrop(dropPiece, square);
+        return;
+      }
+      setDropPiece(null);
+    }
 
     // Spell Chess: while picking a target for Freeze/Jump (see the spell bar below), a tap commits
     // that target to `pendingCast` instead of going anywhere near normal piece selection/movement —
@@ -871,6 +914,7 @@ function ChessBoard({
               isDuck={duckChess && square.square === duckSquare}
               isFrozen={spellChess && spellFrozenSquares.includes(square.square)}
               isPendingFreeze={spellChess && pendingFreezeZone !== null && pendingFreezeZone.includes(square.square)}
+              isPromoted={crazyhouse && !!crazyhouseState && crazyhouseState.promoted.includes(square.square)}
               isJumpSquare={spellChess && square.square === spellJumpSquare}
               size={squareSize}
               lightColor={boardTheme.lightColor}
@@ -936,6 +980,23 @@ function ChessBoard({
           color), since only they may cast right now. Disabled whenever input generally is
           (disabled/gameOver), and the OTHER spell button is disabled once one is mid-pick so only
           one spell is ever in flight, matching the "at most one spell per own turn" rule. */}
+      {/* Crazyhouse only — both reserves in one fixed-height row (see ReserveTray). Tapping one of the side to move's chips picks
+          that piece up; tapping it again, or any non-target square, puts it back. */}
+      {crazyhouse && crazyhouseState && (
+        <ReserveTray
+          width={Math.max(boardSize, width - 32)}
+          state={crazyhouseState}
+          turn={turn}
+          interactive={!disabled && !gameOver && !pendingPromotion}
+          selected={dropPiece}
+          canDrop={(piece) => engine.getLegalDropSquares(piece).length > 0}
+          onSelect={(piece) => {
+            setSelectedSquare(null);
+            setDropPiece(dropPiece === piece ? null : piece);
+          }}
+        />
+      )}
+
       {spellChess && spellState && (
         <View style={styles.spellBar}>
           <Pressable
