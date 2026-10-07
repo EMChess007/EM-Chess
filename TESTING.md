@@ -586,3 +586,16 @@ session stand-in and a DOM event that closes the page's socket transport): the p
 disconnect, and on reconnecting the screen showed "You Won by Resignation" within about a second (before: hung); and with the backend
 restarted under a live game the screen showed "Game unavailable" and the banner (before: hung). Not verified here: a physical-device
 network drop, and a release build talking to the new server (covered by the old-client check in the backend script instead).
+
+**A reconnect AFTER the result is already on screen (found in a review pass, fixed in a follow-up commit).** The reconnect listener stays
+attached while the result sheet is showing. The first version still sent a `rejoin_game` then, and acted on whatever came back: with the
+backend restarted (the finished record gone) the red "This game is no longer available…" banner appeared directly above "You Won by
+Resignation" (reproduced in the browser on the first version); within the 5 minutes, a `finished` answer would also have snapped a move
+the player was reviewing back to the live position (`setViewIndex(null)`). Now, once a result has been handled (`gameOverHandledRef`),
+`handleReconnect` sends nothing and just clears "reconnecting", and an answer to a request that was already in flight is ignored too
+(a live `game_over` that lands first wins; the guard sits after classifying and before any outcome is acted on, so `finished`,
+`unavailable` and `state` are all covered). `onlineRejoin.test.ts` pins both guards and their order (3 mutants: either guard removed, or
+the reconnect guard moved after the emit — all killed; pin-based, like the other screen mutants). The ref is never reset because the
+screen holds ONE match's state (`gameOver`, the move list, ...) and App mounts it fresh for every match — every route into `onlineGame`
+comes from a different screen; the comment on the ref says so. Verified in the browser, same scenario before/after: live resignation,
+result shown, backend restarted, page reconnects — before: banner over the result; after: result untouched, no banner.

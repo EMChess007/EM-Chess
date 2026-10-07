@@ -91,6 +91,22 @@ describe('OnlineGameScreen wiring (no React Native renderer available)', () => {
     expect(screen).toMatch(/const handleGameOver = \(payload: GameOverPayload\) => \{\s*if \(gameOverHandledRef\.current\) return;\s*gameOverHandledRef\.current = true;/);
   });
 
+  it('once a result is on screen a reconnect does not disturb it: no rejoin is sent, and an answer already in flight is ignored', () => {
+    const guard = /if \(gameOverHandledRef\.current\) \{\s*setConnectionState\('connected'\);\s*return;\s*\}/;
+    // 1. handleReconnect: the guard comes BEFORE the rejoin request is emitted.
+    const reconnectStart = screen.indexOf('const handleReconnect = () => {');
+    const emit = screen.indexOf("socket.emit(\n        'rejoin_game'", reconnectStart);
+    expect(reconnectStart).toBeGreaterThan(-1);
+    expect(emit).toBeGreaterThan(reconnectStart);
+    expect(screen.slice(reconnectStart, emit)).toMatch(guard);
+    // 2. the ack callback: after classifying, BEFORE any of the three outcomes is acted on (so 'finished', 'unavailable' and 'state' are all covered).
+    const classify = screen.indexOf('const outcome = classifyRejoinAck(ack);', emit);
+    const firstOutcome = screen.indexOf("if (outcome.kind === 'finished') {", classify);
+    expect(classify).toBeGreaterThan(emit);
+    expect(firstOutcome).toBeGreaterThan(classify);
+    expect(screen.slice(classify, firstOutcome)).toMatch(guard);
+  });
+
   it('a live rejoin still rebuilds the position, clocks and move list from the server state', () => {
     expect(screen).toContain("if (outcome.kind === 'state') {");
     expect(screen).toContain('setFen(outcome.state.fen);');

@@ -116,7 +116,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   const [chatUnread, setChatUnread] = useState(0);
   const wasMaterialDownRef = useRef(false);
   // handleGameOver's side effects (rating, achievements) must run exactly once per game, whether the result arrives as the live `game_over`
-  // event or — for a player who was offline when it ended — in the `rejoin_game` ack (see handleReconnect below).
+  // event or — for a player who was offline when it ended — in the `rejoin_game` ack (see handleReconnect below). Never reset: like
+  // `gameOver` and every other piece of state here it belongs to ONE match, and App mounts this screen fresh for each (every route into
+  // 'onlineGame' comes from a different screen).
   const gameOverHandledRef = useRef(false);
   // Fog of War only — the server always redacts `fen` for this recipient already (see
   // MatchFoundPayload.visibleSquares), but ChessBoard still needs this explicit set to tell a
@@ -308,6 +310,12 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     };
 
     const handleReconnect = () => {
+      // The result is already on screen (a live game_over, or an earlier rejoin answer): there is nothing to rejoin, and whatever the server
+      // said now could only disturb it ("Game unavailable" over a finished game, a move being reviewed snapped back to live).
+      if (gameOverHandledRef.current) {
+        setConnectionState('connected');
+        return;
+      }
       logDiagnostic(`[Multiplayer] own connection restored, rejoining (room ${match.roomId})`);
       socket.emit(
         'rejoin_game',
@@ -319,6 +327,11 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
               outcome.kind === 'state' ? 'succeeded' : outcome.kind === 'finished' ? `found the game already ended (${outcome.gameOver.reason})` : `failed: ${outcome.error}`
             } (room ${match.roomId})`
           );
+          // A live game_over landed while this request was in flight: the result is already shown, and none of the answers below may touch it.
+          if (gameOverHandledRef.current) {
+            setConnectionState('connected');
+            return;
+          }
           // The game ended while we were offline: show the result exactly as a live game_over would have been shown.
           if (outcome.kind === 'finished') {
             setConnectionState('connected');
