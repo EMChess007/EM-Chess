@@ -554,3 +554,35 @@ tournaments are untouched (4-player games are not saved). *Documentation*: doc c
 
 **Known limits** — see TODO.md ("4 Player Chess: what it still leaves out"): Teams, Solo, Online, saved games/analysis, check-fork scoring,
 drag input, repetition draws; clock granularity is 200 ms; Undo gives back the time spent on the undone moves.
+
+
+## 10. Online: rejoin after the game ended — what the client does now
+
+**The bug (2-player Online).** If a player's connection dropped while the game ended (checkmate, a flag, resignation, or the abandonment
+their own absence caused), the server no longer had the room, answered `rejoin_game` with "not found", and `OnlineGameScreen` stayed on
+"Reconnecting…" for ever without ever learning the result (and without the rating/achievement side effects of a finished game).
+
+**The fix, client side.** The server (backend repo, see its TESTING.md "Rejoin after the game ended") now keeps a finished game's result
+for 5 minutes and answers a late rejoin with a refusal that carries it: `{ ok: false, error, finished: true, gameOver }`. The screen sends
+every rejoin answer through the pure `classifyRejoinAck` (`src/logic/onlineRejoin.ts`):
+- **state** — the game is still on: resume exactly as before (position, clocks, move list rebuilt from the server).
+- **finished** — show the result through the SAME `handleGameOver` a live `game_over` uses, and leave the "reconnecting" state. That
+  handler is now idempotent (`gameOverHandledRef`), so rating and achievements run exactly once however the result arrives.
+- **unavailable** — the server has no such game (too long ago, a restarted server): a new `connectionState` ('unavailable') shows
+  "Game unavailable" and a plain banner, and the board is disabled, instead of an endless "Reconnecting…".
+The `finished` flag is checked BEFORE `ok` because the finished answer is deliberately `ok: false`: app builds already in the wild only
+know `ok` / `error` / `state`, and an `ok: true` answer without a `state` would crash them inside the socket callback. Old clients now see
+a refusal, exactly as they always did.
+
+**Tests.** `onlineRejoin.test.ts`: the classifier for every outcome (every end reason, a draw's null winner, refusals keep the server's
+message, malformed answers are "unavailable", the finished answer is a refusal that a pre-change handler cannot mistake for success) and
+source pins for the screen wiring (no React Native renderer here). `duckOnline.test.ts`'s one pin on the rejoin handler was retargeted from
+`ack.state` to `outcome.state`. Mutation-checked (15 mutants: the classifier's branches and order, the idempotence guard, each screen branch;
+14 killed, the 15th is a deliberate equivalent control). Many of the screen mutants are killed by source pins rather than behaviour — the
+behaviour itself was verified in the browser against a running backend (below).
+
+**Verified end to end, in a real browser against a real server** (a guest opponent over a socket; two temporary, reverted hooks — a local
+session stand-in and a DOM event that closes the page's socket transport): the page was dropped, the opponent resigned 7 ms after the
+disconnect, and on reconnecting the screen showed "You Won by Resignation" within about a second (before: hung); and with the backend
+restarted under a live game the screen showed "Game unavailable" and the banner (before: hung). Not verified here: a physical-device
+network drop, and a release build talking to the new server (covered by the old-client check in the backend script instead).

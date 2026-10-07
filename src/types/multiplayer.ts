@@ -157,6 +157,19 @@ export interface RejoinStatePayload {
  * an actual seated player — see the backend's identical type for why. */
 export type SpectateStatePayload = Omit<RejoinStatePayload, 'color' | 'opponentConnected'>;
 
+/** What `rejoin_game` answers when the game already ENDED while this player was offline (the server keeps the result for a few
+ * minutes — see the backend's FINISHED_RETENTION_MS): the result, alongside a refusal (`ok: false`) so that app builds from before this
+ * existed, which only read ok/error/state, behave exactly as they always did. Mirrors the backend type. */
+export interface RejoinFinishedAck {
+  ok: false;
+  error: string;
+  finished: true;
+  gameOver: GameOverPayload;
+}
+
+/** The ack to `rejoin_game`: live state to resume, a plain refusal, or the result of a game that just ended. */
+export type RejoinAck = Ack<{ state: RejoinStatePayload }> | RejoinFinishedAck;
+
 export interface SpectatorMovePayload extends OpponentMovePayload {
   mover: PieceColor;
 }

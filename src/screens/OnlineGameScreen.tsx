@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { connectSocket, disconnectSocket } from '../api/socket';
+import { classifyRejoinAck } from '../logic/onlineRejoin';
 import { appAlert } from '../components/AppAlert';
 import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard, { type PremoveIntent } from '../components/ChessBoard';
@@ -36,7 +37,7 @@ import type {
   GameOverPayload,
   MatchFoundPayload,
   OpponentMovePayload,
-  RejoinStatePayload,
+  RejoinAck,
 } from '../types/multiplayer';
 
 interface OnlineGameScreenProps {
@@ -101,7 +102,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   const [boardKey, setBoardKey] = useState(0);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [gameOver, setGameOver] = useState<GameOverPayload | null>(null);
-  const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting'>('connected');
+  const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'unavailable'>('connected');
   const [opponentGraceSeconds, setOpponentGraceSeconds] = useState<number | null>(null);
   const [openingName, setOpeningName] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
@@ -114,6 +115,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   const [chatInput, setChatInput] = useState('');
   const [chatUnread, setChatUnread] = useState(0);
   const wasMaterialDownRef = useRef(false);
+  // handleGameOver's side effects (rating, achievements) must run exactly once per game, whether the result arrives as the live `game_over`
+  // event or — for a player who was offline when it ended — in the `rejoin_game` ack (see handleReconnect below).
+  const gameOverHandledRef = useRef(false);
   // Fog of War only — the server always redacts `fen` for this recipient already (see
   // MatchFoundPayload.visibleSquares), but ChessBoard still needs this explicit set to tell a
   // genuinely-empty-and-visible square apart from a fogged one (see ChessBoard's own doc comment
@@ -255,6 +259,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     };
 
     const handleGameOver = (payload: GameOverPayload) => {
+      if (gameOverHandledRef.current) return;
+      gameOverHandledRef.current = true;
       setGameOver(payload);
       setDrawOfferPending(false);
       setIncomingDrawOffer(false);
@@ -306,17 +312,34 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       socket.emit(
         'rejoin_game',
         { roomId: match.roomId, playerToken: match.playerToken },
-        (ack: Ack<{ state: RejoinStatePayload }>) => {
-          logDiagnostic(`[Multiplayer] rejoin_game ${ack.ok ? 'succeeded' : `failed: ${ack.error}`} (room ${match.roomId})`);
-          if (ack.ok) {
-            setFen(ack.state.fen);
-            setTurn(ack.state.turn);
-            setWhiteMs(ack.state.whiteMs);
-            setBlackMs(ack.state.blackMs);
+        (ack: RejoinAck) => {
+          const outcome = classifyRejoinAck(ack);
+          logDiagnostic(
+            `[Multiplayer] rejoin_game ${
+              outcome.kind === 'state' ? 'succeeded' : outcome.kind === 'finished' ? `found the game already ended (${outcome.gameOver.reason})` : `failed: ${outcome.error}`
+            } (room ${match.roomId})`
+          );
+          // The game ended while we were offline: show the result exactly as a live game_over would have been shown.
+          if (outcome.kind === 'finished') {
             setConnectionState('connected');
             setViewIndex(null);
-            if (match.isFogOfWar) setVisibleSquares(new Set(ack.state.visibleSquares ?? []));
-            if (duckChess) setDuckSquare(ack.state.duckSquare ?? null);
+            handleGameOver(outcome.gameOver);
+            return;
+          }
+          // The server has no such game any more (too long ago, a restarted server): say so instead of "Reconnecting…" for ever.
+          if (outcome.kind === 'unavailable') {
+            setConnectionState('unavailable');
+            return;
+          }
+          if (outcome.kind === 'state') {
+            setFen(outcome.state.fen);
+            setTurn(outcome.state.turn);
+            setWhiteMs(outcome.state.whiteMs);
+            setBlackMs(outcome.state.blackMs);
+            setConnectionState('connected');
+            setViewIndex(null);
+            if (match.isFogOfWar) setVisibleSquares(new Set(outcome.state.visibleSquares ?? []));
+            if (duckChess) setDuckSquare(outcome.state.duckSquare ?? null);
 
             // Rebuild the full move list (and with it, captured pieces) from scratch — we may
             // have missed one or more opponent_move events entirely while disconnected, so
@@ -340,7 +363,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             // remaining entry with the last position actually known to be correct — a stale (but
             // still genuinely real, previously-redacted) fen, never a fabricated or leaked one.
             let replayBroken = false;
-            ack.state.moves.forEach((m, i) => {
+            outcome.state.moves.forEach((m, i) => {
               const mover: PieceColor = i % 2 === 0 ? 'w' : 'b';
               const fenBefore = duckChess ? replayFen : replayEngine.getFen();
 
@@ -375,9 +398,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             setMoveList(rebuilt);
             if (rebuilt.length > 0) setLastMoveSan(duckChess ? duckMoveNotation(rebuilt[rebuilt.length - 1].move) : rebuilt[rebuilt.length - 1].move.san);
           }
-          // If it failed (e.g. the game already ended while we were offline), leave
-          // connectionState as "reconnecting" — a game_over we missed would already be
-          // undeliverable at this point since the room is gone; nothing more to reconcile.
+          // (The 'finished' and 'unavailable' outcomes returned above.)
         }
       );
     };
@@ -654,6 +675,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   );
   let statusText = isMyTurn ? (mustCapture ? 'Your turn — must capture' : placingDuck ? 'Your turn — place the duck 🦆' : 'Your turn') : `${opponentName}'s turn`;
   if (connectionState === 'reconnecting') statusText = 'Reconnecting...';
+  if (connectionState === 'unavailable') statusText = 'Game unavailable';
 
   const summaryTitle = !gameOver ? '' : gameOver.winner === null ? 'Draw' : gameOver.winner === myColor ? 'You Won' : 'You Lost';
   const summarySubtitle = gameOver ? describeEndReason(gameOver.reason) : '';
@@ -724,6 +746,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       >
         {connectionState === 'reconnecting' && (
           <Text style={styles.warningBanner}>Connection lost — trying to reconnect...</Text>
+        )}
+        {connectionState === 'unavailable' && (
+          <Text style={styles.errorBanner}>This game is no longer available — it ended too long ago to show the result, or the server was restarted.</Text>
         )}
         {opponentGraceSeconds !== null && (
           <Text style={styles.warningBanner}>
