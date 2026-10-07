@@ -497,9 +497,27 @@ A fourth round for arrows and premoves (the premove step, the engine-side premov
   became a pure function) and 0 equivalent; the re-run of those plus new mutants of the extracted function: 8 of 8 killed. The hardened harness ran with no timeouts.
   Verified in the browser (not mockable): taps, a real e2-e4 and a premoved d2-d3 that fired after Blue, Yellow and Green had moved, an impossible premove that
   produced the "no longer legal" notice (and lost it after the next move), a selection that survived a bot's move, and an arrow + highlight that stay on the
-  right squares through a Rotate. **Not verifiable here:** the long-press-drag release itself. The browser pane cannot generate a real drag distance, and
-  the ORIGINAL ChessBoard behaves identically under every synthetic event I tried (the drag shows the live arrow, the release resolves as a tap), so that
-  decision was moved into `decideRelease` and unit-tested instead; a manual check on a device is still worth doing once.
+  right squares through a Rotate. (An earlier version of this note claimed the long-press-drag release could not be verified in the browser pane and that the
+  original ChessBoard "behaved identically under synthetic events". That was wrong: the identical behaviour WAS a bug, found in the next round — see
+  "Arrows vanishing on release" below.)
+
+**Arrows vanishing on release (found by a screen recording, fixed).** Symptom: in a timed 4 Player game, drawing an arrow showed a correct live preview
+while dragging and then removed it the instant the finger lifted, with no move played. Cause, from instrumenting the touch path: the shared gesture hook
+(carried over from ChessBoard, where a comment said "deliberately NOT memoized") created a NEW `PanResponder` on every render. A PanResponder keeps its
+gesture state (`dx`, `dy`, `moveX`…) inside the instance, and the board re-renders constantly mid-drag — on every live-arrow move (it is state) and, in a
+timed 4 Player game, every 200 ms clock tick — so every event was handled by a different instance (grant: #57, moves: #62, #63, #64, …) and the release by
+one that had never seen a move (`dx = dy = moveX = 0`). `decideRelease` therefore saw a stationary touch and treated the drag as a tap, so the arrow was
+never committed. It was NOT the screen-cell -> square mapping (the start cell was correct), and not the clear-on-move rule. Two consequences of the same
+bug: a fast swipe over the board that never armed was also misread as a tap at the release cell (so a scroll could select or move a piece), and the
+distance used to cancel an unarmed long press was wrong. Fix: ONE PanResponder per board (a lazy `useState` initializer) whose handlers read the latest
+options through a ref. The classic board shares the hook, so it had the same latent bug and is fixed by the same change.
+Tested in `useBoardGestures.test.ts`: the real react-native-web PanResponder driven by a tiny hook runtime that re-renders between events (and extra times,
+like clock ticks): the arrow commits with two distinct cells on both grid sizes, the handlers object survives re-renders, taps / slow taps / unarmed drags /
+highlights / terminated touches / the "armed arrows refuse to be interrupted" rule behave, and handlers and square size follow the latest render. Run against
+the OLD hook the same file fails 5 of 12 (the arrow list is empty). Mutation: 10 mutants of the hook, 8 killed first time and 2 test gaps closed. Verified in
+the browser on a timed game: the arrow persists after release while the clock keeps running, survives a Rotate (re-pointing correctly), survives a piece
+selection, and is cleared by a played move; the same on a timed classic game. Note the highlight gesture needs a drag of more than 10 px that ends inside the
+SAME square (the distance is net displacement, so wandering away and back is a tap): the original design, since a slow tap must never become an annotation.
   A fifth round for the annotation invariant: 15 mutants (the pure rule inverted / always / never; the 4 Player epoch as the turn, turn + active seats,
   the score or a constant; a move not advancing `ply`; an elimination or a bare turn advance WITH a `ply` increment; the hook always/never clearing; both
   boards keyed to the turn): 14 killed first time. The one survivor — the hook keeping the FIRST epoch instead of the latest, which only misbehaves when

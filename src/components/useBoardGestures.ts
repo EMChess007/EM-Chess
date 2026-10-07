@@ -40,8 +40,10 @@ export interface BoardGestures {
  * and the board maps those to its own squares, which is exactly where each board's rotation lives.
  *
  * One PanResponder on the board container (rather than a Pressable per square) is what makes it possible to track the finger
- * continuously after the long-press fires, which Pressable's onPress/onLongPress alone can't do. Extracted unchanged in behaviour from
- * ChessBoard.tsx; every comment about a past bug below is from that code and still applies to every board that uses this.
+ * continuously after the long-press fires, which Pressable's onPress/onLongPress alone can't do. Extracted from ChessBoard.tsx; every
+ * comment about a past bug below is from that code and still applies to every board that uses this. ONE deliberate difference: the
+ * PanResponder is created once, not on every render (see the comment at its creation) — the old per-render creation made every long-press
+ * drag look like a tap on release.
  *
  * Positions are computed from `nativeEvent.pageX/pageY` (always relative to the app root) minus this board's own measured on-screen
  * offset — NOT from `locationX/locationY`, which turned out to be relative to whichever of the square children the touch actually hit
@@ -51,7 +53,10 @@ export interface BoardGestures {
  * appear completely dead.
  */
 export function useBoardGestures(options: BoardGestureOptions): BoardGestures {
-  const { squareSize, rows, cols, enableAnnotations, onTap, onArrow, onHighlight } = options;
+  // The PanResponder below is created ONCE for the life of the board, so its handlers must not close over this render's options (they
+  // would go stale): they read the CURRENT ones through this ref instead.
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
   const [liveArrow, setLiveArrow] = useState<{ from: GridPoint; toX: number; toY: number } | null>(null);
 
   const gestureRef = useRef<{
@@ -97,7 +102,10 @@ export function useBoardGestures(options: BoardGestureOptions): BoardGestures {
     return promise;
   };
 
-  const pixelToGrid = (localX: number, localY: number): GridPoint => pixelToCell(localX, localY, squareSize, rows, cols);
+  const pixelToGrid = (localX: number, localY: number): GridPoint => {
+    const { squareSize, rows, cols } = optionsRef.current;
+    return pixelToCell(localX, localY, squareSize, rows, cols);
+  };
 
   const toBoardLocal = (pageX: number, pageY: number) => ({
     x: pageX - boardOffsetRef.current.x,
@@ -110,12 +118,14 @@ export function useBoardGestures(options: BoardGestureOptions): BoardGestures {
     setLiveArrow(null);
   };
 
-  // Deliberately NOT memoized (e.g. via useRef/useMemo) — PanResponder.create() is cheap, and its
-  // handlers below close over this render's options (the board's tap handler, squareSize,
-  // enableAnnotations). Freezing it into a ref on first mount (a common pattern elsewhere) would
-  // pin every handler to that first render's values forever, silently breaking moves on every
-  // render after the very first one.
-  const panResponder = PanResponder.create({
+  // ONE PanResponder for the life of the board — created lazily by a useState initializer, which React guarantees to run once. It used to
+  // be re-created on every render ("deliberately NOT memoized", so handlers always saw fresh props), and that silently broke arrows
+  // and highlights: a PanResponder keeps its gesture state (dx, dy, moveX, ...) INSIDE the instance, and this board re-renders all the
+  // time — on every long-press-drag move (the live arrow is state) and, in 4 Player Chess, on every 200 ms clock tick. So the touch-end was
+  // handled by a brand-new instance that had never seen a move (dx = dy = moveX = 0), the drag looked like a stationary tap, and the
+  // finished arrow was never committed. Fresh props now come from optionsRef instead, which is what the old comment was protecting.
+  const [panResponder] = useState(() =>
+    PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
     // Without this, the board — once it claims a gesture on touch-down — never lets go for the
@@ -139,7 +149,7 @@ export function useBoardGestures(options: BoardGestureOptions): BoardGestures {
       // (see onPanResponderRelease's own doc comment: that decision is distance-based now, not
       // time-based), so there's no need to suppress it just because a piece happens to be
       // selected — a genuine drag should still draw an arrow regardless.
-      const timer = enableAnnotations
+      const timer = optionsRef.current.enableAnnotations
         ? setTimeout(() => {
             if (!gestureRef.current) return;
             gestureRef.current.armed = true;
@@ -205,6 +215,7 @@ export function useBoardGestures(options: BoardGestureOptions): BoardGestures {
 
         // What the touch MEANS is decided by decideRelease (logic/boardGestures.ts, unit-tested): distance first, never the long-press timer.
         const decision = decideRelease({ armed, distance: Math.hypot(dx, dy), startCell, endCell: cell });
+        const { onTap, onArrow, onHighlight } = optionsRef.current; // the CURRENT handlers, even if the release was resolved after a re-render
         if (decision.kind === 'tap') onTap(decision.cell);
         else if (decision.kind === 'arrow') onArrow(decision.from, decision.to);
         else if (decision.kind === 'highlight') onHighlight(decision.cell);
@@ -222,7 +233,8 @@ export function useBoardGestures(options: BoardGestureOptions): BoardGestures {
       clearGesture();
     },
     onPanResponderTerminate: clearGesture,
-  });
+    })
+  );
 
   return { containerRef, onLayout: () => void remeasureBoardOffset(), panHandlers: panResponder.panHandlers, liveArrow, clearLiveArrow: () => setLiveArrow(null) };
 }
