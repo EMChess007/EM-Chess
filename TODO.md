@@ -78,9 +78,9 @@ The engine (`src/logic/fourPlayer/`) is built so the rest slots in without rewor
 - **Saved games / history / rating / analysis.** Games are not saved: the saved-game payload, PGN and `GameHistoryEntry` are 2-player
   shaped, and Stockfish cannot analyse a 4-seat position. Needs a 4-player record format (chess.com's FEN4/PGN4 is the obvious dialect)
   before any of that.
-- **Game length.** `FFA_RULES.maxPlies` is 300, which ends most bot-heavy games before they would finish naturally (median 220-560 plies;
-  see TESTING.md §9). Decide on a larger value (about 1000 fits the measurements). `HARD_MAX_PLIES` (5000) is the absolute ceiling.
-  Other draw-like endings are not detected (repetition, no-progress, K+minor positions that cannot mate).
+- **Game length.** `FFA_RULES.maxPlies` is 1000 (chosen from measurements: ~95% of bot games end naturally by 800 plies);
+  `HARD_MAX_PLIES` (5000) is the absolute ceiling. Other draw-like endings are not detected (repetition, no-progress, K+minor positions that
+  cannot mate).
 - **Under-promotion scoring.** A captured promoted queen is worth 1 point (chess.com's FFA table) while an under-promoted knight/bishop/rook
   is worth its ordinary value: a modelling decision, not a sourced rule; one line in `CAPTURE_POINTS`.
 - **Scoring details not modelled.** Check-fork bonuses (checking two or three royals at once), draw claims, and points for mating an
@@ -92,4 +92,4 @@ The engine (`src/logic/fourPlayer/`) is built so the rest slots in without rewor
   than keeping the time already spent.
 - **Input.** Tap-to-select only (no drag). Squares are ~26 px on a 390 px-wide phone (21 px on 360x640), which is tappable but small; a zoom or
   larger cells on tablets would help (tablets already get up to 34 px).
-- **Threefold repetition / no-progress draws** are not detected (the ply cap — 300 — ends a runaway game by points instead).
+- **Threefold repetition / no-progress draws** are not detected (the ply cap — 1000 — ends a runaway game by points instead).

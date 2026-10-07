@@ -102,7 +102,7 @@ export const FFA_RULES: FourPlayerRules = {
   checkmatePoints: 20,
   stalematedPoints: 20,
   stalemateOthersPoints: 10,
-  maxPlies: 300,
+  maxPlies: 1000,
 };
 
 /** En passant opportunity created by a double step: the square that was skipped, the pawn's landing square, and who stepped. */

@@ -328,7 +328,7 @@ for 0 points, but never move, capture or give check — except the king, which w
 round and freezes (no points) when it cannot. Because nothing is decided until the mated seat's turn, a mate can dissolve (the checker
 is captured), an intervening seat can deliver it (credit goes to the most recent mover among the attackers), and eliminating a seat can
 lift checks it was giving. The game ends when at most one seat is active, when **no checkmate can happen any more** (every ACTIVE seat is a
-bare king — `isDeadPosition`; deliberately strict, K+minor-piece endings are not declared dead), or at the ply cap (300; and never beyond
+bare king — `isDeadPosition`; deliberately strict, K+minor-piece endings are not declared dead), or at the ply cap (1000; and never beyond
 `HARD_MAX_PLIES` = 5000, a ceiling no rules object can raise, so no bug in the rules above can make a game run on for ever); the highest score of
 ALL FOUR seats wins (ties shared). Resigning and running out of time are the two voluntary/clock eliminations (no points for anyone).
 
@@ -424,13 +424,13 @@ carried on), and complete games played to the ranking card.
   promoted piece is the mover's own, so only that it blocks matters, not what it is). **All non-equivalent mutants die.** The harness now runs
   each mutant with `--bail`, a wall-clock kill of the whole process tree and per-mutant progress output.
 
-**Game length, the 300-ply cap and the dead position.** Measured over 30 seeded bot games per matchup (ELO at all four seats, cap lifted to
+**Game length, the ply cap and the dead position.** Measured over 30 seeded bot games per matchup (ELO at all four seats, cap lifted to
 5000): before the dead-position rule, games between weak and mid bots almost never finished: they trade every non-king piece (60 captures —
 the whole non-king material — in every capped game) and then four bare kings shuffle until the cap. After it: all-400 median 556 plies
 (95% done by 800), all-1200 median 484, all-2000 median 431, all-3000 median 269, a mixed 400/1000/1800/3000 table median 223; only 0-17 of 30
-finish within 300 plies (0 / 3 / 5 / 17 / 23 for those five tables). So the cap IS low for human + bots games: it mostly ends games by points
+finish within 300 plies (0 / 3 / 5 / 17 / 23 for those five tables). So the original cap of 300 was too low for human + bots games: it mostly ended games by points
 before they have run their natural course. Raising it is a one-number change (`FFA_RULES.maxPlies`); a value around 1000 would let ~95-100%
-of these games end naturally. Left at 300 pending a decision.
+of these games end naturally. **Decision: `FFA_RULES.maxPlies` is now 1000** (the dead-position rule already ends games early when nothing more can happen, so the larger cap does not bring back dead time).
 
 **Performance.** `legalMoves` from the start position takes ~0.07 ms (a promotion square adds three more moves; the dead-position scan is one
 pass over 196 cells per turn handover). Bot decisions: ELO < 1000 ~0.3 ms, mid roster ~4 ms (max ~20 ms), 1800+

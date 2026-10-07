@@ -50,7 +50,7 @@ interface PlayedGame {
 }
 
 /** Plays a whole game with `elos[seat]` for each seat (dead kings walk by themselves, as in the real game). */
-function selfPlay(elos: number[], seed: number, maxDecisions = 400): PlayedGame {
+function selfPlay(elos: number[], seed: number, maxDecisions = 1200): PlayedGame {
   const rng = seeded(seed);
   let state = initialState();
   const out: PlayedGame = { state, decisions: 0, totalMs: 0, maxMs: 0, illegal: [] };

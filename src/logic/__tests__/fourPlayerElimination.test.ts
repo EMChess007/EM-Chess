@@ -265,6 +265,7 @@ describe('resigning, timing out, the move cap and skipped seats', () => {
         expect(out.state.result, String(maxPlies)).toMatchObject({ reason: 'cap' });
         expect(out.state.ply).toBe(HARD_MAX_PLIES);
       }
+      expect(FFA_RULES.maxPlies).toBe(1000); // measured: ~95% of bot games end naturally by 800 plies, so 1000 leaves headroom (300 cut most of them off)
       expect(HARD_MAX_PLIES).toBeGreaterThan(FFA_RULES.maxPlies); // the ceiling never lowers the normal cap
       expect(HARD_MAX_PLIES).toBeLessThanOrEqual(10_000); // ...and is genuinely a ceiling: a 4-seat game is never allowed to run on past this
       const normal = stateFromPieces(shufflers, { ply: HARD_MAX_PLIES - 1 });
