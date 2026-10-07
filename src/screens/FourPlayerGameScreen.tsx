@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { appAlert } from '../components/AppAlert';
 import FourPlayerBoard from '../components/FourPlayerBoard';
+import FourPlayerSeatStrip from '../components/FourPlayerSeatStrip';
 import GameControlBar from '../components/GameControlBar';
 import GameScreenBody from '../components/GameScreenBody';
 import ScreenHeader from '../components/ScreenHeader';
@@ -9,9 +10,9 @@ import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import {
   SEAT_COLORS,
   SEAT_NAMES,
+  addIncrement,
   chooseBotMove,
   defaultViewSeat,
-  describeController,
   describeEvents,
   initialState,
   isInCheck,
@@ -19,22 +20,27 @@ import {
   nextSeat,
   playMove,
   resign,
-  shortController,
+  type FourPlayerClock,
   type FourPlayerState,
+  type GameEvent,
   type Move,
   type Seat,
   type SeatConfig,
 } from '../logic/fourPlayer';
+import { controllerName } from '../logic/fourPlayerBots';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { playMoveSound } from '../logic/moveSounds';
+import { useFourPlayerClock } from '../logic/useFourPlayerClock';
+import type { TimeControl } from '../types/timeControl';
 
 interface FourPlayerGameScreenProps {
   seats: SeatConfig;
+  timeControl: TimeControl;
   onExit: () => void;
 }
 
-/** How long a bot "thinks" before its move lands, so a round of three bot moves is followable rather than instantaneous. */
-const BOT_DELAY_MS = 450;
+/** How long a bot "thinks" before its move lands, so a round of three bot moves is followable rather than instantaneous (shorter in bullet). */
+const botDelayMs = (timeControl: TimeControl) => (timeControl.category === 'bullet' ? 200 : 450);
 
 interface LogEntry {
   seat: Seat;
@@ -43,16 +49,17 @@ interface LogEntry {
 
 interface Snapshot {
   state: FourPlayerState;
+  clock: FourPlayerClock;
   lastMove: { from: number; to: number } | null;
   log: LogEntry[];
 }
 
 /**
- * Local 4 Player Chess (Free-for-All): hotseat humans and/or bots, per the SeatConfig. The whole game is one immutable FourPlayerState
- * advanced with playMove (which also resolves eliminations and walks dead kings), so Undo is a stack of earlier states. Not saved to
- * history, not rated, no clocks in this first pass.
+ * Local 4 Player Chess (Free-for-All): hotseat humans and/or bots, per the SeatConfig, on four independent clocks. The whole game is one
+ * immutable FourPlayerState advanced with playMove (which also resolves eliminations and walks dead kings), so Undo is a stack of earlier
+ * states (with their clocks). A seat that runs out of time is eliminated by the engine ('timeout'). Not saved to history, not rated.
  */
-export default function FourPlayerGameScreen({ seats, onExit }: FourPlayerGameScreenProps) {
+export default function FourPlayerGameScreen({ seats, timeControl, onExit }: FourPlayerGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const [game, setGame] = useState<FourPlayerState>(() => initialState());
@@ -63,35 +70,50 @@ export default function FourPlayerGameScreen({ seats, onExit }: FourPlayerGameSc
   const [viewSeat, setViewSeat] = useState<Seat>(() => defaultViewSeat(seats));
   const [round, setRound] = useState(0);
 
+  // A flag fall: the engine has already eliminated the seat (and passed the turn on); adopt the result.
+  const handleTimeout = (next: FourPlayerState, events: GameEvent[]) => {
+    setPast((p) => [...p, { state: game, clock, lastMove, log }]);
+    setGame(next);
+    setNotice(describeEvents(events));
+    if (next.result) triggerGameEndHaptics();
+  };
+  const { clock, setClock, reset: resetClock } = useFourPlayerClock(timeControl, game, handleTimeout);
+
   const controller = seats[game.turn];
   const humanToMove = !game.result && controller.kind === 'human';
   const botToMove = !game.result && controller.kind === 'bot';
 
   const apply = useCallback(
     (move: Move) => {
+      const mover = game.turn;
       const { state: next, events } = playMove(game, move);
       const sounds = { san: moveLabel(move), captured: move.captured ? ('p' as const) : undefined };
       playMoveSound(sounds);
       triggerMoveHaptics(sounds);
-      setPast((p) => [...p, { state: game, lastMove, log }]);
+      setPast((p) => [...p, { state: game, clock, lastMove, log }]);
       setGame(next);
-      setLog((l) => [...l, { seat: game.turn, text: moveLabel(move) }]);
+      setClock((c) => addIncrement(c, mover, game)); // the mover's increment; nobody else's, and never a dead king's walk
+      setLog((l) => [...l, { seat: mover, text: moveLabel(move) }]);
       setLastMove({ from: move.from, to: move.to });
       setNotice(describeEvents(events));
       if (next.result) triggerGameEndHaptics();
     },
-    [game, lastMove, log]
+    [game, clock, lastMove, log, setClock]
   );
 
   // Bots: when it is a bot's turn, think for a moment and then play. Re-created on every position change, so it can never act on a stale one.
+  // It must NOT depend on `apply` itself: that changes every time a clock ticks (it captures the clock for Undo snapshots), which would
+  // restart this timer every 200 ms and the bot would never get to move. The latest `apply` is reached through a ref instead.
+  const applyRef = useRef(apply);
+  applyRef.current = apply;
   useEffect(() => {
     if (!botToMove || controller.kind !== 'bot') return;
     const timer = setTimeout(() => {
-      const move = chooseBotMove(game, controller.level);
-      if (move) apply(move);
-    }, BOT_DELAY_MS);
+      const move = chooseBotMove(game, controller.elo);
+      if (move) applyRef.current(move);
+    }, botDelayMs(timeControl));
     return () => clearTimeout(timer);
-  }, [game, botToMove, controller, apply]);
+  }, [game, botToMove, controller, timeControl]);
 
   const canUndo = past.some((p) => seats[p.state.turn].kind === 'human');
   const handleUndo = () => {
@@ -99,6 +121,7 @@ export default function FourPlayerGameScreen({ seats, onExit }: FourPlayerGameSc
     for (let i = past.length - 1; i >= 0; i--) {
       if (seats[past[i].state.turn].kind === 'human') {
         setGame(past[i].state);
+        setClock(past[i].clock);
         setLastMove(past[i].lastMove);
         setLog(past[i].log);
         setPast(past.slice(0, i));
@@ -118,7 +141,7 @@ export default function FourPlayerGameScreen({ seats, onExit }: FourPlayerGameSc
         style: 'destructive',
         onPress: () => {
           const { state: next, events } = resign(game, seat);
-          setPast((p) => [...p, { state: game, lastMove, log }]);
+          setPast((p) => [...p, { state: game, clock, lastMove, log }]);
           setGame(next);
           setNotice(describeEvents(events));
           if (next.result) triggerGameEndHaptics();
@@ -129,6 +152,7 @@ export default function FourPlayerGameScreen({ seats, onExit }: FourPlayerGameSc
 
   const handleNewGame = () => {
     setGame(initialState());
+    resetClock();
     setPast([]);
     setLastMove(null);
     setNotice([]);
@@ -137,10 +161,7 @@ export default function FourPlayerGameScreen({ seats, onExit }: FourPlayerGameSc
     setRound((r) => r + 1);
   };
 
-  const ranking = useMemo(
-    () => ([0, 1, 2, 3] as Seat[]).slice().sort((a, b) => game.score[b] - game.score[a] || a - b),
-    [game.score]
-  );
+  const ranking = useMemo(() => ([0, 1, 2, 3] as Seat[]).slice().sort((a, b) => game.score[b] - game.score[a] || a - b), [game.score]);
 
   const mover = SEAT_NAMES[game.turn];
   let statusText: string;
@@ -155,7 +176,7 @@ export default function FourPlayerGameScreen({ seats, onExit }: FourPlayerGameSc
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="4 Player Chess" subtitle="Free-for-All" onBack={onExit} backLabel="‹ Menu" />
+      <ScreenHeader title="4 Player Chess" subtitle={`Free-for-All · ${timeControl.label}`} onBack={onExit} backLabel="‹ Menu" />
       <GameScreenBody
         bottomBar={
           <>
@@ -176,28 +197,7 @@ export default function FourPlayerGameScreen({ seats, onExit }: FourPlayerGameSc
           </>
         }
       >
-        <View style={styles.seatStrip}>
-          {([0, 1, 2, 3] as Seat[]).map((seat) => {
-            const out = game.status[seat] !== 'active';
-            const current = !game.result && game.turn === seat;
-            return (
-              <View key={seat} style={[styles.seatChip, current && { borderColor: SEAT_COLORS[seat], borderWidth: 2 }, out && styles.seatChipOut]}>
-                <View style={[styles.seatDot, { backgroundColor: SEAT_COLORS[seat] }]} />
-                <View style={styles.seatText}>
-                  <View style={styles.seatNameRow}>
-                    <Text style={styles.seatName} numberOfLines={1}>
-                      {SEAT_NAMES[seat]}
-                    </Text>
-                    <Text style={styles.seatScore}>{game.score[seat]}</Text>
-                  </View>
-                  <Text style={styles.seatMeta} numberOfLines={1}>
-                    {out ? 'out' : shortController(seats[seat])}
-                  </Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
+        <FourPlayerSeatStrip state={game} seats={seats} clock={clock} />
 
         <Text style={[styles.status, { color: game.result ? colors.gold : colors.text }]}>{statusText}</Text>
 
@@ -227,7 +227,7 @@ export default function FourPlayerGameScreen({ seats, onExit }: FourPlayerGameSc
                 <Text style={styles.resultPlace}>{position + 1}.</Text>
                 <View style={[styles.seatDot, { backgroundColor: SEAT_COLORS[seat] }]} />
                 <Text style={[styles.resultName, game.result!.winners.includes(seat) && { fontWeight: '800' }]}>
-                  {SEAT_NAMES[seat]} <Text style={styles.resultMeta}>({describeController(seats[seat])})</Text>
+                  {SEAT_NAMES[seat]} <Text style={styles.resultMeta}>({controllerName(seats[seat])})</Text>
                 </Text>
                 <Text style={styles.resultScore}>{game.score[seat]}</Text>
               </View>
@@ -247,26 +247,7 @@ function createStyles(colors: AppColors) {
     footer: { alignItems: 'center', gap: 6 },
     resetButton: { paddingVertical: 10, paddingHorizontal: 22, backgroundColor: colors.buttonBackground, borderRadius: 10 },
     resetButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-    seatStrip: { flexDirection: 'row', gap: 4, paddingHorizontal: 8, alignSelf: 'stretch' },
-    seatChip: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 5,
-      paddingVertical: 4,
-      paddingHorizontal: 5,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-    },
-    seatChipOut: { opacity: 0.5 },
     seatDot: { width: 10, height: 10, borderRadius: 5 },
-    seatText: { flex: 1 },
-    seatNameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 2 },
-    seatName: { flexShrink: 1, fontSize: 12, fontWeight: '700', color: colors.text },
-    seatScore: { fontSize: 12, fontWeight: '800', color: colors.text },
-    seatMeta: { fontSize: 10, color: colors.textSecondary },
     status: { fontSize: 15, fontWeight: '600' },
     recent: { fontSize: 12, textAlign: 'center', paddingHorizontal: 8 },
     notice: { fontSize: 12, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 12 },

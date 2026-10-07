@@ -60,7 +60,8 @@ import { recordAppOpen } from './src/logic/streakStorage';
 import { restoreActiveThemes } from './src/logic/themeSettings';
 import type { BotPersonality } from './src/types/bot';
 import type { ColorChoice, PieceColor } from './src/types/chess';
-import type { SeatConfig } from './src/logic/fourPlayer';
+import { SEAT_NAMES, defaultSeatConfig, withController, type Seat, type SeatConfig } from './src/logic/fourPlayer';
+import { controllerForBot } from './src/logic/fourPlayerBots';
 import type { AnalyzeParams } from './src/types/history';
 import type { ActiveGameSummary, MatchFoundPayload, SetupChessPairedPayload } from './src/types/multiplayer';
 import type { TimeControl } from './src/types/timeControl';
@@ -126,8 +127,11 @@ type Screen =
   | { name: 'tournamentStandings'; token: string; tournamentId: string }
   | { name: 'engineSelect' }
   // 4 Player Chess is its own mode, not a variant of the 2-player game (see src/logic/fourPlayer): setup picks who controls each seat.
-  | { name: 'fourPlayerSetup' }
-  | { name: 'fourPlayerGame'; seats: SeatConfig }
+  // The seat choices travel in the screen state so they survive the trip to the bot picker and on to the time control.
+  | { name: 'fourPlayerSetup'; seats: SeatConfig }
+  | { name: 'fourPlayerBotSelect'; seats: SeatConfig; seat: Seat }
+  | { name: 'fourPlayerTimeControl'; seats: SeatConfig }
+  | { name: 'fourPlayerGame'; seats: SeatConfig; timeControl: TimeControl }
   | { name: 'themeSelect' }
   | { name: 'streak' }
   | { name: 'puzzleRush'; themeFilter?: string[] }
@@ -398,7 +402,7 @@ export default function App() {
             mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: true },
           })
         }
-        onFourPlayer={() => setScreen({ name: 'fourPlayerSetup' })}
+        onFourPlayer={() => setScreen({ name: 'fourPlayerSetup', seats: defaultSeatConfig() })}
         onEngineVsEngineClassic={() =>
           setScreen({
             name: 'timeControlSelect',
@@ -697,9 +701,38 @@ export default function App() {
       />
     );
   } else if (screen.name === 'fourPlayerSetup') {
-    content = <FourPlayerSetupScreen onBack={() => setScreen({ name: 'playModeSelect' })} onStart={(seats) => setScreen({ name: 'fourPlayerGame', seats })} />;
+    const { seats } = screen;
+    content = (
+      <FourPlayerSetupScreen
+        seats={seats}
+        onChange={(next) => setScreen({ name: 'fourPlayerSetup', seats: next })}
+        onPickBot={(seat) => setScreen({ name: 'fourPlayerBotSelect', seats, seat })}
+        onContinue={() => setScreen({ name: 'fourPlayerTimeControl', seats })}
+        onBack={() => setScreen({ name: 'playModeSelect' })}
+      />
+    );
+  } else if (screen.name === 'fourPlayerBotSelect') {
+    const { seats, seat } = screen;
+    content = (
+      <BotSelectScreen
+        subtitle={`4 Player Chess · ${SEAT_NAMES[seat]}`}
+        engineLabel="4 Player Chess bot"
+        onSelect={(bot) => setScreen({ name: 'fourPlayerSetup', seats: withController(seats, seat, controllerForBot(bot)) })}
+        onBack={() => setScreen({ name: 'fourPlayerSetup', seats })}
+      />
+    );
+  } else if (screen.name === 'fourPlayerTimeControl') {
+    const { seats } = screen;
+    content = (
+      <TimeControlSelectScreen
+        subtitle="4 Player Chess · Free-for-All"
+        excludeCategories={['daily']}
+        onSelect={(timeControl) => setScreen({ name: 'fourPlayerGame', seats, timeControl })}
+        onBack={() => setScreen({ name: 'fourPlayerSetup', seats })}
+      />
+    );
   } else if (screen.name === 'fourPlayerGame') {
-    content = <FourPlayerGameScreen seats={screen.seats} onExit={() => setScreen({ name: 'playModeSelect' })} />;
+    content = <FourPlayerGameScreen seats={screen.seats} timeControl={screen.timeControl} onExit={() => setScreen({ name: 'playModeSelect' })} />;
   } else if (screen.name === 'engineSelect') {
     content = <EngineSelectScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'themeSelect') {

@@ -6,3 +6,4 @@ export * from './elimination';
 export * from './bot';
 export * from './setup';
 export * from './presentation';
+export * from './clock';

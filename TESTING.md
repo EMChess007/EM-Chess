@@ -297,13 +297,18 @@ server must understand the protocol first); until it lands the Online/Challenge/
 ## 9. 4 Player Chess (Free-for-All, Local + Bots) — scope, decisions and known limits
 
 A genuinely new mode, not a variant flag: its own pure-TypeScript engine in `src/logic/fourPlayer/` (no React, no chess.js, no
-`ChessEngine`; a test pins that the folder imports only from itself), its own `FourPlayerBoard` component, and two screens
-(`FourPlayerSetupScreen`, `FourPlayerGameScreen`). It surfaces as its own card on the Play menu, not in `VariantSelector`.
-Branch `fourPlayerChess` (frontend only; no backend changes).
+`ChessEngine`; a test pins that the folder imports only from itself), its own `FourPlayerBoard` and `FourPlayerSeatStrip` components,
+and two screens (`FourPlayerSetupScreen`, `FourPlayerGameScreen`). It surfaces as its own card on the Play menu, not in
+`VariantSelector`. Branch `fourPlayerChess` (frontend only; no backend changes).
+
+**Flow.** Play → 4 Player Chess → *seat setup* (per seat: Human, or Bot — tapping a bot opens the app's real "Select a Bot" roster
+screen, `BotSelectScreen`, subtitled with the seat) → *time control* (the real `TimeControlSelectScreen`, Daily excluded: Bullet /
+Blitz / Rapid / No time limit) → game. The seat choices travel in App's navigation state, so they survive the trip to the bot picker.
+There are no preset shortcuts: the per-seat toggles cover them.
 
 **Board.** 14 x 14 minus a 3 x 3 corner = 160 squares, stored as a flat 196-cell `Int8Array` mailbox (-1 off-board, 0 empty,
 `seat * 8 + type` for pieces, type 7 = a promoted queen). Neighbour/ray tables are precomputed and already stop at the cut corners,
-so move generation has no bounds checks. State is immutable (`FourPlayerState`); Undo is a stack of states.
+so move generation has no bounds checks. State is immutable (`FourPlayerState`); Undo is a stack of states (with their clocks).
 
 **Rules as built.** Movement is standard chess; pawns move/capture in their own seat's direction and double-step from their
 starting line; promotion is to a queen only, on each seat's own 8th rank (Red rank 8, Yellow rank 7, Blue file h, Green file g).
@@ -311,64 +316,95 @@ Legality generalises king safety: a move is legal iff no LIVE enemy seat attacks
 works). En passant is generic across directions (a Blue pawn can take a Red pawn) and lasts one applied move. Castling is per seat
 (king two squares towards the rook, rook onto the crossed square). Kings are never captured.
 
-**Elimination (the new part).** Checkmate is never stored as "pending": after every move the turn passes clockwise and the next seat
-is examined *at that moment* (`advance` in `elimination.ts`). A seat with no legal move is checkmated (in check) or stalemated,
-eliminated on the spot, and that **consumes its turn**. An eliminated seat's pieces turn dead (a status flip, no per-piece flag): they
-block and can be captured for 0 points, but never move, capture or give check — except the king, which walks to a random empty square
-each time its turn comes round and freezes (no points) when it cannot. Because nothing is decided until the mated seat's turn, a mate
-can dissolve (the checker is captured), an intervening seat can deliver it (credit goes to the most recent mover among the attackers),
-and eliminating a seat can lift checks it was giving. The game ends when at most one seat is active or at the 300-ply cap; the
-highest score of ALL FOUR seats wins (ties shared).
+**Elimination.** Checkmate is never stored as "pending": after every move the turn passes clockwise and the next seat is examined *at
+that moment* (`advance` in `elimination.ts`). A seat with no legal move is checkmated (in check) or stalemated, eliminated on the spot,
+and that **consumes its turn**. An eliminated seat's pieces turn dead (a status flip, no per-piece flag): they block and can be captured
+for 0 points, but never move, capture or give check — except the king, which walks to a random empty square each time its turn comes
+round and freezes (no points) when it cannot. Because nothing is decided until the mated seat's turn, a mate can dissolve (the checker
+is captured), an intervening seat can deliver it (credit goes to the most recent mover among the attackers), and eliminating a seat can
+lift checks it was giving. The game ends when at most one seat is active or at the 300-ply cap; the highest score of ALL FOUR seats wins
+(ties shared). Resigning and running out of time are the two voluntary/clock eliminations (no points for anyone).
+
+**Clocks.** Four independent clocks (`fourPlayer/clock.ts`, a pure model; `useFourPlayerClock` is the timer around it — the 4-seat
+counterpart of `useChessClock`, which is two-seat all the way down and was left untouched). Only the seat whose turn it is runs, and the
+engine only ever hands the turn to an ACTIVE seat, so an eliminated seat's clock is simply never touched again — it freezes at its last
+reading and is greyed — and a dead king's random walk costs nobody time (and earns no increment). A seat whose clock reaches 0 is
+eliminated through the engine's `resign(..., 'timeout')` path: its pieces go dead, the turn passes on, and the game ends if it was the third
+elimination. The increment goes to the seat that just moved. "No time limit" disables ticking entirely. Time is converted from timestamps
+every 200 ms (so a flag fall is noticed within 0.2 s); Undo restores the clocks as they were. Bots use real clock time while they
+"think" (200 ms in bullet, 450 ms otherwise).
 
 **Scoring (simplified).** Capture values pawn 1, knight 3, bishop 5, rook 5, queen 9, promoted queen 1; dead pieces 0; checkmate +20 to
 the credited seat; stalemate +20 to the stalemated seat and +10 to every other active seat. Not modelled: check-fork bonuses, draw
-claims, points for mating a dead king. No clocks; resign is the only voluntary elimination (the engine has a `'timeout'` reason ready).
+claims, points for mating a dead king.
 
-**Bot.** `fourPlayer/bot.ts`, three levels, no Stockfish (it cannot play this game). Easy = random with a capture preference; medium =
-one ply (points, material vs the average active opponent, hanging-piece penalty, mate of the next seat); hard = two ply against the
-next ACTIVE seat's worst reply including being mated by it. Not ELO-rated (4-player games are never rated).
+**Bots (strength from ELO).** `fourPlayer/bot.ts`; no Stockfish (it cannot play this game). The bot a player picks is the roster bot
+(Kiddo 400 … The Unbeatable 3000, from `BOT_PERSONALITIES`, not a copy); the engine folder stores only its ELO, and `botStrength(elo)` turns
+that into play, in the same family as `chooseGiveawayBotMove` / `chooseAtomicBotMove` / … : `bestChance = 0.2 + 0.7 * clamp((elo - 400) / 2600)`
+is the chance of playing the scored choice at all (otherwise a uniformly random legal move); `noise = 2.5 * (1 - strength)` is a random wobble
+on every candidate's score (0 at 3000), so a weak bot's "best" move is only plausible; and an internal search tier layered under it:
+*greedy* (ELO < 1000: points and material only — it hangs pieces and cannot see a mate), *careful* (1000-1799: plus hanging-piece, castling and
+promotion terms and spotting a mate or stalemate of the next seat), *deep* (1800+: two ply against the next ACTIVE seat's worst reply,
+including being mated by it). The old fixed Easy/Medium/Hard labels are gone. Measured over 16 rotated-seat games (ELO 400 / 1000 / 1800 /
+3000 around the board): average scores about 15 / 34 / 45 / 103 and ELO 3000 won 14 of 16. Adjacent roster steps (e.g. 1400 vs 2200) overlap
+within the noise of a sample that size: strength is genuinely monotonic and clearly separated across the roster, not a precise rating.
+Not ELO-rated (4-player games are never rated).
 
 **UI.** Fixed top-down cross board; `viewSeat` rotates it purely at render time (the sole human sits at the bottom in vs-bots games;
-hotseat starts Red-at-bottom with a Rotate button). Tap a piece, tap a highlighted square (no drag in this pass). Squares are 26 px on a
-390 px-wide phone (22 px on 360x640, up to 34 px on tablets/desktop): checked in the browser at 390x760 and 360x640, no clipping or
-horizontal overflow, including a full bot-only game played to its end (ranking card shown).
+hotseat starts Red-at-bottom with a Rotate button). Tap a piece, tap a highlighted square (no drag in this pass). The **seat strip** is one
+card per seat with, together: colour + name, the score (right), the remaining time in large type (red under 10 s while it is running; omitted
+for "No time limit"), and who plays the seat (Human or the roster bot's name; "out" once eliminated, greyed). The seat to move has a border in
+its colour. Squares are 26 px on a 390 px-wide phone (21 px on 360x640, up to 34 px on tablets/desktop); checked in the browser at both
+sizes: no clipping or horizontal overflow, a flag fall played out (the idle human's 1-minute clock ran out, the seat went grey and the bots
+carried on), and complete games played to the ranking card.
 
 **How it is tested** (all in `src/logic/__tests__/`)
 - `fourPlayerBoard.test.ts` — 160 squares and exactly which corners are cut; the start position square by square for all four seats
-  (including Blue/Green's king-queen swap); the invariant that every queen is on an even-parity square and every king on an odd one;
-  rays stopping at the corners; render rotation; serialisation round-trips (statuses, scores, en passant, a finished result).
+  (including Blue/Green's king-queen swap); every queen on an even-parity square and every king on an odd one; rays stopping at the
+  corners; render rotation; serialisation round-trips.
 - `fourPlayerMoves.test.ts` — every piece in each seat's direction; double steps, promotion lines for all four seats, captures per
   direction, no king capture; castling for all 8 rook sides plus every refusal and every way to lose it; en passant (across axes,
   one-move window, own pawn, exposing the capturer's king); multi-seat check, pins, dead pieces never attacking; **a differential test
-  against chess.js** on an 8x8 window (two live seats, 1000 random positions: legal moves and "in check" agree exactly).
-- `fourPlayerElimination.test.ts` — the 8 named scenarios (1 a pending mate dissolves; 2 an intervening mate credits the later attacker,
-  2b credits the earlier one when alone; 3 an elimination lifts a check; 4 the turn is consumed and a walled-in dead king freezes, 4b a free
-  one walks; 5 one move mates two seats; 6 stalemate scoring; 7 the game ends mid-cycle and the highest score wins even if dead; 8 dead
-  pieces block, score 0 and never attack), plus resign, timeout, the third resignation, the ply cap, skipped frozen seats and turn order.
-- `fourPlayerBot.test.ts` — legal at every level and seat, null when boxed in, takes a free queen, does not trade a queen for a defended
-  pawn, finds mate in one (also with a dead seat in between), hard declines bait that costs a back-rank mate, complete self-play games at
-  every level, and a timing budget.
-- `fourPlayerApp.test.ts` — seat setup, labels/narration, cell sizing, and wiring/isolation pins (the engine imports only itself; the
-  2-player plumbing never mentions it; the game is not rated/saved; menu and `App.tsx` routing).
-- **Mutation-checked**: 54 deliberate breakages of the engine and bot (corner size, pawn directions and start/promotion lines, rotation,
-  piece order, point values, castling geometry and rights, every attack/legality rule, dead-piece handling, mate-credit order, scoring,
-  game end, freezing, resign, the ply cap, bot evaluation). 46 were killed on the first run; 5 real gaps (dead pawns/knights giving check,
-  a dead king capturing, an eliminated seat keeping castling rights, the bot treating a dead seat as its opponent) were closed with new
-  tests and now die; 3 survivors are equivalent mutants: the sign of a pawn's perpendicular is irrelevant because both sides are always
-  used, the TYPE of the mover's own piece on the arrival square cannot change its own king's safety (only that something stands there),
-  and a dead seat's material is never read by the evaluation.
+  against chess.js** on an 8x8 window (1000 random positions: legal moves and "in check" agree exactly).
+- `fourPlayerElimination.test.ts` — the 8 named scenarios (a pending mate dissolves; an intervening mate credits the later attacker; an
+  elimination lifts a check; the turn is consumed and a walled-in dead king freezes while a free one walks; one move mates two seats;
+  stalemate scoring; the game ends mid-cycle and the highest score wins even if dead; dead pieces block, score 0 and never attack), plus
+  resign, timeout, the third resignation, the ply cap, skipped frozen seats and turn order.
+- `fourPlayerClock.test.ts` — the clock integration: only the seat to move ticks (every seat); time accumulates and never goes negative;
+  a disabled clock never ticks; a timeout eliminates through the engine's timeout path (no points, pieces dead, turn passed, nobody else's
+  clock touched, flags at exactly zero, skips already-eliminated seats, the third timeout ends the game); **an eliminated seat's clock stays
+  frozen** after a timeout and after a checkmate, through dead-king walks and many later rounds; increments go to the mover only and never to
+  an eliminated seat; a whole simulated 60 s game checks every step that only the mover's clock changed and that eliminated seats never change
+  again; clock construction from time controls.
+- `fourPlayerBot.test.ts` — `botStrength` (the 0.2-0.9 family, clamped, monotonic over the whole roster, tier thresholds), the effect of the
+  chosen ELO (how often the bot finds a free queen rises ~20% → ~90%; the noise term; **rotated-seat games where higher ELO scores more and
+  ELO 3000 wins most**), legality at every strength, tier behaviour (greedy cannot see mate and takes a defended pawn, careful grabs bait that
+  deep declines, careful/deep find mate in one, also past a dead seat), complete self-play games, and a timing budget.
+- `fourPlayerApp.test.ts` — seat setup, the roster glue (every roster bot maps to a controller and back to its name; the setup screen
+  contains no copy of the roster, no tiers, no presets), the new flow in `App.tsx`, `TimeControlSelectScreen`/`BotSelectScreen` gaining only
+  optional props, the seat-card contents, clock formatting, cell sizing, and a **regression pin for a bug found in the browser**: the bot
+  effect must not depend on `apply`, which changes on every clock tick and would cancel the bot's timer forever (bots never moved).
+- **Mutation-checked**: the first pass's 54 engine/bot mutants (corner geometry, pawn lines, rotation, piece order, point values, castling,
+  every attack/legality rule, dead pieces, mate-credit order, scoring, game end, freezing, resign, the ply cap: 51 killed, 3 equivalent —
+  the sign of a pawn's perpendicular, the type of the mover's own piece on its arrival square, and dead seats' material never being read), plus 34 new mutants for this
+  pass (ELO formula and scale, noise, tier thresholds and what each tier sees, clock ticking/flooring/flagging/disabling/increments/timeout
+  reason/initial times, clock formatting, setup defaults, roster glue). 27 were killed on the first run; 5 real gaps (noise never applied,
+  greedy bots seeing mates, careful bots searching two ply, a clock ticking an inactive seat, the hotseat start seat) were closed with new
+  tests, and 2 "survivors" were harness artifacts (the search string also matched a header comment) that were retargeted and then killed:
+  **all 34 now die**.
 
-**Performance.** `legalMoves` from the start position takes ~0.07 ms. Full bot-vs-bot games (up to the 300-ply cap): easy ~0.1 ms per
-decision, medium ~4 ms (max ~20 ms), hard ~16 ms mean (max ~260 ms); a complete four-hard-bot game computes in ~3-5 s in total.
-Nothing recomputes per render except the legal-move list for the position on screen (memoised per position).
+**Performance.** `legalMoves` from the start position takes ~0.07 ms. Bot decisions: ELO < 1000 ~0.3 ms, mid roster ~4 ms (max ~20 ms), 1800+
+~16 ms mean (max ~260 ms); a complete four-strong-bot game computes in ~3-5 s in total. The clock timer touches one number per 200 ms and
+re-renders only the strip and status. Nothing recomputes per render except the legal-move list for the position on screen (memoised).
 
-**CHECKLIST sections, explicitly.** *Spec before code*: written and reviewed before implementation. *Correctness*: above. *Performance*:
-above. *Online/backend parity*: **N/A this pass** — fully isolated, no Online component, no backend change; the engine is written so
-it can be mirrored verbatim later (no React/chess.js imports, serialisable state). *Cross-feature*: nothing else imports the folder;
-bots (a separate bot), analysis (4-player games are not analysable), PGN export/import (not saved, so nothing to export), game history,
-ratings/achievements, puzzles and tournaments are untouched — pinned by `fourPlayerApp.test.ts`. *Documentation*: doc comments at the
-top of every engine file explain the lazy-mate rule, dead pieces, the scoring simplifications and the generic en passant. *Variant
-extras*: not combinable with any 2-player variant because it is not one (no `VariantSelector` entry, no `gameResult.ts` slot).
+**CHECKLIST sections, explicitly.** *Spec before code*: written and reviewed (first pass); this pass is UI/flow, bot-strength and clock work,
+no rules change. *Correctness*: above (elimination-by-timeout, clock-stops-on-elimination and only-current-seat-ticks have their own tests).
+*Performance*: above. *Online/backend parity*: **N/A** — still fully local, no backend change; the clock model is pure and serialisable, ready to
+be mirrored with the rest of the engine when Online comes. *Cross-feature*: nothing else imports the folder; the only shared files touched are
+`BotSelectScreen` and `TimeControlSelectScreen` (optional props, unchanged behaviour for their existing callers) and the 2-player
+`useChessClock`/`bots.ts` are untouched — pinned by `fourPlayerApp.test.ts`. Analysis, PGN, game history, ratings, achievements, puzzles and
+tournaments are untouched (4-player games are not saved). *Documentation*: doc comments at the top of every engine file; this section.
+*Variant extras*: not combinable with any 2-player variant because it is not one.
 
-**Known limits** — see TODO.md ("4 Player Chess: what the first pass leaves out"): Teams, Solo, Online, clocks, saved games/analysis,
-check-fork scoring, drag input, repetition draws.
+**Known limits** — see TODO.md ("4 Player Chess: what it still leaves out"): Teams, Solo, Online, saved games/analysis, check-fork scoring,
+drag input, repetition draws; clock granularity is 200 ms; Undo gives back the time spent on the undone moves.

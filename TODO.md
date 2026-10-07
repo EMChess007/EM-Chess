@@ -65,22 +65,26 @@ and a room only lives while both sockets stay connected. Making Daily real is it
 (see `isUnlimitedTimeControl` in the backend's `rooms.ts` and `playerClockText` in `src/logic/time.ts`). The
 Challenge screen does not offer it (nor Daily) yet — a small follow-up since the server already accepts it.
 
-## 4 Player Chess: what the first pass (Local + Bots, FFA) deliberately leaves out
+## 4 Player Chess: what it still leaves out
 
 The engine (`src/logic/fourPlayer/`) is built so the rest slots in without rework, but none of these exist yet:
 
 - **Teams and Solo modes.** `FourPlayerRules` already carries the knobs that differ (`promotionCoord` — Teams promotes on the 11th
   rank — and the point values); what is missing is the notion of allies (`attackers()` treats every other seat as an enemy) and the
   team/solo scoring and end conditions in `elimination.ts`.
-- **Online.** The engine is pure TypeScript with no React/chess.js imports and a serialisable state, ready to be mirrored verbatim
-  into `backend/src/game/` behind the same no-drift test the 2-player variants use. Needs 4-seat rooms, matchmaking for four,
-  per-seat clocks and a 4-player wire format. Nothing in the backend knows about it today.
-- **Clocks.** `eliminateSeat(..., 'timeout')` exists; there is no clock UI or per-seat timer.
-- **Saved games / history / rating / analysis.** Games are not saved: the saved-game payload, PGN and `GameHistoryEntry` are
-  2-player shaped, and Stockfish cannot analyse a 4-seat position. Needs a 4-player record format (chess.com's FEN4/PGN4 is the
-  obvious dialect) before any of that.
-- **Scoring details not modelled.** Check-fork bonuses (checking two or three royals at once), draw claims, and points for
-  mating an already-dead king. The numbers that are modelled live in `FFA_RULES`.
-- **Input.** Tap-to-select only (no drag). Squares are ~26 px on a 390 px-wide phone, which is tappable but small; a zoom or a larger
-  cell on tablets would help. Tablets already get up to 34 px.
+- **Online.** The engine is pure TypeScript with no React/chess.js imports and a serialisable state (the clock model included), ready to be
+  mirrored verbatim into `backend/src/game/` behind the same no-drift test the 2-player variants use. Needs 4-seat rooms, matchmaking for
+  four, server-side per-seat clocks and a 4-player wire format. Nothing in the backend knows about it today.
+- **Saved games / history / rating / analysis.** Games are not saved: the saved-game payload, PGN and `GameHistoryEntry` are 2-player
+  shaped, and Stockfish cannot analyse a 4-seat position. Needs a 4-player record format (chess.com's FEN4/PGN4 is the obvious dialect)
+  before any of that.
+- **Scoring details not modelled.** Check-fork bonuses (checking two or three royals at once), draw claims, and points for mating an
+  already-dead king. The numbers that are modelled live in `FFA_RULES`.
+- **Bot finesse.** Strength is a heuristic dial (`botStrength`), not a calibrated rating: it is clearly monotonic across the roster, but two
+  neighbouring roster bots are not reliably distinguishable in a handful of games. The bot looks only at the NEXT active seat; it never
+  models the two seats that move after that.
+- **Clocks.** Local only. The tick is 200 ms (a flag fall is noticed within 0.2 s), there is no pause, and Undo restores the clocks rather
+  than keeping the time already spent.
+- **Input.** Tap-to-select only (no drag). Squares are ~26 px on a 390 px-wide phone (21 px on 360x640), which is tappable but small; a zoom or
+  larger cells on tablets would help (tablets already get up to 34 px).
 - **Threefold repetition / no-progress draws** are not detected (the ply cap — 300 — ends a runaway game by points instead).

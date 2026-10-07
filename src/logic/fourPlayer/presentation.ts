@@ -9,15 +9,23 @@ import type { SeatController } from './setup';
 /** The pixel size of one board square: as large as the width allows, capped by the height left over for the rest of the game screen. */
 export function getFourPlayerCellSize(viewportWidth: number, viewportHeight: number): number {
   const byWidth = Math.floor((viewportWidth - 16) / SIZE);
-  const byHeight = Math.floor((viewportHeight - 330) / SIZE);
+  const byHeight = Math.floor((viewportHeight - 345) / SIZE);
   return Math.max(20, Math.min(byWidth, byHeight, 34));
 }
 
-const SHORT_LEVEL = { easy: 'easy', medium: 'med', hard: 'hard' } as const;
-
-/** "Human" / "Bot med" — short enough for the four seat chips across a phone screen. */
+/** "Human" / "Bot 1400" — short enough for the four seat cards across a phone screen (the screens show the roster name when there is room). */
 export function shortController(controller: SeatController): string {
-  return controller.kind === 'human' ? 'Human' : `Bot ${SHORT_LEVEL[controller.level]}`;
+  return controller.kind === 'human' ? 'Human' : `Bot ${controller.elo}`;
+}
+
+/** The clock under a seat's name: "m:ss" ("h:mm:ss" past an hour), rounded UP so a seat is never shown 0:00 while it still has time. */
+export function formatSeatClock(seconds: number): string {
+  const total = Math.max(0, Math.ceil(seconds - 1e-9));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  const ss = String(secs).padStart(2, '0');
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${ss}` : `${minutes}:${ss}`;
 }
 
 /** One human-readable line per notable event ("Blue was checkmated by Red (+20)"); ordinary moves produce nothing. */
