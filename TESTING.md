@@ -360,7 +360,8 @@ within the noise of a sample that size: strength is genuinely monotonic and clea
 Not ELO-rated (4-player games are never rated).
 
 **UI.** Fixed top-down cross board; `viewSeat` rotates it purely at render time (the sole human sits at the bottom in vs-bots games;
-hotseat starts Red-at-bottom with a Rotate button). Tap a piece, tap a highlighted square (no drag in this pass). **Piece themes:** the board
+hotseat starts Red-at-bottom with a Rotate button). Tap a piece, tap a highlighted square (no drag-and-drop of pieces). Long-press-drag draws an **arrow** and a long press highlights a square, and
+while the bots play the human can queue a **premove** — see "Arrows and premoves" below. **Piece themes:** the board
 reads the same `useActivePieceTheme()` as the 2-player board. Themes only have white and black art (all three built-in sets, and uploads), so
 there is no honest per-seat art to select; a themed piece is drawn as the theme's own image on a disc in the seat's colour, using the white set
 on Red/Blue/Green and the black set on Yellow (`seatPieceImageKey`), grey and faded once the seat is out, with a small bar under a promoted
@@ -373,6 +374,46 @@ for "No time limit"), and who plays the seat (Human or the roster bot's name; "o
 its colour. Squares are 26 px on a 390 px-wide phone (21 px on 360x640, up to 34 px on tablets/desktop); checked in the browser at both
 sizes: no clipping or horizontal overflow, a flag fall played out (the idle human's 1-minute clock ran out, the seat went grey and the bots
 carried on), and complete games played to the ranking card.
+
+**Arrows and premoves** (ported from the 2-player board; the mechanics are shared, only the geometry and the extra seats differ).
+*Spec.* The 4 Player board gets the same two features as classic chess: long-press-drag draws arrows (long press highlights a square), and a
+player waiting for their turn can pick one of their own pieces and a destination, which is played automatically when the turn comes back if it is
+still legal, and cancelled with a notice if it is not. Reused: the whole touch handler (now `components/useBoardGestures.ts`, extracted unchanged in
+behaviour from `ChessBoard.tsx` and used by both boards), the SVG overlay `BoardAnnotations` (generalised from a fixed 8 x 8 to any grid, with an
+optional stroke scale), `PromotionPicker` (for a promoting premove), and the premove rules themselves (`logic/premove.ts` + `logic/usePremove.ts`, lifted
+from BotGameScreen/OnlineGameScreen). New: the cell <-> square mapping through the viewing seat (`fourPlayer/annotations.ts`), the engine side of a
+premove (`fourPlayer/premove.ts`), and the board/screen wiring. Interaction with other features: 4-player games are local only, so there is no
+Online/backend side; the 2-player board's behaviour must not change, which is why the gesture decision was moved into a pure, unit-tested module.
+*What the 2-player implementation does (and the 4-player version keeps).* ONE premove at a time: queueing a new one REPLACES the old one (there is no
+chain or queue), a Cancel button drops it, nothing is previewed or validated when it is queued (no legal-move dots while premoving), and when the turn
+returns a fresh engine validates it: legal -> played as if the player had just moved; illegal -> dropped with "Premove was no longer legal —
+cancelled." Arrows are wiped whenever the position changes.
+*What 4 players forces to differ.*
+- **Three seats move in between, and you can be eliminated.** `stepPremove` decides, in this order: game over -> drop silently; the seat is out
+  -> drop with "Premove cancelled — you are out of the game."; not our turn yet -> wait; otherwise ask the engine. The engine is never asked while it is
+  not the player's turn. Everything that can go stale in three moves (a blocked path, the piece captured, a new pin, a check you did not answer, a
+  target that moved away — which simply makes it a quiet move) is judged by the same `findLegalMove` as a hand-made move.
+- **A promoting premove asks for its piece when it is queued** (as the 2-player picker does), via the shared picker in the premoving seat's colour; if the
+  square is blocked by the time it fires it is cancelled like any other.
+- **Only a single human can premove** (vs bots). With several humans on one device "my turn" is ambiguous, so there is no premove (`premoveSeat`).
+- **Arrows are stored as absolute squares, not screen cells.** The 2-player board stores the cells it was drawn on and gets away with it because it wipes
+  them on every move and never rotates mid-position. This board has a Rotate button, and a different bottom seat per player, so an arrow is converted
+  once with `gridToSquare(cell, viewSeat)` and drawn through the CURRENT rotation with `squareToGrid(square, viewSeat)`: after a Rotate it still joins the
+  same two real squares (checked in the browser: the same arrow runs up the screen in Red's view and left along the right edge in Blue's). A gesture that
+  starts or ends in one of the four cut corners draws nothing.
+- **Taps now come from the gesture hook, not a Pressable per cell** (a Pressable would claim the touch before the board's responder could see a drag). The
+  cells keep their accessibility labels and `onAccessibilityTap`, as the 2-player squares have no per-square press either.
+- **Selection survives other seats' moves while premoving.** On the 2-player board a position change clears a half-made selection, which is harmless
+  when the opponent moves once; here three bots move in a row (about 1.4 s) and would wipe the player's selection before they could tap the target. While
+  premoving, the selection and an open promotion choice are kept as long as the piece is still the player's own. Arrows and highlights ARE wiped on every
+  position change, as on the 2-player board (so a plan drawn while waiting disappears after the next bot move: a candidate to revisit if it proves
+  annoying with three opponents).
+- **The "illegal premove" notice goes away once the player has moved** (the 2-player screens keep it until the next premove or cancel).
+- A queued premove is dropped on Undo and New Game (it was made against a position that no longer exists), and its two squares are tinted while queued.
+Not migrated: BotGameScreen / OnlineGameScreen still hold their own inline copy of the premove slot (same rules; `usePremove` is the shared form for any
+new board). *Reusable for future 4-player variants:* nothing in `premove.ts`, `usePremove.ts`, `boardGestures.ts`, `useBoardGestures.ts` or
+`BoardAnnotations` knows about this mode; the engine-side helpers read `state.rules` and legality always comes from `findLegalMove`, so a variant with other
+promotion lines, scoring or elimination rules needs no change here.
 
 **How it is tested** (all in `src/logic/__tests__/`)
 - `fourPlayerBoard.test.ts` — 160 squares and exactly which corners are cut; the start position square by square for all four seats
@@ -403,6 +444,18 @@ carried on), and complete games played to the ranking card.
   ELO 3000 wins most**), legality at every strength, tier behaviour (greedy cannot see mate and takes a defended pawn, careful grabs bait that
   deep declines, careful/deep find mate in one, also past a dead seat), complete self-play games, a timing budget, and promotion choice (strong
   bots queen even when they pick late among ties; careful bots avoid a stalemating queen; weak bots' random branch can under-promote).
+- `fourPlayerPremove.test.ts` — the 4-seat premove cases against the real engine: after Blue, Yellow and Green have moved the premove is still legal and is
+  played; or it is cancelled because another seat blocked the path, captured the piece, pinned it to the king, gave check it does not answer, or blocked a
+  promotion square; a target that was occupied and has emptied still fires as a quiet move; the seat was checkmated (its turn consumed) or resigned/timed
+  out while waiting (notice) and the game ended (silent); the wait is "wait" after every one of the three intermediate moves; `stepPremove`'s order of
+  decisions and that the engine is never asked out of turn; promotion premoves (piece carried, default queen, ignored for ordinary moves, one step from
+  each seat's own line only); `canPremove`, `premoveSeat`, `describePremove`; the notice lifecycle.
+- `fourPlayerAnnotations.test.ts` — screen cell <-> square is an exact bijection on the 160 squares for every viewing seat (and the 36 cut-corner cells are
+  not squares), agrees with where the board component draws each square, puts the viewer's king row at the bottom; an arrow from a player's own king one
+  step forward is the same absolute arrow for every seat; the same absolute arrow points right / up / left / down in views 0 / 1 / 2 / 3; after a Rotate an
+  arrow ends on the cells where its pieces are now drawn, and rotates rigidly by a quarter per seat; corners and zero-length arrows draw nothing.
+- `boardGestures.test.ts` — what a finished touch means (stationary = tap even if held past the long-press time; the 10 px threshold is inclusive; an
+  armed drag is an arrow, or a highlight on its own cell; an unarmed drag does nothing) and the pixel -> cell clamp for both grid sizes.
 - `fourPlayerApp.test.ts` — seat setup, the roster glue (every roster bot maps to a controller and back to its name; the setup screen
   contains no copy of the roster, no tiers, no presets), the new flow in `App.tsx`, `TimeControlSelectScreen`/`BotSelectScreen` gaining only
   optional props, the seat-card contents, clock formatting, cell sizing, and a **regression pin for a bug found in the browser**: the bot
@@ -424,6 +477,16 @@ carried on), and complete games played to the ranking card.
   promoted piece is the mover's own, so only that it blocks matters, not what it is). **All non-equivalent mutants die.** The harness now runs
   each mutant with `--bail`, a wall-clock kill of the whole process tree and per-mutant progress output.
 
+A fourth round for arrows and premoves (the premove step, the engine-side premove helpers, the rotation mapping, the gesture decision, the notice
+  lifecycle): 39 mutants, 34 killed first time, 5 real gaps closed (a fixture where the game simply ended hid that an eliminated seat could premove; a
+  pawn two steps from its line and another seat's pawn on a promotion step were untested; the notice lifecycle only existed inside the React hook, so it
+  became a pure function) and 0 equivalent; the re-run of those plus new mutants of the extracted function: 8 of 8 killed. The hardened harness ran with no timeouts.
+  Verified in the browser (not mockable): taps, a real e2-e4 and a premoved d2-d3 that fired after Blue, Yellow and Green had moved, an impossible premove that
+  produced the "no longer legal" notice (and lost it after the next move), a selection that survived a bot's move, and an arrow + highlight that stay on the
+  right squares through a Rotate. **Not verifiable here:** the long-press-drag release itself. The browser pane cannot generate a real drag distance, and
+  the ORIGINAL ChessBoard behaves identically under every synthetic event I tried (the drag shows the live arrow, the release resolves as a tap), so that
+  decision was moved into `decideRelease` and unit-tested instead; a manual check on a device is still worth doing once.
+
 **Game length, the ply cap and the dead position.** Measured over 30 seeded bot games per matchup (ELO at all four seats, cap lifted to
 5000): before the dead-position rule, games between weak and mid bots almost never finished: they trade every non-king piece (60 captures —
 the whole non-king material — in every capped game) and then four bare kings shuffle until the cap. After it: all-400 median 556 plies
@@ -444,7 +507,10 @@ bot games) and piece themes. *Correctness*: above (elimination-by-timeout, clock
 be mirrored with the rest of the engine when Online comes. *Cross-feature*: nothing else imports the folder; the only shared files touched are
 `BotSelectScreen` and `TimeControlSelectScreen` (optional props, unchanged behaviour for their existing callers) and, in the follow-up pass,
 `ChessBoard.tsx`, whose inline promotion modal moved verbatim into the shared `components/PromotionPicker.tsx` (same Modal, backdrop, labels and
-styles; the existing source-pin test in `promotion.test.ts` was retargeted at the new component, not weakened, and the full suite is green); the 2-player
+styles; the existing source-pin test in `promotion.test.ts` was retargeted at the new component, not weakened, and the full suite is green) and, for arrows,
+`ChessBoard.tsx`'s ~250 lines of gesture handling, which moved into the shared `useBoardGestures` hook (its decision logic into the pure `boardGestures.ts`)
+and `BoardAnnotations.tsx` (new optional `rows`/`cols`/`scale`, defaults = the old look) — a refactor of live 2-player code, covered by the full suite, the
+browser checks above and the parity check against the original; the 2-player
 `useChessClock`/`bots.ts` are untouched — pinned by `fourPlayerApp.test.ts`. Analysis, PGN, game history, ratings, achievements, puzzles and
 tournaments are untouched (4-player games are not saved). *Documentation*: doc comments at the top of every engine file; this section.
 *Variant extras*: not combinable with any 2-player variant because it is not one.

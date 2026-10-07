@@ -30,6 +30,15 @@ export function humanSeats(config: SeatConfig): Seat[] {
   return ([0, 1, 2, 3] as Seat[]).filter((seat) => config[seat].kind === 'human');
 }
 
+/**
+ * The seat that may queue premoves: the ONE human when exactly one seat is human (vs bots). With several humans sharing the device
+ * "my turn" is ambiguous, so there is no premove; with none there is no one to premove.
+ */
+export function premoveSeat(config: SeatConfig): Seat | undefined {
+  const humans = humanSeats(config);
+  return humans.length === 1 ? humans[0] : undefined;
+}
+
 /** A game needs at least one human at the device. */
 export function isStartable(config: SeatConfig): boolean {
   return humanSeats(config).length >= 1;

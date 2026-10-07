@@ -17,11 +17,15 @@ import {
   initialState,
   isInCheck,
   describeResultReason,
+  describePremove,
   moveLabel,
   nextSeat,
   playMove,
+  premoveSeat,
+  resolvePremove,
   resign,
   type FourPlayerClock,
+  type FourPlayerPremove,
   type FourPlayerState,
   type GameEvent,
   type Move,
@@ -32,6 +36,8 @@ import { controllerName } from '../logic/fourPlayerBots';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { playMoveSound } from '../logic/moveSounds';
 import { useFourPlayerClock } from '../logic/useFourPlayerClock';
+import { describePremoveCancel } from '../logic/premove';
+import { usePremove } from '../logic/usePremove';
 import type { TimeControl } from '../types/timeControl';
 
 interface FourPlayerGameScreenProps {
@@ -116,6 +122,23 @@ export default function FourPlayerGameScreen({ seats, timeControl, onExit }: Fou
     return () => clearTimeout(timer);
   }, [game, botToMove, controller, timeControl]);
 
+  // Premove: the one human (vs bots) may queue a move while the three other seats play; it is validated against the REAL position the moment
+  // the turn comes back and played through the same apply() as a hand-made move, or cancelled with a notice (see logic/premove.ts). It is
+  // dropped silently when the game ends and with a notice if the seat is eliminated while waiting. Several humans on one device: none.
+  const myPremoveSeat = premoveSeat(seats);
+  const {
+    premove,
+    queue: queuePremove,
+    cancel: cancelPremove,
+    cancelReason: premoveCancelReason,
+  } = usePremove<FourPlayerPremove, Move>({
+    isMyTurn: myPremoveSeat !== undefined && game.turn === myPremoveSeat,
+    canStillPlay: myPremoveSeat !== undefined && game.status[myPremoveSeat] === 'active',
+    gameOver: !!game.result,
+    resolve: (intent) => (myPremoveSeat === undefined ? null : resolvePremove(game, myPremoveSeat, intent)),
+    play: apply,
+  });
+
   const canUndo = past.some((p) => seats[p.state.turn].kind === 'human');
   const handleUndo = () => {
     // Back to the most recent earlier position in which a human was to move (undoing the bots' replies along with it).
@@ -127,6 +150,7 @@ export default function FourPlayerGameScreen({ seats, timeControl, onExit }: Fou
         setLog(past[i].log);
         setPast(past.slice(0, i));
         setNotice([]);
+        cancelPremove();
         return;
       }
     }
@@ -160,6 +184,7 @@ export default function FourPlayerGameScreen({ seats, timeControl, onExit }: Fou
     setLog([]);
     setViewSeat(defaultViewSeat(seats));
     setRound((r) => r + 1);
+    cancelPremove();
   };
 
   const ranking = useMemo(() => ([0, 1, 2, 3] as Seat[]).slice().sort((a, b) => game.score[b] - game.score[a] || a - b), [game.score]);
@@ -202,7 +227,28 @@ export default function FourPlayerGameScreen({ seats, timeControl, onExit }: Fou
 
         <Text style={[styles.status, { color: game.result ? colors.gold : colors.text }]}>{statusText}</Text>
 
-        <FourPlayerBoard key={round} state={game} viewSeat={viewSeat} interactive={humanToMove} lastMove={lastMove} onMove={apply} />
+        <FourPlayerBoard
+          key={round}
+          state={game}
+          viewSeat={viewSeat}
+          interactive={humanToMove}
+          lastMove={lastMove}
+          onMove={apply}
+          premoveSeat={myPremoveSeat}
+          premove={premove}
+          onPremove={queuePremove}
+          enableAnnotations
+        />
+
+        {premoveCancelReason && <Text style={styles.errorText}>{describePremoveCancel(premoveCancelReason)}</Text>}
+        {premove && !humanToMove && (
+          <View style={styles.premoveRow}>
+            <Text style={styles.premoveText}>Premove queued: {describePremove(premove)}</Text>
+            <Pressable style={styles.premoveCancelButton} onPress={cancelPremove}>
+              <Text style={styles.premoveCancelButtonText}>Cancel</Text>
+            </Pressable>
+          </View>
+        )}
 
         {log.length > 0 && (
           <Text style={styles.recent} numberOfLines={1}>
@@ -252,6 +298,11 @@ function createStyles(colors: AppColors) {
     status: { fontSize: 15, fontWeight: '600' },
     recent: { fontSize: 12, textAlign: 'center', paddingHorizontal: 8 },
     notice: { fontSize: 12, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 12 },
+    errorText: { fontSize: 13, color: colors.danger, textAlign: 'center' },
+    premoveRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    premoveText: { fontSize: 13, fontStyle: 'italic', color: colors.gold },
+    premoveCancelButton: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 6, backgroundColor: colors.buttonBackground },
+    premoveCancelButtonText: { fontSize: 12, fontWeight: '600', color: '#fff' },
     resultCard: {
       alignSelf: 'stretch',
       marginHorizontal: 16,

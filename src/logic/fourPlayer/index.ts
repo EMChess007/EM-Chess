@@ -7,3 +7,5 @@ export * from './bot';
 export * from './setup';
 export * from './presentation';
 export * from './clock';
+export * from './premove';
+export * from './annotations';

@@ -90,6 +90,10 @@ The engine (`src/logic/fourPlayer/`) is built so the rest slots in without rewor
   models the two seats that move after that.
 - **Clocks.** Local only. The tick is 200 ms (a flag fall is noticed within 0.2 s), there is no pause, and Undo restores the clocks rather
   than keeping the time already spent.
-- **Input.** Tap-to-select only (no drag). Squares are ~26 px on a 390 px-wide phone (21 px on 360x640), which is tappable but small; a zoom or
+- **Input.** Tap-to-select only (no drag-and-drop of pieces). Squares are ~26 px on a 390 px-wide phone (21 px on 360x640), which is tappable but small; a zoom or
   larger cells on tablets would help (tablets already get up to 34 px).
+- **Arrows while waiting.** Arrows and highlights are wiped on every position change, as on the 2-player board; with three bots moving in a row a plan
+  drawn while waiting vanishes after the next bot move. Consider keeping them until the player's own turn.
+- **One premove implementation.** BotGameScreen and OnlineGameScreen still carry their own inline premove slot; `logic/usePremove.ts` is the shared form
+  (the 4 Player screen uses it). Migrating the 2-player screens is a pure refactor, left alone because Online cannot be exercised here.
 - **Threefold repetition / no-progress draws** are not detected (the ply cap — 1000 — ends a runaway game by points instead).

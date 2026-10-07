@@ -292,7 +292,7 @@ describe('promotion choice on the 4 Player board (no React Native renderer avail
   it('reuses the shared picker the 2-player board uses, drawn in the picking seat\'s colour, instead of auto-queening', () => {
     expect(board).toContain("import PromotionPicker from './PromotionPicker';");
     expect(board).toContain('choices={PROMOTABLE_TYPES}');
-    expect(board).toContain('visible={pendingPromotion !== null}');
+    expect(board).toContain('visible={pendingPromotion !== null || pendingPremove !== null}'); // the same picker also serves a promoting premove
     expect(board).toContain('onChoose={completePromotion}');
     expect(board).toContain('seat={pickerSeat}');
     expect(board).toContain('seatOf(state.cells[pendingPromotion[0].from])'); // the seat that owns the pawn, not necessarily the viewer
@@ -302,9 +302,10 @@ describe('promotion choice on the 4 Player board (no React Native renderer avail
   it('asks only when there is a choice, never moves before the player has chosen, and drops a half-made choice when the position changes', () => {
     expect(board).toContain('if (options.length > 1)');
     expect(board).toContain('setPendingPromotion(options); // a promotion: ask which piece');
-    expect(board).toContain('if (!interactive || pendingPromotion) return;');
+    expect(board).toContain('if (pendingPromotion || pendingPremove) return;'); // nothing else is tappable while the picker is up
+    expect(board).toContain('if (!interactive) return;'); // ...and no move without the turn
     expect(board).toContain('promotionOf(m) === pick');
-    expect(board).toMatch(/setPendingPromotion\(null\);\s*\}, \[state\]\)/);
+    expect(board).toMatch(/setPendingPromotion\(null\);[\s\S]*?\}, \[state\]\)/);
     expect(board).not.toMatch(/QUEEN\)\s*\)?\s*onMove|onMove\([^)]*QUEEN/); // no hidden default pick
   });
 
@@ -319,5 +320,89 @@ describe('why a game ended', () => {
     expect(describeResultReason('cap')).toMatch(/Move limit/);
     expect(describeResultReason('deadPosition')).toMatch(/bare kings/);
     expect(read('screens/FourPlayerGameScreen.tsx')).toContain('describeResultReason(game.result.reason)');
+  });
+});
+
+describe('arrows and premoves on the 4 Player board: shared code, wired in (no React Native renderer available)', () => {
+  const importsOf = (text: string) => [...text.matchAll(/^\s*import[^'"\n]*from\s+['"]([^'"]+)['"]/gm)].map((m) => m[1]);
+
+  it('the gesture hook, annotation overlay, picker and premove step are SHARED: none of them knows about 4 Player Chess', () => {
+    for (const file of ['components/useBoardGestures.ts', 'components/BoardAnnotations.tsx', 'components/PromotionPicker.tsx', 'logic/premove.ts', 'logic/usePremove.ts']) {
+      for (const source of importsOf(read(file))) expect(source, `${file} imports ${source}`).not.toMatch(/fourPlayer|FourPlayer/);
+    }
+    // ...and the 2-player board uses the very same gesture hook and overlay (one implementation, two boards).
+    const classic = read('components/ChessBoard.tsx');
+    expect(classic).toContain("import { useBoardGestures } from './useBoardGestures';");
+    expect(classic).toContain("import BoardAnnotations,");
+    expect(classic).not.toMatch(/PanResponder.create|import {[^}]*PanResponder/); // the inline copy is gone
+    expect(read('components/FourPlayerBoard.tsx')).toContain("import { useBoardGestures } from './useBoardGestures';");
+    expect(read('components/FourPlayerBoard.tsx')).toContain("import BoardAnnotations from './BoardAnnotations';");
+  });
+
+  it('the gesture hook keeps the 2-player behaviour: the decision is the unit-tested pure one, a fresh measurement is awaited, termination is refused only mid-arrow', () => {
+    const hook = read('components/useBoardGestures.ts');
+    expect(hook).toContain("import { LONG_PRESS_MS, MOVE_THRESHOLD_PX, decideRelease, pixelToCell } from '../logic/boardGestures';");
+    expect(hook).toContain('const decision = decideRelease({ armed, distance: Math.hypot(dx, dy), startCell, endCell: cell });');
+    expect(hook).toContain('pendingMeasureRef.current.then((offset) => resolveRelease(offset, true));');
+    expect(hook).toContain('onPanResponderTerminationRequest: () => !gestureRef.current?.armed,');
+    expect(hook).toContain('evt.nativeEvent.pageX'); // page coordinates, never locationX
+    expect(hook).not.toMatch(/nativeEvent.locationX/);
+    expect(hook).toContain('pixelToCell(localX, localY, squareSize, rows, cols)'); // the grid it was given (8 or 14), not a hard-coded 8
+    expect(read('logic/boardGestures.ts')).not.toMatch(/react-native|from 'react'/); // pure, so it can be unit-tested
+  });
+
+  it('BoardAnnotations still defaults to the 8 x 8 classic look and scales for smaller squares', () => {
+    const overlay = read('components/BoardAnnotations.tsx');
+    expect(overlay).toContain('rows = 8, cols = 8, scale = 1');
+    expect(overlay).toContain('strokeWidth={6 * scale}');
+    expect(read('components/ChessBoard.tsx')).not.toMatch(/<BoardAnnotations[^>]*\s(rows|cols|scale)=/); // the classic board passes nothing extra
+  });
+
+  it('the 4 Player board maps cells to squares through the view seat in ONE place each way, and stores annotations as squares', () => {
+    const board = read('components/FourPlayerBoard.tsx');
+    expect(board).toContain('gridToSquare(cell, viewSeat)');
+    expect(board).toContain('squareToGrid(a.from, viewSeat)');
+    expect(board).toContain('useState<readonly SquareArrow[]>([])');
+    expect(board).toContain('rows={SIZE}');
+    expect(board).toContain('cols={SIZE}');
+    expect(board).toContain('enableAnnotations={enableAnnotations}'.replace('={enableAnnotations}', '')); // passed to the hook and the overlay
+    expect(board).not.toContain('Pressable'); // taps come from the gesture hook; a Pressable per cell would steal the touches
+  });
+
+  it('premove mode: only while NOT interactive, with a premove seat, and never a legal-move preview; promotions ask for the piece', () => {
+    const board = read('components/FourPlayerBoard.tsx');
+    expect(board).toContain('const premoveMode = !interactive && premoveSeat !== undefined && onPremove !== undefined && canPremove(state, premoveSeat);');
+    expect(board).toContain('const moves = useMemo(() => (interactive ? currentMoves(state) : []), [state, interactive]);'); // no targets while premoving
+    expect(board).toContain('isPromotionPremove(state, premoveSeat, selected, square)');
+    expect(board).toContain('onPremove?.({ from, to, promotion: pick });');
+    // A position change (another seat moved) keeps a premove selection on the player's own piece instead of wiping it every ply.
+    expect(board).toContain('prev !== null && premoveMode && isOwnPiece(prev) ? prev : null');
+    expect(board).toContain('premoveMark={!!premove && (premove.from === square || premove.to === square)}');
+  });
+
+  it('the game screen has ONE premove slot (a new one replaces the old), validated by the engine, played through apply(), dropped on Undo / New Game', () => {
+    const screen = read('screens/FourPlayerGameScreen.tsx');
+    expect(screen).toContain('const myPremoveSeat = premoveSeat(seats);');
+    expect(screen).toContain('play: apply,');
+    expect(screen).toContain('resolvePremove(game, myPremoveSeat, intent)');
+    expect(screen).toContain('canStillPlay: myPremoveSeat !== undefined && game.status[myPremoveSeat] === \'active\'');
+    expect(screen).toContain('gameOver: !!game.result');
+    expect(screen.match(/cancelPremove\(\);/g)?.length).toBe(2); // Undo and New Game
+    expect(screen).toContain('describePremoveCancel(premoveCancelReason)');
+    expect(screen).toContain('Premove queued: {describePremove(premove)}');
+    const hook = read('logic/usePremove.ts');
+    expect(hook).toContain('const [premove, setPremove] = useState<I | null>(null);'); // a single intent, not a list
+    expect(hook).toContain('setPremove(intent);'); // queueing REPLACES
+    expect(hook).not.toMatch(/\[\.\.\.prev|push\(|\.concat\(/); // never chains
+    expect(hook).toContain('setCancelReason((reason) => noticeAfterTurnChange(reason, isMyTurn));'); // the notice lifecycle is the tested pure function
+    expect(hook).toContain('if (step.reason) setCancelReason(step.reason);'); // a cancellation is always surfaced (except the silent game-over one)
+  });
+
+  it('the 2-player screens\' premove rules are unchanged (same notice text, same single slot)', () => {
+    for (const file of ['screens/BotGameScreen.tsx', 'screens/OnlineGameScreen.tsx']) {
+      const text = read(file);
+      expect(text, file).toContain('Premove was no longer legal — cancelled.');
+      expect(text, file).toContain('useState<PremoveIntent | null>(null)');
+    }
   });
 });

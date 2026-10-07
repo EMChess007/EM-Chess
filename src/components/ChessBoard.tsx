@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, PanResponder, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { ChessEngine } from '../logic/ChessEngine';
 import { getLegalDuckPlacementSquares } from '../logic/duckChess';
 import { getGiveawayMoves } from '../logic/giveaway';
@@ -10,16 +10,9 @@ import type { ExplodedPiece, Move, PieceColor, Piece as PieceModel } from '../ty
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
 import { getBoardSize } from './boardSize';
 import PromotionPicker from './PromotionPicker';
+import { useBoardGestures } from './useBoardGestures';
 import Piece from './Piece';
 import Square from './Square';
-
-// How long a hold must last before it's treated as "start drawing an arrow/highlight" instead of
-// a normal tap-to-select/tap-to-move — long enough that an ordinary quick tap never triggers it.
-const LONG_PRESS_MS = 400;
-// How far (in raw screen pixels) a touch may drift before the long-press timer even has a chance
-// to fire and still count as "held in place" — beyond this it's read as an intentional drag
-// starting immediately, not a long-press.
-const MOVE_THRESHOLD_PX = 10;
 
 export interface PremoveIntent {
   from: string;
@@ -228,12 +221,12 @@ function ChessBoard({
   // played, a rewind/forward through history, a "New Game"), same as selectedSquare above.
   const [arrows, setArrows] = useState<BoardArrow[]>([]);
   const [highlights, setHighlights] = useState<GridPoint[]>([]);
-  const [liveArrow, setLiveArrow] = useState<{ from: GridPoint; toX: number; toY: number } | null>(null);
 
   useEffect(() => {
     setArrows([]);
     setHighlights([]);
-    setLiveArrow(null);
+    clearLiveArrow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fen]);
 
   // Slide animation: a moving piece "sprite" overlaid on top of the static grid, translated from
@@ -497,220 +490,27 @@ function ChessBoard({
     if (result) finishRegularMove(result);
   };
 
-  // --- Unified touch handling for the whole grid: a quick tap behaves exactly like the old
-  // per-square Pressable.onPress did (see handleSquarePress above); a long-press-and-drag draws
-  // an arrow (or, released back on the same square, toggles a highlight there) when
-  // `enableAnnotations` is on. One PanResponder on the board container (rather than a Pressable
-  // per square) is what makes it possible to track the finger continuously after the long-press
-  // fires, which Pressable's onPress/onLongPress alone can't do.
-  //
-  // Positions are computed from `nativeEvent.pageX/pageY` (always relative to the app root) minus
-  // this board's own measured on-screen offset — NOT from `locationX/locationY`, which turned out
-  // to be relative to whichever of the 64 Square children the touch actually hit (a real, if
-  // poorly documented, React Native behavior for a responder with overlapping/nested children),
-  // not to this responder view itself. That made every tap resolve to a position within a single
-  // ~squareSize-sized child instead of across the whole board, which — since squareSize divides
-  // squareSize to a value under 1 — collapsed almost every tap to row/col (0, 0) regardless of
-  // where the board was actually touched. This is what made tap-to-select appear completely dead.
-  const gestureRef = useRef<{
-    startSquare: string;
-    longPressTimer: ReturnType<typeof setTimeout> | null;
-    armed: boolean;
-  } | null>(null);
-  const boardContainerRef = useRef<View>(null);
-  const boardOffsetRef = useRef({ x: 0, y: 0 });
-  // The most recent not-yet-resolved remeasureBoardOffset() call, if any — see that function's
-  // own doc comment for why onPanResponderRelease needs to be able to wait on this instead of
-  // always trusting boardOffsetRef.current, which can be stale mid-flight.
-  const pendingMeasureRef = useRef<Promise<{ x: number; y: number }> | null>(null);
-
-  // .measure() is an async round-trip (a real native-bridge round-trip on iOS/Android; still
-  // genuinely async on web), so caching its result and reading boardOffsetRef.current elsewhere
-  // was a race: if something above the board changes height (e.g. the move-list strip appearing
-  // after the first move, or the status line wrapping to a second line for "— Check!") and a tap
-  // lands before THIS remeasurement resolves, the release handler would use the board's OLD
-  // on-screen position — off by roughly whatever it shifted, silently resolving the tap to the
-  // wrong square (confirmed directly: a tap on a square whose piece had legal-move dots showing
-  // moments earlier failed to complete a move at all). Calling this at the start of every gesture
-  // (not just on layout changes) isn't enough on its own, since "fires before release" was an
-  // assumption, not a guarantee, for a fast tap. This now returns the in-flight Promise (tracked
-  // in pendingMeasureRef) so onPanResponderRelease can actually wait for a fresh measurement
-  // instead of hoping one already landed.
-  const remeasureBoardOffset = (): Promise<{ x: number; y: number }> => {
-    const node = boardContainerRef.current;
-    if (!node) return Promise.resolve(boardOffsetRef.current);
-    const promise = new Promise<{ x: number; y: number }>((resolve) => {
-      node.measure((_x, _y, _width, _height, pageX, pageY) => {
-        const offset = { x: pageX, y: pageY };
-        boardOffsetRef.current = offset;
-        resolve(offset);
-      });
-    });
-    pendingMeasureRef.current = promise;
-    promise.finally(() => {
-      // Only clear if nothing newer has started in the meantime (a slower, older measurement
-      // resolving after a fresher one must not stomp on the fresher one's own pending-ness).
-      if (pendingMeasureRef.current === promise) pendingMeasureRef.current = null;
-    });
-    return promise;
-  };
-
-  const pixelToGrid = (localX: number, localY: number): GridPoint => ({
-    row: Math.min(7, Math.max(0, Math.floor(localY / squareSize))),
-    col: Math.min(7, Math.max(0, Math.floor(localX / squareSize))),
-  });
-
-  const toBoardLocal = (pageX: number, pageY: number) => ({
-    x: pageX - boardOffsetRef.current.x,
-    y: pageY - boardOffsetRef.current.y,
-  });
-
-  const clearGesture = () => {
-    if (gestureRef.current?.longPressTimer) clearTimeout(gestureRef.current.longPressTimer);
-    gestureRef.current = null;
-    setLiveArrow(null);
-  };
-
-  // Deliberately NOT memoized (e.g. via useRef/useMemo) — PanResponder.create() is cheap, and its
-  // handlers below close over this render's handleSquarePress/orientation/enableAnnotations/
-  // squareSize. Freezing it into a ref on first mount (a common pattern elsewhere) would pin every
-  // handler to that first render's values forever, silently breaking moves/orientation on every
-  // render after the very first one.
-  const panResponder = PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      // Without this, the board — once it claims a gesture on touch-down — never lets go for the
-      // rest of that gesture, even for a vertical drag that was clearly meant to scroll the
-      // surrounding screen (see GameScreenBody). A plain tap never triggers this at all (it never
-      // moves enough for anything to request termination); a genuinely armed long-press-drawn
-      // arrow refuses to be interrupted mid-draw. Everything else — most of all, an ordinary
-      // scroll swipe that happens to start over the board — hands off to whichever ancestor
-      // ScrollView asks for it.
-      onPanResponderTerminationRequest: () => !gestureRef.current?.armed,
-      onPanResponderGrant: (evt) => {
-        // Fired here (in addition to onLayout) so this gesture's own later events — chiefly
-        // onPanResponderRelease, where a tap actually resolves to a square — use a freshly
-        // re-measured offset instead of a possibly-stale one (see remeasureBoardOffset).
-        remeasureBoardOffset();
-        const { x: localX, y: localY } = toBoardLocal(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
-        const { row, col } = pixelToGrid(localX, localY);
-        const startSquare = rowColToSquare(row, col, orientation);
-
-        // Arming here only ever means "a live arrow/highlight preview may start showing if the
-        // finger goes on to actually drag" — it no longer decides tap-vs-annotation by itself
-        // (see onPanResponderRelease's own doc comment: that decision is distance-based now, not
-        // time-based), so there's no need to suppress it just because a piece happens to be
-        // selected — a genuine drag should still draw an arrow regardless.
-        const timer = enableAnnotations
-          ? setTimeout(() => {
-              if (!gestureRef.current) return;
-              gestureRef.current.armed = true;
-              setLiveArrow({ from: { row, col }, toX: localX, toY: localY });
-            }, LONG_PRESS_MS)
-          : null;
-        gestureRef.current = { startSquare, longPressTimer: timer, armed: false };
-      },
-      onPanResponderMove: (_evt, gestureState) => {
-        const state = gestureRef.current;
-        if (!state) return;
-
-        if (!state.armed) {
-          // Moved too far before the long-press timer fired — this is a fast drag/swipe, not a
-          // held annotation gesture, so cancel the pending timer (it simply won't arm).
-          if (Math.hypot(gestureState.dx, gestureState.dy) > MOVE_THRESHOLD_PX && state.longPressTimer) {
-            clearTimeout(state.longPressTimer);
-            state.longPressTimer = null;
-          }
-          return;
-        }
-
-        const startGrid = squareToRowCol(state.startSquare, orientation);
-        const { x: localX, y: localY } = toBoardLocal(gestureState.moveX, gestureState.moveY);
-        setLiveArrow({ from: startGrid, toX: localX, toY: localY });
-      },
-      onPanResponderRelease: (evt, gestureState) => {
-        const state = gestureRef.current;
-        if (!state) return;
-
-        // moveX/moveY isn't updated until the first move event fires — for a gesture that never
-        // moved at all (the common case for a plain tap), it's still 0, so fall back to the
-        // release event's own pageX/pageY, which is always populated.
-        const hasMoved = gestureState.moveX !== 0 || gestureState.moveY !== 0;
-        const pageX = hasMoved ? gestureState.moveX : evt.nativeEvent.pageX;
-        const pageY = hasMoved ? gestureState.moveY : evt.nativeEvent.pageY;
-        // Captured now, before clearGesture() below — resolveRelease may run asynchronously
-        // (waiting on a pending measurement), by which point gestureRef.current would already be
-        // cleared.
-        const armed = state.armed;
-        const startSquare = state.startSquare;
-        const dx = gestureState.dx;
-        const dy = gestureState.dy;
-
-        const resolveRelease = (offset: { x: number; y: number }, viaFreshMeasurement: boolean) => {
-          const localX = pageX - offset.x;
-          const localY = pageY - offset.y;
-          const { row, col } = pixelToGrid(localX, localY);
-          const resolvedSquare = rowColToSquare(row, col, orientation);
-
-          if (__DEV__) {
-            // Defensive diagnostic — if a tap ever resolves to the wrong square again, this is
-            // the first thing to check: was a fresh measurement actually awaited, and does the
-            // offset used look like the board's real on-screen position. Console-only (not
-            // logDiagnostic): this fires on every single tap, far more often than this app's
-            // other diagnostic events, and would otherwise cycle the shared 100-entry ring buffer
-            // out within a handful of moves — a build that actually needs this (not just dev) can
-            // still get it from a cable + adb logcat, same as before this session.
-            console.log(
-              `[ChessBoard] tap -> ${resolvedSquare} | page=(${pageX.toFixed(1)},${pageY.toFixed(1)}) ` +
-                `offset=(${offset.x.toFixed(1)},${offset.y.toFixed(1)}) ` +
-                `${viaFreshMeasurement ? '[awaited a fresh measurement]' : '[used cached offset]'}`
-            );
-          }
-
-          // Root-cause fix: whether this was a genuinely STATIONARY release (finger never moved
-          // past MOVE_THRESHOLD_PX) decides everything — NOT whether the long-press timer
-          // happened to already fire (see onPanResponderGrant's 400ms timer above). The previous
-          // version branched on `armed` first, so an entirely ordinary tap that simply took
-          // >=LONG_PRESS_MS to release (easy mid-move-selection, or just hesitating over which
-          // piece to pick) got silently reinterpreted as an annotation gesture instead of calling
-          // handleSquarePress at all — no error, nothing in the diagnostic log above either,
-          // since that only ever records the resolved square, never whether it actually reached
-          // handleSquarePress. A real annotation drag always involves genuine movement past the
-          // threshold; a stationary release never does, regardless of how long it was held — so
-          // checking distance first, unconditionally, closes the whole timing-dependent bug
-          // class rather than the specific places it was spotted.
-          const isStationary = Math.hypot(dx, dy) <= MOVE_THRESHOLD_PX;
-          if (isStationary) {
-            handleSquarePress(resolvedSquare);
-          } else if (armed) {
-            const startGrid = squareToRowCol(startSquare, orientation);
-            if (resolvedSquare === startSquare) {
-              setHighlights((prev) =>
-                prev.some((p) => p.row === startGrid.row && p.col === startGrid.col)
-                  ? prev.filter((p) => !(p.row === startGrid.row && p.col === startGrid.col))
-                  : [...prev, startGrid]
-              );
-            } else {
-              setArrows((prev) => [...prev, { from: startGrid, to: { row, col } }]);
-            }
-          }
-          // else: moved past the tap threshold without ever arming — an aborted drag/scroll
-          // attempt (enableAnnotations off, or it moved too fast to arm), not a tap or an
-          // annotation. Deliberately does nothing rather than acting on whatever square it
-          // happened to end on.
-        };
-
-        // The crux of the fix: if a remeasure triggered at gesture-grant (or by a layout shift
-        // just before it) hasn't resolved yet, WAIT for it instead of resolving this tap against
-        // a boardOffsetRef that might still reflect the board's position before that shift.
-        if (pendingMeasureRef.current) {
-          pendingMeasureRef.current.then((offset) => resolveRelease(offset, true));
-        } else {
-          resolveRelease(boardOffsetRef.current, false);
-        }
-        clearGesture();
-      },
-      onPanResponderTerminate: clearGesture,
+  // --- Touch handling for the whole grid: a quick tap behaves exactly like a per-square press (see handleSquarePress above); a
+  // long-press-and-drag draws an arrow (or, released back on the same square, toggles a highlight there) when `enableAnnotations` is
+  // on. The mechanics (one PanResponder on the container, fresh offset measurement, tap-vs-drag by distance) are shared with the
+  // 4 Player board and live in useBoardGestures; this board only says what a display cell MEANS (its own orientation mapping).
+  const {
+    containerRef: boardContainerRef,
+    onLayout: onBoardLayout,
+    panHandlers,
+    liveArrow,
+    clearLiveArrow,
+  } = useBoardGestures({
+    squareSize,
+    rows: 8,
+    cols: 8,
+    enableAnnotations,
+    onTap: ({ row, col }) => handleSquarePress(rowColToSquare(row, col, orientation)),
+    onArrow: (from, to) => setArrows((prev) => [...prev, { from, to }]),
+    onHighlight: (cell) =>
+      setHighlights((prev) =>
+        prev.some((p) => p.row === cell.row && p.col === cell.col) ? prev.filter((p) => !(p.row === cell.row && p.col === cell.col)) : [...prev, cell]
+      ),
   });
 
   // Atomic explosion overlay values (see the animation effect): one cell per square the blast cleared.
@@ -723,9 +523,9 @@ function ChessBoard({
     <View style={styles.border}>
       <View
         ref={boardContainerRef}
-        onLayout={remeasureBoardOffset}
+        onLayout={onBoardLayout}
         style={[styles.board, { width: boardSize, height: boardSize }]}
-        {...panResponder.panHandlers}
+        {...panHandlers}
       >
         {displayRows.map((row, rowIndex) =>
           row.map((square, colIndex) => (
