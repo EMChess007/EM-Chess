@@ -405,9 +405,13 @@ cancelled." Arrows are wiped whenever the position changes.
   cells keep their accessibility labels and `onAccessibilityTap`, as the 2-player squares have no per-square press either.
 - **Selection survives other seats' moves while premoving.** On the 2-player board a position change clears a half-made selection, which is harmless
   when the opponent moves once; here three bots move in a row (about 1.4 s) and would wipe the player's selection before they could tap the target. While
-  premoving, the selection and an open promotion choice are kept as long as the piece is still the player's own. Arrows and highlights ARE wiped on every
-  position change, as on the 2-player board (so a plan drawn while waiting disappears after the next bot move: a candidate to revisit if it proves
-  annoying with three opponents).
+  premoving, the selection and an open promotion choice are kept as long as the piece is still the player's own.
+- **Arrows and highlights survive the other seats' moves** (the 2-player board wipes them on every move). While the player is waiting — still in the game,
+  not their turn, game not over — they stay through Blue's, Yellow's and Green's moves, so a plan drawn while the bots play is still there when it is
+  needed. They are wiped when the player's own turn starts, when the player has just moved, when the player is out, when the game ends, and always when
+  nobody is "waiting" (hotseat), where the board behaves like the 2-player one. That rule is `keepAnnotationsAfterMove` (pure, tested over a whole round
+  with the real engine); there is no separate "clear" gesture on either board — the wipe is the only clearing mechanism — and drawing a new arrow adds to
+  the existing ones, as on the 2-player board.
 - **The "illegal premove" notice goes away once the player has moved** (the 2-player screens keep it until the next premove or cancel).
 - A queued premove is dropped on Undo and New Game (it was made against a position that no longer exists), and its two squares are tinted while queued.
 Not migrated: BotGameScreen / OnlineGameScreen still hold their own inline copy of the premove slot (same rules; `usePremove` is the shared form for any

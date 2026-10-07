@@ -8,14 +8,20 @@ import {
   fileOf,
   fromDisplay,
   gridToSquare,
+  findLegalMove,
   index,
+  keepAnnotationsAfterMove,
   parseSquare,
+  playMove,
   rankOf,
+  resign,
   squareName,
   squareToGrid,
+  stateFromPieces,
   stepForward,
   toDisplay,
   toggleHighlight,
+  type FourPlayerState,
   type Seat,
 } from '../fourPlayer';
 
@@ -145,5 +151,51 @@ describe('arrows drawn from each seat\'s own perspective point at the right abso
     expect(on).toEqual([sq('f5')]);
     expect(toggleHighlight(on, sq('f5'))).toEqual([]);
     expect(toggleHighlight(on, null)).toBe(on);
+  });
+});
+
+describe('arrows survive the other seats\' moves and are cleared when it is the player\'s turn', () => {
+  const RED = 0;
+  const BLUE = 1;
+  const YELLOW = 2;
+  const GREEN = 3;
+  const first = () => 0;
+  const KINGS = ['rK@h1', 'bK@a8', 'yK@g14', 'gK@n7'];
+  const play = (state: FourPlayerState, from: string, to: string) => {
+    const move = findLegalMove(state, state.turn, sq(from), sq(to));
+    if (!move) throw new Error(`illegal: ${from}-${to}`);
+    return playMove(state, move, first).state;
+  };
+
+  it('over a whole round: wiped after the player\'s own move, kept after each of the three other seats\' moves, wiped when the turn is back', () => {
+    // Red (the waiting player) to move; Blue, Yellow, Green each have a legal king step.
+    let state = stateFromPieces([...KINGS, 'rR@d1', 'rP@e2'], { turn: RED });
+    const verdicts: boolean[] = [];
+    const moves: [string, string][] = [['e2', 'e3'], ['a8', 'a9'], ['g14', 'f14'], ['n7', 'n8']];
+    for (const [from, to] of moves) {
+      const mover = state.turn;
+      state = play(state, from, to);
+      verdicts.push(keepAnnotationsAfterMove(RED, mover, state));
+    }
+    // Red moved -> wipe; Blue -> keep; Yellow -> keep; Green moved and it is Red's turn again -> wipe.
+    expect(verdicts).toEqual([false, true, true, false]);
+    expect(state.turn).toBe(RED);
+  });
+
+  it('is never kept when nobody is waiting (hotseat), when the waiting seat is out, or when the game is over', () => {
+    const state = stateFromPieces([...KINGS, 'rR@d1', 'bP@b6'], { turn: YELLOW });
+    expect(keepAnnotationsAfterMove(RED, BLUE, state)).toBe(true); // control: Red waiting, Blue just moved
+    expect(keepAnnotationsAfterMove(undefined, BLUE, state)).toBe(false); // hotseat: behaves like the 2-player board
+    expect(keepAnnotationsAfterMove(RED, BLUE, resign(state, RED, first).state)).toBe(false); // Red is out
+    expect(keepAnnotationsAfterMove(RED, BLUE, { ...state, result: { winners: [GREEN as Seat], reason: 'cap' } })).toBe(false); // game over
+  });
+
+  it('the seat that just moved is judged by who WAS to move, so a seat\'s own move always wipes, whichever seat it is', () => {
+    const state = stateFromPieces([...KINGS, 'rR@d1'], { turn: YELLOW });
+    for (const seat of SEATS) {
+      expect(keepAnnotationsAfterMove(seat, seat, state), `seat ${seat} just moved`).toBe(false);
+    }
+    expect(keepAnnotationsAfterMove(GREEN, BLUE, state)).toBe(true); // Green waiting while Blue moved and Yellow is up
+    expect(keepAnnotationsAfterMove(GREEN, BLUE, { ...state, turn: GREEN })).toBe(false); // ...but not once it is Green's turn
   });
 });

@@ -12,6 +12,8 @@
  */
 
 import { SIZE, VALID, fromDisplay, index, toDisplay, fileOf, rankOf, type Seat } from './board';
+import { canPremove } from './premove';
+import type { FourPlayerState } from './state';
 
 export interface GridCell {
   row: number;
@@ -40,6 +42,18 @@ export function gridToSquare(cell: GridCell, viewSeat: Seat): number | null {
 export function addArrow(arrows: readonly SquareArrow[], from: number | null, to: number | null): readonly SquareArrow[] {
   if (from === null || to === null || from === to) return arrows;
   return [...arrows, { from, to }];
+}
+
+/**
+ * Whether arrows and highlights should SURVIVE the position change that just happened. The 2-player board wipes them on every move; here
+ * three seats move between the player's turns, so a plan drawn while waiting would vanish after the very next bot move. They are kept
+ * while the player is WAITING (still in the game, not their turn, game not over) and the change was another seat's move. They are wiped
+ * when the player's own turn starts, when the player has just moved themselves, when they are out, when the game ends, and always when
+ * there is no single waiting player (hotseat: nobody is "waiting", so it behaves like the 2-player board).
+ * `previousMover` is the seat that was to move in the position that was just replaced.
+ */
+export function keepAnnotationsAfterMove(waitingSeat: Seat | undefined, previousMover: Seat, next: Pick<FourPlayerState, 'status' | 'result' | 'turn'>): boolean {
+  return waitingSeat !== undefined && previousMover !== waitingSeat && canPremove(next, waitingSeat);
 }
 
 /** Toggles a highlighted square; a cut-corner cell (null) changes nothing. */

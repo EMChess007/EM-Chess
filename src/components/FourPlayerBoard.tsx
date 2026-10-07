@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { PieceImageMap } from '../types/theme';
@@ -22,6 +22,7 @@ import {
   isInCheck,
   isPromotedType,
   isPromotionPremove,
+  keepAnnotationsAfterMove,
   promotionOf,
   rankOf,
   seatOf,
@@ -205,16 +206,21 @@ export default function FourPlayerBoard({
     onArrow: (from, to) => setArrows((prev) => addArrow(prev, gridToSquare(from, viewSeat), gridToSquare(to, viewSeat))),
     onHighlight: (cell) => setHighlights((prev) => toggleHighlight(prev, gridToSquare(cell, viewSeat))),
   });
-  // A new position wipes the annotations (as on the 2-player board) and any half-made normal move. While premoving, a position change is
-  // just another seat having moved — with three of them in a row it must not undo the player's own selection or an open promotion
-  // choice, so those survive as long as the piece they refer to is still the player's own.
+  // A new position wipes any half-made normal move. While premoving, a position change is just another seat having moved — with three of
+  // them in a row it must not undo the player's own selection or an open promotion choice, so those survive as long as the piece they
+  // refer to is still the player's own. Arrows and highlights follow the same idea: they are wiped as on the 2-player board EXCEPT while
+  // the player is waiting for their turn (see keepAnnotationsAfterMove), so a plan drawn while the bots play is still there when it is needed.
+  const previousMoverRef = useRef<Seat>(state.turn); // whose turn it was in the position that was just replaced
   useEffect(() => {
     setSelected((prev) => (prev !== null && premoveMode && isOwnPiece(prev) ? prev : null));
     setPendingPromotion(null);
     setPendingPremove((prev) => (prev !== null && premoveMode && isOwnPiece(prev.from) ? prev : null));
-    setArrows([]);
-    setHighlights([]);
-    clearLiveArrow();
+    if (!keepAnnotationsAfterMove(premoveSeat, previousMoverRef.current, state)) {
+      setArrows([]);
+      setHighlights([]);
+      clearLiveArrow();
+    }
+    previousMoverRef.current = state.turn;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 

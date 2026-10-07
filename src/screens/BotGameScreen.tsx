@@ -624,6 +624,11 @@ export default function BotGameScreen({
   // automatically via handleMove the instant it's actually the user's turn again — same pattern
   // as OnlineGameScreen's premove, just resolved against the bot's move landing instead of a
   // socket event.
+  //
+  // TODO(follow-up cleanup): this is one of two inline copies of the same premove slot (the other is OnlineGameScreen's); the 4 Player
+  // screen uses the shared logic/usePremove.ts + logic/premove.ts, which implement exactly these rules. Migrate both 2-player screens
+  // to it once Online can be properly exercised — deliberately NOT done in the 4 Player arrows/premove pass. Note the shared hook also
+  // clears its "illegal" notice after the player moves, where these copies keep it until the next premove/cancel.
   const [premove, setPremove] = useState<PremoveIntent | null>(null);
   const [premoveInvalid, setPremoveInvalid] = useState(false);
 
