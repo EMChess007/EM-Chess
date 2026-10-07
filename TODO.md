@@ -64,3 +64,23 @@ and a room only lives while both sockets stay connected. Making Daily real is it
 **Found while adding "No time limit".** That one *is* offered Online now, as live-only play with hidden clocks
 (see `isUnlimitedTimeControl` in the backend's `rooms.ts` and `playerClockText` in `src/logic/time.ts`). The
 Challenge screen does not offer it (nor Daily) yet — a small follow-up since the server already accepts it.
+
+## 4 Player Chess: what the first pass (Local + Bots, FFA) deliberately leaves out
+
+The engine (`src/logic/fourPlayer/`) is built so the rest slots in without rework, but none of these exist yet:
+
+- **Teams and Solo modes.** `FourPlayerRules` already carries the knobs that differ (`promotionCoord` — Teams promotes on the 11th
+  rank — and the point values); what is missing is the notion of allies (`attackers()` treats every other seat as an enemy) and the
+  team/solo scoring and end conditions in `elimination.ts`.
+- **Online.** The engine is pure TypeScript with no React/chess.js imports and a serialisable state, ready to be mirrored verbatim
+  into `backend/src/game/` behind the same no-drift test the 2-player variants use. Needs 4-seat rooms, matchmaking for four,
+  per-seat clocks and a 4-player wire format. Nothing in the backend knows about it today.
+- **Clocks.** `eliminateSeat(..., 'timeout')` exists; there is no clock UI or per-seat timer.
+- **Saved games / history / rating / analysis.** Games are not saved: the saved-game payload, PGN and `GameHistoryEntry` are
+  2-player shaped, and Stockfish cannot analyse a 4-seat position. Needs a 4-player record format (chess.com's FEN4/PGN4 is the
+  obvious dialect) before any of that.
+- **Scoring details not modelled.** Check-fork bonuses (checking two or three royals at once), draw claims, and points for
+  mating an already-dead king. The numbers that are modelled live in `FFA_RULES`.
+- **Input.** Tap-to-select only (no drag). Squares are ~26 px on a 390 px-wide phone, which is tappable but small; a zoom or a larger
+  cell on tablets would help. Tablets already get up to 34 px.
+- **Threefold repetition / no-progress draws** are not detected (the ply cap — 300 — ends a runaway game by points instead).

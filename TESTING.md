@@ -293,3 +293,82 @@ server must understand the protocol first); until it lands the Online/Challenge/
   the duck, so in rare positions a move could carry an unnecessary disambiguator. Cosmetic only.
 - The duck animation is a plain emoji on the square; the placement UI and the duck rendering were verified in the web
   build, not on a device.
+
+## 9. 4 Player Chess (Free-for-All, Local + Bots) — scope, decisions and known limits
+
+A genuinely new mode, not a variant flag: its own pure-TypeScript engine in `src/logic/fourPlayer/` (no React, no chess.js, no
+`ChessEngine`; a test pins that the folder imports only from itself), its own `FourPlayerBoard` component, and two screens
+(`FourPlayerSetupScreen`, `FourPlayerGameScreen`). It surfaces as its own card on the Play menu, not in `VariantSelector`.
+Branch `fourPlayerChess` (frontend only; no backend changes).
+
+**Board.** 14 x 14 minus a 3 x 3 corner = 160 squares, stored as a flat 196-cell `Int8Array` mailbox (-1 off-board, 0 empty,
+`seat * 8 + type` for pieces, type 7 = a promoted queen). Neighbour/ray tables are precomputed and already stop at the cut corners,
+so move generation has no bounds checks. State is immutable (`FourPlayerState`); Undo is a stack of states.
+
+**Rules as built.** Movement is standard chess; pawns move/capture in their own seat's direction and double-step from their
+starting line; promotion is to a queen only, on each seat's own 8th rank (Red rank 8, Yellow rank 7, Blue file h, Green file g).
+Legality generalises king safety: a move is legal iff no LIVE enemy seat attacks your king afterwards (double check from two seats
+works). En passant is generic across directions (a Blue pawn can take a Red pawn) and lasts one applied move. Castling is per seat
+(king two squares towards the rook, rook onto the crossed square). Kings are never captured.
+
+**Elimination (the new part).** Checkmate is never stored as "pending": after every move the turn passes clockwise and the next seat
+is examined *at that moment* (`advance` in `elimination.ts`). A seat with no legal move is checkmated (in check) or stalemated,
+eliminated on the spot, and that **consumes its turn**. An eliminated seat's pieces turn dead (a status flip, no per-piece flag): they
+block and can be captured for 0 points, but never move, capture or give check — except the king, which walks to a random empty square
+each time its turn comes round and freezes (no points) when it cannot. Because nothing is decided until the mated seat's turn, a mate
+can dissolve (the checker is captured), an intervening seat can deliver it (credit goes to the most recent mover among the attackers),
+and eliminating a seat can lift checks it was giving. The game ends when at most one seat is active or at the 300-ply cap; the
+highest score of ALL FOUR seats wins (ties shared).
+
+**Scoring (simplified).** Capture values pawn 1, knight 3, bishop 5, rook 5, queen 9, promoted queen 1; dead pieces 0; checkmate +20 to
+the credited seat; stalemate +20 to the stalemated seat and +10 to every other active seat. Not modelled: check-fork bonuses, draw
+claims, points for mating a dead king. No clocks; resign is the only voluntary elimination (the engine has a `'timeout'` reason ready).
+
+**Bot.** `fourPlayer/bot.ts`, three levels, no Stockfish (it cannot play this game). Easy = random with a capture preference; medium =
+one ply (points, material vs the average active opponent, hanging-piece penalty, mate of the next seat); hard = two ply against the
+next ACTIVE seat's worst reply including being mated by it. Not ELO-rated (4-player games are never rated).
+
+**UI.** Fixed top-down cross board; `viewSeat` rotates it purely at render time (the sole human sits at the bottom in vs-bots games;
+hotseat starts Red-at-bottom with a Rotate button). Tap a piece, tap a highlighted square (no drag in this pass). Squares are 26 px on a
+390 px-wide phone (22 px on 360x640, up to 34 px on tablets/desktop): checked in the browser at 390x760 and 360x640, no clipping or
+horizontal overflow, including a full bot-only game played to its end (ranking card shown).
+
+**How it is tested** (all in `src/logic/__tests__/`)
+- `fourPlayerBoard.test.ts` — 160 squares and exactly which corners are cut; the start position square by square for all four seats
+  (including Blue/Green's king-queen swap); the invariant that every queen is on an even-parity square and every king on an odd one;
+  rays stopping at the corners; render rotation; serialisation round-trips (statuses, scores, en passant, a finished result).
+- `fourPlayerMoves.test.ts` — every piece in each seat's direction; double steps, promotion lines for all four seats, captures per
+  direction, no king capture; castling for all 8 rook sides plus every refusal and every way to lose it; en passant (across axes,
+  one-move window, own pawn, exposing the capturer's king); multi-seat check, pins, dead pieces never attacking; **a differential test
+  against chess.js** on an 8x8 window (two live seats, 1000 random positions: legal moves and "in check" agree exactly).
+- `fourPlayerElimination.test.ts` — the 8 named scenarios (1 a pending mate dissolves; 2 an intervening mate credits the later attacker,
+  2b credits the earlier one when alone; 3 an elimination lifts a check; 4 the turn is consumed and a walled-in dead king freezes, 4b a free
+  one walks; 5 one move mates two seats; 6 stalemate scoring; 7 the game ends mid-cycle and the highest score wins even if dead; 8 dead
+  pieces block, score 0 and never attack), plus resign, timeout, the third resignation, the ply cap, skipped frozen seats and turn order.
+- `fourPlayerBot.test.ts` — legal at every level and seat, null when boxed in, takes a free queen, does not trade a queen for a defended
+  pawn, finds mate in one (also with a dead seat in between), hard declines bait that costs a back-rank mate, complete self-play games at
+  every level, and a timing budget.
+- `fourPlayerApp.test.ts` — seat setup, labels/narration, cell sizing, and wiring/isolation pins (the engine imports only itself; the
+  2-player plumbing never mentions it; the game is not rated/saved; menu and `App.tsx` routing).
+- **Mutation-checked**: 54 deliberate breakages of the engine and bot (corner size, pawn directions and start/promotion lines, rotation,
+  piece order, point values, castling geometry and rights, every attack/legality rule, dead-piece handling, mate-credit order, scoring,
+  game end, freezing, resign, the ply cap, bot evaluation). 46 were killed on the first run; 5 real gaps (dead pawns/knights giving check,
+  a dead king capturing, an eliminated seat keeping castling rights, the bot treating a dead seat as its opponent) were closed with new
+  tests and now die; 3 survivors are equivalent mutants: the sign of a pawn's perpendicular is irrelevant because both sides are always
+  used, the TYPE of the mover's own piece on the arrival square cannot change its own king's safety (only that something stands there),
+  and a dead seat's material is never read by the evaluation.
+
+**Performance.** `legalMoves` from the start position takes ~0.07 ms. Full bot-vs-bot games (up to the 300-ply cap): easy ~0.1 ms per
+decision, medium ~4 ms (max ~20 ms), hard ~16 ms mean (max ~260 ms); a complete four-hard-bot game computes in ~3-5 s in total.
+Nothing recomputes per render except the legal-move list for the position on screen (memoised per position).
+
+**CHECKLIST sections, explicitly.** *Spec before code*: written and reviewed before implementation. *Correctness*: above. *Performance*:
+above. *Online/backend parity*: **N/A this pass** — fully isolated, no Online component, no backend change; the engine is written so
+it can be mirrored verbatim later (no React/chess.js imports, serialisable state). *Cross-feature*: nothing else imports the folder;
+bots (a separate bot), analysis (4-player games are not analysable), PGN export/import (not saved, so nothing to export), game history,
+ratings/achievements, puzzles and tournaments are untouched — pinned by `fourPlayerApp.test.ts`. *Documentation*: doc comments at the
+top of every engine file explain the lazy-mate rule, dead pieces, the scoring simplifications and the generic en passant. *Variant
+extras*: not combinable with any 2-player variant because it is not one (no `VariantSelector` entry, no `gameResult.ts` slot).
+
+**Known limits** — see TODO.md ("4 Player Chess: what the first pass leaves out"): Teams, Solo, Online, clocks, saved games/analysis,
+check-fork scoring, drag input, repetition draws.

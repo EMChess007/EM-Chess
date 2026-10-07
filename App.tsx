@@ -40,6 +40,8 @@ import RegisterScreen from './src/screens/RegisterScreen';
 import SetupChessOnlineScreen from './src/screens/SetupChessOnlineScreen';
 import TournamentScreen from './src/screens/TournamentScreen';
 import TournamentStandingsScreen from './src/screens/TournamentStandingsScreen';
+import FourPlayerGameScreen from './src/screens/FourPlayerGameScreen';
+import FourPlayerSetupScreen from './src/screens/FourPlayerSetupScreen';
 import SpectateListScreen from './src/screens/SpectateListScreen';
 import SpectatorGameScreen from './src/screens/SpectatorGameScreen';
 import StreakScreen from './src/screens/StreakScreen';
@@ -58,6 +60,7 @@ import { recordAppOpen } from './src/logic/streakStorage';
 import { restoreActiveThemes } from './src/logic/themeSettings';
 import type { BotPersonality } from './src/types/bot';
 import type { ColorChoice, PieceColor } from './src/types/chess';
+import type { SeatConfig } from './src/logic/fourPlayer';
 import type { AnalyzeParams } from './src/types/history';
 import type { ActiveGameSummary, MatchFoundPayload, SetupChessPairedPayload } from './src/types/multiplayer';
 import type { TimeControl } from './src/types/timeControl';
@@ -122,6 +125,9 @@ type Screen =
   | { name: 'tournament'; token: string }
   | { name: 'tournamentStandings'; token: string; tournamentId: string }
   | { name: 'engineSelect' }
+  // 4 Player Chess is its own mode, not a variant of the 2-player game (see src/logic/fourPlayer): setup picks who controls each seat.
+  | { name: 'fourPlayerSetup' }
+  | { name: 'fourPlayerGame'; seats: SeatConfig }
   | { name: 'themeSelect' }
   | { name: 'streak' }
   | { name: 'puzzleRush'; themeFilter?: string[] }
@@ -392,6 +398,7 @@ export default function App() {
             mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: true },
           })
         }
+        onFourPlayer={() => setScreen({ name: 'fourPlayerSetup' })}
         onEngineVsEngineClassic={() =>
           setScreen({
             name: 'timeControlSelect',
@@ -689,6 +696,10 @@ export default function App() {
         onAnalyze={(params) => setScreen({ name: 'analysis', params })}
       />
     );
+  } else if (screen.name === 'fourPlayerSetup') {
+    content = <FourPlayerSetupScreen onBack={() => setScreen({ name: 'playModeSelect' })} onStart={(seats) => setScreen({ name: 'fourPlayerGame', seats })} />;
+  } else if (screen.name === 'fourPlayerGame') {
+    content = <FourPlayerGameScreen seats={screen.seats} onExit={() => setScreen({ name: 'playModeSelect' })} />;
   } else if (screen.name === 'engineSelect') {
     content = <EngineSelectScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'themeSelect') {
