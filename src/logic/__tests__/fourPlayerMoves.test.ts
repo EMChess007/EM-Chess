@@ -6,17 +6,28 @@ import {
   FLAG_DOUBLE_STEP,
   FLAG_EN_PASSANT,
   FLAG_PROMOTION,
+  BISHOP,
+  KNIGHT,
+  PAWN,
+  PROMOTED_BISHOP,
+  PROMOTED_KNIGHT,
   PROMOTED_QUEEN,
+  PROMOTED_ROOK,
+  QUEEN,
+  ROOK,
+  promotionOf,
   applyMoveRaw,
   attackers,
   fileOf,
   findLegalMove,
   initialState,
   isInCheck,
+  isPromotedType,
   legalMoves,
   listPieces,
   moveLabel,
   parseSquare,
+  pieceCode,
   playMove,
   rankOf,
   squareName,
@@ -37,10 +48,9 @@ function movesOf(state: FourPlayerState, seat: Seat = state.turn, from?: string)
     .map((m) => `${squareName(m.from)}-${squareName(m.to)}`)
     .sort();
 }
+/** The distinct squares a piece can move to (a promotion has four moves to the same square: one per promotion choice). */
 const targets = (state: FourPlayerState, from: string, seat?: Seat) =>
-  movesOf(state, seat, from)
-    .map((s) => s.split('-')[1])
-    .sort();
+  [...new Set(movesOf(state, seat, from).map((s) => s.split('-')[1]))].sort();
 const KINGS = ['rK@h1', 'bK@a8', 'yK@g14', 'gK@n7'];
 
 describe('the start position', () => {
@@ -90,7 +100,7 @@ describe("pawns move in their own seat's direction", () => {
     expect(isInCheck(state, YELLOW)).toBe(true);
   });
 
-  it("promotes (always to a queen) on the 8th rank from the seat's own back edge: Red rank 8, Yellow rank 7, Blue file h, Green file g", () => {
+  it("promotes (queen by default) on the 8th rank from the seat's own back edge: Red rank 8, Yellow rank 7, Blue file h, Green file g", () => {
     const cases: [string, string, Seat][] = [
       ['rP@e7', 'e8', RED],
       ['yP@j8', 'j7', YELLOW],
@@ -104,7 +114,7 @@ describe("pawns move in their own seat's direction", () => {
       expect(move, piece).not.toBeNull();
       expect(move.flags & FLAG_PROMOTION, piece).toBeTruthy();
       const after = applyMoveRaw(state, move);
-      expect(after.cells[parseSquare(to)], piece).toBe(seat * 8 + PROMOTED_QUEEN);
+      expect(after.cells[parseSquare(to)], piece).toBe(pieceCode(seat, PROMOTED_QUEEN));
       expect(after.cells[from]).toBe(0);
     }
     const early = stateFromPieces([...KINGS, 'rP@e6']);
@@ -118,6 +128,112 @@ describe("pawns move in their own seat's direction", () => {
     expect(applyMoveRaw(promoted, findLegalMove(promoted, YELLOW, parseSquare('e12'), parseSquare('e8'))!).score[YELLOW]).toBe(1);
     const real = stateFromPieces([...KINGS, 'rQ@e8', 'yR@e12'], { turn: YELLOW });
     expect(applyMoveRaw(real, findLegalMove(real, YELLOW, parseSquare('e12'), parseSquare('e8'))!).score[YELLOW]).toBe(9);
+  });
+});
+
+describe('promotion choice (under-promotion)', () => {
+  const PICKS = [QUEEN, ROOK, BISHOP, KNIGHT];
+  const PROMOTED_OF: Record<number, number> = { [QUEEN]: PROMOTED_QUEEN, [ROOK]: PROMOTED_ROOK, [BISHOP]: PROMOTED_BISHOP, [KNIGHT]: PROMOTED_KNIGHT };
+
+  it('reaching the last line offers exactly four moves — queen, rook, bishop, knight — for every seat and for pushes and captures alike', () => {
+    const cases: [string, string, Seat, string][] = [
+      ['rP@e7', 'e8', RED, 'push'],
+      ['yP@j8', 'j7', YELLOW, 'push'],
+      ['bP@g5', 'h5', BLUE, 'push'],
+      ['gP@h6', 'g6', GREEN, 'push'],
+      ['rP@e7', 'f8', RED, 'capture'],
+    ];
+    for (const [piece, to, seat, how] of cases) {
+      const extra = how === 'capture' ? ['yN@f8'] : [];
+      const state = stateFromPieces([...KINGS, piece, ...extra]);
+      const from = parseSquare(piece.split('@')[1]);
+      const moves = legalMoves(state, seat).filter((m) => m.from === from && m.to === parseSquare(to));
+      expect(moves.map(promotionOf), `${piece}-${to}`).toEqual(PICKS);
+      for (const move of moves) expect(move.flags & FLAG_PROMOTION).toBeTruthy();
+    }
+  });
+
+  it('the notation names the piece chosen: =Q =R =B =N', () => {
+    const state = stateFromPieces([...KINGS, 'rP@e7']);
+    const label = (pick: number) => moveLabel(findLegalMove(state, RED, parseSquare('e7'), parseSquare('e8'), pick)!);
+    expect([QUEEN, ROOK, BISHOP, KNIGHT].map(label)).toEqual(['e7-e8=Q', 'e7-e8=R', 'e7-e8=B', 'e7-e8=N']);
+  });
+
+  it('isPromotedType: exactly the four promoted types (7-10) are promoted', () => {
+    expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(isPromotedType)).toEqual([false, false, false, false, false, false, true, true, true, true]);
+    expect([PROMOTED_QUEEN, PROMOTED_KNIGHT, PROMOTED_BISHOP, PROMOTED_ROOK].every(isPromotedType)).toBe(true);
+  });
+
+  it('each choice puts the chosen piece on the square, and findLegalMove picks it (queen when unspecified)', () => {
+    const state = stateFromPieces([...KINGS, 'rP@e7']);
+    const e7 = parseSquare('e7');
+    const e8 = parseSquare('e8');
+    for (const pick of PICKS) {
+      const move = findLegalMove(state, RED, e7, e8, pick)!;
+      expect(promotionOf(move)).toBe(pick);
+      expect(applyMoveRaw(state, move).cells[e8]).toBe(pieceCode(RED, PROMOTED_OF[pick]));
+    }
+    expect(promotionOf(findLegalMove(state, RED, e7, e8)!)).toBe(QUEEN);
+    // The choice is ignored for a move that is not a promotion.
+    expect(findLegalMove(stateFromPieces([...KINGS, 'rP@e6']), RED, parseSquare('e6'), parseSquare('e7'), KNIGHT)).not.toBeNull();
+    expect(promotionOf({ flags: 0 })).toBe(0);
+  });
+
+  it('a promoted piece MOVES like the piece it became (a promoted knight jumps, a promoted rook slides straight, a promoted bishop slides diagonally)', () => {
+    const base = [...KINGS];
+    expect(targets(stateFromPieces([...base, 'rH@e8']), 'e8', RED)).toEqual(['c7', 'c9', 'd10', 'd6', 'f10', 'f6', 'g7', 'g9']);
+    const rook = targets(stateFromPieces([...base, 'rT@e8']), 'e8', RED);
+    expect(rook).toContain('e14');
+    expect(rook).toContain('b8'); // a8 holds Blue's king, which can never be captured
+    expect(rook).not.toContain('f9');
+    const bishop = targets(stateFromPieces([...base, 'rD@e8']), 'e8', RED);
+    expect(bishop).toContain('f9');
+    expect(bishop).not.toContain('e9');
+  });
+
+  it('a promoted piece gives check as the piece it became', () => {
+    // Yellow king on g14; a promoted knight on f12 attacks g14, a promoted rook on g8 attacks along the g file, a promoted bishop on d11 along the diagonal.
+    const checks = (piece: string) => isInCheck(stateFromPieces(['rK@h1', 'bK@a8', 'yK@g14', 'gK@n7', piece]), YELLOW);
+    expect(checks('rH@f12')).toBe(true);
+    expect(checks('rT@g8')).toBe(true);
+    expect(checks('rD@d11')).toBe(true);
+    expect(checks('rZ@g8')).toBe(true);
+    expect(checks('rH@g8')).toBe(false); // a promoted knight on a rook's square is NOT a rook
+    expect(checks('rD@g8')).toBe(false);
+    expect(checks('rT@d11')).toBe(false);
+  });
+
+  it('what a captured promoted piece scores follows what it was promoted to: knight 3, bishop 5, rook 5, queen 1 (an ordinary queen 9)', () => {
+    const expected: [string, number][] = [['H', 3], ['D', 5], ['T', 5], ['Z', 1], ['N', 3], ['B', 5], ['R', 5], ['Q', 9], ['P', 1]];
+    for (const [letter, points] of expected) {
+      const state = stateFromPieces([...KINGS, `r${letter}@e8`, 'yR@e12'], { turn: YELLOW });
+      const taken = applyMoveRaw(state, findLegalMove(state, YELLOW, parseSquare('e12'), parseSquare('e8'))!);
+      expect(taken.score[YELLOW], `capturing a red ${letter}`).toBe(points);
+    }
+  });
+
+  it('a promoted piece is worth nothing once its seat is out, like any dead piece', () => {
+    const state = stateFromPieces([...KINGS, 'rH@e8', 'yR@e12'], { turn: YELLOW, status: ['dead-king', 'active', 'active', 'active'] });
+    expect(applyMoveRaw(state, findLegalMove(state, YELLOW, parseSquare('e12'), parseSquare('e8'))!).score[YELLOW]).toBe(0);
+  });
+
+  it('the classic reason to under-promote: here a queen or bishop would stalemate Blue (a4 boxed in), a rook or knight does not', () => {
+    const state = stateFromPieces(['rK@h1', 'yK@g14', 'gK@n7', 'bK@a4', 'rP@e7', 'rR@b5']);
+    const outcome = PICKS.map((pick) => {
+      const after = applyMoveRaw(state, findLegalMove(state, RED, parseSquare('e7'), parseSquare('e8'), pick)!);
+      const moves = legalMoves(after, BLUE).length;
+      return moves > 0 ? 'moves' : isInCheck(after, BLUE) ? 'mate' : 'stalemate';
+    });
+    expect(outcome).toEqual(['stalemate', 'moves', 'stalemate', 'moves']); // queen, rook, bishop, knight
+  });
+
+  it('whether a promotion gives check depends on the piece chosen (queen checks along the diagonal, knight does not)', () => {
+    // Only the queen's diagonal e8-a4 reaches Blue's king: whether a promotion gives check depends on the piece chosen.
+    const state = stateFromPieces(['rK@h1', 'yK@g14', 'gK@n7', 'bK@a4', 'rP@e7']);
+    const afterKnight = applyMoveRaw(state, findLegalMove(state, RED, parseSquare('e7'), parseSquare('e8'), KNIGHT)!);
+    expect(isInCheck(afterKnight, BLUE)).toBe(false);
+    const afterQueen = applyMoveRaw(state, findLegalMove(state, RED, parseSquare('e7'), parseSquare('e8'), QUEEN)!);
+    expect(isInCheck(afterQueen, BLUE)).toBe(true); // e8 queen checks along the e8-a4 diagonal
   });
 });
 
@@ -310,7 +426,7 @@ describe('en passant', () => {
     // The capture removes the stepped pawn (which is NOT on the landing square) and scores a pawn.
     const taken = applyMoveRaw(blue, findLegalMove(blue, BLUE, parseSquare('d4'), parseSquare('e3'))!);
     expect(taken.cells[parseSquare('e4')]).toBe(0);
-    expect(taken.cells[parseSquare('e3')]).toBe(BLUE * 8 + 1);
+    expect(taken.cells[parseSquare('e3')]).toBe(pieceCode(BLUE, PAWN));
     expect(taken.cells[parseSquare('d4')]).toBe(0);
     expect(taken.score[BLUE]).toBe(1);
     expect(taken.ep).toBeNull();
@@ -324,7 +440,7 @@ describe('en passant', () => {
     const red = { ...stepped, turn: RED as Seat };
     const taken = applyMoveRaw(red, findLegalMove(red, RED, parseSquare('d4'), parseSquare('c5'))!);
     expect(taken.cells[parseSquare('d5')]).toBe(0);
-    expect(taken.cells[parseSquare('c5')]).toBe(RED * 8 + 1);
+    expect(taken.cells[parseSquare('c5')]).toBe(pieceCode(RED, PAWN));
   });
 
   it("is only available on the very next applied move, never to the stepping seat's own pawns, and never after a single step", () => {
@@ -356,7 +472,7 @@ describe('labels', () => {
       .filter((m) => m.from === parseSquare('e7'))
       .map(moveLabel)
       .sort();
-    expect(labels).toEqual(['e7-e8=Q', 'e7xf8=Q']);
+    expect(labels).toEqual(['e7-e8=B', 'e7-e8=N', 'e7-e8=Q', 'e7-e8=R', 'e7xf8=B', 'e7xf8=N', 'e7xf8=Q', 'e7xf8=R']);
   });
 });
 

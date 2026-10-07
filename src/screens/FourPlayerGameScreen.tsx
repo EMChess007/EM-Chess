@@ -16,6 +16,7 @@ import {
   describeEvents,
   initialState,
   isInCheck,
+  describeResultReason,
   moveLabel,
   nextSeat,
   playMove,
@@ -232,7 +233,7 @@ export default function FourPlayerGameScreen({ seats, timeControl, onExit }: Fou
                 <Text style={styles.resultScore}>{game.score[seat]}</Text>
               </View>
             ))}
-            <Text style={styles.resultNote}>{game.result.reason === 'cap' ? 'Move limit reached — scored by points.' : 'Three players eliminated — highest score wins.'}</Text>
+            <Text style={styles.resultNote}>{describeResultReason(game.result.reason)}</Text>
           </View>
         )}
       </GameScreenBody>

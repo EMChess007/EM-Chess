@@ -307,11 +307,16 @@ Blitz / Rapid / No time limit) → game. The seat choices travel in App's naviga
 There are no preset shortcuts: the per-seat toggles cover them.
 
 **Board.** 14 x 14 minus a 3 x 3 corner = 160 squares, stored as a flat 196-cell `Int8Array` mailbox (-1 off-board, 0 empty,
-`seat * 8 + type` for pieces, type 7 = a promoted queen). Neighbour/ray tables are precomputed and already stop at the cut corners,
+`seat * 16 + type` for pieces: types 1-6 the ordinary pieces, 7-10 a promoted queen / knight / bishop / rook, each of which MOVES as the piece it
+became — `baseTypeOf` — but keeps its own code because its capture value and its UI marker depend on it). Neighbour/ray tables are precomputed and already stop at the cut corners,
 so move generation has no bounds checks. State is immutable (`FourPlayerState`); Undo is a stack of states (with their clocks).
 
 **Rules as built.** Movement is standard chess; pawns move/capture in their own seat's direction and double-step from their
-starting line; promotion is to a queen only, on each seat's own 8th rank (Red rank 8, Yellow rank 7, Blue file h, Green file g).
+starting line; a pawn reaching its seat's 8th rank (Red rank 8, Yellow rank 7, Blue file h, Green file g) PROMOTES, and the player chooses queen,
+rook, bishop or knight: the generator emits one move per choice (queen first; the choice lives in bits 5-6 of `Move.flags`) and
+`findLegalMove(state, seat, from, to, promotion = QUEEN)` picks one. This replaces the first pass's auto-queen (chess.com's Teams mode allows
+under-promotion; its FFA notes do not say, so this is a deliberate decision, not a sourced rule). Bots choose like everything else they
+choose: by their evaluation (so they queen unless a stalemate or a tactic says otherwise), and a weak bot's random moments can under-promote.
 Legality generalises king safety: a move is legal iff no LIVE enemy seat attacks your king afterwards (double check from two seats
 works). En passant is generic across directions (a Blue pawn can take a Red pawn) and lasts one applied move. Castling is per seat
 (king two squares towards the rook, rook onto the crossed square). Kings are never captured.
@@ -322,8 +327,10 @@ and that **consumes its turn**. An eliminated seat's pieces turn dead (a status 
 for 0 points, but never move, capture or give check — except the king, which walks to a random empty square each time its turn comes
 round and freezes (no points) when it cannot. Because nothing is decided until the mated seat's turn, a mate can dissolve (the checker
 is captured), an intervening seat can deliver it (credit goes to the most recent mover among the attackers), and eliminating a seat can
-lift checks it was giving. The game ends when at most one seat is active or at the 300-ply cap; the highest score of ALL FOUR seats wins
-(ties shared). Resigning and running out of time are the two voluntary/clock eliminations (no points for anyone).
+lift checks it was giving. The game ends when at most one seat is active, when **no checkmate can happen any more** (every ACTIVE seat is a
+bare king — `isDeadPosition`; deliberately strict, K+minor-piece endings are not declared dead), or at the ply cap (300; and never beyond
+`HARD_MAX_PLIES` = 5000, a ceiling no rules object can raise, so no bug in the rules above can make a game run on for ever); the highest score of
+ALL FOUR seats wins (ties shared). Resigning and running out of time are the two voluntary/clock eliminations (no points for anyone).
 
 **Clocks.** Four independent clocks (`fourPlayer/clock.ts`, a pure model; `useFourPlayerClock` is the timer around it — the 4-seat
 counterpart of `useChessClock`, which is two-seat all the way down and was left untouched). Only the seat whose turn it is runs, and the
@@ -334,7 +341,9 @@ elimination. The increment goes to the seat that just moved. "No time limit" dis
 every 200 ms (so a flag fall is noticed within 0.2 s); Undo restores the clocks as they were. Bots use real clock time while they
 "think" (200 ms in bullet, 450 ms otherwise).
 
-**Scoring (simplified).** Capture values pawn 1, knight 3, bishop 5, rook 5, queen 9, promoted queen 1; dead pieces 0; checkmate +20 to
+**Scoring (simplified).** Capture values pawn 1, knight 3, bishop 5, rook 5, queen 9; a promoted piece is worth what it was promoted to (promoted
+knight 3, bishop 5, rook 5) **except the promoted queen, which stays at 1** (chess.com's FFA table; it stops a pawn being farmed into nine points
+— it is one line in `CAPTURE_POINTS` if that should change); dead pieces 0; checkmate +20 to
 the credited seat; stalemate +20 to the stalemated seat and +10 to every other active seat. Not modelled: check-fork bonuses, draw
 claims, points for mating a dead king.
 
@@ -351,7 +360,14 @@ within the noise of a sample that size: strength is genuinely monotonic and clea
 Not ELO-rated (4-player games are never rated).
 
 **UI.** Fixed top-down cross board; `viewSeat` rotates it purely at render time (the sole human sits at the bottom in vs-bots games;
-hotseat starts Red-at-bottom with a Rotate button). Tap a piece, tap a highlighted square (no drag in this pass). The **seat strip** is one
+hotseat starts Red-at-bottom with a Rotate button). Tap a piece, tap a highlighted square (no drag in this pass). **Piece themes:** the board
+reads the same `useActivePieceTheme()` as the 2-player board. Themes only have white and black art (all three built-in sets, and uploads), so
+there is no honest per-seat art to select; a themed piece is drawn as the theme's own image on a disc in the seat's colour, using the white set
+on Red/Blue/Green and the black set on Yellow (`seatPieceImageKey`), grey and faded once the seat is out, with a small bar under a promoted
+piece. Tinting the silhouettes was rejected because the art's detail is its dark outline and fill; a flat tint turns each piece into a blob.
+The built-in Classic theme keeps its tinted glyphs. **Promotion choice:** a tap on a promotion square opens the shared `PromotionPicker` (the
+modal that used to be inline in `ChessBoard.tsx`, extracted so both boards use one implementation), with the four pieces drawn for the seat that
+owns the pawn. The **seat strip** is one
 card per seat with, together: colour + name, the score (right), the remaining time in large type (red under 10 s while it is running; omitted
 for "No time limit"), and who plays the seat (Human or the roster bot's name; "out" once eliminated, greyed). The seat to move has a border in
 its colour. Squares are 26 px on a 390 px-wide phone (21 px on 360x640, up to 34 px on tablets/desktop); checked in the browser at both
@@ -361,15 +377,21 @@ carried on), and complete games played to the ranking card.
 **How it is tested** (all in `src/logic/__tests__/`)
 - `fourPlayerBoard.test.ts` — 160 squares and exactly which corners are cut; the start position square by square for all four seats
   (including Blue/Green's king-queen swap); every queen on an even-parity square and every king on an odd one; rays stopping at the
-  corners; render rotation; serialisation round-trips.
+  corners; render rotation; serialisation round-trips (including every promoted piece type, compared as piece codes, not just letters).
 - `fourPlayerMoves.test.ts` — every piece in each seat's direction; double steps, promotion lines for all four seats, captures per
   direction, no king capture; castling for all 8 rook sides plus every refusal and every way to lose it; en passant (across axes,
   one-move window, own pawn, exposing the capturer's king); multi-seat check, pins, dead pieces never attacking; **a differential test
-  against chess.js** on an 8x8 window (1000 random positions: legal moves and "in check" agree exactly).
+  against chess.js** on an 8x8 window (1000 random positions: legal moves and "in check" agree exactly); **promotion choice**: exactly four
+  moves (Q R B N) for every seat, for pushes and captures; each choice puts its own promoted piece on the square; promoted pieces move and give
+  check as the piece they became (and NOT as a queen); notation `=Q/=R/=B/=N`; capture values (promoted N 3, B 5, R 5, queen 1, ordinary queen 9,
+  0 once the seat is out); the classic reason to under-promote, a verified position where queen or bishop stalemates and rook or knight does not.
 - `fourPlayerElimination.test.ts` — the 8 named scenarios (a pending mate dissolves; an intervening mate credits the later attacker; an
   elimination lifts a check; the turn is consumed and a walled-in dead king freezes while a free one walks; one move mates two seats;
   stalemate scoring; the game ends mid-cycle and the highest score wins even if dead; dead pieces block, score 0 and never attack), plus
-  resign, timeout, the third resignation, the ply cap, skipped frozen seats and turn order.
+  resign, timeout, the third resignation, the ply cap, skipped frozen seats and turn order; the **dead position** (the capture that leaves
+  every active seat a bare king ends the game on the spot, any other material or a promoted queen keeps it going, dead seats' material does not
+  count, an out-of-turn elimination that removes the last live material ends it too); and the **hard ply ceiling** (a game nothing else can end
+  stops exactly at the cap; `maxPlies` of Infinity still stops at `HARD_MAX_PLIES`).
 - `fourPlayerClock.test.ts` — the clock integration: only the seat to move ticks (every seat); time accumulates and never goes negative;
   a disabled clock never ticks; a timeout eliminates through the engine's timeout path (no points, pieces dead, turn passed, nobody else's
   clock touched, flags at exactly zero, skips already-eliminated seats, the third timeout ends the game); **an eliminated seat's clock stays
@@ -379,11 +401,14 @@ carried on), and complete games played to the ranking card.
 - `fourPlayerBot.test.ts` — `botStrength` (the 0.2-0.9 family, clamped, monotonic over the whole roster, tier thresholds), the effect of the
   chosen ELO (how often the bot finds a free queen rises ~20% → ~90%; the noise term; **rotated-seat games where higher ELO scores more and
   ELO 3000 wins most**), legality at every strength, tier behaviour (greedy cannot see mate and takes a defended pawn, careful grabs bait that
-  deep declines, careful/deep find mate in one, also past a dead seat), complete self-play games, and a timing budget.
+  deep declines, careful/deep find mate in one, also past a dead seat), complete self-play games, a timing budget, and promotion choice (strong
+  bots queen even when they pick late among ties; careful bots avoid a stalemating queen; weak bots' random branch can under-promote).
 - `fourPlayerApp.test.ts` — seat setup, the roster glue (every roster bot maps to a controller and back to its name; the setup screen
   contains no copy of the roster, no tiers, no presets), the new flow in `App.tsx`, `TimeControlSelectScreen`/`BotSelectScreen` gaining only
   optional props, the seat-card contents, clock formatting, cell sizing, and a **regression pin for a bug found in the browser**: the bot
-  effect must not depend on `apply`, which changes on every clock tick and would cancel the bot's timer forever (bots never moved).
+  effect must not depend on `apply`, which changes on every clock tick and would cancel the bot's timer forever (bots never moved); the piece
+  theme wiring (the same hook as the 2-player board, every seat x piece type resolves to an image in every built-in theme, the white/black set per
+  seat), the promotion flow (the shared picker, no hidden default pick, a half-made choice dropped when the position changes) and the result text.
 - **Mutation-checked**: the first pass's 54 engine/bot mutants (corner geometry, pawn lines, rotation, piece order, point values, castling,
   every attack/legality rule, dead pieces, mate-credit order, scoring, game end, freezing, resign, the ply cap: 51 killed, 3 equivalent —
   the sign of a pawn's perpendicular, the type of the mover's own piece on its arrival square, and dead seats' material never being read), plus 34 new mutants for this
@@ -391,17 +416,35 @@ carried on), and complete games played to the ranking card.
   reason/initial times, clock formatting, setup defaults, roster glue). 27 were killed on the first run; 5 real gaps (noise never applied,
   greedy bots seeing mates, careful bots searching two ply, a clock ticking an inactive seat, the hotseat start seat) were closed with new
   tests, and 2 "survivors" were harness artifacts (the search string also matched a header comment) that were retargeted and then killed:
-  **all 34 now die**.
+  **all 34 now die**. A third round for the follow-ups (promotion generation/choice/application, promoted-piece movement, check and values,
+  the dead-position rule, the hard ceiling, themed piece keys): 36 mutants, 30 killed first time, 5 real gaps closed (the R/B notation letters
+  were only checked as an unordered set; `isPromotedType` and promoted-rook serialisation were not pinned at the piece-code level; the bot's
+  under-promotion values were not distinguished from a queen because ties picked the first candidate; the ceiling's size was not bounded) and
+  1 genuinely equivalent (the legality scratch board promoting to a queen: it only asks whether the mover's own king is exposed, and the
+  promoted piece is the mover's own, so only that it blocks matters, not what it is). **All non-equivalent mutants die.** The harness now runs
+  each mutant with `--bail`, a wall-clock kill of the whole process tree and per-mutant progress output.
 
-**Performance.** `legalMoves` from the start position takes ~0.07 ms. Bot decisions: ELO < 1000 ~0.3 ms, mid roster ~4 ms (max ~20 ms), 1800+
+**Game length, the 300-ply cap and the dead position.** Measured over 30 seeded bot games per matchup (ELO at all four seats, cap lifted to
+5000): before the dead-position rule, games between weak and mid bots almost never finished: they trade every non-king piece (60 captures —
+the whole non-king material — in every capped game) and then four bare kings shuffle until the cap. After it: all-400 median 556 plies
+(95% done by 800), all-1200 median 484, all-2000 median 431, all-3000 median 269, a mixed 400/1000/1800/3000 table median 223; only 0-17 of 30
+finish within 300 plies (0 / 3 / 5 / 17 / 23 for those five tables). So the cap IS low for human + bots games: it mostly ends games by points
+before they have run their natural course. Raising it is a one-number change (`FFA_RULES.maxPlies`); a value around 1000 would let ~95-100%
+of these games end naturally. Left at 300 pending a decision.
+
+**Performance.** `legalMoves` from the start position takes ~0.07 ms (a promotion square adds three more moves; the dead-position scan is one
+pass over 196 cells per turn handover). Bot decisions: ELO < 1000 ~0.3 ms, mid roster ~4 ms (max ~20 ms), 1800+
 ~16 ms mean (max ~260 ms); a complete four-strong-bot game computes in ~3-5 s in total. The clock timer touches one number per 200 ms and
 re-renders only the strip and status. Nothing recomputes per render except the legal-move list for the position on screen (memoised).
 
-**CHECKLIST sections, explicitly.** *Spec before code*: written and reviewed (first pass); this pass is UI/flow, bot-strength and clock work,
-no rules change. *Correctness*: above (elimination-by-timeout, clock-stops-on-elimination and only-current-seat-ticks have their own tests).
+**CHECKLIST sections, explicitly.** *Spec before code*: written and reviewed (first pass); the refinement pass was UI/flow, bot-strength and clock
+work; the follow-up pass added under-promotion (a rules decision, see Rules as built), the dead-position end condition (found by measuring real
+bot games) and piece themes. *Correctness*: above (elimination-by-timeout, clock-stops-on-elimination and only-current-seat-ticks have their own tests).
 *Performance*: above. *Online/backend parity*: **N/A** — still fully local, no backend change; the clock model is pure and serialisable, ready to
 be mirrored with the rest of the engine when Online comes. *Cross-feature*: nothing else imports the folder; the only shared files touched are
-`BotSelectScreen` and `TimeControlSelectScreen` (optional props, unchanged behaviour for their existing callers) and the 2-player
+`BotSelectScreen` and `TimeControlSelectScreen` (optional props, unchanged behaviour for their existing callers) and, in the follow-up pass,
+`ChessBoard.tsx`, whose inline promotion modal moved verbatim into the shared `components/PromotionPicker.tsx` (same Modal, backdrop, labels and
+styles; the existing source-pin test in `promotion.test.ts` was retargeted at the new component, not weakened, and the full suite is green); the 2-player
 `useChessClock`/`bots.ts` are untouched — pinned by `fourPlayerApp.test.ts`. Analysis, PGN, game history, ratings, achievements, puzzles and
 tournaments are untouched (4-player games are not saved). *Documentation*: doc comments at the top of every engine file; this section.
 *Variant extras*: not combinable with any 2-player variant because it is not one.

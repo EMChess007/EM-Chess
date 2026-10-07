@@ -43,10 +43,12 @@ import {
   KING_START_SQUARE,
   KNIGHT,
   PAWN,
-  PROMOTED_QUEEN,
+  PROMOTABLE_TYPES,
+  PROMOTED_TYPE_OF,
   QUEEN,
   ROOK,
   ROOK_START_BIT,
+  baseTypeOf,
   pieceCode,
   seatOf,
   typeOf,
@@ -68,6 +70,17 @@ export const FLAG_PROMOTION = 4;
 export const FLAG_CASTLE = 8;
 /** With FLAG_CASTLE: the king castled towards the HIGHER-coordinate rook (castling side 1). */
 export const FLAG_CASTLE_SIDE_1 = 16;
+/** With FLAG_PROMOTION: bits 5-6 hold the index (into PROMOTABLE_TYPES: queen, rook, bishop, knight) of the piece promoted to. */
+const PROMOTION_SHIFT = 5;
+const PROMOTION_MASK = 3 << PROMOTION_SHIFT;
+
+/** The ordinary piece type (QUEEN / ROOK / BISHOP / KNIGHT) a promotion move promotes to, or 0 when the move is not a promotion. */
+export function promotionOf(move: Pick<Move, 'flags'>): number {
+  return move.flags & FLAG_PROMOTION ? PROMOTABLE_TYPES[(move.flags & PROMOTION_MASK) >> PROMOTION_SHIFT] : 0;
+}
+
+/** The piece type that ends up on the board for a promotion move (a PROMOTED_* type), or 0 when the move is not a promotion. */
+const promotedPieceType = (move: Pick<Move, 'flags'>): number => (move.flags & FLAG_PROMOTION ? PROMOTED_TYPE_OF[promotionOf(move)] : 0);
 
 // --- Attacks -----------------------------------------------------------------------------------------------------------
 
@@ -97,7 +110,7 @@ export function attackers(cells: Int8Array, status: readonly SeatStatus[], squar
   const knightTargets = KNIGHT_TARGETS[square];
   for (let i = 0; i < knightTargets.length; i++) {
     const code = cells[knightTargets[i]];
-    if (code > 0 && typeOf(code) === KNIGHT) {
+    if (code > 0 && baseTypeOf(code) === KNIGHT) {
       const a = seatOf(code);
       if (a !== victim && status[a] === 'active') mask |= 1 << a;
     }
@@ -120,8 +133,8 @@ export function attackers(cells: Int8Array, status: readonly SeatStatus[], squar
       if (code > 0) {
         const a = seatOf(code);
         if (a !== victim && status[a] === 'active') {
-          const type = typeOf(code);
-          if (type === QUEEN || type === PROMOTED_QUEEN || (d < ORTHOGONAL_COUNT ? type === ROOK : type === BISHOP)) mask |= 1 << a;
+          const type = baseTypeOf(code);
+          if (type === QUEEN || (d < ORTHOGONAL_COUNT ? type === ROOK : type === BISHOP)) mask |= 1 << a;
         }
       }
       break; // the first piece on the ray blocks it, whoever owns it
@@ -141,8 +154,12 @@ export function isInCheck(state: Pick<FourPlayerState, 'cells' | 'status' | 'kin
 const isCapturable = (code: number, seat: Seat): boolean => code > 0 && seatOf(code) !== seat && typeOf(code) !== KING;
 
 function pushPawnMove(out: Move[], state: FourPlayerState, seat: Seat, from: number, to: number, captured: number, flags: number): void {
-  const promotes = forwardCoord(seat, to) >= state.rules.promotionCoord ? FLAG_PROMOTION : 0;
-  out.push({ from, to, captured, flags: flags | promotes });
+  if (forwardCoord(seat, to) < state.rules.promotionCoord) {
+    out.push({ from, to, captured, flags });
+    return;
+  }
+  // Reaching the last line is a promotion, and the player picks the piece: one move per choice (queen first).
+  for (let choice = 0; choice < PROMOTABLE_TYPES.length; choice++) out.push({ from, to, captured, flags: flags | FLAG_PROMOTION | (choice << PROMOTION_SHIFT) });
 }
 
 /** Pseudo-legal moves (king safety NOT yet checked) for every piece `seat` can move right now. */
@@ -164,7 +181,7 @@ export function pseudoMoves(state: FourPlayerState, seat: Seat): Move[] {
   for (let from = 0; from < cells.length; from++) {
     const code = cells[from];
     if (code <= 0 || seatOf(code) !== seat) continue;
-    const type = typeOf(code);
+    const type = baseTypeOf(code); // a promoted piece moves like the piece it became
 
     if (type === PAWN) {
       const one = stepForward(seat, from);
@@ -235,7 +252,7 @@ function makeScratch(cells: Int8Array, state: FourPlayerState, move: Move, seat:
   const epSquare = move.flags & FLAG_EN_PASSANT && state.ep ? state.ep.pawn : -1;
   const oldEp = epSquare >= 0 ? cells[epSquare] : 0;
   cells[from] = EMPTY;
-  cells[to] = move.flags & FLAG_PROMOTION ? pieceCode(seat, PROMOTED_QUEEN) : piece;
+  cells[to] = move.flags & FLAG_PROMOTION ? pieceCode(seat, promotedPieceType(move)) : piece;
   if (epSquare >= 0) cells[epSquare] = EMPTY;
   let rookFrom = -1;
   let rookTo = -1;
@@ -276,9 +293,12 @@ export function legalMoves(state: FourPlayerState, seat: Seat): Move[] {
   return out;
 }
 
-/** Finds the legal move `from → to` for `seat` (promotion is always to a queen, so from/to identifies a move uniquely). */
-export function findLegalMove(state: FourPlayerState, seat: Seat, from: number, to: number): Move | null {
-  return legalMoves(state, seat).find((move) => move.from === from && move.to === to) ?? null;
+/**
+ * Finds the legal move `from → to` for `seat`. A promotion has four moves with the same from/to, so `promotion` (QUEEN, ROOK, BISHOP
+ * or KNIGHT) picks one; it defaults to the queen, and is ignored for a move that is not a promotion.
+ */
+export function findLegalMove(state: FourPlayerState, seat: Seat, from: number, to: number, promotion: number = QUEEN): Move | null {
+  return legalMoves(state, seat).find((move) => move.from === from && move.to === to && (!(move.flags & FLAG_PROMOTION) || promotionOf(move) === promotion)) ?? null;
 }
 
 // --- Applying a move ---------------------------------------------------------------------------------------------------
@@ -304,7 +324,7 @@ export function applyMoveRaw(state: FourPlayerState, move: Move): FourPlayerStat
   }
 
   cells[move.from] = EMPTY;
-  cells[move.to] = move.flags & FLAG_PROMOTION ? pieceCode(seat, PROMOTED_QUEEN) : piece;
+  cells[move.to] = move.flags & FLAG_PROMOTION ? pieceCode(seat, promotedPieceType(move)) : piece;
   if (move.flags & FLAG_EN_PASSANT && state.ep) cells[state.ep.pawn] = EMPTY;
   if (move.flags & FLAG_CASTLE) {
     const castle = CASTLES[seat][move.flags & FLAG_CASTLE_SIDE_1 ? 1 : 0];
@@ -324,9 +344,11 @@ export function applyMoveRaw(state: FourPlayerState, move: Move): FourPlayerStat
   return { ...state, cells, score, kings, castling, ep, ply: state.ply + 1 };
 }
 
-/** Coordinate notation for the move list: "e2-e4", "d4xe5", "e7-e8=Q", "O-O" / "O-O-O" (side 0 is the long side for Red/Yellow only by position, so castling shows both squares). */
+const PROMOTION_LETTERS: Record<number, string> = { [QUEEN]: 'Q', [ROOK]: 'R', [BISHOP]: 'B', [KNIGHT]: 'N' };
+
+/** Coordinate notation for the move list: "e2-e4", "d4xe5", "e7-e8=Q" (or =R / =B / =N), "O-O" / "O-O-O" (side 0 is the long side for Red/Yellow only by position, so castling shows both squares). */
 export function moveLabel(move: Move): string {
   const name = (square: number) => `${'abcdefghijklmn'[fileOf(square)]}${rankOf(square) + 1}`;
   if (move.flags & FLAG_CASTLE) return `${name(move.from)}-${name(move.to)} (castle)`;
-  return `${name(move.from)}${move.captured ? 'x' : '-'}${name(move.to)}${move.flags & FLAG_PROMOTION ? '=Q' : ''}${move.flags & FLAG_EN_PASSANT ? ' e.p.' : ''}`;
+  return `${name(move.from)}${move.captured ? 'x' : '-'}${name(move.to)}${move.flags & FLAG_PROMOTION ? `=${PROMOTION_LETTERS[promotionOf(move)]}` : ''}${move.flags & FLAG_EN_PASSANT ? ' e.p.' : ''}`;
 }

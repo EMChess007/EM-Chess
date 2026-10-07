@@ -183,6 +183,18 @@ describe('serialisation', () => {
     expect(serialize(back)).toBe(text);
   });
 
+  it('round-trips every kind of promoted piece (queen Z, knight H, bishop D, rook T) and keeps them apart from the ordinary pieces', () => {
+    const state = stateFromPieces(['rK@h1', 'bK@a8', 'yK@g14', 'gK@n7', 'rZ@e8', 'rH@f8', 'rD@g8', 'rT@e9', 'rQ@d8', 'rN@d9', 'rB@d10', 'rR@d11', 'yT@e12', 'bH@c5', 'gD@l5']);
+    const back = deserialize(serialize(state));
+    expect(Array.from(back.cells)).toEqual(Array.from(state.cells)); // the very same piece codes, not just the same letters
+    expect(listPieces(back).sort()).toEqual(listPieces(state).sort());
+    expect(serialize(back)).toBe(serialize(state));
+    expect(listPieces(back)).toContain('rH@f8');
+    expect(back.cells[parseSquare('e8')]).not.toBe(back.cells[parseSquare('d8')]); // promoted queen vs ordinary queen
+    expect(back.cells[parseSquare('f8')]).not.toBe(back.cells[parseSquare('d9')]); // promoted knight vs ordinary knight
+    expect(() => stateFromPieces(['rX@e8'])).toThrow();
+  });
+
   it('round-trips a mid-game state: scores, statuses, a promoted queen, an en passant record and a finished result', () => {
     const state = {
       ...stateFromPieces(['rK@h1', 'bK@a8', 'yK@g14', 'gK@n7', 'rZ@e8', 'bP@c5', 'yP@j12'], { turn: 2, status: ['active', 'dead-king', 'frozen', 'active'], score: [12, 20, 3, 7], castling: 5, ply: 41 }),

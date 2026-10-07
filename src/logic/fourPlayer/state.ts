@@ -4,8 +4,10 @@
  * STATE IS IMMUTABLE. Every function that "changes" a game returns a new FourPlayerState (the 196-byte cell array is copied per
  * ply — trivial next to the work of generating moves), which makes Undo a plain stack of states and keeps React happy.
  *
- * PIECES are single bytes: `seat * 8 + type`, 0 = empty, -1 = the cut corners. Type 7 is a PROMOTED QUEEN: it moves as a queen
- * but is worth only 1 point when captured (FFA scoring), so it needs its own code.
+ * PIECES are single bytes: `seat * 16 + type`, 0 = empty, -1 = the cut corners. Types 1-6 are the ordinary pieces. Types 7-10 are
+ * PROMOTED pieces (a pawn that reached its last line and became a queen / knight / bishop / rook): each MOVES like the ordinary piece
+ * (`baseTypeOf`) but keeps its own code, because what it is worth when captured is decided by what it was promoted to (see
+ * CAPTURE_POINTS) and because the UI marks promoted pieces.
  *
  * SEAT STATUS is the heart of the elimination rules (see elimination.ts):
  *   'active'    — a normal player.
@@ -29,17 +31,45 @@ export const QUEEN = 5;
 export const KING = 6;
 /** A queen that began as a pawn: moves like a queen, captured for 1 point. */
 export const PROMOTED_QUEEN = 7;
+/** Under-promotions: they move like their ordinary piece and are captured for that piece's points. */
+export const PROMOTED_KNIGHT = 8;
+export const PROMOTED_BISHOP = 9;
+export const PROMOTED_ROOK = 10;
 
 export const OFF_BOARD = -1;
 export const EMPTY = 0;
 
-export const pieceCode = (seat: Seat, type: number): number => seat * 8 + type;
-export const seatOf = (code: number): Seat => (code >> 3) as Seat;
-export const typeOf = (code: number): number => code & 7;
-export const isQueenLike = (type: number): boolean => type === QUEEN || type === PROMOTED_QUEEN;
+export const pieceCode = (seat: Seat, type: number): number => seat * 16 + type;
+export const seatOf = (code: number): Seat => (code >> 4) as Seat;
+/** The full piece type, promoted variants included (7-10). Use `baseTypeOf` to ask how the piece MOVES. */
+export const typeOf = (code: number): number => code & 15;
 
-/** What a captured piece scores for the capturer (a dead piece is worth 0, a king is never captured). */
-export const CAPTURE_POINTS: Record<number, number> = { [PAWN]: 1, [KNIGHT]: 3, [BISHOP]: 5, [ROOK]: 5, [QUEEN]: 9, [PROMOTED_QUEEN]: 1, [KING]: 0 };
+/** How each piece type moves: the ordinary type itself, or for a promoted piece the piece it became. */
+const BASE_TYPE: readonly number[] = [0, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING, QUEEN, KNIGHT, BISHOP, ROOK];
+export const baseTypeOf = (code: number): number => BASE_TYPE[code & 15];
+export const isPromotedType = (type: number): boolean => type >= PROMOTED_QUEEN;
+
+/** What a pawn may promote to, in picker order (queen first), and the promoted piece type each choice produces. */
+export const PROMOTABLE_TYPES: readonly number[] = [QUEEN, ROOK, BISHOP, KNIGHT];
+export const PROMOTED_TYPE_OF: Record<number, number> = { [QUEEN]: PROMOTED_QUEEN, [ROOK]: PROMOTED_ROOK, [BISHOP]: PROMOTED_BISHOP, [KNIGHT]: PROMOTED_KNIGHT };
+
+/**
+ * What a captured piece scores for the capturer (a dead piece is worth 0, a king is never captured). A promoted piece is worth what
+ * it was promoted to — EXCEPT the promoted queen, which stays at 1 point (chess.com's FFA table: it stops a pawn being "farmed" into
+ * nine points). Under-promotions are not in that table; they take their ordinary piece values.
+ */
+export const CAPTURE_POINTS: Record<number, number> = {
+  [PAWN]: 1,
+  [KNIGHT]: 3,
+  [BISHOP]: 5,
+  [ROOK]: 5,
+  [QUEEN]: 9,
+  [PROMOTED_QUEEN]: 1,
+  [PROMOTED_KNIGHT]: 3,
+  [PROMOTED_BISHOP]: 5,
+  [PROMOTED_ROOK]: 5,
+  [KING]: 0,
+};
 
 /**
  * The scoring and rule knobs that differ between the four-player modes. Only FFA exists in this pass, but nothing in the engine
@@ -58,6 +88,13 @@ export interface FourPlayerRules {
   /** The game is scored and ended when this many plies have been played (guards against endless bot games). */
   maxPlies: number;
 }
+
+/**
+ * An absolute ceiling on game length that no rules object can raise (`maxPlies` may be lowered or tuned, never removed). It is the last
+ * stop for a game whatever the checkmate / dead-position logic does: even a bug there cannot make a game, a bot-vs-bot run or a test
+ * loop go on forever.
+ */
+export const HARD_MAX_PLIES = 5000;
 
 export const FFA_RULES: FourPlayerRules = {
   mode: 'ffa',
@@ -78,7 +115,8 @@ export interface EnPassant {
 export interface FourPlayerResult {
   /** Seats with the highest score when the game ended (more than one on a tie). */
   winners: Seat[];
-  reason: 'elimination' | 'cap';
+  /** `deadPosition`: every still-active seat is down to a bare king, so no checkmate can ever happen again (see `isDeadPosition`). */
+  reason: 'elimination' | 'cap' | 'deadPosition';
 }
 
 export interface FourPlayerState {
@@ -231,8 +269,9 @@ export function initialState(rules: FourPlayerRules = FFA_RULES): FourPlayerStat
 
 // --- Hand-built positions (tests, board editor later) ------------------------------------------------------------------
 
-const TYPE_LETTERS: Record<string, number> = { P: PAWN, N: KNIGHT, B: BISHOP, R: ROOK, Q: QUEEN, K: KING, Z: PROMOTED_QUEEN };
-const LETTER_OF_TYPE = 'xPNBRQKZ';
+// Promoted pieces: Z = queen, H = knight ("horse"), D = bishop ("diagonal"), T = rook ("tower").
+const TYPE_LETTERS: Record<string, number> = { P: PAWN, N: KNIGHT, B: BISHOP, R: ROOK, Q: QUEEN, K: KING, Z: PROMOTED_QUEEN, H: PROMOTED_KNIGHT, D: PROMOTED_BISHOP, T: PROMOTED_ROOK };
+const LETTER_OF_TYPE = 'xPNBRQKZHDT';
 const SEAT_LETTERS = 'rbyg';
 
 export interface PositionOptions {
@@ -247,13 +286,13 @@ export interface PositionOptions {
 }
 
 /**
- * Builds a position from a list like `['rK@h1', 'rR@d1', 'yK@g14', 'bP@b5']` (seat letter r/b/y/g + type letter P/N/B/R/Q/K/Z + "@" +
- * square; Z is a promoted queen). Used by the tests to set up exact scenarios, and by anything that needs a custom position.
+ * Builds a position from a list like `['rK@h1', 'rR@d1', 'yK@g14', 'bP@b5']` (seat letter r/b/y/g + type letter P/N/B/R/Q/K + "@" +
+ * square; Z/H/D/T are a promoted queen/knight/bishop/rook). Used by the tests to set up exact scenarios, and by anything that needs a custom position.
  */
 export function stateFromPieces(pieces: readonly string[], options: PositionOptions = {}): FourPlayerState {
   const cells = blankCells();
   for (const spec of pieces) {
-    const match = /^([rbyg])([PNBRQKZ])@([a-n]\d{1,2})$/.exec(spec);
+    const match = /^([rbyg])([PNBRQKZHDT])@([a-n]\d{1,2})$/.exec(spec);
     if (!match) throw new Error(`bad piece spec: ${spec}`);
     const square = parseSquare(match[3]);
     if (square < 0) throw new Error(`not a playable square: ${spec}`);

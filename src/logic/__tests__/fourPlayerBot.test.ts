@@ -8,8 +8,13 @@ import {
   initialState,
   legalMoves,
   playMove,
+  promotionOf,
   squareName,
   stateFromPieces,
+  BISHOP,
+  KNIGHT,
+  QUEEN,
+  ROOK,
   type FourPlayerState,
   type Move,
   type Seat,
@@ -263,4 +268,47 @@ describe('self-play', () => {
     expect(mean).toBeLessThan(250);
     expect(game.maxMs).toBeLessThan(1500);
   }, 180_000);
+});
+
+describe('promotion choice', () => {
+  const promotionPick = (pieces: string[], elo: number, rng: () => number): number => {
+    const state = stateFromPieces(pieces);
+    return promotionOf(chooseBotMove(state, elo, rng)!);
+  };
+
+  it('a bot that wants its best move queens when nothing special is going on, at every tier', () => {
+    for (const elo of [400, 1200, 3000]) {
+      for (const rng of SCORED_RNGS) expect(promotionPick([...KINGS, 'rP@e7'], elo, rng), `elo ${elo}`).toBe(QUEEN);
+    }
+  });
+
+  it('a strong bot queens even when it picks late among equal-looking moves: nothing else comes close to a queen in its evaluation', () => {
+    // A bot only reaches its scored branch when rng() < bestChance, so use an rng just under it: ties would then pick the LAST candidate.
+    for (const elo of [2000, 3000]) {
+      const nearlyAlways = () => botStrength(elo).bestChance * 0.95;
+      expect(promotionPick([...KINGS, 'rP@e7'], elo, nearlyAlways), `elo ${elo}`).toBe(QUEEN);
+    }
+  });
+
+  it('a careful bot (one-ply search) promotes to something else when the queen would stalemate the next seat (Blue boxed in on a4)', () => {
+    // Careful tier only: in this exact position a deep bot also weighs that the b5 rook would hang after a non-queen promotion, and
+    // (reasonably, by its own valuation) takes the queen anyway.
+    const pieces = ['rK@h1', 'yK@g14', 'gK@n7', 'bK@a4', 'rP@e7', 'rR@b5'];
+    for (const elo of [1000, 1400, 1700]) {
+      for (const rng of SCORED_RNGS) {
+        const pick = promotionPick(pieces, elo, rng);
+        expect([ROOK, KNIGHT], `elo ${elo} chose ${pick}`).toContain(pick); // queen and bishop would stalemate Blue (+20 to Blue)
+      }
+    }
+  });
+
+  it('the random branch can under-promote too (a weak bot does not always queen), and every promotion move it offers is legal', () => {
+    const state = stateFromPieces([...KINGS, 'rP@e7']);
+    const picks = new Set<number>();
+    const rng = seeded(5);
+    for (let i = 0; i < 200; i++) picks.add(promotionOf(chooseBotMove(state, 400, rng)!));
+    expect(picks.has(QUEEN)).toBe(true);
+    expect([...picks].some((p) => p === ROOK || p === BISHOP || p === KNIGHT)).toBe(true);
+    expect(legalMoves(state, RED).filter((m) => promotionOf(m) !== 0)).toHaveLength(4);
+  });
 });

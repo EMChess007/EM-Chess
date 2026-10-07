@@ -78,6 +78,11 @@ The engine (`src/logic/fourPlayer/`) is built so the rest slots in without rewor
 - **Saved games / history / rating / analysis.** Games are not saved: the saved-game payload, PGN and `GameHistoryEntry` are 2-player
   shaped, and Stockfish cannot analyse a 4-seat position. Needs a 4-player record format (chess.com's FEN4/PGN4 is the obvious dialect)
   before any of that.
+- **Game length.** `FFA_RULES.maxPlies` is 300, which ends most bot-heavy games before they would finish naturally (median 220-560 plies;
+  see TESTING.md §9). Decide on a larger value (about 1000 fits the measurements). `HARD_MAX_PLIES` (5000) is the absolute ceiling.
+  Other draw-like endings are not detected (repetition, no-progress, K+minor positions that cannot mate).
+- **Under-promotion scoring.** A captured promoted queen is worth 1 point (chess.com's FFA table) while an under-promoted knight/bishop/rook
+  is worth its ordinary value: a modelling decision, not a sourced rule; one line in `CAPTURE_POINTS`.
 - **Scoring details not modelled.** Check-fork bonuses (checking two or three royals at once), draw claims, and points for mating an
   already-dead king. The numbers that are modelled live in `FFA_RULES`.
 - **Bot finesse.** Strength is a heuristic dial (`botStrength`), not a calibrated rating: it is clearly monotonic across the roster, but two

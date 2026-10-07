@@ -8,15 +8,18 @@ import {
   defaultViewSeat,
   describeController,
   describeEvents,
+  describeResultReason,
   formatSeatClock,
   getFourPlayerCellSize,
   humanSeats,
   isStartable,
+  seatPieceImageKey,
   shortController,
   withController,
   type GameEvent,
   type SeatConfig,
 } from '../fourPlayer';
+import { AVAILABLE_PIECE_THEMES } from '../pieceThemes';
 import { botDisplayName, controllerForBot, controllerName, rosterBotForElo } from '../fourPlayerBots';
 
 const SRC = join(__dirname, '../..');
@@ -250,5 +253,71 @@ describe('isolation and wiring (no React Native renderer available)', () => {
     expect(board).toContain('fromDisplay(dx, dy, viewSeat)');
     expect(board).toContain('if (!VALID[square])');
     expect(board).toContain('currentMoves(state)'); // legal squares come from the engine, not recomputed in the component
+  });
+});
+
+describe('the piece theme on the 4 Player board', () => {
+  it('every seat and piece type maps to a key every built-in image theme has (so no piece can fall back to nothing)', () => {
+    const themes = AVAILABLE_PIECE_THEMES.filter((theme) => theme.images);
+    expect(themes.length).toBeGreaterThanOrEqual(3);
+    for (const theme of themes) {
+      for (let seat = 0; seat < 4; seat++) {
+        for (let type = 1; type <= 10; type++) expect(theme.images![seatPieceImageKey(seat, type)], `${theme.id} seat ${seat} type ${type}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('the white set goes on the dark seats and the black set on Yellow; a promoted piece is drawn as the piece it became', () => {
+    expect([0, 1, 2, 3].map((seat) => seatPieceImageKey(seat, 2))).toEqual(['wn', 'wn', 'bn', 'wn']);
+    expect(seatPieceImageKey(0, 1)).toBe('wp');
+    expect(seatPieceImageKey(2, 6)).toBe('bk');
+    expect([7, 8, 9, 10].map((type) => seatPieceImageKey(1, type))).toEqual(['wq', 'wn', 'wb', 'wr']); // promoted Q, N, B, R
+  });
+
+  it('the board reads the SAME active piece theme the 2-player board does, keeps Classic on tinted glyphs, and marks promoted pieces', () => {
+    const board = read('components/FourPlayerBoard.tsx');
+    expect(board).toContain("import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';");
+    expect(board).toContain('const pieceTheme = useActivePieceTheme();');
+    expect(board).toContain('images={pieceTheme.images}');
+    expect(board).toContain('images?.[seatPieceImageKey(seat, type)]'); // no image => the tinted glyph
+    expect(board).toContain('isPromotedType(type)');
+    expect(board).toContain('backgroundColor: dead ? DEAD_COLOR : SEAT_COLORS[seat]'); // eliminated seats are grey on themed pieces too
+    expect(board).not.toMatch(/pieceSets|pieceThemes/); // it never reads theme data directly, only through the hook
+  });
+});
+
+describe('promotion choice on the 4 Player board (no React Native renderer available)', () => {
+  const board = read('components/FourPlayerBoard.tsx');
+
+  it('reuses the shared picker the 2-player board uses, drawn in the picking seat\'s colour, instead of auto-queening', () => {
+    expect(board).toContain("import PromotionPicker from './PromotionPicker';");
+    expect(board).toContain('choices={PROMOTABLE_TYPES}');
+    expect(board).toContain('visible={pendingPromotion !== null}');
+    expect(board).toContain('onChoose={completePromotion}');
+    expect(board).toContain('seat={pickerSeat}');
+    expect(board).toContain('seatOf(state.cells[pendingPromotion[0].from])'); // the seat that owns the pawn, not necessarily the viewer
+    expect(read('components/ChessBoard.tsx')).toContain("import PromotionPicker from './PromotionPicker';"); // one picker, two boards
+  });
+
+  it('asks only when there is a choice, never moves before the player has chosen, and drops a half-made choice when the position changes', () => {
+    expect(board).toContain('if (options.length > 1)');
+    expect(board).toContain('setPendingPromotion(options); // a promotion: ask which piece');
+    expect(board).toContain('if (!interactive || pendingPromotion) return;');
+    expect(board).toContain('promotionOf(m) === pick');
+    expect(board).toMatch(/setPendingPromotion\(null\);\s*\}, \[state\]\)/);
+    expect(board).not.toMatch(/QUEEN\)\s*\)?\s*onMove|onMove\([^)]*QUEEN/); // no hidden default pick
+  });
+
+  it('the notation shows what was chosen, and the game screen still receives one Move', () => {
+    expect(read('screens/FourPlayerGameScreen.tsx')).toContain('onMove={apply}');
+  });
+});
+
+describe('why a game ended', () => {
+  it('has a line for each ending, including the dead position', () => {
+    expect(describeResultReason('elimination')).toMatch(/eliminated/);
+    expect(describeResultReason('cap')).toMatch(/Move limit/);
+    expect(describeResultReason('deadPosition')).toMatch(/bare kings/);
+    expect(read('screens/FourPlayerGameScreen.tsx')).toContain('describeResultReason(game.result.reason)');
   });
 });

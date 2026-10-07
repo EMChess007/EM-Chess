@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   FFA_RULES,
+  HARD_MAX_PLIES,
   applyMoveRaw,
+  chooseBotMove,
   eliminateSeat,
   findLegalMove,
   initialState,
+  isDeadPosition,
   isInCheck,
   legalMoves,
   listPieces,
@@ -214,7 +217,7 @@ describe('resigning, timing out, the move cap and skipped seats', () => {
   });
 
   it('the third resignation ends the game and the highest score wins', () => {
-    const state = stateFromPieces(['rK@h1', 'bK@a8', 'yK@g14', 'gK@n7'], { score: [4, 9, 1, 2], status: ['active', 'dead-king', 'active', 'active'] });
+    const state = stateFromPieces(['rK@h1', 'rP@e2', 'bK@a8', 'yK@g14', 'gK@n7'], { score: [4, 9, 1, 2], status: ['active', 'dead-king', 'active', 'active'] });
     const afterYellow = resign(state, YELLOW).state;
     expect(afterYellow.result).toBeNull();
     const afterGreen = resign(afterYellow, GREEN).state;
@@ -237,10 +240,93 @@ describe('resigning, timing out, the move cap and skipped seats', () => {
 
   it('the ply cap scores and ends the game', () => {
     const rules = { ...FFA_RULES, maxPlies: 5 };
-    const state = stateFromPieces(['rK@h1', 'bK@a8', 'yK@g14', 'gK@n7'], { ply: 4, rules, score: [3, 1, 7, 2] });
+    const state = stateFromPieces(['rK@h1', 'bK@a8', 'yK@g14', 'gK@n7', 'yP@g13'], { ply: 4, rules, score: [3, 1, 7, 2] });
     const out = play(state, 'h1', 'h2');
     expect(out.state.result).toEqual({ winners: [YELLOW], reason: 'cap' });
     expect(out.events[out.events.length - 1].kind).toBe('gameOver');
+  });
+
+  describe('the hard ply ceiling: the last stop, independent of every other end-of-game rule', () => {
+    // Two knights each can shuffle for ever and no mate is forced, so only the cap can end this game.
+    const shufflers = ['rK@h1', 'rN@e3', 'bK@a8', 'bN@c6', 'yK@g14', 'yN@j12', 'gK@n7', 'gN@l9'];
+
+    it('a game that nothing else can end is ended by the cap, exactly at maxPlies', () => {
+      let state = stateFromPieces(shufflers, { rules: { ...FFA_RULES, maxPlies: 40 } });
+      let steps = 0;
+      for (; !state.result && steps < 200; steps++) state = playMove(state, legalMoves(state, state.turn)[0]).state;
+      expect(state.result).toMatchObject({ reason: 'cap' });
+      expect(state.ply).toBe(40);
+    });
+
+    it('maxPlies can be lowered but never lifted past HARD_MAX_PLIES: Infinity (or a huge number) still stops there', () => {
+      for (const maxPlies of [Infinity, 1e9]) {
+        const state = stateFromPieces(shufflers, { ply: HARD_MAX_PLIES - 1, rules: { ...FFA_RULES, maxPlies } });
+        const out = playMove(state, legalMoves(state, state.turn)[0]);
+        expect(out.state.result, String(maxPlies)).toMatchObject({ reason: 'cap' });
+        expect(out.state.ply).toBe(HARD_MAX_PLIES);
+      }
+      expect(HARD_MAX_PLIES).toBeGreaterThan(FFA_RULES.maxPlies); // the ceiling never lowers the normal cap
+      expect(HARD_MAX_PLIES).toBeLessThanOrEqual(10_000); // ...and is genuinely a ceiling: a 4-seat game is never allowed to run on past this
+      const normal = stateFromPieces(shufflers, { ply: HARD_MAX_PLIES - 1 });
+      expect(normal.rules.maxPlies).toBeLessThan(HARD_MAX_PLIES);
+    });
+  });
+
+  describe('dead position: nothing but bare kings can ever be left (found by measuring real bot games)', () => {
+    // Weak bots trade every piece (the 4-seat board has 60 non-king pieces); once all four are bare kings no checkmate can ever
+    // happen again, and the game used to burn the whole ply cap doing nothing.
+    const lastTrade = ['rK@h1', 'bK@a8', 'bB@h2', 'yK@g14', 'gK@n7'];
+
+    it('the capture that leaves every active seat a bare king ends the game on the spot; the highest score wins', () => {
+      const out = play(stateFromPieces(lastTrade), 'h1', 'h2');
+      expect(out.state.result).toEqual({ winners: [RED], reason: 'deadPosition' });
+      expect(out.state.score).toEqual([5, 0, 0, 0]);
+      expect(out.events[out.events.length - 1]).toMatchObject({ kind: 'gameOver', result: { reason: 'deadPosition' } });
+    });
+
+    it('while any active seat still has a piece or pawn the game goes on', () => {
+      for (const extra of ['gN@m5', 'yP@g13', 'bR@b5', 'gQ@n11']) {
+        const out = play(stateFromPieces([...lastTrade, extra]), 'h1', 'h2');
+        expect(out.state.result, extra).toBeNull();
+      }
+    });
+
+    it('a promoted queen is a piece too', () => {
+      const out = play(stateFromPieces([...lastTrade, 'gZ@n10']), 'h1', 'h2');
+      expect(out.state.result).toBeNull();
+    });
+
+    it('dead pieces do not count: material owned by an eliminated seat is not a way to mate', () => {
+      const state = stateFromPieces(['rK@h1', 'bK@a8', 'bR@b5', 'bP@b6', 'yK@g14', 'gK@n7'], { status: ['active', 'dead-king', 'active', 'active'] });
+      const out = play(state, 'h1', 'h2');
+      expect(out.state.result).toEqual({ winners: [RED, BLUE, YELLOW, GREEN], reason: 'deadPosition' }); // all tied on 0
+    });
+
+    it('an elimination that removes the last live material (resign, out of turn or not) ends the game as well', () => {
+      const state = stateFromPieces(['rK@h1', 'rR@d1', 'bK@a8', 'yK@g14', 'gK@n7'], { turn: YELLOW });
+      const out = resign(state, RED, first);
+      expect(out.state.result).toMatchObject({ reason: 'deadPosition' });
+      expect(out.events[out.events.length - 1].kind).toBe('gameOver');
+    });
+
+    it('a normal position with material is untouched, and the opening is not a dead position', () => {
+      expect(isDeadPosition(initialState())).toBe(false);
+      expect(isDeadPosition(stateFromPieces(lastTrade))).toBe(false); // the bishop is Blue's and Blue is active
+      expect(isDeadPosition(stateFromPieces(['rK@h1', 'bK@a8', 'yK@g14', 'gK@n7']))).toBe(true);
+    });
+
+    it('seeded games between the weakest bots now finish by themselves long before any cap', () => {
+      const rules = { ...FFA_RULES, maxPlies: 6000 };
+      for (const seed of [1, 2, 3, 4]) {
+        let s = seed * 7919;
+        const rng = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+        let state = initialState(rules);
+        for (let guard = 0; !state.result && guard < 7000; guard++) state = playMove(state, chooseBotMove(state, 400, rng)!, rng).state; // bounded here too: never rely on the engine alone to stop
+        expect(state.result, `seed ${seed} never finished`).not.toBeNull();
+        expect(state.result!.reason, `seed ${seed} ended at ply ${state.ply}`).not.toBe('cap');
+        expect(state.ply).toBeLessThan(2500);
+      }
+    }, 120_000);
   });
 
   it('eliminateSeat is a no-op for a seat that is not active or once the game is over', () => {

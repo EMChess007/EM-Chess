@@ -15,18 +15,19 @@
  * necessarily to whoever first created the threat. Eliminating a seat also turns ITS pieces dead, which can lift checks on others,
  * which is why seats are evaluated one at a time, in order, rather than all at once.
  *
- * GAME END (FFA): as soon as at most ONE seat is still active (three eliminated) — or the ply cap is reached. The winner(s) are the
- * seat(s) with the HIGHEST SCORE among all four (not only the survivor), ties shared.
+ * GAME END (FFA): as soon as at most ONE seat is still active (three eliminated), or when no checkmate is possible any more (every
+ * active seat is a bare king — `isDeadPosition`), or the ply cap is reached. The winner(s) are the seat(s) with the HIGHEST SCORE
+ * among all four (not only the survivor), ties shared.
  *
  * SCORING (simplified from chess.com's table; the numbers live in FourPlayerRules): capturing a live piece scores its value (pawn 1,
- * knight 3, bishop 5, rook 5, queen 9, promoted queen 1); dead pieces score 0; checkmating a seat +20 to the credited seat;
+ * knight 3, bishop 5, rook 5, queen 9; a promoted piece is worth what it became, except the promoted queen: 1); dead pieces score 0; checkmating a seat +20 to the credited seat;
  * stalemating a seat gives the STALEMATED seat +20 and every other still-active seat +10. Not modelled: check-fork bonuses, draw
  * claims, points for mating an already-dead king.
  */
 
 import { nextSeat, seatBefore, type Seat } from './board';
 import { applyMoveRaw, attackers, legalMoves, type Move } from './moves';
-import { activeSeats, type FourPlayerResult, type FourPlayerState, type SeatStatus } from './state';
+import { activeSeats, HARD_MAX_PLIES, KING, seatOf, typeOf, type FourPlayerResult, type FourPlayerState, type SeatStatus } from './state';
 
 export type EliminationReason = 'checkmate' | 'stalemate' | 'resign' | 'timeout';
 
@@ -62,10 +63,11 @@ function withStatus(state: FourPlayerState, seat: Seat, status: SeatStatus): Fou
   return { ...state, status: next };
 }
 
-/** Ends the game if at most one seat is still active. */
+/** Ends the game if at most one seat is still active, or if no checkmate is possible any more. */
 function finishIfOver(state: FourPlayerState, events: GameEvent[]): FourPlayerState {
-  if (state.result || activeSeats(state).length > 1) return state;
-  return endGame(state, 'elimination', events);
+  if (state.result) return state;
+  if (activeSeats(state).length <= 1) return endGame(state, 'elimination', events);
+  return endIfDeadPosition(state, events);
 }
 
 function endGame(state: FourPlayerState, reason: FourPlayerResult['reason'], events: GameEvent[]): FourPlayerState {
@@ -100,8 +102,27 @@ export function eliminateSeat(state: FourPlayerState, seat: Seat, reason: Elimin
   return next;
 }
 
+/**
+ * True when no checkmate can ever happen again: every ACTIVE seat has nothing but its king. Dead pieces never attack and kings can
+ * never give check (they may not stand next to each other), so the game can only drain plies until the cap. Deliberately strict —
+ * K+minor-piece endings are NOT declared dead: with several seats and cooperative blocks a mate is not provably impossible there.
+ */
+export function isDeadPosition(state: FourPlayerState): boolean {
+  const { cells, status } = state;
+  for (let i = 0; i < cells.length; i++) {
+    const code = cells[i];
+    if (code <= 0 || typeOf(code) === KING) continue;
+    if (status[seatOf(code)] === 'active') return false;
+  }
+  return true;
+}
+
+function endIfDeadPosition(state: FourPlayerState, events: GameEvent[]): FourPlayerState {
+  return !state.result && isDeadPosition(state) ? endGame(state, 'deadPosition', events) : state;
+}
+
 function capIfReached(state: FourPlayerState, events: GameEvent[]): FourPlayerState {
-  return !state.result && state.ply >= state.rules.maxPlies ? endGame(state, 'cap', events) : state;
+  return !state.result && state.ply >= Math.min(state.rules.maxPlies, HARD_MAX_PLIES) ? endGame(state, 'cap', events) : state;
 }
 
 /**
@@ -111,6 +132,8 @@ function capIfReached(state: FourPlayerState, events: GameEvent[]): FourPlayerSt
 export function advance(state: FourPlayerState, events: GameEvent[], rng: Rng = Math.random): FourPlayerState {
   let current = state;
   for (let guard = 0; guard < 64 && !current.result; guard++) {
+    current = finishIfOver(current, events);
+    if (current.result) break;
     const seat = nextSeat(current.turn);
     current = { ...current, turn: seat };
     const status = current.status[seat];

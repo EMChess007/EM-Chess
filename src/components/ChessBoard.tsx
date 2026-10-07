@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, PanResponder, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { ChessEngine } from '../logic/ChessEngine';
 import { getLegalDuckPlacementSquares } from '../logic/duckChess';
 import { getGiveawayMoves } from '../logic/giveaway';
@@ -9,6 +9,7 @@ import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { ExplodedPiece, Move, PieceColor, Piece as PieceModel } from '../types/chess';
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
 import { getBoardSize } from './boardSize';
+import PromotionPicker from './PromotionPicker';
 import Piece from './Piece';
 import Square from './Square';
 
@@ -796,74 +797,21 @@ function ChessBoard({
         )}
       </View>
 
-      {/* A real Modal, not an overlay inside the board: it covers the WHOLE screen, so a tap
-          anywhere outside the four buttons — on the board or off it — lands on the backdrop and
-          cancels. (An earlier absolutely-positioned overlay only covered the board's own bounds,
-          so taps elsewhere on the screen never reached it.) Android's back button cancels too. */}
-      <Modal
+      {/* The shared full-screen picker: a tap anywhere outside the four buttons cancels (see PromotionPicker). */}
+      <PromotionPicker
         visible={pendingPromotion !== null}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={cancelPromotion}
-      >
-        <Pressable style={styles.promotionBackdrop} onPress={cancelPromotion} accessibilityLabel="Cancel promotion">
-          <View style={styles.promotionPanel}>
-            <Text style={styles.promotionTitle}>Promote to</Text>
-            <View style={styles.promotionRow}>
-              {getPromotionChoices(giveaway).map((choice) => (
-                <Pressable
-                  key={choice}
-                  style={[styles.promotionButton, { width: squareSize * 1.15, height: squareSize * 1.15 }]}
-                  onPress={() => completePromotion(choice)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Promote to ${PROMOTION_LABELS[choice]}`}
-                >
-                  <Piece piece={{ type: choice, color: pendingPromotion?.color ?? 'w' }} images={pieceTheme.images} />
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
+        choices={getPromotionChoices(giveaway)}
+        buttonSize={squareSize * 1.15}
+        labelFor={(choice) => PROMOTION_LABELS[choice]}
+        renderChoice={(choice) => <Piece piece={{ type: choice, color: pendingPromotion?.color ?? 'w' }} images={pieceTheme.images} />}
+        onChoose={completePromotion}
+        onCancel={cancelPromotion}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  promotionBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  promotionPanel: {
-    backgroundColor: '#f4ecd8',
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    gap: 8,
-  },
-  promotionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3a2618',
-  },
-  promotionRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  promotionButton: {
-    backgroundColor: '#d9c8a3',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   border: {
     borderWidth: 2,
     borderColor: '#3a2618',

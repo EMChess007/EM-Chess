@@ -49,8 +49,8 @@ export function botStrength(elo: number): BotStrength {
   };
 }
 
-/** Material value by piece type (index = type code): P, N, B, R, Q, K (never counted), promoted queen. */
-const VALUE = [0, 1, 3, 3.25, 5, 9, 0, 9];
+/** Material value by piece type (index = type code): P, N, B, R, Q, K (never counted), then promoted Q, N, B, R (worth what they play like). */
+const VALUE = [0, 1, 3, 3.25, 5, 9, 0, 9, 3, 3.25, 5];
 const CHECKMATE_VALUE = 25;
 const STALEMATE_VALUE = -6;
 
