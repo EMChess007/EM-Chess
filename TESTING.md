@@ -406,12 +406,16 @@ cancelled." Arrows are wiped whenever the position changes.
 - **Selection survives other seats' moves while premoving.** On the 2-player board a position change clears a half-made selection, which is harmless
   when the opponent moves once; here three bots move in a row (about 1.4 s) and would wipe the player's selection before they could tap the target. While
   premoving, the selection and an open promotion choice are kept as long as the piece is still the player's own.
-- **Arrows and highlights survive the other seats' moves** (the 2-player board wipes them on every move). While the player is waiting — still in the game,
-  not their turn, game not over — they stay through Blue's, Yellow's and Green's moves, so a plan drawn while the bots play is still there when it is
-  needed. They are wiped when the player's own turn starts, when the player has just moved, when the player is out, when the game ends, and always when
-  nobody is "waiting" (hotseat), where the board behaves like the 2-player one. That rule is `keepAnnotationsAfterMove` (pure, tested over a whole round
-  with the real engine); there is no separate "clear" gesture on either board — the wipe is the only clearing mechanism — and drawing a new arrow adds to
-  the existing ones, as on the 2-player board.
+- **Arrows and highlights follow ONE app-wide invariant** (`logic/annotationLifecycle.ts`, mirrored in CHECKLIST.md): they persist across turns — the
+  player's own and every other seat's — and are cleared when a MOVE is played, by anyone, and at no other time. Not when "my turn starts", not while
+  "waiting", not tied to whose turn it is at all (this replaced an earlier rule that wiped on the player's own turn). Each board names a *position epoch*
+  — a value that changes iff the position changed — and clears through the single hook `useClearAnnotationsOnMove`: classic chess uses the FEN (it has no
+  pass or skip, so the FEN changes exactly when a move is played or the position is replaced); 4 Player Chess uses `state.ply`, which is incremented in
+  exactly one place (a move being applied) and therefore does NOT change on any turn that advances without a move: a seat resigning or timing out, a
+  seat eliminated at its turn by `advance` (checkmate/stalemate found when its turn comes), a frozen seat skipped. An eliminated king's random walk IS a
+  move (it changes the position), so it clears. Undo / stepping back / a new game / an Online resync REPLACE the position and clear too — a deliberate
+  superset of "a move was played", since arrows on a position that is no longer shown would point at something else. Rotating the board never clears
+  (annotations are stored as absolute squares). There is no separate "clear" gesture on either board; drawing a new arrow adds to the existing ones.
 - **The "illegal premove" notice goes away once the player has moved** (the 2-player screens keep it until the next premove or cancel).
 - A queued premove is dropped on Undo and New Game (it was made against a position that no longer exists), and its two squares are tinted while queued.
 Not migrated: BotGameScreen / OnlineGameScreen still hold their own inline copy of the premove slot (same rules; `usePremove` is the shared form for any
@@ -458,6 +462,12 @@ promotion lines, scoring or elimination rules needs no change here.
   not squares), agrees with where the board component draws each square, puts the viewer's king row at the bottom; an arrow from a player's own king one
   step forward is the same absolute arrow for every seat; the same absolute arrow points right / up / left / down in views 0 / 1 / 2 / 3; after a Rotate an
   arrow ends on the cells where its pieces are now drawn, and rotates rigidly by a quarter per seat; corners and zero-length arrows draw nothing.
+- `annotationLifecycle.test.ts` — the app-wide arrow invariant (cleared when a move is played, never because of a turn): the pure rule; every 4 Player
+  no-move turn advance against the real engine (a seat resigning off turn, the seat to move resigning so the NEXT seat's turn starts, a flag falling on
+  the seat to move through `clockTick`, a seat stalemated at its turn after the previous seat resigned — two turns pass — and a frozen seat skipped) leaves
+  the epoch and so the arrows alone; every move by every seat, a dead king's walk, moves that eliminate seats, and Undo all change it; classic chess's FEN
+  changes on every move and never on reads, an identical rebuilt position, or anything else; each board clears through the one shared hook, keyed to the
+  FEN / `positionEpoch(state)`, in exactly one place, and `ply` is incremented in exactly one place in the engine.
 - `boardGestures.test.ts` — what a finished touch means (stationary = tap even if held past the long-press time; the 10 px threshold is inclusive; an
   armed drag is an arrow, or a highlight on its own cell; an unarmed drag does nothing) and the pixel -> cell clamp for both grid sizes.
 - `fourPlayerApp.test.ts` — seat setup, the roster glue (every roster bot maps to a controller and back to its name; the setup screen
@@ -490,6 +500,11 @@ A fourth round for arrows and premoves (the premove step, the engine-side premov
   right squares through a Rotate. **Not verifiable here:** the long-press-drag release itself. The browser pane cannot generate a real drag distance, and
   the ORIGINAL ChessBoard behaves identically under every synthetic event I tried (the drag shows the live arrow, the release resolves as a tap), so that
   decision was moved into `decideRelease` and unit-tested instead; a manual check on a device is still worth doing once.
+  A fifth round for the annotation invariant: 15 mutants (the pure rule inverted / always / never; the 4 Player epoch as the turn, turn + active seats,
+  the score or a constant; a move not advancing `ply`; an elimination or a bare turn advance WITH a `ply` increment; the hook always/never clearing; both
+  boards keyed to the turn): 14 killed first time. The one survivor — the hook keeping the FIRST epoch instead of the latest, which only misbehaves when
+  the position returns to its very first value (Undo to the start) — is React-hook behaviour with no renderer here, so it is pinned at source level
+  (and the hook's redundant "did it change" guard is an equivalent mutant of the effect's own dependency list).
 
 **Game length, the ply cap and the dead position.** Measured over 30 seeded bot games per matchup (ELO at all four seats, cap lifted to
 5000): before the dead-position rule, games between weak and mid bots almost never finished: they trade every non-king piece (60 captures —

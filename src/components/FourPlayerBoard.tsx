@@ -1,10 +1,11 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { PieceImageMap } from '../types/theme';
 import BoardAnnotations from './BoardAnnotations';
 import PromotionPicker from './PromotionPicker';
 import { useBoardGestures } from './useBoardGestures';
+import { useClearAnnotationsOnMove } from './useClearAnnotationsOnMove';
 import {
   PROMOTABLE_TYPES,
   SEAT_COLORS,
@@ -22,7 +23,7 @@ import {
   isInCheck,
   isPromotedType,
   isPromotionPremove,
-  keepAnnotationsAfterMove,
+  positionEpoch,
   promotionOf,
   rankOf,
   seatOf,
@@ -208,21 +209,23 @@ export default function FourPlayerBoard({
   });
   // A new position wipes any half-made normal move. While premoving, a position change is just another seat having moved — with three of
   // them in a row it must not undo the player's own selection or an open promotion choice, so those survive as long as the piece they
-  // refer to is still the player's own. Arrows and highlights follow the same idea: they are wiped as on the 2-player board EXCEPT while
-  // the player is waiting for their turn (see keepAnnotationsAfterMove), so a plan drawn while the bots play is still there when it is needed.
-  const previousMoverRef = useRef<Seat>(state.turn); // whose turn it was in the position that was just replaced
+  // refer to is still the player's own.
   useEffect(() => {
     setSelected((prev) => (prev !== null && premoveMode && isOwnPiece(prev) ? prev : null));
     setPendingPromotion(null);
     setPendingPremove((prev) => (prev !== null && premoveMode && isOwnPiece(prev.from) ? prev : null));
-    if (!keepAnnotationsAfterMove(premoveSeat, previousMoverRef.current, state)) {
-      setArrows([]);
-      setHighlights([]);
-      clearLiveArrow();
-    }
-    previousMoverRef.current = state.turn;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
+
+  // Arrows and highlights obey the app-wide invariant (logic/annotationLifecycle.ts): they are cleared when a MOVE is played and at no other
+  // time — not when a turn starts or passes, and not when a seat is skipped, eliminated or flagged without a move. `state.ply` is this
+  // mode's position epoch: it goes up in exactly one place (a move being applied, real or an eliminated king's walk), so turns that advance
+  // without a move leave it, and the arrows, alone; Undo lowers it (the position is replaced), which also clears.
+  useClearAnnotationsOnMove(positionEpoch(state), () => {
+    setArrows([]);
+    setHighlights([]);
+    clearLiveArrow();
+  });
 
   /** Target square -> its moves (several only for a promotion: one per piece to promote to). */
   const targetMoves = useMemo(() => {

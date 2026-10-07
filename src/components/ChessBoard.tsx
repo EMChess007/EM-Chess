@@ -11,6 +11,7 @@ import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnota
 import { getBoardSize } from './boardSize';
 import PromotionPicker from './PromotionPicker';
 import { useBoardGestures } from './useBoardGestures';
+import { useClearAnnotationsOnMove } from './useClearAnnotationsOnMove';
 import Piece from './Piece';
 import Square from './Square';
 
@@ -217,17 +218,17 @@ function ChessBoard({
   // The previewed move is already on the board when the turn is committed, so its slide animation is skipped.
   const skipAnimationRef = useRef(false);
 
-  // Arrows/highlights (see BoardAnnotations) — always reset on a real position change (a move
-  // played, a rewind/forward through history, a "New Game"), same as selectedSquare above.
+  // Arrows/highlights (see BoardAnnotations) — cleared when the position changes (a move played, a
+  // rewind/forward through history, a "New Game"), and ONLY then: the shared invariant in
+  // logic/annotationLifecycle.ts. Classic chess has no pass/skip, so the FEN is exactly that epoch.
   const [arrows, setArrows] = useState<BoardArrow[]>([]);
   const [highlights, setHighlights] = useState<GridPoint[]>([]);
 
-  useEffect(() => {
+  useClearAnnotationsOnMove(fen, () => {
     setArrows([]);
     setHighlights([]);
     clearLiveArrow();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fen]);
+  });
 
   // Slide animation: a moving piece "sprite" overlaid on top of the static grid, translated from
   // the origin square's pixel position to the destination's over ANIMATION_DURATION_MS. The

@@ -378,10 +378,8 @@ describe('arrows and premoves on the 4 Player board: shared code, wired in (no R
     // A position change (another seat moved) keeps a premove selection on the player's own piece instead of wiping it every ply.
     expect(board).toContain('prev !== null && premoveMode && isOwnPiece(prev) ? prev : null');
     expect(board).toContain('premoveMark={!!premove && (premove.from === square || premove.to === square)}');
-    // Annotations are wiped on a new position unless the player is waiting (the tested rule), and the previous mover is tracked across renders.
-    expect(board).toContain('if (!keepAnnotationsAfterMove(premoveSeat, previousMoverRef.current, state)) {');
-    expect(board).toContain('previousMoverRef.current = state.turn;');
-    expect(board).toContain('const previousMoverRef = useRef<Seat>(state.turn);');
+    // Annotations follow the app-wide invariant (cleared when a move is played, never because of whose turn it is): see annotationLifecycle.test.ts.
+    expect(board).toContain('useClearAnnotationsOnMove(positionEpoch(state), () => {');
   });
 
   it('the game screen has ONE premove slot (a new one replaces the old), validated by the engine, played through apply(), dropped on Undo / New Game', () => {

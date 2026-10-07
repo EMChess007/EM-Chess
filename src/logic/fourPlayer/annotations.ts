@@ -12,7 +12,6 @@
  */
 
 import { SIZE, VALID, fromDisplay, index, toDisplay, fileOf, rankOf, type Seat } from './board';
-import { canPremove } from './premove';
 import type { FourPlayerState } from './state';
 
 export interface GridCell {
@@ -45,15 +44,15 @@ export function addArrow(arrows: readonly SquareArrow[], from: number | null, to
 }
 
 /**
- * Whether arrows and highlights should SURVIVE the position change that just happened. The 2-player board wipes them on every move; here
- * three seats move between the player's turns, so a plan drawn while waiting would vanish after the very next bot move. They are kept
- * while the player is WAITING (still in the game, not their turn, game not over) and the change was another seat's move. They are wiped
- * when the player's own turn starts, when the player has just moved themselves, when they are out, when the game ends, and always when
- * there is no single waiting player (hotseat: nobody is "waiting", so it behaves like the 2-player board).
- * `previousMover` is the seat that was to move in the position that was just replaced.
+ * This mode's POSITION EPOCH for the app-wide annotation invariant (logic/annotationLifecycle.ts): arrows and highlights are cleared when a
+ * move is played and at no other time. `ply` is incremented in exactly one place — `applyMoveRaw`, which both a real move and an
+ * eliminated king's random walk go through — so it changes for every move, and does NOT change on any turn advance that plays no move: a
+ * seat skipped (frozen), eliminated at its turn (checkmate / stalemate found by `advance`), resigning, or running out of time. Undo lowers
+ * it, which is right: the position the arrows described is gone. It must never be replaced by anything turn-based (whose turn it is, who
+ * just moved), which would clear on those no-move paths.
  */
-export function keepAnnotationsAfterMove(waitingSeat: Seat | undefined, previousMover: Seat, next: Pick<FourPlayerState, 'status' | 'result' | 'turn'>): boolean {
-  return waitingSeat !== undefined && previousMover !== waitingSeat && canPremove(next, waitingSeat);
+export function positionEpoch(state: Pick<FourPlayerState, 'ply'>): number {
+  return state.ply;
 }
 
 /** Toggles a highlighted square; a cut-corner cell (null) changes nothing. */
