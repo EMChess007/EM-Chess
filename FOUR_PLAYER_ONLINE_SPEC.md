@@ -1,6 +1,6 @@
 # 4 Player Chess Online — spec (v1)
 
-Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2 (room manager) is built and reviewed; W3 (bots, takeover, abandonment) is built, awaiting review; W4-W7 are not started. Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
+Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2 (room manager) is built and reviewed; W3 (bots, takeover, abandonment) is built and reviewed; W4 (matchmaker and socket handlers - the first workstream the running server loads) is built, awaiting review; W5-W7 are not started. Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
 and backend `chess-app-backend` (`backend/`). Decisions A/B/C below are the owner's; items marked **[confirm]** are details I chose
 while writing this and want a yes/no on.
 
@@ -161,6 +161,16 @@ mirror the 2-player screen.
 > `FOUR_BOT_THINK_BULLET_MS`, `FOUR_BULLET_MAX_INITIAL_SECONDS`, `FOUR_FAST_FORWARD_DELAY_MS`, `fourBotThinkMs()`. Open for W4: the fill timer and
 > `FOUR_FILL_MS` override, minimum humans, the queue, the per-room spectator cap, registering the events.
 
+> **As built in W4** (`fourPlayerMatchmaking.ts`, `fourPlayerHandlers.ts`, `src/index.ts`; backend TESTING.md §13): `registerFourPlayerHandlers(io)` is called from
+> `index.ts` right after `registerSocketHandlers(io)` and adds its OWN connection listener - the 2-player `socketHandlers.ts` is unmodified. Every handler is
+> registered through one `listen()` that normalises socket.io's argument shapes (no payload => the ack comes first; a non-function ack), replies safely and catches
+> sync throws AND rejected promises. **Usernames are resolved when a player QUEUES (one query per join), not at room creation** (a deviation from section 7: it keeps
+> room creation synchronous and race-free; a failed lookup is "Player", guests "Guest"). A seated socket cannot queue; a late check after the lookup stops a socket
+> seated meanwhile from being queued. The matchmaker is injected (`startGame`, `notify`, an injectable random source): one lobby per time control, the 4th human starts
+> at once, the fill timer runs from the moment a lobby first holds two, restarts from zero after dropping below two, and a failed start puts the humans back in the queue.
+> `FOUR_FILL_MS` (plain decimal 1..600000) shortens the wait only when NODE_ENV is not "production". The spectator cap is **50 per room**, the active-games list is
+> **newest first, at most 100** (W2's list was oldest first despite its comment). Left for later: a per-socket cap on `four_*` events in general.
+
 ### 4.1 Room model
 `FourRoom { id, state, clock, turnStartedAt, seq, seats[4], moves[], spectators:Set, status, timers… }` with
 `seats[i] = { controller:'human'|'bot', botReason?, elo?, originalHuman:boolean, socketId|null, userId|null, name, playerToken|null,
@@ -299,7 +309,7 @@ Separate class from the 2-player `Matchmaker` (which stays untouched). Queues ke
 | W1 | Generator, generated mirror, wire types, CI `--check`, `test-fourplayer.mjs` parity | yes — **done** (backend TESTING.md §10, frontend §11) |
 | W2 | `FourRoomManager`: commit funnel, clocks, resign, endGame, finished retention, chat, spectate (no bots yet); stub-socket + fake-timer script | after W1 — **done** (backend TESTING.md §11) |
 | W3 | Bot driver, takeover/retake, all-gone, fast-forward, tier clamp | after W2 — **done** (backend TESTING.md §12) |
-| W4 | `FourPlayerMatchmaker`, handler registration, validation/rate limits, disconnect hook, active-games list | after W2 |
+| W4 | `FourPlayerMatchmaker`, handler registration, validation/rate limits, disconnect hook, active-games list | after W2 — **done** (backend TESTING.md §13) |
 | W5 | Client: wire use, reducer/hook, screens, nav, chat, spectator, SeatStrip props, tests | after W2/W4 contract |
 | W6 | `test-fourplayer-online.mjs` (real server, socket.io-client), nightly fuzz section, CI/nightly wiring | after W3-W5 |
 | W7 | Docs (backend TESTING.md §12, frontend TESTING.md §9, TODO), mutation checks, browser verification with two tabs + bot fill (`FOUR_FILL_MS=3000`) | last |
