@@ -1,6 +1,6 @@
 # 4 Player Chess Online — spec (v1)
 
-Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2-W7 are not started. Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
+Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2 (room manager) is built, awaiting review; W3-W7 are not started. Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
 and backend `chess-app-backend` (`backend/`). Decisions A/B/C below are the owner's; items marked **[confirm]** are details I chose
 while writing this and want a yes/no on.
 
@@ -130,6 +130,22 @@ dead-king walks the client cannot predict). A rejected ack rolls back to the las
 mirror the 2-player screen.
 
 ## 4. Server design (`backend/src/game/fourPlayerRooms.ts` + `fourPlayerMatchmaking.ts`)
+
+> **As built in W2** (`backend/src/game/fourPlayerRooms.ts`, `fourPlayerConfig.ts`; the text below is the design, the code is the truth):
+> - `commit()` takes an already-computed step (`state`, `clock`, `events`, `move`, `log`) instead of an action: **clock charging is a PURE
+>   computation (`charge()`) whose result is fed into a commit**, so `commit()` is literally the only assigner of `state`/`clock`/`seq`/`turnStartedAt`
+>   (pinned by a source-level test). A flag that falls before a move or a resignation is committed as its own `four_state` (actor `clock`), so such a
+>   call can publish two states (`seq` +2).
+> - Seats carry no `userId` (nothing reads it with no persistence in v1; add it with v2 history). `createRoom` sends each human its own
+>   `four_match_found` itself. Every inbound method takes `unknown` and validates with the shared wire validators; the seat always comes from the socket.
+> - `emit()` is the only send; it catches and logs, so a failing socket cannot abort a commit. `endGame` records the finished result before sending.
+> - Finished-result retention equals the 2-player server's (pinned by a test); a seated socket cannot spectate; a spectator watches one game at a
+>   time; `four_resign` after the seat's own flag fall is simply `ok` (one state published).
+> - Config holds only constants a workstream uses: W2's are `FOUR_FINISHED_RETENTION_MS`, `FOUR_FINISHED_SWEEP_INTERVAL_MS`, `FOUR_CHAT_MIN_INTERVAL_MS`,
+>   `FOUR_MOVE_RATE_LIMIT`, `FOUR_NAME_MAX_LENGTH`; the bot/takeover constants arrive with W3, fill-wait and minimum humans with W4.
+> - **Seams for W3:** `commit()`'s tail (end the game or re-arm the clock timer) is where the bot driver is scheduled; seat runtime already has
+>   `controller`, `botReason`, `elo`, `originalHuman`, `disconnectedAt`; `handleDisconnect` is where the grace timer starts; `rejoin` is where a
+>   taken-over seat is retaken. **Open for W4:** a per-room spectator cap (W2 has none).
 
 ### 4.1 Room model
 `FourRoom { id, state, clock, turnStartedAt, seq, seats[4], moves[], spectators:Set, status, timers… }` with
@@ -267,7 +283,7 @@ Separate class from the 2-player `Matchmaker` (which stays untouched). Queues ke
 |---|---|---|
 | W0 | **2-player late-rejoin fix:** `RoomManager.finishedRooms` (both tokens), `rejoin` returns `{ok, finished, gameOver}`, `OnlineGameScreen` handles it (extract the game-over side effects once). Touches live 2-player server + client, so it ships first as its own commit/PR with its own test. | yes |
 | W1 | Generator, generated mirror, wire types, CI `--check`, `test-fourplayer.mjs` parity | yes — **done** (backend TESTING.md §10, frontend §11) |
-| W2 | `FourRoomManager`: commit funnel, clocks, resign, endGame, finished retention, chat, spectate (no bots yet); stub-socket + fake-timer script | after W1 |
+| W2 | `FourRoomManager`: commit funnel, clocks, resign, endGame, finished retention, chat, spectate (no bots yet); stub-socket + fake-timer script | after W1 — **done** (backend TESTING.md §11) |
 | W3 | Bot driver, takeover/retake, all-gone, fast-forward, tier clamp | after W2 |
 | W4 | `FourPlayerMatchmaker`, handler registration, validation/rate limits, disconnect hook, active-games list | after W2 |
 | W5 | Client: wire use, reducer/hook, screens, nav, chat, spectator, SeatStrip props, tests | after W2/W4 contract |
