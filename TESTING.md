@@ -599,3 +599,40 @@ the reconnect guard moved after the emit — all killed; pin-based, like the oth
 screen holds ONE match's state (`gameOver`, the move list, ...) and App mounts it fresh for every match — every route into `onlineGame`
 comes from a different screen; the comment on the ref says so. Verified in the browser, same scenario before/after: live resignation,
 result shown, backend restarted, page reconnects — before: banner over the result; after: result untouched, no banner.
+
+## 11. 4 Player Chess ONLINE — the wire contract and the mirrored file set (workstream W1)
+
+Spec: `FOUR_PLAYER_ONLINE_SPEC.md`. W1 adds the shared protocol file and the guard around the engine files the server copies; **no screen,
+hook or socket code changed and no existing file was modified** — Local 4 Player, 2-player Online and everything else behave exactly as before.
+
+**`src/logic/fourPlayerWire.ts`** is the single source of truth for the `four_*` protocol: every payload, ack and event name, the limits both
+sides enforce, and a few pure validators. The backend's `src/game/fourPlayerWire.ts` is GENERATED from it (backend repo, `npm run
+sync:fourplayer`), so client and server cannot disagree on a field or a limit. It may import only the mirrored engine modules, extensionless.
+Highlights: the unit of sync is `serialize(FourPlayerState)` plus the engine's own `GameEvent`s (already plain JSON, so nothing is converted);
+`four_state` carries `seq` (+1 per state; the client ignores `seq <=` current and resyncs on a gap); there are **no draw events** (the engine
+models no draws); a move payload has **no seat field** (the server uses the socket's own seat); `four_rejoin` on a finished game is a plain
+success carrying `finished: true` + the result (a new event, so no released client needs the 2-player `ok: false` trick).
+
+**Validators (the server's only defence against a hostile or buggy client, so strict by default):**
+- `validateFourTimeControl`: whole seconds, 60-3600 initial, 0-30 increment; "No time limit", Daily, fractions, NaN, Infinity, strings are refused;
+  only the two known fields are returned (extra and `__proto__` keys never reach the server logic).
+- `validateFourMovePayload`: a valid room id; `from`/`to` must be **canonical names of playable squares**; promotion one of `q r b n`; legality is the engine's
+  job. **Review finding:** the engine's `parseSquare` accepts a leading zero, so `e02`/`a04` parsed as `e2`/`a4` and would have been quietly
+  normalised. Decision: refuse them (`isCanonicalSquareName`: `squareName(parseSquare(x)) === x`), not relax the test.
+- `normalizeFourChatText` (trim, then cut to 500, refuse if empty — same rule as 2-player), `validateFourId`, `validateFourJoinQueue`.
+- None of them throws on any input (a `Symbol`, an object whose `toString` throws, an array dressed with the right property names, 1000 random shapes).
+- `clocksToWireMs` (one rounding rule for both sides) and `classifyFourRejoinAck` (the 4-player twin of `classifyRejoinAck`).
+
+**`src/logic/fourPlayer/MIRRORED_TO_BACKEND.json`** lists the files the backend copies (the six engine modules + the wire file). The owner of the
+source owns the list. `fourPlayerMirrorSet.test.ts` fails here — not only later in the backend's CI — if an engine file imports a client-only
+module, a package, uses `require`/`import()`, spells an extension, or if the list stops being exactly the closure of `bot`, `clock` and the wire file.
+
+**Tests:** `fourPlayerWire.test.ts` (limits and every validator boundary; event surface — the runtime name lists must equal the typed
+interfaces; engine events survive a JSON round trip, of every kind, in a game that is guaranteed to end; payload size measured and bounded) and
+`fourPlayerMirrorSet.test.ts`. The generator and engine parity are tested in the backend repo (its TESTING.md §10).
+**Mutation-checked:** wire validators/constants 41 mutants, **41/41 killed**; mirror-set guard 10 mutants, **10/10 killed**. First-pass survivors
+were test gaps, not equivalents, and were closed: a promotion/label key that is always emitted (`toEqual` ignores `undefined` keys — the
+value assertions are now `toStrictEqual`), arrays accepted as payloads, and the validator throwing on exotic values.
+Two first-run test failures were bugs in the tests themselves (an unsorted expected list; a default parameter that turned `undefined` into `0`).
+
+**Sizes:** a typical `four_state` is 700 bytes (ply 150); a 1000-entry move log is 28 KB.
