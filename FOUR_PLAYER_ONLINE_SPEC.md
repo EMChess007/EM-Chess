@@ -1,6 +1,6 @@
 # 4 Player Chess Online — spec (v1)
 
-Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2 (room manager) is built, awaiting review; W3-W7 are not started. Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
+Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2 (room manager) is built and reviewed; W3 (bots, takeover, abandonment) is built, awaiting review; W4-W7 are not started. Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
 and backend `chess-app-backend` (`backend/`). Decisions A/B/C below are the owner's; items marked **[confirm]** are details I chose
 while writing this and want a yes/no on.
 
@@ -147,6 +147,20 @@ mirror the 2-player screen.
 >   `controller`, `botReason`, `elo`, `originalHuman`, `disconnectedAt`; `handleDisconnect` is where the grace timer starts; `rejoin` is where a
 >   taken-over seat is retaken. **Open for W4:** a per-room spectator cap (W2 has none).
 
+> **As built in W3** (same files; backend TESTING.md §12): **bots** run on their own random stream (`botRng`, so a bot's decision never shifts the
+> engine's stream and a game with bots can be replayed on an independent engine), through the same funnel (actor `bot`), clamped to
+> `min(elo, FOUR_SERVER_BOT_MAX_ELO = 1700)`; the chosen move is checked against the engine's legal moves and a bot that returns nothing, an illegal
+> move or THROWS gets the first legal move (an exception in a timer callback would kill every game on the process). Bot pacing is the local game's rule
+> (450 ms, Bullet <= 120 s: 200 ms). **Takeover** only if the seat is still active, still disconnected and some ORIGINAL human is still connected;
+> an eliminated human's disconnect starts no grace; SeatInfo carries `graceMsLeft`. **Retake** cancels the seat's grace countdown, a pending bot move
+> and the all-gone countdown. **All-gone** counts original humans with a live socket (a bot-held seat and spectators do not count) and ends with reason
+> `abandoned`, no winners; at a seat's grace expiry with nobody connected there is no takeover (the all-gone countdown decides). **Fast-forward**: no
+> human-CONTROLLED seat is still active (an away active human still counts as playing) and a human is connected -> bots play with delay 0, one ply per
+> timer. `finish()` is the one way a game ends (engine result or abandonment): record first, clear every timer, then `four_game_over` (sent from
+> nowhere else). Config additions: `FOUR_TAKEOVER_GRACE_MS`, `FOUR_ALL_GONE_MS`, `FOUR_BOT_ELO`, `FOUR_SERVER_BOT_MAX_ELO`, `FOUR_BOT_THINK_MS`,
+> `FOUR_BOT_THINK_BULLET_MS`, `FOUR_BULLET_MAX_INITIAL_SECONDS`, `FOUR_FAST_FORWARD_DELAY_MS`, `fourBotThinkMs()`. Open for W4: the fill timer and
+> `FOUR_FILL_MS` override, minimum humans, the queue, the per-room spectator cap, registering the events.
+
 ### 4.1 Room model
 `FourRoom { id, state, clock, turnStartedAt, seq, seats[4], moves[], spectators:Set, status, timers… }` with
 `seats[i] = { controller:'human'|'bot', botReason?, elo?, originalHuman:boolean, socketId|null, userId|null, name, playerToken|null,
@@ -284,7 +298,7 @@ Separate class from the 2-player `Matchmaker` (which stays untouched). Queues ke
 | W0 | **2-player late-rejoin fix:** `RoomManager.finishedRooms` (both tokens), `rejoin` returns `{ok, finished, gameOver}`, `OnlineGameScreen` handles it (extract the game-over side effects once). Touches live 2-player server + client, so it ships first as its own commit/PR with its own test. | yes |
 | W1 | Generator, generated mirror, wire types, CI `--check`, `test-fourplayer.mjs` parity | yes — **done** (backend TESTING.md §10, frontend §11) |
 | W2 | `FourRoomManager`: commit funnel, clocks, resign, endGame, finished retention, chat, spectate (no bots yet); stub-socket + fake-timer script | after W1 — **done** (backend TESTING.md §11) |
-| W3 | Bot driver, takeover/retake, all-gone, fast-forward, tier clamp | after W2 |
+| W3 | Bot driver, takeover/retake, all-gone, fast-forward, tier clamp | after W2 — **done** (backend TESTING.md §12) |
 | W4 | `FourPlayerMatchmaker`, handler registration, validation/rate limits, disconnect hook, active-games list | after W2 |
 | W5 | Client: wire use, reducer/hook, screens, nav, chat, spectator, SeatStrip props, tests | after W2/W4 contract |
 | W6 | `test-fourplayer-online.mjs` (real server, socket.io-client), nightly fuzz section, CI/nightly wiring | after W3-W5 |
