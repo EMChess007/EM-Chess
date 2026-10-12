@@ -5,6 +5,61 @@ backend test scripts import this repo's `src/logic/ChessEngine.ts` directly, sin
 actual shared chess logic, not a reimplementation. See the backend's own `TESTING.md` for that
 half; this document covers what's local to this repo.
 
+## 4 Player Chess Online — roll-up (read this first for the whole feature)
+
+**What it is.** Online Free-for-All 4 Player Chess, built on top of the local mode of §9. Players queue per time control (live Bullet/Blitz/Rapid only); four humans start a game at
+once, and with at least two the server fills the empty seats with Amateur bots after 30 s. The server is the only authority: it validates every move with the engine, runs the four
+clocks and broadcasts a numbered snapshot (`four_state`, `seq`) that every client adopts, so every seat and every spectator holds the identical position. A player who stays away for 45 s
+is replaced by a bot and may retake the seat until the game ends; there is chat, spectating, an active-games list and premoves. Nothing is saved, rated or analysed (v1), and the 2-player
+Online mode is unchanged apart from one fix (W0). Spec: `FOUR_PLAYER_ONLINE_SPEC.md`; the backend's half is in its own `TESTING.md` (same roll-up at its top).
+
+**Where each workstream is documented** (the per-workstream sections stay as they are)
+
+| | What | Section |
+|---|---|---|
+| W0 | 2-player "rejoin after the game ended" fix | frontend §10; backend "Rejoin after the game ended" |
+| W1 | wire contract and the generated engine mirror | frontend §11; backend §10 |
+| W2 | the room manager | backend §11 |
+| W3 | bots, takeover, retake, abandonment | backend §12 |
+| W4 | matchmaker and socket handlers | backend §13 |
+| W5 | the client: queue, game and spectator screens, chat, premoves | frontend §12 |
+| W6 | real-socket end-to-end test, nightly fuzz section, `FOUR_GRACE_MS` | backend §14 |
+| W7 | this roll-up, the last mutation re-run on the final code | here and the backend roll-up |
+
+**Final numbers, both repos.** Automated checks written for the feature: **1,085** — **188 vitest tests in this repo** (W0 14, W1 46, W5 128) and **897 script checks in the backend**
+(W0 42, W1 142, W2 220, W3 160, W4 135, W6 198), plus the 4 Player section of the nightly fuzz (random, so not counted). The whole frontend suite is 673 tests in 36 files.
+**Mutation checks, every workstream's set re-run on the final code** (always on a disposable copy of the repos, never the real files): **565 bugs planted, 543 killed, 22 equivalent, 0 survivors.**
+
+| | Planted | Killed | Equivalent | Survivors |
+|---|---|---|---|---|
+| W0 (backend 13, client 15) | 28 | 27 | 1 | 0 |
+| W1 (generator 38, wire 41, mirror-set guard 10, engine parity 18) | 107 | 107 | 0 | 0 |
+| W2 | 65 | 63 | 2 | 0 |
+| W3 | 68 | 62 | 6 | 0 |
+| W4 | 83 | 79 | 4 | 0 |
+| W5 | 188 | 180 | 8 | 0 |
+| W6 (17 unit + 9 against a real server) | 26 | 25 | 1 | 0 |
+| **Total** | **565** | **543** | **22** | **0** |
+
+Every equivalent mutant is justified individually and, since W7, documented in the code next to the thing it is about (`EQUIVALENT-MUTANT NOTE` comments). The ones in THIS repo:
+- W0 client — a `if (ack.ok === false)` branch added after `if (!ack.ok)`: dead code, identical behaviour.
+- W5 (8; notes in `fourPlayerOnline.ts`, `fourPlayerOnlineSession.ts`, `fourPlayerOnlineUi.ts`): the log entry's seat (`move.seat` equals the previous snapshot's turn in any valid flow); `seq: payload.seq` vs `view.seq + 1`
+  (equal in that branch); a null seat in `canMove` (the turn test refuses it anyway); an identical expression (`displayState`); a clock running for an inactive seat (the engine never leaves the turn there in an
+  unfinished game); `readSnapshot`'s `typeof` fast path (the catch covers it); the session's belt-and-braces `moveAcked` (unreachable: every path to `view.seq >= ack.seq` already cleared `pending`);
+  `fillInMs === null` (`Number.isFinite(null)` is already false).
+The backend's 13 are listed in its roll-up.
+
+**What the W7 re-run changed.** It was run so that nothing is taken on trust from an earlier pass. The W5 first-pass kills (120, made before a few hardening edits) were re-classified against the current code: all 188
+re-run, 180 killed, 8 equivalent, 0 survivors. Six mutants of the older harnesses (W3 ×2, W4 ×4) had gone stale when W6 moved the `FOUR_*_MS` override rules into one shared helper; they were retargeted and now die.
+The W6 mutants that had first been "killed" by an over-strict clock assertion were re-run on the final code: 9/9 killed, each by the check that names it.
+
+**What was NOT verified (read this before calling it finished).** The two-tab browser pass of the player screens (queue, game, spectator, takeover, "Return to your game") that W5's known limits flagged as never having been seen
+rendered was **not performed**: the project owner declined it for this workstream. Those screens are covered by the pure layers (reducer, session class against a fake socket, UI wording) and by source pins, and the real session class
+was driven over real sockets against the real backend (17/17, W5), but nobody has looked at them on screen yet. Other deliberate v1 limits: rejoin token in memory only, no chat history after a reconnect, no private rooms,
+no saved games / ratings, no Teams/Solo online, the bot promotion-nudge parity follow-up, and no game in the nightly fuzz ends by the engine itself within 80 plies (those endings are unit-tested).
+
+**Merge order.** The backend's nightly fuzz imports the app's 4-seat engine from this repo's DEFAULT branch, and its CI checks out the same-named branch of this repo: merge this repo's `fourPlayerOnline` first (or together with the backend's).
+
 ## 1. What runs on every commit/PR (`.github/workflows/ci.yml`)
 
 Triggers on every push/PR to `master`:

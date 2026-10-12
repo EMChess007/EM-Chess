@@ -1,6 +1,6 @@
 # 4 Player Chess Online — spec (v1)
 
-Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2 (room manager) is built and reviewed; W3 (bots, takeover, abandonment) is built and reviewed; W4 (matchmaker and socket handlers - the first workstream the running server loads) is built and reviewed; W5 (the client: queue, game and spectator screens) is built and reviewed; W6 (the real-socket end-to-end test, the 4 Player section of the nightly fuzz, and their CI/nightly wiring) is built, awaiting review; W7 is not started. Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
+Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2 (room manager) is built and reviewed; W3 (bots, takeover, abandonment) is built and reviewed; W4 (matchmaker and socket handlers - the first workstream the running server loads) is built and reviewed; W5 (the client: queue, game and spectator screens) is built and reviewed; W6 (the real-socket end-to-end test, the 4 Player section of the nightly fuzz, and their CI/nightly wiring) is built and reviewed; W7 (the docs roll-up and the last mutation re-run on the final code) is done and awaiting review - its browser pass was declined and is NOT done (see the W7 row). Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
 and backend `chess-app-backend` (`backend/`). Decisions A/B/C below are the owner's; items marked **[confirm]** are details I chose
 while writing this and want a yes/no on.
 
@@ -323,7 +323,7 @@ Separate class from the 2-player `Matchmaker` (which stays untouched). Queues ke
 | W4 | `FourPlayerMatchmaker`, handler registration, validation/rate limits, disconnect hook, active-games list | after W2 — **done** (backend TESTING.md §13) |
 | W5 | Client: wire use, reducer/hook, screens, nav, chat, spectator, SeatStrip props, tests | after W2/W4 contract — **done** (frontend TESTING.md §12) |
 | W6 | `test-fourplayer-online.mjs` (real server, socket.io-client), nightly fuzz section, CI/nightly wiring | after W3-W5 — **done** (backend TESTING.md §14) |
-| W7 | Docs (a final "4 Player Chess Online" roll-up in both TESTING.md files and TODO.md — the per-workstream sections already exist: backend §10-§14, frontend §11-§12), a last re-run of every workstream's mutation sets, browser verification with two tabs + bot fill (`FOUR_FILL_MS=3000`) | last |
+| W7 | Docs (a final "4 Player Chess Online" roll-up in both TESTING.md files and TODO.md — the per-workstream sections already exist: backend §10-§14, frontend §11-§12), a last re-run of every workstream's mutation sets, browser verification with two tabs + bot fill (`FOUR_FILL_MS=3000`) | last — **done** (docs roll-up and mutation re-run: backend and frontend TESTING.md roll-ups); the two-tab browser verification was **not performed** (declined by the owner) |
 
 > **As built in W6** (backend only: `scripts/test-fourplayer-online.mjs`, a "4 Player Chess" section in `scripts/nightly-fuzz-online.mjs`, `FOUR_GRACE_MS` in `fourPlayerConfig.ts`, the CI and nightly
 > workflows; backend TESTING.md §14): the plan above, with these refinements. The e2e holds **four real sockets per room** (plus a spectator) and proves identical snapshots at every
@@ -333,6 +333,12 @@ Separate class from the 2-player `Matchmaker` (which stays untouched). Queues ke
 > real-socket run found a defect no in-process test could: the four `four_match_found` clocks were read per recipient and differed by a millisecond or two on a real clock (fixed in
 > `createRoom`, pinned deterministically). The existing "Start dev server" steps of `ci.yml` and `nightly.yml` gained `FOUR_GRACE_MS: '1500'`; the nightly needs the frontend's 4 Player
 > work on the frontend repo's default branch (it imports the app's engine from there).
+
+> **As built in W7** (both TESTING.md roll-ups, TODO.md): the "4 Player Chess Online" roll-up sections (what the feature is, where each workstream is documented, final numbers, every equivalent mutant
+> justified), and a last mutation re-run of EVERY workstream's set on the final code, always on a disposable copy: **565 planted, 543 killed, 22 equivalent, 0 survivors.** The re-run found six older mutants gone stale
+> (W6 had moved the `FOUR_*_MS` override rules into one helper) and retargeted them; each equivalent mutant now carries an `EQUIVALENT-MUTANT NOTE` comment where it lives (comments only, no behaviour change).
+> **Not done:** the two-tab browser verification of the player screens was declined by the owner. It needs two humans (a lone human never gets bots) and the backend started with
+> `FOUR_FILL_MS=3000 FOUR_GRACE_MS=3000`; it stays listed in TODO.md as open.
 
 ## 10. Test plan (CHECKLIST 2, 3, 4, 5)
 
