@@ -72,7 +72,7 @@ The engine (`src/logic/fourPlayer/`) is built so the rest slots in without rewor
 - **Teams and Solo modes.** `FourPlayerRules` already carries the knobs that differ (`promotionCoord` — Teams promotes on the 11th
   rank — and the point values); what is missing is the notion of allies (`attackers()` treats every other seat as an enemy) and the
   team/solo scoring and end conditions in `elimination.ts`.
-- **Online — done: built, tested and reviewed on the `fourPlayerOnline` branch (workstreams W0-W7).** Live Free-for-All with a queue per time control, bots filling to four,
+- **Online — done, except the browser pass below: built and tested on the `fourPlayerOnline` branch (workstreams W0-W7).** Live Free-for-All with a queue per time control, bots filling to four,
   server bots taking over for a dropped player (retake until the game ends), spectating, chat, premoves, a real-socket end-to-end test and a nightly fuzz section. See
   `FOUR_PLAYER_ONLINE_SPEC.md` and the "4 Player Chess Online" roll-up at the top of TESTING.md. What is still out, by design (v1): private rooms / invite links, saved games / history /
   ratings / analysis of online games, Teams and Solo online, a persisted rejoin token (an app restart or web refresh forfeits the seat to a bot), chat history after a reconnect, and the bot
