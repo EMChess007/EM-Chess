@@ -72,9 +72,11 @@ The engine (`src/logic/fourPlayer/`) is built so the rest slots in without rewor
 - **Teams and Solo modes.** `FourPlayerRules` already carries the knobs that differ (`promotionCoord` — Teams promotes on the 11th
   rank — and the point values); what is missing is the notion of allies (`attackers()` treats every other seat as an enemy) and the
   team/solo scoring and end conditions in `elimination.ts`.
-- **Online.** The engine is pure TypeScript with no React/chess.js imports and a serialisable state (the clock model included), ready to be
-  mirrored verbatim into `backend/src/game/` behind the same no-drift test the 2-player variants use. Needs 4-seat rooms, matchmaking for
-  four, server-side per-seat clocks and a 4-player wire format. Nothing in the backend knows about it today.
+- **Online — built on the `fourPlayerOnline` branch (workstreams W0-W5 done; W6 end-to-end tests and W7 final docs/browser pass remain).** Live Free-for-All
+  with a queue per time control, bots filling to four, server bots taking over for a dropped player, spectating, chat, premoves. What is still out, by
+  design (v1): private rooms / invite links, saved games / history / ratings / analysis of online games, Teams and Solo online, a persisted rejoin token
+  (an app restart or web refresh forfeits the seat to a bot), chat history after a reconnect, and the bot promotion-nudge parity follow-up (the one
+  server-bot behaviour only covered by the random parity games). See `FOUR_PLAYER_ONLINE_SPEC.md` and TESTING.md §11-§12.
 - **Saved games / history / rating / analysis.** Games are not saved: the saved-game payload, PGN and `GameHistoryEntry` are 2-player
   shaped, and Stockfish cannot analyse a 4-seat position. Needs a 4-player record format (chess.com's FEN4/PGN4 is the obvious dialect)
   before any of that.

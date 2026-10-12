@@ -1,6 +1,6 @@
 # 4 Player Chess Online — spec (v1)
 
-Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2 (room manager) is built and reviewed; W3 (bots, takeover, abandonment) is built and reviewed; W4 (matchmaker and socket handlers - the first workstream the running server loads) is built, awaiting review; W5-W7 are not started. Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
+Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2 (room manager) is built and reviewed; W3 (bots, takeover, abandonment) is built and reviewed; W4 (matchmaker and socket handlers - the first workstream the running server loads) is built and reviewed; W5 (the client: queue, game and spectator screens) is built, awaiting review; W6-W7 are not started. Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
 and backend `chess-app-backend` (`backend/`). Decisions A/B/C below are the owner's; items marked **[confirm]** are details I chose
 while writing this and want a yes/no on.
 
@@ -20,7 +20,7 @@ Unchanged: every 2-player event and screen, **except** one deliberate fix to the
 **Interactions (stated, not assumed):** 2-player Online, tournaments, Setup Chess pairing, challenges, history, ratings, analysis, PGN and
 puzzles are untouched (4 Player has no persistence/rating in v1). The new mode is structurally exclusive with every 2-player variant:
 its own `four_*` event names mean a 2-player payload can never carry it, so the existing variant-conflict checks need no change. Local 4 Player (hotseat/bots)
-is unchanged; Online 4 Player is entered from the Online menu and, like every Online entry today, requires a logged-in session on the client.
+is unchanged; Online 4 Player is entered from an **Online button on the existing 4 Player Chess card of the Play menu** (next to Free-for-All) and, like every Online entry today, requires a logged-in session on the client.
 
 ## 1. Decisions locked in
 
@@ -285,7 +285,7 @@ Separate class from the 2-player `Matchmaker` (which stays untouched). Queues ke
 
 ## 8. Frontend
 
-- **Entry:** Online card on the Play menu -> `TimeControlSelectScreen` with `excludeCategories: ['daily','unlimited']` -> `FourPlayerMatchmakingScreen`
+- **Entry:** an Online button on the existing 4 Player Chess card of the Play menu (behind the login gate) -> `TimeControlSelectScreen` with `excludeCategories: ['daily','unlimited']` -> `FourPlayerMatchmakingScreen`
   (lobby count, fill countdown, cancel) -> `FourPlayerOnlineGameScreen`; plus a spectator screen reached from the existing list (which gains
   a 4 Player section). Login required, as for every Online entry.
 - **State:** `useFourPlayerOnlineGame(match)` owns the socket listeners and a **pure reducer** (`applyFourState`) for `seq` ordering,
@@ -301,6 +301,17 @@ Separate class from the 2-player `Matchmaker` (which stays untouched). Queues ke
   (`state.ply` comes in the snapshot; bot and server moves advance it).
 - **Local 4 Player is untouched.**
 
+> **As built in W5** (frontend TESTING.md §12; `logic/fourPlayerOnline.ts`, `fourPlayerOnlineSession.ts`, `fourPlayerOnlineUi.ts`, `useFourPlayerOnlineGame.ts`, three
+> screens, two components): the plan above, with these refinements. **State** is split three ways so each part is testable without a renderer: a pure reducer
+> (`applyFourState` and friends; the authority is the last adopted snapshot, an optimistic move is a separate `pending` copy beside it, so a rollback is "drop
+> `pending`"), a socket **session class** around it (`FourOnlineSession`: when to send what, against a fake socket in the tests), and a ~40-line hook. The reducer
+> itself tells the caller when to send `four_rejoin` (`result.resync`): once per gap. Server data is shape-checked before it can reach a render. **Reconnect** also
+> covers a move nobody answers (rolled back, then the room is re-read) and a spectator (re-asks `four_spectate_game`). **Leaving mid-game** asks first and drops the
+> connection; because the decided rejoin token is in memory only, `App.tsx` keeps the match in one `useState` so the 4 Player card can offer "Return to your game"
+> (an app restart forgets it). **Premove** is spent only when a move could really be sent. An older server that does not know `four_*` is survived: the queue
+> screen reports it after 10 s, the Spectate list drops only its 4 Player section. **Housekeeping fixed here:** the intro and the Entry bullet now say "an Online
+> button on the existing 4 Player Chess card", and the W7 row's stale section numbers were corrected.
+
 ## 9. Workstreams and order (branch `fourPlayerOnline` in both repos; frontend from `fourPlayerChess`, backend from `main`)
 
 | | Work | Independent? |
@@ -310,9 +321,9 @@ Separate class from the 2-player `Matchmaker` (which stays untouched). Queues ke
 | W2 | `FourRoomManager`: commit funnel, clocks, resign, endGame, finished retention, chat, spectate (no bots yet); stub-socket + fake-timer script | after W1 — **done** (backend TESTING.md §11) |
 | W3 | Bot driver, takeover/retake, all-gone, fast-forward, tier clamp | after W2 — **done** (backend TESTING.md §12) |
 | W4 | `FourPlayerMatchmaker`, handler registration, validation/rate limits, disconnect hook, active-games list | after W2 — **done** (backend TESTING.md §13) |
-| W5 | Client: wire use, reducer/hook, screens, nav, chat, spectator, SeatStrip props, tests | after W2/W4 contract |
+| W5 | Client: wire use, reducer/hook, screens, nav, chat, spectator, SeatStrip props, tests | after W2/W4 contract — **done** (frontend TESTING.md §12) |
 | W6 | `test-fourplayer-online.mjs` (real server, socket.io-client), nightly fuzz section, CI/nightly wiring | after W3-W5 |
-| W7 | Docs (backend TESTING.md §12, frontend TESTING.md §9, TODO), mutation checks, browser verification with two tabs + bot fill (`FOUR_FILL_MS=3000`) | last |
+| W7 | Docs (a final "4 Player Chess Online" roll-up in both TESTING.md files and TODO.md — the per-workstream sections already exist: backend §10-§13, frontend §11-§12), a last re-run of every workstream's mutation sets, browser verification with two tabs + bot fill (`FOUR_FILL_MS=3000`) | last |
 
 ## 10. Test plan (CHECKLIST 2, 3, 4, 5)
 
