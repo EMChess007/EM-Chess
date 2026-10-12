@@ -1,6 +1,6 @@
 # 4 Player Chess Online — spec (v1)
 
-Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2 (room manager) is built and reviewed; W3 (bots, takeover, abandonment) is built and reviewed; W4 (matchmaker and socket handlers - the first workstream the running server loads) is built and reviewed; W5 (the client: queue, game and spectator screens) is built, awaiting review; W6-W7 are not started. Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
+Status: **approved; in progress** — W0 (2-player late-rejoin fix) and W1 (engine mirror + wire contract) are built and reviewed; W2 (room manager) is built and reviewed; W3 (bots, takeover, abandonment) is built and reviewed; W4 (matchmaker and socket handlers - the first workstream the running server loads) is built and reviewed; W5 (the client: queue, game and spectator screens) is built and reviewed; W6 (the real-socket end-to-end test, the 4 Player section of the nightly fuzz, and their CI/nightly wiring) is built, awaiting review; W7 is not started. Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one)
 and backend `chess-app-backend` (`backend/`). Decisions A/B/C below are the owner's; items marked **[confirm]** are details I chose
 while writing this and want a yes/no on.
 
@@ -322,8 +322,17 @@ Separate class from the 2-player `Matchmaker` (which stays untouched). Queues ke
 | W3 | Bot driver, takeover/retake, all-gone, fast-forward, tier clamp | after W2 — **done** (backend TESTING.md §12) |
 | W4 | `FourPlayerMatchmaker`, handler registration, validation/rate limits, disconnect hook, active-games list | after W2 — **done** (backend TESTING.md §13) |
 | W5 | Client: wire use, reducer/hook, screens, nav, chat, spectator, SeatStrip props, tests | after W2/W4 contract — **done** (frontend TESTING.md §12) |
-| W6 | `test-fourplayer-online.mjs` (real server, socket.io-client), nightly fuzz section, CI/nightly wiring | after W3-W5 |
-| W7 | Docs (a final "4 Player Chess Online" roll-up in both TESTING.md files and TODO.md — the per-workstream sections already exist: backend §10-§13, frontend §11-§12), a last re-run of every workstream's mutation sets, browser verification with two tabs + bot fill (`FOUR_FILL_MS=3000`) | last |
+| W6 | `test-fourplayer-online.mjs` (real server, socket.io-client), nightly fuzz section, CI/nightly wiring | after W3-W5 — **done** (backend TESTING.md §14) |
+| W7 | Docs (a final "4 Player Chess Online" roll-up in both TESTING.md files and TODO.md — the per-workstream sections already exist: backend §10-§14, frontend §11-§12), a last re-run of every workstream's mutation sets, browser verification with two tabs + bot fill (`FOUR_FILL_MS=3000`) | last |
+
+> **As built in W6** (backend only: `scripts/test-fourplayer-online.mjs`, a "4 Player Chess" section in `scripts/nightly-fuzz-online.mjs`, `FOUR_GRACE_MS` in `fourPlayerConfig.ts`, the CI and nightly
+> workflows; backend TESTING.md §14): the plan above, with these refinements. The e2e holds **four real sockets per room** (plus a spectator) and proves identical snapshots at every
+> `seq`; its rejoin-after-end scenario pins the 4 Player shape **`{ ok: true, finished: true, gameOver }`** (§3's plain success), not the 2-player `{ ok: false, finished: true, … }` that the
+> W6 brief assumed. The nightly section's clients use the **app's** engine (independent of the server's mirror) and pace themselves under the server's move rate limit. `FOUR_GRACE_MS`
+> shortens the takeover grace under exactly the guard of `FOUR_FILL_MS` (never in production; `FOUR_ALL_GONE_MS` has no override because no end-to-end scenario waits for it). The first
+> real-socket run found a defect no in-process test could: the four `four_match_found` clocks were read per recipient and differed by a millisecond or two on a real clock (fixed in
+> `createRoom`, pinned deterministically). The existing "Start dev server" steps of `ci.yml` and `nightly.yml` gained `FOUR_GRACE_MS: '1500'`; the nightly needs the frontend's 4 Player
+> work on the frontend repo's default branch (it imports the app's engine from there).
 
 ## 10. Test plan (CHECKLIST 2, 3, 4, 5)
 
