@@ -132,9 +132,14 @@ describe('ChessBoard source wiring (no RN renderer available)', () => {
     expect(source).not.toMatch(/promotion:\s*'q'/);
   });
 
-  it('shows the picker in a full-screen Modal (not a board-bounded overlay) so any outside tap cancels', () => {
-    expect(source).toMatch(/<Modal[\s\S]*?visible=\{pendingPromotion !== null\}/);
-    expect(source).toMatch(/onRequestClose=\{cancelPromotion\}/);
+  it('shows the shared picker (a full-screen Modal, not a board-bounded overlay) whenever a promotion is pending, and cancels through it', () => {
+    expect(source).toMatch(/<PromotionPicker[\s\S]*?visible=\{pendingPromotion !== null\}/);
+    expect(source).toMatch(/onCancel=\{cancelPromotion\}/);
+    expect(source).toMatch(/onChoose=\{completePromotion\}/);
+    const picker = readFileSync(join(__dirname, '../../components/PromotionPicker.tsx'), 'utf8');
+    expect(picker).toMatch(/<Modal visible=\{visible\}/);
+    expect(picker).toMatch(/onRequestClose=\{onCancel\}/);
+    expect(picker).toContain('accessibilityLabel="Cancel promotion"'); // a tap on the backdrop cancels
   });
 
   it('asks via the shared isPromotionMove check and the picker for both real moves and premoves', () => {

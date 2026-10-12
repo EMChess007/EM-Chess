@@ -12,6 +12,11 @@ export interface BoardArrow {
 
 interface BoardAnnotationsProps {
   squareSize: number;
+  /** Grid size in squares. Default 8 x 8 (classic chess); the 4 Player board is 14 x 14. */
+  rows?: number;
+  cols?: number;
+  /** Multiplies the arrow's line width, arrowhead and clearance, for boards whose squares are much smaller than classic's. Default 1. */
+  scale?: number;
   arrows: BoardArrow[];
   highlights: GridPoint[];
   /** The in-progress arrow while the user is still dragging (not yet released) — drawn to the
@@ -35,7 +40,9 @@ function center(point: GridPoint, squareSize: number): { x: number; y: number } 
 /** One arrow's line + arrowhead triangle, from `from` to a raw pixel endpoint `to` (already
  * inset/positioned by the caller) — shared by both a finished arrow (square-to-square) and the
  * live in-progress preview (square-to-raw-finger-position). */
-function ArrowShape({ from, to, insetStart }: { from: { x: number; y: number }; to: { x: number; y: number }; insetStart: number }) {
+function ArrowShape({ from, to, insetStart, scale }: { from: { x: number; y: number }; to: { x: number; y: number }; insetStart: number; scale: number }) {
+  const headLength = ARROWHEAD_LENGTH * scale;
+  const headWidth = ARROWHEAD_WIDTH * scale;
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const length = Math.hypot(dx, dy);
@@ -46,23 +53,23 @@ function ArrowShape({ from, to, insetStart }: { from: { x: number; y: number }; 
   const startX = from.x + ux * insetStart;
   const startY = from.y + uy * insetStart;
   // The line stops short of the arrowhead's tip so the triangle isn't drawn over a thick line end.
-  const lineEndX = to.x - ux * ARROWHEAD_LENGTH;
-  const lineEndY = to.y - uy * ARROWHEAD_LENGTH;
+  const lineEndX = to.x - ux * headLength;
+  const lineEndY = to.y - uy * headLength;
 
   // Arrowhead: a triangle whose tip is `to`, base perpendicular to the line direction.
   const perpX = -uy;
   const perpY = ux;
-  const baseX = to.x - ux * ARROWHEAD_LENGTH;
-  const baseY = to.y - uy * ARROWHEAD_LENGTH;
+  const baseX = to.x - ux * headLength;
+  const baseY = to.y - uy * headLength;
   const points = [
     `${to.x},${to.y}`,
-    `${baseX + perpX * (ARROWHEAD_WIDTH / 2)},${baseY + perpY * (ARROWHEAD_WIDTH / 2)}`,
-    `${baseX - perpX * (ARROWHEAD_WIDTH / 2)},${baseY - perpY * (ARROWHEAD_WIDTH / 2)}`,
+    `${baseX + perpX * (headWidth / 2)},${baseY + perpY * (headWidth / 2)}`,
+    `${baseX - perpX * (headWidth / 2)},${baseY - perpY * (headWidth / 2)}`,
   ].join(' ');
 
   return (
     <>
-      <Line x1={startX} y1={startY} x2={lineEndX} y2={lineEndY} stroke={ARROW_COLOR} strokeWidth={6} strokeLinecap="round" />
+      <Line x1={startX} y1={startY} x2={lineEndX} y2={lineEndY} stroke={ARROW_COLOR} strokeWidth={6 * scale} strokeLinecap="round" />
       <Polygon points={points} fill={ARROW_COLOR} />
     </>
   );
@@ -71,15 +78,14 @@ function ArrowShape({ from, to, insetStart }: { from: { x: number; y: number }; 
 /** SVG overlay drawn on top of the board grid — highlighted squares, finished arrows, and (while
  * dragging) a live preview arrow. Purely visual: ChessBoard owns all the gesture/state logic that
  * feeds this. */
-export default function BoardAnnotations({ squareSize, arrows, highlights, liveArrow }: BoardAnnotationsProps) {
-  const boardSize = squareSize * 8;
+export default function BoardAnnotations({ squareSize, rows = 8, cols = 8, scale = 1, arrows, highlights, liveArrow }: BoardAnnotationsProps) {
   const inset = squareSize * END_INSET_RATIO;
 
   return (
     <Svg
       pointerEvents="none"
-      width={boardSize}
-      height={boardSize}
+      width={squareSize * cols}
+      height={squareSize * rows}
       style={{ position: 'absolute', top: 0, left: 0 }}
     >
       {highlights.map((point) => (
@@ -93,10 +99,10 @@ export default function BoardAnnotations({ squareSize, arrows, highlights, liveA
         />
       ))}
       {arrows.map((arrow, index) => (
-        <ArrowShape key={index} from={center(arrow.from, squareSize)} to={center(arrow.to, squareSize)} insetStart={inset} />
+        <ArrowShape key={index} from={center(arrow.from, squareSize)} to={center(arrow.to, squareSize)} insetStart={inset} scale={scale} />
       ))}
       {liveArrow && (
-        <ArrowShape from={center(liveArrow.from, squareSize)} to={{ x: liveArrow.toX, y: liveArrow.toY }} insetStart={inset} />
+        <ArrowShape from={center(liveArrow.from, squareSize)} to={{ x: liveArrow.toX, y: liveArrow.toY }} insetStart={inset} scale={scale} />
       )}
     </Svg>
   );

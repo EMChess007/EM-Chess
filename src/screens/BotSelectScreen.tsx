@@ -16,6 +16,11 @@ interface BotSelectScreenProps {
   giveaway?: boolean;
   atomic?: boolean;
   duckChess?: boolean;
+  /** Overrides the subtitle (4 Player Chess shows which seat the bot is for). */
+  subtitle?: string;
+  /** When set, shown instead of the engine name on every card and the custom-engine section is hidden: used by modes whose bots are
+   * heuristics rather than Stockfish (4 Player Chess), where an engine name would be wrong. */
+  engineLabel?: string;
 }
 
 /** A placeholder ELO shown for custom-engine cards — irrelevant to actual play, since
@@ -43,6 +48,8 @@ export default function BotSelectScreen({
   giveaway,
   atomic,
   duckChess,
+  subtitle,
+  engineLabel,
 }: BotSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
@@ -67,7 +74,7 @@ export default function BotSelectScreen({
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Select a Bot" subtitle={variantName} onBack={onBack} />
+      <ScreenHeader title="Select a Bot" subtitle={subtitle ?? variantName} onBack={onBack} />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {BOT_CATEGORIES.map(({ category, label }) => (
@@ -84,7 +91,7 @@ export default function BotSelectScreen({
                         transparency, not as something to pick. */}
                     {/* Atomic bots never use a UCI engine (see chooseAtomicBotMove), so naming one here
                         would be wrong. */}
-                    <Text style={styles.cardEngine}>{atomic ? 'Atomic search bot' : duckChess ? 'Duck Chess bot' : getEngineName(getEngineIdForElo(bot.elo))}</Text>
+                    <Text style={styles.cardEngine}>{engineLabel ?? (atomic ? 'Atomic search bot' : duckChess ? 'Duck Chess bot' : getEngineName(getEngineIdForElo(bot.elo)))}</Text>
                   </View>
                 </Pressable>
               ))}
@@ -92,7 +99,7 @@ export default function BotSelectScreen({
           </View>
         ))}
 
-        {customEngines.length > 0 && (
+        {customEngines.length > 0 && !engineLabel && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>My Engines</Text>
             <View style={styles.cardList}>

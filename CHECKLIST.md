@@ -54,3 +54,9 @@ was called "done" — don't repeat that on anything else.
 - Explicit mutual-exclusivity declaration with every other variant.
 - Fits the existing pattern: VariantSelector entry, screen prop threading (fogOfWar/chess960/
   setupChess-style), gameResult.ts priority slot.
+- Board annotations (arrows/highlights) follow the app-wide invariant in
+  `src/logic/annotationLifecycle.ts`: cleared when a MOVE is played, by anyone, and at no other
+  time — never keyed to whose turn it is, a turn starting, or a seat being skipped/eliminated/
+  flagged without a move. Name the mode's position epoch (classic: the FEN; 4 Player: the ply),
+  clear through `useClearAnnotationsOnMove`, and add the mode's no-move turn-advance paths to
+  `annotationLifecycle.test.ts`. This applies to Online boards too.

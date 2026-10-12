@@ -29,6 +29,7 @@ interface PlayModeSelectScreenProps {
   onLocalGiveaway: () => void;
   onLocalAtomic: () => void;
   onLocalDuckChess: () => void;
+  onFourPlayer: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
@@ -63,6 +64,7 @@ export default function PlayModeSelectScreen({
   onLocalGiveaway,
   onLocalAtomic,
   onLocalDuckChess,
+  onFourPlayer,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
@@ -197,6 +199,16 @@ export default function PlayModeSelectScreen({
         </View>
 
         <View style={styles.categoryCard}>
+          <Text style={styles.categoryTitle}>4 Player Chess</Text>
+          <Text style={styles.categorySubtitle}>Four players on a cross-shaped board — pass the device or play against bots</Text>
+          <View style={styles.subButtonRow}>
+            <Pressable style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onFourPlayer}>
+              <ModeButtonLabel label="Free-for-All" style={styles.subButtonText} />
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>Engine vs Engine</Text>
           <Text style={styles.categorySubtitle}>Watch two engines play each other automatically</Text>
           <View style={styles.subButtonRow}>
@@ -296,6 +308,9 @@ function createStyles(colors: AppColors) {
     },
     localSubButton: {
       backgroundColor: colors.buttonBackground,
+    },
+    fourPlayerSubButton: {
+      backgroundColor: '#8e24aa',
     },
     engineSubButton: {
       backgroundColor: '#8d6e00',
