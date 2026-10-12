@@ -110,7 +110,7 @@ describe('Online wiring (no React Native renderer available)', () => {
   });
 
   it('rejoin restores the duck and replays each ply on a fresh engine from the running pair', () => {
-    expect(online).toContain('if (duckChess) setDuckSquare(ack.state.duckSquare ?? null);');
+    expect(online).toContain('if (duckChess) setDuckSquare(outcome.state.duckSquare ?? null);'); // (was ack.state: the rejoin ack is now classified first)
     expect(online).toContain('let replayDuck: string | null = null;');
     expect(online).toContain('duckChess: true, duckSquare: replayDuck');
   });

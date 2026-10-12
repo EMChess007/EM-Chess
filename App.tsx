@@ -41,6 +41,9 @@ import SetupChessOnlineScreen from './src/screens/SetupChessOnlineScreen';
 import TournamentScreen from './src/screens/TournamentScreen';
 import TournamentStandingsScreen from './src/screens/TournamentStandingsScreen';
 import FourPlayerGameScreen from './src/screens/FourPlayerGameScreen';
+import FourPlayerMatchmakingScreen from './src/screens/FourPlayerMatchmakingScreen';
+import FourPlayerOnlineGameScreen from './src/screens/FourPlayerOnlineGameScreen';
+import FourPlayerSpectatorScreen from './src/screens/FourPlayerSpectatorScreen';
 import FourPlayerSetupScreen from './src/screens/FourPlayerSetupScreen';
 import SpectateListScreen from './src/screens/SpectateListScreen';
 import SpectatorGameScreen from './src/screens/SpectatorGameScreen';
@@ -63,6 +66,7 @@ import type { ColorChoice, PieceColor } from './src/types/chess';
 import { SEAT_NAMES, defaultSeatConfig, withController, type Seat, type SeatConfig } from './src/logic/fourPlayer';
 import { controllerForBot } from './src/logic/fourPlayerBots';
 import type { AnalyzeParams } from './src/types/history';
+import type { FourMatchFoundPayload } from './src/logic/fourPlayerWire';
 import type { ActiveGameSummary, MatchFoundPayload, SetupChessPairedPayload } from './src/types/multiplayer';
 import type { TimeControl } from './src/types/timeControl';
 
@@ -132,6 +136,11 @@ type Screen =
   | { name: 'fourPlayerBotSelect'; seats: SeatConfig; seat: Seat }
   | { name: 'fourPlayerTimeControl'; seats: SeatConfig }
   | { name: 'fourPlayerGame'; seats: SeatConfig; timeControl: TimeControl }
+  // Online 4 Player (FOUR_PLAYER_ONLINE_SPEC.md §8): pick a live time control -> queue -> the game; spectating is a separate screen.
+  | { name: 'fourPlayerOnlineTimeControl'; token: string }
+  | { name: 'fourPlayerMatchmaking'; token: string; timeControl: TimeControl }
+  | { name: 'fourPlayerOnlineGame'; token: string; match: FourMatchFoundPayload; timeControl: TimeControl; resume: boolean }
+  | { name: 'fourPlayerSpectate'; token: string | null; roomId: string }
   | { name: 'themeSelect' }
   | { name: 'streak' }
   | { name: 'puzzleRush'; themeFilter?: string[] }
@@ -179,6 +188,9 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>({ name: 'main' });
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
+  // An online 4 Player game the player left while their seat was still live (a bot plays it after 45 s; they may return until it ends). Kept in
+  // memory only, like the 2-player rejoin token: an app restart or a web refresh forgets it, and the seat stays with the bot.
+  const [fourResume, setFourResume] = useState<{ token: string; match: FourMatchFoundPayload; timeControl: TimeControl } | null>(null);
   // Gates the very first render on the persisted Dark/Light preference having actually loaded —
   // without this, every screen mounts once with useAppColors()'s synchronous default ('light',
   // see colorSchemeSettings.ts) and only corrects itself once restoreColorSchemeMode's AsyncStorage
@@ -321,6 +333,12 @@ export default function App() {
         onChallengeFriend={() => authSession && setScreen({ name: 'challenge', token: authSession.token })}
         onTournaments={() => authSession && setScreen({ name: 'tournament', token: authSession.token })}
         onSpectate={() => setScreen({ name: 'spectateList', token: authSession?.token ?? null })}
+        onFourPlayerOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', token: authSession.token })}
+        onFourPlayerResume={
+          fourResume && authSession?.token === fourResume.token
+            ? () => setScreen({ name: 'fourPlayerOnlineGame', token: fourResume.token, match: fourResume.match, timeControl: fourResume.timeControl, resume: true })
+            : undefined
+        }
         onBotClassic={() =>
           setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false })
         }
@@ -521,9 +539,12 @@ export default function App() {
             blackUsername: game.blackUsername,
           })
         }
+        onWatchFour={(game) => setScreen({ name: 'fourPlayerSpectate', token, roomId: game.roomId })}
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
     );
+  } else if (screen.name === 'fourPlayerSpectate') {
+    content = <FourPlayerSpectatorScreen authToken={screen.token} roomId={screen.roomId} onExit={() => setScreen({ name: 'spectateList', token: screen.token })} />;
   } else if (screen.name === 'spectatorGame') {
     content = (
       <SpectatorGameScreen
@@ -733,6 +754,47 @@ export default function App() {
     );
   } else if (screen.name === 'fourPlayerGame') {
     content = <FourPlayerGameScreen seats={screen.seats} timeControl={screen.timeControl} onExit={() => setScreen({ name: 'playModeSelect' })} />;
+  } else if (screen.name === 'fourPlayerOnlineTimeControl') {
+    const { token } = screen;
+    content = (
+      <TimeControlSelectScreen
+        subtitle="4 Player Chess · Online"
+        excludeCategories={['daily', 'unlimited']}
+        onSelect={(timeControl) => setScreen({ name: 'fourPlayerMatchmaking', token, timeControl })}
+        onBack={() => setScreen({ name: 'playModeSelect' })}
+      />
+    );
+  } else if (screen.name === 'fourPlayerMatchmaking') {
+    const { token, timeControl } = screen;
+    content = (
+      <FourPlayerMatchmakingScreen
+        authToken={token}
+        timeControl={timeControl}
+        onMatchFound={(match) => {
+          setFourResume(null);
+          setScreen({ name: 'fourPlayerOnlineGame', token, match, timeControl, resume: false });
+        }}
+        onCancel={() => setScreen({ name: 'playModeSelect' })}
+      />
+    );
+  } else if (screen.name === 'fourPlayerOnlineGame') {
+    const { token, match, timeControl, resume } = screen;
+    content = (
+      <FourPlayerOnlineGameScreen
+        key={match.roomId}
+        authToken={token}
+        match={match}
+        resume={resume}
+        onExit={(resumable) => {
+          setFourResume(resumable ? { token, match, timeControl } : null);
+          setScreen({ name: 'playModeSelect' });
+        }}
+        onPlayAgain={() => {
+          setFourResume(null);
+          setScreen({ name: 'fourPlayerMatchmaking', token, timeControl });
+        }}
+      />
+    );
   } else if (screen.name === 'engineSelect') {
     content = <EngineSelectScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'themeSelect') {

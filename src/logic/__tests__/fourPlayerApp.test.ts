@@ -170,7 +170,9 @@ describe('the seat cards and the game screen (no React Native renderer available
     expect(strip).toContain('<Text style={styles.score}>{state.score[seat]}</Text>');
     expect(strip).toContain('{clock.enabled && <Text style={[styles.time');
     expect(strip).toContain('formatSeatClock(seconds)');
-    expect(strip).toContain("{out ? 'out' : controllerName(seats[seat])}");
+    // Online (W5) gave the strip optional `labels`; the local game still passes `seats` and gets exactly the roster-bot / "Human" text it always did.
+    expect(strip).toContain("const playerName = label ? label.name : seats ? controllerName(seats[seat]) : '';");
+    expect(strip).toContain("{out ? 'out' : playerName}");
     expect(strip).toContain('state.turn === seat'); // the seat to move is highlighted
     expect(strip).toContain('out && styles.out'); // an eliminated seat is greyed (its clock is frozen)
   });

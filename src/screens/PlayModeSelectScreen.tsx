@@ -30,6 +30,10 @@ interface PlayModeSelectScreenProps {
   onLocalAtomic: () => void;
   onLocalDuckChess: () => void;
   onFourPlayer: () => void;
+  /** Online 4 Player (behind the same login gate as every Online entry). */
+  onFourPlayerOnline: () => void;
+  /** Set while the player has left an online 4 Player game that is still going: offers "Return to your game". */
+  onFourPlayerResume?: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
@@ -65,6 +69,8 @@ export default function PlayModeSelectScreen({
   onLocalAtomic,
   onLocalDuckChess,
   onFourPlayer,
+  onFourPlayerOnline,
+  onFourPlayerResume,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
@@ -93,6 +99,7 @@ export default function PlayModeSelectScreen({
   const handleOnline = requireLogin(onOnline);
   const handleChallengeFriend = requireLogin(onChallengeFriend);
   const handleTournaments = requireLogin(onTournaments);
+  const handleFourPlayerOnline = requireLogin(onFourPlayerOnline);
 
   return (
     <View style={styles.container}>
@@ -200,12 +207,20 @@ export default function PlayModeSelectScreen({
 
         <View style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>4 Player Chess</Text>
-          <Text style={styles.categorySubtitle}>Four players on a cross-shaped board — pass the device or play against bots</Text>
+          <Text style={styles.categorySubtitle}>Four players on a cross-shaped board — pass the device, play bots, or play online</Text>
           <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onFourPlayer}>
               <ModeButtonLabel label="Free-for-All" style={styles.subButtonText} />
             </Pressable>
+            <Pressable style={[styles.subButton, styles.fourPlayerSubButton]} onPress={handleFourPlayerOnline}>
+              <ModeButtonLabel label="Online" style={styles.subButtonText} />
+            </Pressable>
           </View>
+          {onFourPlayerResume && (
+            <Pressable style={styles.spectateLink} onPress={onFourPlayerResume}>
+              <Text style={styles.spectateLinkText}>Return to your game ›</Text>
+            </Pressable>
+          )}
         </View>
 
         <View style={styles.categoryCard}>

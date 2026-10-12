@@ -5,6 +5,61 @@ backend test scripts import this repo's `src/logic/ChessEngine.ts` directly, sin
 actual shared chess logic, not a reimplementation. See the backend's own `TESTING.md` for that
 half; this document covers what's local to this repo.
 
+## 4 Player Chess Online — roll-up (read this first for the whole feature)
+
+**What it is.** Online Free-for-All 4 Player Chess, built on top of the local mode of §9. Players queue per time control (live Bullet/Blitz/Rapid only); four humans start a game at
+once, and with at least two the server fills the empty seats with Amateur bots after 30 s. The server is the only authority: it validates every move with the engine, runs the four
+clocks and broadcasts a numbered snapshot (`four_state`, `seq`) that every client adopts, so every seat and every spectator holds the identical position. A player who stays away for 45 s
+is replaced by a bot and may retake the seat until the game ends; there is chat, spectating, an active-games list and premoves. Nothing is saved, rated or analysed (v1), and the 2-player
+Online mode is unchanged apart from one fix (W0). Spec: `FOUR_PLAYER_ONLINE_SPEC.md`; the backend's half is in its own `TESTING.md` (same roll-up at its top).
+
+**Where each workstream is documented** (the per-workstream sections stay as they are)
+
+| | What | Section |
+|---|---|---|
+| W0 | 2-player "rejoin after the game ended" fix | frontend §10; backend "Rejoin after the game ended" |
+| W1 | wire contract and the generated engine mirror | frontend §11; backend §10 |
+| W2 | the room manager | backend §11 |
+| W3 | bots, takeover, retake, abandonment | backend §12 |
+| W4 | matchmaker and socket handlers | backend §13 |
+| W5 | the client: queue, game and spectator screens, chat, premoves | frontend §12 |
+| W6 | real-socket end-to-end test, nightly fuzz section, `FOUR_GRACE_MS` | backend §14 |
+| W7 | this roll-up, the last mutation re-run on the final code | here and the backend roll-up |
+
+**Final numbers, both repos.** Automated checks written for the feature: **1,085** — **188 vitest tests in this repo** (W0 14, W1 46, W5 128) and **897 script checks in the backend**
+(W0 42, W1 142, W2 220, W3 160, W4 135, W6 198), plus the 4 Player section of the nightly fuzz (random, so not counted). The whole frontend suite is 673 tests in 36 files.
+**Mutation checks, every workstream's set re-run on the final code** (always on a disposable copy of the repos, never the real files): **565 bugs planted, 543 killed, 22 equivalent, 0 survivors.**
+
+| | Planted | Killed | Equivalent | Survivors |
+|---|---|---|---|---|
+| W0 (backend 13, client 15) | 28 | 27 | 1 | 0 |
+| W1 (generator 38, wire 41, mirror-set guard 10, engine parity 18) | 107 | 107 | 0 | 0 |
+| W2 | 65 | 63 | 2 | 0 |
+| W3 | 68 | 62 | 6 | 0 |
+| W4 | 83 | 79 | 4 | 0 |
+| W5 | 188 | 180 | 8 | 0 |
+| W6 (17 unit + 9 against a real server) | 26 | 25 | 1 | 0 |
+| **Total** | **565** | **543** | **22** | **0** |
+
+Every equivalent mutant is justified individually and, since W7, documented in the code next to the thing it is about (`EQUIVALENT-MUTANT NOTE` comments). The ones in THIS repo:
+- W0 client — a `if (ack.ok === false)` branch added after `if (!ack.ok)`: dead code, identical behaviour.
+- W5 (8; notes in `fourPlayerOnline.ts`, `fourPlayerOnlineSession.ts`, `fourPlayerOnlineUi.ts`): the log entry's seat (`move.seat` equals the previous snapshot's turn in any valid flow); `seq: payload.seq` vs `view.seq + 1`
+  (equal in that branch); a null seat in `canMove` (the turn test refuses it anyway); an identical expression (`displayState`); a clock running for an inactive seat (the engine never leaves the turn there in an
+  unfinished game); `readSnapshot`'s `typeof` fast path (the catch covers it); the session's belt-and-braces `moveAcked` (unreachable: every path to `view.seq >= ack.seq` already cleared `pending`);
+  `fillInMs === null` (`Number.isFinite(null)` is already false).
+The backend's 13 are listed in its roll-up.
+
+**What the W7 re-run changed.** It was run so that nothing is taken on trust from an earlier pass. The W5 first-pass kills (120, made before a few hardening edits) were re-classified against the current code: all 188
+re-run, 180 killed, 8 equivalent, 0 survivors. Six mutants of the older harnesses (W3 ×2, W4 ×4) had gone stale when W6 moved the `FOUR_*_MS` override rules into one shared helper; they were retargeted and now die.
+The W6 mutants that had first been "killed" by an over-strict clock assertion were re-run on the final code: 9/9 killed, each by the check that names it.
+
+**What was NOT verified (read this before calling it finished).** The two-tab browser pass of the player screens (queue, game, spectator, takeover, "Return to your game") that W5's known limits flagged as never having been seen
+rendered was **not performed**: the project owner declined it for this workstream. Those screens are covered by the pure layers (reducer, session class against a fake socket, UI wording) and by source pins, and the real session class
+was driven over real sockets against the real backend (17/17, W5), but nobody has looked at them on screen yet. Other deliberate v1 limits: rejoin token in memory only, no chat history after a reconnect, no private rooms,
+no saved games / ratings, no Teams/Solo online, the bot promotion-nudge parity follow-up, and no game in the nightly fuzz ends by the engine itself within 80 plies (those endings are unit-tested).
+
+**Merge order.** The backend's nightly fuzz imports the app's 4-seat engine from this repo's DEFAULT branch, and its CI checks out the same-named branch of this repo: merge this repo's `fourPlayerOnline` first (or together with the backend's).
+
 ## 1. What runs on every commit/PR (`.github/workflows/ci.yml`)
 
 Triggers on every push/PR to `master`:
@@ -382,7 +437,7 @@ still legal, and cancelled with a notice if it is not. Reused: the whole touch h
 behaviour from `ChessBoard.tsx` and used by both boards), the SVG overlay `BoardAnnotations` (generalised from a fixed 8 x 8 to any grid, with an
 optional stroke scale), `PromotionPicker` (for a promoting premove), and the premove rules themselves (`logic/premove.ts` + `logic/usePremove.ts`, lifted
 from BotGameScreen/OnlineGameScreen). New: the cell <-> square mapping through the viewing seat (`fourPlayer/annotations.ts`), the engine side of a
-premove (`fourPlayer/premove.ts`), and the board/screen wiring. Interaction with other features: 4-player games are local only, so there is no
+premove (`fourPlayer/premove.ts`), and the board/screen wiring. Interaction with other features (written when 4-player games were local only; Online exists since §11-§12, and its board is this same component): there is no
 Online/backend side; the 2-player board's behaviour must not change, which is why the gesture decision was moved into a pure, unit-tested module.
 *What the 2-player implementation does (and the 4-player version keeps).* ONE premove at a time: queueing a new one REPLACES the old one (there is no
 chain or queue), a Cancel button drops it, nothing is previewed or validated when it is queued (no legal-move dots while premoving), and when the turn
@@ -540,7 +595,7 @@ re-renders only the strip and status. Nothing recomputes per render except the l
 **CHECKLIST sections, explicitly.** *Spec before code*: written and reviewed (first pass); the refinement pass was UI/flow, bot-strength and clock
 work; the follow-up pass added under-promotion (a rules decision, see Rules as built), the dead-position end condition (found by measuring real
 bot games) and piece themes. *Correctness*: above (elimination-by-timeout, clock-stops-on-elimination and only-current-seat-ticks have their own tests).
-*Performance*: above. *Online/backend parity*: **N/A** — still fully local, no backend change; the clock model is pure and serialisable, ready to
+*Performance*: above. *Online/backend parity*: **N/A at the time of §9** (Online was added later: §11-§12 and the backend's TESTING.md §10-§13) — fully local, no backend change; the clock model is pure and serialisable, ready to
 be mirrored with the rest of the engine when Online comes. *Cross-feature*: nothing else imports the folder; the only shared files touched are
 `BotSelectScreen` and `TimeControlSelectScreen` (optional props, unchanged behaviour for their existing callers) and, in the follow-up pass,
 `ChessBoard.tsx`, whose inline promotion modal moved verbatim into the shared `components/PromotionPicker.tsx` (same Modal, backdrop, labels and
@@ -554,3 +609,182 @@ tournaments are untouched (4-player games are not saved). *Documentation*: doc c
 
 **Known limits** — see TODO.md ("4 Player Chess: what it still leaves out"): Teams, Solo, Online, saved games/analysis, check-fork scoring,
 drag input, repetition draws; clock granularity is 200 ms; Undo gives back the time spent on the undone moves.
+
+
+## 10. Online: rejoin after the game ended — what the client does now
+
+**The bug (2-player Online).** If a player's connection dropped while the game ended (checkmate, a flag, resignation, or the abandonment
+their own absence caused), the server no longer had the room, answered `rejoin_game` with "not found", and `OnlineGameScreen` stayed on
+"Reconnecting…" for ever without ever learning the result (and without the rating/achievement side effects of a finished game).
+
+**The fix, client side.** The server (backend repo, see its TESTING.md "Rejoin after the game ended") now keeps a finished game's result
+for 5 minutes and answers a late rejoin with a refusal that carries it: `{ ok: false, error, finished: true, gameOver }`. The screen sends
+every rejoin answer through the pure `classifyRejoinAck` (`src/logic/onlineRejoin.ts`):
+- **state** — the game is still on: resume exactly as before (position, clocks, move list rebuilt from the server).
+- **finished** — show the result through the SAME `handleGameOver` a live `game_over` uses, and leave the "reconnecting" state. That
+  handler is now idempotent (`gameOverHandledRef`), so rating and achievements run exactly once however the result arrives.
+- **unavailable** — the server has no such game (too long ago, a restarted server): a new `connectionState` ('unavailable') shows
+  "Game unavailable" and a plain banner, and the board is disabled, instead of an endless "Reconnecting…".
+The `finished` flag is checked BEFORE `ok` because the finished answer is deliberately `ok: false`: app builds already in the wild only
+know `ok` / `error` / `state`, and an `ok: true` answer without a `state` would crash them inside the socket callback. Old clients now see
+a refusal, exactly as they always did.
+
+**Tests.** `onlineRejoin.test.ts`: the classifier for every outcome (every end reason, a draw's null winner, refusals keep the server's
+message, malformed answers are "unavailable", the finished answer is a refusal that a pre-change handler cannot mistake for success) and
+source pins for the screen wiring (no React Native renderer here). `duckOnline.test.ts`'s one pin on the rejoin handler was retargeted from
+`ack.state` to `outcome.state`. Mutation-checked (15 mutants: the classifier's branches and order, the idempotence guard, each screen branch;
+14 killed, the 15th is a deliberate equivalent control). Many of the screen mutants are killed by source pins rather than behaviour — the
+behaviour itself was verified in the browser against a running backend (below).
+
+**Verified end to end, in a real browser against a real server** (a guest opponent over a socket; two temporary, reverted hooks — a local
+session stand-in and a DOM event that closes the page's socket transport): the page was dropped, the opponent resigned 7 ms after the
+disconnect, and on reconnecting the screen showed "You Won by Resignation" within about a second (before: hung); and with the backend
+restarted under a live game the screen showed "Game unavailable" and the banner (before: hung). Not verified here: a physical-device
+network drop, and a release build talking to the new server (covered by the old-client check in the backend script instead).
+
+**A reconnect AFTER the result is already on screen (found in a review pass, fixed in a follow-up commit).** The reconnect listener stays
+attached while the result sheet is showing. The first version still sent a `rejoin_game` then, and acted on whatever came back: with the
+backend restarted (the finished record gone) the red "This game is no longer available…" banner appeared directly above "You Won by
+Resignation" (reproduced in the browser on the first version); within the 5 minutes, a `finished` answer would also have snapped a move
+the player was reviewing back to the live position (`setViewIndex(null)`). Now, once a result has been handled (`gameOverHandledRef`),
+`handleReconnect` sends nothing and just clears "reconnecting", and an answer to a request that was already in flight is ignored too
+(a live `game_over` that lands first wins; the guard sits after classifying and before any outcome is acted on, so `finished`,
+`unavailable` and `state` are all covered). `onlineRejoin.test.ts` pins both guards and their order (3 mutants: either guard removed, or
+the reconnect guard moved after the emit — all killed; pin-based, like the other screen mutants). The ref is never reset because the
+screen holds ONE match's state (`gameOver`, the move list, ...) and App mounts it fresh for every match — every route into `onlineGame`
+comes from a different screen; the comment on the ref says so. Verified in the browser, same scenario before/after: live resignation,
+result shown, backend restarted, page reconnects — before: banner over the result; after: result untouched, no banner.
+
+## 11. 4 Player Chess ONLINE — the wire contract and the mirrored file set (workstream W1)
+
+Spec: `FOUR_PLAYER_ONLINE_SPEC.md`. W1 adds the shared protocol file and the guard around the engine files the server copies; **no screen,
+hook or socket code changed and no existing file was modified** — Local 4 Player, 2-player Online and everything else behave exactly as before.
+
+**`src/logic/fourPlayerWire.ts`** is the single source of truth for the `four_*` protocol: every payload, ack and event name, the limits both
+sides enforce, and a few pure validators. The backend's `src/game/fourPlayerWire.ts` is GENERATED from it (backend repo, `npm run
+sync:fourplayer`), so client and server cannot disagree on a field or a limit. It may import only the mirrored engine modules, extensionless.
+Highlights: the unit of sync is `serialize(FourPlayerState)` plus the engine's own `GameEvent`s (already plain JSON, so nothing is converted);
+`four_state` carries `seq` (+1 per state; the client ignores `seq <=` current and resyncs on a gap); there are **no draw events** (the engine
+models no draws); a move payload has **no seat field** (the server uses the socket's own seat); `four_rejoin` on a finished game is a plain
+success carrying `finished: true` + the result (a new event, so no released client needs the 2-player `ok: false` trick).
+
+**Validators (the server's only defence against a hostile or buggy client, so strict by default):**
+- `validateFourTimeControl`: whole seconds, 60-3600 initial, 0-30 increment; "No time limit", Daily, fractions, NaN, Infinity, strings are refused;
+  only the two known fields are returned (extra and `__proto__` keys never reach the server logic).
+- `validateFourMovePayload`: a valid room id; `from`/`to` must be **canonical names of playable squares**; promotion one of `q r b n`; legality is the engine's
+  job. **Review finding:** the engine's `parseSquare` accepts a leading zero, so `e02`/`a04` parsed as `e2`/`a4` and would have been quietly
+  normalised. Decision: refuse them (`isCanonicalSquareName`: `squareName(parseSquare(x)) === x`), not relax the test.
+- `normalizeFourChatText` (trim, then cut to 500, refuse if empty — same rule as 2-player), `validateFourId`, `validateFourJoinQueue`.
+- None of them throws on any input (a `Symbol`, an object whose `toString` throws, an array dressed with the right property names, 1000 random shapes).
+- `clocksToWireMs` (one rounding rule for both sides) and `classifyFourRejoinAck` (the 4-player twin of `classifyRejoinAck`).
+
+**`src/logic/fourPlayer/MIRRORED_TO_BACKEND.json`** lists the files the backend copies (the six engine modules + the wire file). The owner of the
+source owns the list. `fourPlayerMirrorSet.test.ts` fails here — not only later in the backend's CI — if an engine file imports a client-only
+module, a package, uses `require`/`import()`, spells an extension, or if the list stops being exactly the closure of `bot`, `clock` and the wire file.
+
+**Tests:** `fourPlayerWire.test.ts` (limits and every validator boundary; event surface — the runtime name lists must equal the typed
+interfaces; engine events survive a JSON round trip, of every kind, in a game that is guaranteed to end; payload size measured and bounded) and
+`fourPlayerMirrorSet.test.ts`. The generator and engine parity are tested in the backend repo (its TESTING.md §10).
+**Mutation-checked:** wire validators/constants 41 mutants, **41/41 killed**; mirror-set guard 10 mutants, **10/10 killed**. First-pass survivors
+were test gaps, not equivalents, and were closed: a promotion/label key that is always emitted (`toEqual` ignores `undefined` keys — the
+value assertions are now `toStrictEqual`), arrays accepted as payloads, and the validator throwing on exotic values.
+Two first-run test failures were bugs in the tests themselves (an unsorted expected list; a default parameter that turned `undefined` into `0`).
+
+**Sizes:** a typical `four_state` is 700 bytes (ply 150); a 1000-entry move log is 28 KB.
+
+## 12. 4 Player Chess ONLINE — the client (workstream W5)
+
+Spec: `FOUR_PLAYER_ONLINE_SPEC.md` §8. W5 is the first workstream with UI: the Online entry, the queue, the game, spectating, chat, premoves. The server
+(backend TESTING.md §11-§13) was already complete and is **unchanged**; this section is the frontend repo only.
+
+**What changed, what is reused.** New: a pure reducer, a socket "session" class around it, a thin React hook, three screens, two components. Reused
+unchanged: `FourPlayerBoard` (viewed from the player's own seat, premoves always on), `usePremove` + `resolvePremove`, `GameControlBar`,
+`GameScreenBody`, `TimeControlSelectScreen` (with `excludeCategories: ['daily','unlimited']`), `appAlert`. Edited (small): `FourPlayerSeatStrip` (optional
+`labels`; the local game still passes `seats` and gets its old text), `SpectateListScreen` (a 4 Player section), `PlayModeSelectScreen` (an Online button on the
+4 Player card + an optional "Return to your game" link), `App.tsx` (four screens, one piece of in-memory state).
+
+**Decisions confirmed before W5** (all built as decided): entry = a second "Online" button on the existing 4 Player card, behind the login gate; spectating
+open to guests, in the existing Spectate list, with read-only chat and Rotate; premoves online always on; seat wording exactly "Bot (Amateur)" / name +
+"bot playing" / "offline · Ns" grace countdown; Rotate as in the local game; rejoin token in memory only (like the 2-player screen); Back mid-game asks
+"Leave the game? A bot takes your seat after 45s. You can return until the game ends."; after the game: result card + "Play again" + "Back to menu".
+
+**Interpretation to note.** "You can return until the game ends" with "in-memory token, no persistence" means the app must remember the game while it is
+running. It does, in one `useState` in `App.tsx` (`fourResume`: token + the match): leaving mid-game stores it, the 4 Player card then shows "Return to your
+game ›", which reopens the screen with `resume: true` (rejoin at once). An app restart or a web refresh forgets it, exactly as the decision says.
+
+### Design (`logic/fourPlayerOnline.ts`, `fourPlayerOnlineSession.ts`, `fourPlayerOnlineUi.ts`, `useFourPlayerOnlineGame.ts`)
+- **Authority and a pending copy, side by side.** `view.state` / `seq` / `clocksMs` are the last adopted server snapshot and are never edited by a local move.
+  A move the player makes becomes `view.pending` (the engine's `applyMoveRaw` copy, no randomness); the screen draws `displayState(view)`. A refusal
+  therefore "rolls back" by dropping `pending` - there is no undo that could go wrong. Each pending move has an `id`, so a late refusal of an earlier move can
+  never roll back a later one. The board is not interactive while a move is pending, a rejoin is in flight, the connection is down, or the game is over (`canMove`).
+- **Ordering (the spec's rule).** `seq <= current` -> ignored and the view is returned *by reference unchanged* (equal = duplicate, smaller = late arrival);
+  `seq == current + 1` -> adopted; `seq > current + 1` -> a gap: one `four_rejoin`, however many later states arrive while it is in flight. The reducer says
+  when to send (`result.resync`), the caller never decides.
+- **Untrusted server data.** Snapshots go through the engine's `deserialize` inside a try; clocks, seats and `four_game_over` are shape-checked before they can
+  reach a render (a malformed `four_game_over` used to be accepted and would have crashed the status line - found by the tests, below). Nothing in any socket
+  callback can throw out of the session (`guard`).
+- **The session class** holds the reconnect/rejoin/spectate logic against a minimal `FourSocket` (Socket.IO's client satisfies it; the tests fake it) and
+  injected effects (sound, haptics, clock, log), so the part that decides *when to send what* is unit-tested without a renderer. The hook is ~40 lines.
+- **Reconnect.** Socket.IO `reconnect` -> `four_rejoin` (a spectator re-asks `four_spectate_game`). Answers: state -> adopt (and re-key the board); finished ->
+  show the result (no haptic for a game that ended while away); not found / unreadable -> an explicit `unavailable` state with the reason, never "Reconnecting…"
+  for ever. A move nobody answers (8 s) rolls back **and** re-reads the room, because the server may have applied it.
+- **An older server** (no `four_*` handlers) never answers: the queue screen says so after 10 s; the Spectate list drops only its 4 Player section after 5 s.
+- **Premove.** `isMyTurn` for the premove slot is "my turn *and* a move could really be sent now", so a premove is not spent on a reconnect or a pending move;
+  it is resolved against the authority, and fired through the same path as a hand-made move.
+
+### Tests (all in `src/logic/__tests__/`, 673 in the whole suite)
+- `fourPlayerOnline.test.ts` (42) - the reducer, against a **server simulator built on the real engine** (`fourPlayerOnlineKit.ts`: the same `playMove` /
+  `resign` / `serialize` the server's mirror runs, so every payload is exactly what `four_state` carries). The four tests the spec asked for are named and
+  stand alone: **NAMED 1** out-of-order seq ignored and the view untouched (by reference); **NAMED 2** duplicate seq; **NAMED 3** a genuine gap sends exactly
+  ONE `four_rejoin` however many later states arrive, the answer repairs the view, late stragglers are stale, a second gap may ask again; **NAMED 4** a refused
+  optimistic move rolls back to exactly the last authoritative snapshot (same object, same text, same seq/clocks/log). Also: a 3-seed lockstep game with
+  eliminations and dead-king walks (asserted to occur) compared with the server after every ply; gap-then-straggler; wrong room; after game over;
+  unreadable snapshots / clocks / seq (10 shapes, one rejoin each); whole-room answers (older / equal / newer, pending kept or dropped); optimistic moves in
+  every refusal situation; premoves (queued, waits, fired on the turn snapshot, cancelled when eliminated); clocks; malformed seats / game-over / events.
+- `fourPlayerOnlineSession.test.ts` (44) - the session against a **fake socket**: listener symmetry; a normal game with sounds; refusal vs silence vs
+  ack-before-state; gap / invalid -> exactly one rejoin; disconnect / reconnect / finished / unavailable / junk answers; resume; game over; seat updates; chat;
+  resign; spectating (load, refusal, silence, reconnect, gap); hostile payloads and acks (+ a pseudo-random flood that must converge to the server's truth).
+- `fourPlayerOnlineUi.test.ts` (24) - seat wording, status line, result table, leave wording, queue line, chat log, Spectate rows.
+- `fourPlayerOnlineApp.test.ts` (18) - source pins for what has no renderer: every `four_*` string is a real event (the app's socket is untyped), every listener
+  is removed, the server stays the only authority, the Online button is behind the login gate, presets vs the server's validator, spectators send nothing.
+- `fourPlayerApp.test.ts`: one existing pin retargeted (the seat strip's player text) - same behaviour pinned, new spelling.
+
+### Mutation checks (188 planted bugs in the reducer, the session and the UI-wording file)
+Final disposition: **180 killed, 8 equivalent (each documented in the code beside it), 0 survivors** (the 188th, added late, re-creates the callback-guard defect below). The first pass found 21 survivors; the closed ones were real
+test gaps (promotion letters on the wire; `canMove` ignoring game over / a final state / an eliminated seat; stale `lastMove` / `moveError` / seats after a newer
+room answer; a late rejoin answer over a result already on screen; junk rejoin replies; callbacks after `stop()`; a chat sender seat out of range; two UI
+wordings). The equivalents: the log entry's seat (`move.seat` equals the previous turn in any valid flow), `seq: payload.seq` vs `view.seq + 1` (equal in that
+branch), a null seat in `canMove` (refused by the turn test anyway), an identical expression, the turn on an inactive seat (never in an unfinished game),
+`readSnapshot`'s `typeof` fast path (the catch covers it), the session's belt-and-braces `moveAcked` (unreachable), `fillInMs === null` (`isFinite(null)` is false).
+Honest limits: the 120 kills of the first pass were made before a few small hardening edits (the guard now survives a throwing logger); the final classification
+of those 120 was not re-run - W7's last mutation pass should.
+**The mutation harness was interrupted twice, and the second time taught the right design.** (1) A run was killed mid-mutant and left one mutation applied in
+`fourPlayerOnlineSession.ts`; it was found by a read-only check (does each mutant's original text still exist?) and repaired. (2) The first fix - restore the
+files from a signal handler (SIGINT/SIGTERM/exit) and keep a copy aside - was then put through a REAL interrupt (a Ctrl-C and a terminal close, in the app's
+terminal panel, while a mutant was demonstrably applied). **It did not work:** the run loop is synchronous (`spawnSync`), so the JavaScript SIGINT handler never
+got a turn and Ctrl-C was ignored, and closing the terminal kills the process outright, leaving the mutant on disk (caught again by the read-only check and
+repaired from the copy). The handler-based restore was never a safety net on Windows. **The harness now never touches the real files:** it copies `src/` to a
+work directory (linking `node_modules`), mutates and tests only the copy, and re-hashes the real files at the end. Re-tested the same way: Ctrl-C stops it, closing
+the terminal stops it, and the real files were byte-identical at the moment of the interrupt and after. The read-only check stays as a cheap audit. Lesson for
+any future harness here: do not rely on cleanup code surviving the interruption; make the interruption harmless.
+
+### Performance
+`applyFourState` over 605 real snapshots (one full bot game): total 43 ms, **mean 0.07 ms, p99 0.35 ms, max 1.9 ms** (three runs: 42.5-44.5 ms). The cost is the
+engine's `deserialize` of one snapshot per state; a frame is 16 ms. The test asserts generous bounds (mean < 5 ms, max < 100 ms) so a slow CI machine does not flake.
+
+### Real-network check (throwaway, not committed)
+The real `FourOnlineSession` driven over real sockets against the real backend (`FOUR_FILL_MS=1500` on port 3101): two guest players queued, got one room and
+different seats, played 4 moves each; a guest spectator joined; chat reached the other player and the spectator, a spectator's chat attempt sent nothing; one
+player's connection was cut and the session showed "reconnecting", rejoined with its token and play continued; both resigned, the bots finished the game, and
+all three clients ended with the same result, the same final position, the same `seq` (57), and the end announced once each. 17/17 checks passed. The
+player *screens* need a logged-in account (the project rule is no account creation in browser tests), so the on-screen check of those is W7's.
+
+### Bugs the tests found in this workstream (all fixed)
+1. A rejoin answer that was not an object made the classifier throw inside the callback, leaving the "catching up" flag set for ever. Now an explicit `unavailable`.
+2. A malformed `four_game_over` was accepted (a missing `winners` would have crashed the status line / result card). Now shape-checked.
+3. The callback guard logged first, unprotected, so a logger that threw skipped the recovery that follows it (the resync flag stayed set). Each step is now independent; covered by its own test, `NAMED GUARD - with a logger that ALWAYS throws...`, which fails against the old guard (verified by re-introducing it as a mutant).
+
+### Known limits (deliberate, v1)
+Rejoin token in memory only. Chat history is not replayed after a reconnect (the server does not send it). The player screens are covered by pins and by the
+pure layers, not by a rendered test (no React Native renderer); W7 verifies them in the browser. Only move/capture sounds. The badge line adds one small text
+row to a seat card that carries one (a takeover or an offline seat); on the smallest phones the board budget is unchanged but that was not measured on a device.

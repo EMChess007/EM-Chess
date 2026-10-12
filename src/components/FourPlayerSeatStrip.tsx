@@ -2,22 +2,27 @@ import { StyleSheet, Text, View } from 'react-native';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { SEAT_COLORS, SEAT_NAMES, formatSeatClock, type FourPlayerClock, type FourPlayerState, type Seat, type SeatConfig } from '../logic/fourPlayer';
 import { controllerName } from '../logic/fourPlayerBots';
+import type { FourSeatLabel } from '../logic/fourPlayerOnlineUi';
 
 /** Below this many seconds an active seat's clock turns red. */
 const LOW_TIME_SECONDS = 10;
 
 interface FourPlayerSeatStripProps {
   state: FourPlayerState;
-  seats: SeatConfig;
+  /** Local games: who controls each seat (Human / the roster bot's name). Omit when `labels` is given. */
+  seats?: SeatConfig;
   clock: FourPlayerClock;
+  /** Online games: the name under each clock ("Ana (you)", "Bot (Amateur)") and an optional badge ("bot playing", "offline · 32s"). Wins over `seats`. */
+  labels?: readonly FourSeatLabel[];
 }
 
 /**
  * One card per seat, side by side, readable at a glance on a phone: colour + name with the score on the right, the remaining time in
- * large type underneath (omitted for "No time limit"), and who is playing the seat (Human or the roster bot's name) — or "out" once the
- * seat is eliminated, when its clock is frozen and greyed. The seat to move gets a border in its colour.
+ * large type underneath (omitted for "No time limit"), and who is playing the seat (Human or the roster bot's name; online, the player's
+ * name) — or "out" once the seat is eliminated, when its clock is frozen and greyed. The seat to move gets a border in its colour. An
+ * online seat can also carry a small badge line (a bot that took over, a player inside the disconnect grace period).
  */
-export default function FourPlayerSeatStrip({ state, seats, clock }: FourPlayerSeatStripProps) {
+export default function FourPlayerSeatStrip({ state, seats, clock, labels }: FourPlayerSeatStripProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   return (
@@ -27,10 +32,13 @@ export default function FourPlayerSeatStrip({ state, seats, clock }: FourPlayerS
         const current = !state.result && state.turn === seat;
         const seconds = clock.seconds[seat];
         const low = clock.enabled && !out && seconds <= LOW_TIME_SECONDS;
+        const label = labels?.[seat];
+        const playerName = label ? label.name : seats ? controllerName(seats[seat]) : '';
+        const badge = !out && label?.badge ? label.badge : null;
         return (
           <View
             key={seat}
-            accessibilityLabel={`${SEAT_NAMES[seat]}, ${controllerName(seats[seat])}, score ${state.score[seat]}${clock.enabled ? `, ${formatSeatClock(seconds)} left` : ''}${out ? ', out of the game' : ''}`}
+            accessibilityLabel={`${SEAT_NAMES[seat]}, ${playerName}${badge ? `, ${badge}` : ''}, score ${state.score[seat]}${clock.enabled ? `, ${formatSeatClock(seconds)} left` : ''}${out ? ', out of the game' : ''}`}
             style={[styles.card, current && { borderColor: SEAT_COLORS[seat], borderWidth: 2, backgroundColor: colors.background }, out && styles.out]}
           >
             <View style={styles.topRow}>
@@ -42,8 +50,13 @@ export default function FourPlayerSeatStrip({ state, seats, clock }: FourPlayerS
             </View>
             {clock.enabled && <Text style={[styles.time, low && current && styles.timeLow, out && styles.timeOut]}>{formatSeatClock(seconds)}</Text>}
             <Text style={styles.player} numberOfLines={1}>
-              {out ? 'out' : controllerName(seats[seat])}
+              {out ? 'out' : playerName}
             </Text>
+            {badge && (
+              <Text style={styles.badge} numberOfLines={1}>
+                {badge}
+              </Text>
+            )}
           </View>
         );
       })}
@@ -73,5 +86,6 @@ function createStyles(colors: AppColors) {
     timeLow: { color: colors.danger },
     timeOut: { color: colors.textSecondary },
     player: { fontSize: 10, color: colors.textSecondary },
+    badge: { fontSize: 9, fontWeight: '700', color: colors.gold },
   });
 }
