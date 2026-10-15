@@ -43,6 +43,7 @@ import {
 import {
   GIVEAWAY_RULE_HINT,
   checkedKingSquares,
+  describeResignWarning,
   describeResultNote,
   rankSeats,
   seatMetric,
@@ -86,6 +87,23 @@ describe('wording per variant', () => {
   it('the variant of a position is read from its rules', () => {
     expect(variantOfState(initialState(FFA_RULES))).toBe('ffa');
     expect(variantOfState(initialState(GIVEAWAY_RULES))).toBe('giveaway');
+  });
+});
+
+describe('the Resign confirmation (a wording gap found by the W5 browser pass: the ONLINE screen said "dead blockers" in a Giveaway game)', () => {
+  it('4 Player Chess keeps its two original sentences exactly; Giveaway says the pieces become walls nobody can capture, locally and online', () => {
+    expect(describeResignWarning('ffa', false)).toBe('This seat is eliminated; its pieces stay on the board as dead blockers.');
+    expect(describeResignWarning('ffa', true)).toBe('Your seat is eliminated and its pieces stay on the board as dead blockers. You can keep watching until the game ends.');
+    expect(describeResignWarning('giveaway', false)).toBe('This seat is eliminated and cannot win; its pieces stay on the board as walls that nobody can capture.');
+    expect(describeResignWarning('giveaway', true)).toBe('Your seat is eliminated and cannot win; its pieces stay on the board as walls that nobody can capture. You can keep watching until the game ends.');
+    expect(describeResignWarning('giveaway', true)).not.toMatch(/dead blockers/);
+  });
+
+  it('both game screens take the wording from the helper with the right arguments (no screen carries its own copy)', () => {
+    const read = (rel: string) => readFileSync(join(__dirname, '../..', rel), 'utf8').replace(/\r\n/g, '\n');
+    expect(read('screens/FourPlayerOnlineGameScreen.tsx')).toContain("appAlert('Resign?', describeResignWarning(view.variant, true), [");
+    expect(read('screens/FourPlayerGameScreen.tsx')).toContain('describeResignWarning(variant, false),');
+    for (const file of ['screens/FourPlayerOnlineGameScreen.tsx', 'screens/FourPlayerGameScreen.tsx']) expect(read(file), file).not.toContain('dead blockers');
   });
 });
 

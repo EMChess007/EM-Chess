@@ -19,7 +19,7 @@ import {
   type Seat,
 } from '../logic/fourPlayer';
 import { canMove, displayClock, displayState } from '../logic/fourPlayerOnline';
-import { variantTitle } from '../logic/fourPlayerVariant';
+import { describeResignWarning, variantTitle } from '../logic/fourPlayerVariant';
 import { LEAVE_GAME_MESSAGE, LEAVE_GAME_TITLE, describeStatus, isLiveSeat, seatLabels } from '../logic/fourPlayerOnlineUi';
 import { fourVariantOf, type FourMatchFoundPayload } from '../logic/fourPlayerWire';
 import { describePremoveCancel } from '../logic/premove';
@@ -92,7 +92,7 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
 
   const handleResign = () => {
     if (!view || !isLiveSeat(view)) return;
-    appAlert('Resign?', 'Your seat is eliminated and its pieces stay on the board as dead blockers. You can keep watching until the game ends.', [
+    appAlert('Resign?', describeResignWarning(view.variant, true), [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Resign',

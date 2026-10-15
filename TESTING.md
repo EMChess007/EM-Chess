@@ -5,6 +5,48 @@ backend test scripts import this repo's `src/logic/ChessEngine.ts` directly, sin
 actual shared chess logic, not a reimplementation. See the backend's own `TESTING.md` for that
 half; this document covers what's local to this repo.
 
+## 4 Player Giveaway — roll-up (read this first for the whole feature)
+
+**What it is.** The Antichess version of the 4-seat board: **Local, Bots and Online built together**, on the SAME engine as 4 Player Chess (`src/logic/fourPlayer/`), which dispatches on `state.rules.mode` (`'ffa'` | `'giveaway'`) at a fixed list of
+touch points (header of `giveaway.ts`). Captures are mandatory for everyone (kings are ordinary pieces, no check, no castling, promotion to Q/R/B/N); a seat that loses its last piece wins at once, a seat to move with no legal move **wins**, a resigned / flagged
+seat is eliminated and **cannot win** (its pieces stay as permanent walls that block squares and slide-rays and cannot be captured); the last active seat wins; at 1000 plies the fewest pieces win (ties shared). No points: seat cards and the result table count
+pieces left. Online uses the same queue / room / lobby / spectate machinery as 4 Player Chess, with the lobby keyed by time control **and variant**; the wire stays backward compatible (absent `variant` = Free-for-All). Spec: `FOUR_PLAYER_GIVEAWAY_SPEC.md`;
+the backend's half is in its own `TESTING.md` (same roll-up at its top).
+
+**Where each workstream is documented**
+
+| | What | Frontend | Backend |
+|---|---|---|---|
+| W1 | rules engine, wire core, FFA golden gate, generated mirror | §13 | §15 |
+| W2 | the Giveaway bot, the variant through rooms / lobbies / handlers | §14 | §16 |
+| W3 | every screen (menu card, local + online flow, variant-aware wording, D15 echo check) | §15 | §17 |
+| W4 | real-socket e2e scenarios, nightly fuzz, CI wiring | §16 | §18 |
+| W5 | this roll-up, the last mutation re-run on the final code, the online browser pass, the Resign-wording fix | §17 | §19 |
+
+**Final numbers.** Frontend vitest suite: **817 tests in 41 files** (the 4 Player Chess Online close-out had 673); Giveaway-specific: 133 in 5 files (`fourPlayerGiveaway*.test.ts` ×4 and the FFA golden gate) plus 11 added to `annotationLifecycle.test.ts`. Backend scripts at the end of W5
+(each count is the script's current total, so Giveaway additions are inside the earlier scripts' figures): mirror sync 114, engine parity 53, rooms 220, bots 160, matchmaking 74, handlers 61, **Giveaway 89**, real-socket e2e 287 (not re-run in W5: no server code changed since W4), plus the Giveaway section of the nightly fuzz (random, not counted).
+**Mutation checks, every workstream's set re-run on the final code** (always on a disposable copy, never the real files; W4's mutants run a mutated copy as a REAL server): **192 planted, 187 killed, 5 equivalent, 0 real survivors.**
+
+| | Planted | Killed | Equivalent | Survivors |
+|---|---|---|---|---|
+| W1 (52 rules / wire / client / presentation, 20 in the engine-parity script) | 72 | 72 | 0 | 0 |
+| W2 (22 bot, 17 rooms / matchmaker / handlers, 8 mirrored bot) | 47 | 45 | 2 | 0 |
+| W3 (screens, reducer and UI helpers) | 54 | 53 | 1 | 0 |
+| W4 (12 against the real-socket e2e, 7 against the fuzz) | 19 | 17 | 2 | 0 |
+| **Total** | **192** | **187** | **5** | **0** |
+
+Every equivalent has an `EQUIVALENT-MUTANT NOTE` in the code. The ones in THIS repo: `giveawayBot.ts` — ties are not broken among the best (the tie pick and the noise are each redundant with the other: both only matter when two moves score the same);
+`fourPlayerVariant.ts` — `rankSeats`'s trailing `a - b` (a stable sort already keeps seat order). The backend's three (the queue entry's own `variant` copy; the matchmaker's variant validation, which the handler's validator makes unreachable over a socket; the fuzz's cap-winner mutant, which needs a 1000-ply game) are in its roll-up.
+Two honest details of the W5 fuzz run: "last standing at two seats" is only killed at the CI setting of 80 plies (games end by resignation there), and "the rejoin room state has no variant" was killed this time by the fuzz harness failing without printing a summary (the earlier run killed it with 3 named issues).
+
+**What W5 found.** The online browser pass (below) found one real gap that no pure test had caught: the ONLINE Resign dialog said "its pieces stay on the board as dead blockers" in a Giveaway game (they are walls nobody can capture). The wording now comes from one helper, `describeResignWarning`, used by both game screens, with
+tests that pin the exact four sentences and that neither screen carries its own copy.
+
+**What was NOT verified (read this before calling it finished).** Browser-verified in W5 (the user's own logged-in tab + a scripted guest socket as the second human): the Giveaway queue screen, a live online game (a quiet move while a capture is mandatory is refused, a capture is accepted), leaving and returning, the Spectate tag, Resign and the result card.
+**Not seen rendered:** the D15 refusal screen (needs a server that does not echo the variant, i.e. an older one), a server bot taking over a seat in the browser, and the 4 Player CHESS online screens after the variant changes (they are covered by the golden gate and the pure layers, not by eyes). The v1 limits are in `TODO.md` ("4 Player Giveaway: what it still leaves out").
+
+**Merge order.** Same as 4 Player Chess Online: `ci.yml` checks out the same-named branch of this repo, so push / merge this repo's `fourPlayerGiveaway` first (or together with the backend's). Nothing has been pushed.
+
 ## 4 Player Chess Online — roll-up (read this first for the whole feature)
 
 **What it is.** Online Free-for-All 4 Player Chess, built on top of the local mode of §9. Players queue per time control (live Bullet/Blitz/Rapid only); four humans start a game at
@@ -941,3 +983,15 @@ spectator, the D15 refusal) and the result card — they need a second human, a 
 W4 changes only the backend repo's test scripts and workflows (its `TESTING.md` §18); **no app source changed**. The nightly fuzz's Giveaway clients use THIS repo's own engine (`src/logic/fourPlayer/state.ts`, `moves.ts`, `giveaway.ts`),
 independently of the server's generated mirror, which is why the fuzz can catch a server that disagrees with the app: it caught every planted server bug it could reach (capture not mandatory, points as scores, a missing variant, a missing last-piece win, last standing at two seats).
 The frontend suite and typecheck are unchanged (815 tests).
+
+## 17. 4 Player Giveaway — close-out (workstream W5)
+
+W5 adds no feature. It re-runs every workstream's mutation set on the final code, drives the online screens in a real browser, writes the roll-up at the top of this file and records what is still left out (`TODO.md`).
+
+**Online browser pass (the one W7 of 4 Player Chess skipped).** The built-in browser pane, logged in by the project owner themselves (no account was created and no password was typed by the assistant), against the owner's own dev backend on `:3000`; the second human was a scripted
+guest socket (not a second real account). Seen on screen: the Giveaway queue, a live online game, a quiet move **refused** while a capture was mandatory and a capture accepted, leaving the game and "Return to your game", the Spectate tag on the active-games list, Resign and the result card. One real finding: the online Resign dialog used the Chess wording ("dead blockers"). Fixed in `fourPlayerVariant.ts` (`describeResignWarning(variant, online)`, used by `FourPlayerGameScreen` and `FourPlayerOnlineGameScreen`), with two tests in `fourPlayerGiveawayScreens.test.ts`
+(the four exact sentences; a source pin that neither screen keeps its own copy). The local dialog was re-checked in the pane after the fix. (The header "Online · W5Guest" seen during the pass was only the label of the scripted guest, not an app issue.)
+**Not browser-verified:** the D15 refusal screen, a bot taking over in the browser, the 4 Player Chess (non-Giveaway) online screens.
+
+**Mutation re-run on the final code** (`scratchpad/w5-final`, each on a disposable copy): W1 52/52 + parity 28/28 (20 W1 + 8 W2 mirrored-bot mutants); W2 bot 21 killed + 1 equivalent, plumbing 16 + 1; W3 53 + 1; W4 real-socket 11 + 1, fuzz 6 + 1. **187 killed, 5 equivalent, 0 survivors** — every one of the five is the documented
+equivalent (names in the roll-up and in the code). Frontend vitest 817/817, `tsc --noEmit` clean in both repos (the untracked `_claude_harness.mts` / `_probe.mts` scratch files are not part of the project).

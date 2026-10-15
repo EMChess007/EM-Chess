@@ -48,6 +48,20 @@ export function checkedKingSquares(state: FourPlayerState): number[] {
   return squares;
 }
 
+/**
+ * The text of the Resign confirmation. `online` = the seated player's own seat (and they can keep watching); local = a hot-seat seat. 4 Player Chess keeps its two original
+ * sentences exactly; Giveaway says what really happens to the pieces: they become WALLS that nobody can capture (in 4 Player Chess they stay as dead blockers that CAN be
+ * captured). Found by the W5 browser pass: the online screen showed the Chess wording in a Giveaway game.
+ */
+export function describeResignWarning(variant: FourVariant, online: boolean): string {
+  if (variant === 'giveaway') {
+    return `${online ? 'Your seat' : 'This seat'} is eliminated and cannot win; its pieces stay on the board as walls that nobody can capture.${online ? ' You can keep watching until the game ends.' : ''}`;
+  }
+  return online
+    ? 'Your seat is eliminated and its pieces stay on the board as dead blockers. You can keep watching until the game ends.'
+    : 'This seat is eliminated; its pieces stay on the board as dead blockers.';
+}
+
 /** The tail of the "X to move" line: "in check!" in 4 Player Chess; in Giveaway "must capture" when the seat has a capture (so every legal move is one). */
 export function statusSuffix(state: FourPlayerState, seat: Seat): string {
   if (state.rules.mode === 'giveaway') return legalMoves(state, seat).some((move) => move.captured !== 0) ? ' — must capture' : '';

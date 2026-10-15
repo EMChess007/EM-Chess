@@ -35,7 +35,7 @@ import {
 import { controllerName } from '../logic/fourPlayerBots';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { playMoveSound } from '../logic/moveSounds';
-import { describeResultNote, rankSeats, seatMetric, statusSuffix, variantModeLabel, variantTitle } from '../logic/fourPlayerVariant';
+import { describeResignWarning, describeResultNote, rankSeats, seatMetric, statusSuffix, variantModeLabel, variantTitle } from '../logic/fourPlayerVariant';
 import { useFourPlayerClock } from '../logic/useFourPlayerClock';
 import { describePremoveCancel } from '../logic/premove';
 import { usePremove } from '../logic/usePremove';
@@ -164,7 +164,7 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
     const seat = game.turn;
     appAlert(
       `${SEAT_NAMES[seat]} resigns?`,
-      variant === 'giveaway' ? 'This seat is eliminated and cannot win; its pieces stay on the board as walls that nobody can capture.' : 'This seat is eliminated; its pieces stay on the board as dead blockers.',
+      describeResignWarning(variant, false),
       [
         { text: 'Cancel', style: 'cancel' },
         {
