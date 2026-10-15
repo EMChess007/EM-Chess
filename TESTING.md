@@ -935,3 +935,9 @@ a capture available the status reads "Red to move — must capture"; a quiet mov
 spectator, the D15 refusal) and the result card — they need a second human, a login and a running backend; that is W5's pass, with the login hand-off asked up front.
 
 **Known limits.** "Return to your game" still sits on the 4 Player Chess card (one resume slot for both variants). The Giveaway setup screen shows the rule twice (intro + hint line) — kept because the spec lists the hint on the setup screen.
+
+## 16. 4 Player Giveaway — real sockets and the nightly fuzz (workstream W4)
+
+W4 changes only the backend repo's test scripts and workflows (its `TESTING.md` §18); **no app source changed**. The nightly fuzz's Giveaway clients use THIS repo's own engine (`src/logic/fourPlayer/state.ts`, `moves.ts`, `giveaway.ts`),
+independently of the server's generated mirror, which is why the fuzz can catch a server that disagrees with the app: it caught every planted server bug it could reach (capture not mandatory, points as scores, a missing variant, a missing last-piece win, last standing at two seats).
+The frontend suite and typecheck are unchanged (815 tests).

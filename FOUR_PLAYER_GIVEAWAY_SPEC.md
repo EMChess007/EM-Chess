@@ -1,6 +1,6 @@
 # 4 Player Giveaway (4-seat Antichess) — spec (v1)
 
-Status: **approved (all [confirm] items); W1 (rules + wire core) committed, W2 (bot + server variant plumbing) committed, W3 (every screen) built and awaiting review - W4-W5 not started.** Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one) and backend `chess-app-backend` (`backend/`).
+Status: **approved (all [confirm] items); W1 (rules + wire core) committed, W2 (bot + server variant plumbing) committed, W3 (every screen) committed, W4 (real sockets, nightly fuzz, CI wiring) built and awaiting review - W5 not started.** Written per CHECKLIST.md ("spec before code"). Covers both repos: frontend `EM-Chess` (this one) and backend `chess-app-backend` (`backend/`).
 Same process as 4 Player Chess Online: after each workstream I stop, send the diffs (logic first) and wait for an explicit "go"; nothing is pushed or merged unless asked. The one difference you asked for:
 **every workstream builds Local, Bots and Online together for its slice** (§9) - there is no "local first, online later" stage. Items marked **[confirm]** are details I chose and want a yes/no on (collected in §13).
 
