@@ -842,3 +842,47 @@ a long sparse game costs ~9 µs per ply including the turn-pass and stuck checks
 **Cross-feature check.** 2-player Giveaway, Atomic, Duck, bots, analysis, PGN, history and puzzles share no file with this change (`git diff` touches only `src/logic/fourPlayer*`);
 the 4 Player **Chess** bot is untouched and must not be called on a Giveaway state (it scores check and mates) — W2 adds the Giveaway bot and the server picks by variant.
 Known W1 limits, by design: `readSnapshot` and the screens still read every snapshot with Chess rules (W3), and premove / annotation lifecycle for Giveaway are W3 items.
+
+## 14. 4 Player Giveaway — the bot and the whole game loop in-process (workstream W2)
+
+Spec: `FOUR_PLAYER_GIVEAWAY_SPEC.md` §6 and §7. W2 adds **one new file** to the engine — `src/logic/fourPlayer/giveawayBot.ts` (mirrored to the server) — and
+threads the variant through the **server's** room manager, matchmaker and handlers (backend repo, its `TESTING.md` §16). **No screen, hook or client-socket code changed**:
+the app still plays 4 Player Chess exactly as before; Giveaway has no entry point until W3.
+
+**The bot** (`chooseGiveawayFourBotMove(state, elo, rng)`, same signature and **same ELO dial** as the Chess bot — `botStrength`: `bestChance`, `noise`, tiers). Not Stockfish
+(it cannot play a 4-seat game). A Giveaway bot wants to LOSE pieces without handing anyone the game. The candidate list is already the legal set (the captures, when it has any), so
+its choice is *which* capture or quiet move. Only the next ACTIVE seat answers before it moves again, so, as in the Chess bot, it looks at that one seat.
+`score = exposure − handed-win penalty − victim penalty + noise`: **exposure** = the bot's own pieces the next seat could capture after the move, **one per piece** (a piece attacked twice counts once)
+plus a tiny value tiebreak that stays far below one extra piece; the **greedy** tier (ELO < 1000) sees only that; the **careful** tier (ELO ≥ 1000) also subtracts 30 for a move that
+wins the game for someone else (it takes a seat's **last piece**, or leaves the next seat with **no legal move** — stuck wins) and a small `4 / (1 + pieces the victim has left)` for
+feeding a seat that is close to empty. **No deep tier** in v1 (decision D12), so the server's ELO clamp (1700) stays but never binds. It is a first version, on purpose.
+`chooseBotMoveFor(state, elo, rng)` dispatches on `state.rules.mode` and is now the **default chooser of the server's room manager** — a Giveaway room can never get the Chess bot — while the
+Chess path is move for move the old one (a test plays 60 Chess plies through both and compares).
+
+**Tests** (`src/logic/__tests__/fourPlayerGiveawayBot.test.ts`, 21): always a legal move over 30 full games at mixed ELOs (1 500+ decisions); null for a seat with none; only captures when one exists;
+careful won't take a last piece / won't leave the next seat stuck / prefers to be captured / prefers a richer victim; greedy does all of those blindly; a piece attacked twice counts once; the
+**next ACTIVE seat** (not a frozen one) is the one that answers; a captured piece of ANOTHER seat is not my exposure (a blocker-pawn position where only the exposure of my own pawn makes the
+difference); rook-over-pawn as a tiebreak and the documented order of the weights; the ELO dial (the right capture is chosen ~40 % at 400, ~75 % at 1500, ~95 % at 3000; measured bands asserted);
+a close call is decided partly by the noise (56 % measured, 71 % if the noise were removed); no deep tier (ELO 3000 costs within a small factor of ELO 1000: nothing searches deeper); the dispatcher; and 40 whole bot-vs-bot games from the
+start position at random ELO mixes. **Local game loop:** those bot games ARE the local game logic (the local screen is `playMove` + a chooser), with seeded replays — no screen exists yet.
+Endings of those 40 games: `outOfPieces` 37, `stuck` 3, mean 99 plies.
+
+**Mutation checks (copy-based, `mutate-gw2.cjs`).** Bot: 22 planted bugs; first pass 16 killed, 6 survived — four were real test gaps (exposure of another seat's piece; no value tiebreak; an
+oversized value tiebreak; the dispatcher test used a position where both bots happen to agree) plus the noise (the first noise test was not sensitive to it), all closed with named tests above;
+one is **equivalent and documented inline** (`EQUIVALENT-MUTANT NOTE` in `giveawayBot.ts`): taking the first best move instead of a random one among the best — the added noise already makes exact ties
+vanishingly rare, so either randomiser alone is redundant. **21/22 killed + 1 equivalent.** Mirrored bot (parity script): 8 mutants, first pass 7 killed + 1 survivor (the stuck-next-seat penalty had no
+constructed sweep), closed → **8/8**. Server plumbing: see the backend's `TESTING.md` §16.
+
+**Performance.** One bot decision, over 1 204 decisions of 12 seeded games (ELOs 800 / 1200 / 1700 / 3000): **mean 42 µs, p99 291 µs, max 577 µs** — no search, a few `legalMoves` calls per candidate
+(the Chess careful tier is ~20 ms worst case). A whole bot-vs-bot game is ~100 plies.
+
+**Compatibility matrix (spec §7) — what is tested where.** New client + new server, Giveaway ✓ (server script §1–§6, over the handlers); new client **Chess** + new server ✓ (explicit `"ffa"`
+and the unchanged Chess traffic: the one visible difference is a `variant: "ffa"` key on Chess payloads and on the active-games list rows — additive); **old client + new server** ✓ (a payload
+with no `variant` gets a Chess room, never a Giveaway one); new client **Giveaway + old server** — the *client's* refusal when the echo is missing (D15) is built and tested in **W3**; it cannot be
+tested server-side.
+
+**Existing tests edited in W2 (all pinned lists / key sets, none relaxed):** `fourPlayerMirrorSet.test.ts` (the file list and the closure's entry points gain `giveawayBot.ts`).
+Everything else, the whole frontend suite (769 tests), passes unchanged.
+
+**Known W2 limits.** The Giveaway bot is a v1 heuristic: it does not plan to *be stuck* (which wins), does not look past the next seat, and has no opening/endgame knowledge; whether it is fun to play against
+is for the browser pass (W5) and tuning. The screens still call the Chess bot (W3 swaps them to `chooseBotMoveFor`).
