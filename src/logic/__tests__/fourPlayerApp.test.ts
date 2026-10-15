@@ -90,8 +90,8 @@ describe('the bot roster is the app\'s ONE roster (not a copy)', () => {
     expect(setup).not.toMatch(/1 human \+ 3 bots|4 humans|oneHumanConfig|allHumansConfig|presetRow|presetButton/);
     expect(setup).toContain('onPickBot(seat)');
     const app = readFileSync(join(SRC, '../App.tsx'), 'utf8').replace(/\r\n/g, '\n');
-    expect(app).toContain("{ name: 'fourPlayerBotSelect'; seats: SeatConfig; seat: Seat }");
-    expect(app).toMatch(/<BotSelectScreen\s+subtitle=\{`4 Player Chess · \$\{SEAT_NAMES\[seat\]\}`\}\s+engineLabel="4 Player Chess bot"/);
+    expect(app).toContain("{ name: 'fourPlayerBotSelect'; variant: FourVariant; seats: SeatConfig; seat: Seat }");
+    expect(app).toMatch(/<BotSelectScreen\s+subtitle=\{`\$\{variantTitle\(variant\)\} · \$\{SEAT_NAMES\[seat\]\}`\}\s+engineLabel=\{`\$\{variantTitle\(variant\)\} bot`\}/);
     expect(app).toContain('withController(seats, seat, controllerForBot(bot))');
   });
 
@@ -107,12 +107,12 @@ describe('the bot roster is the app\'s ONE roster (not a copy)', () => {
 describe('the time-control step', () => {
   it('goes after seat setup and before the game, reusing TimeControlSelectScreen with Daily left out', () => {
     const app = readFileSync(join(SRC, '../App.tsx'), 'utf8').replace(/\r\n/g, '\n');
-    expect(app).toContain("{ name: 'fourPlayerTimeControl'; seats: SeatConfig }");
-    expect(app).toContain("{ name: 'fourPlayerGame'; seats: SeatConfig; timeControl: TimeControl }");
-    expect(app).toContain("onContinue={() => setScreen({ name: 'fourPlayerTimeControl', seats })}");
+    expect(app).toContain("{ name: 'fourPlayerTimeControl'; variant: FourVariant; seats: SeatConfig }");
+    expect(app).toContain("{ name: 'fourPlayerGame'; variant: FourVariant; seats: SeatConfig; timeControl: TimeControl }");
+    expect(app).toContain("onContinue={() => setScreen({ name: 'fourPlayerTimeControl', variant, seats })}");
     expect(app).toContain("excludeCategories={['daily']}");
-    expect(app).toContain("setScreen({ name: 'fourPlayerGame', seats, timeControl })");
-    expect(app).toContain('<FourPlayerGameScreen seats={screen.seats} timeControl={screen.timeControl}');
+    expect(app).toContain("setScreen({ name: 'fourPlayerGame', variant, seats, timeControl })");
+    expect(app).toContain('<FourPlayerGameScreen variant={screen.variant} seats={screen.seats} timeControl={screen.timeControl}');
     const picker = read('screens/TimeControlSelectScreen.tsx');
     expect(picker).toContain('excludeCategories?: TimeControlCategory[];');
     expect(picker).toContain('TIME_CONTROL_CATEGORIES.filter(({ category }) => !excludeCategories.includes(category)).map(');
@@ -167,7 +167,7 @@ describe('the seat cards and the game screen (no React Native renderer available
   it('each seat card shows name + score + remaining time together, plus who plays it, and the clock row disappears for "No time limit"', () => {
     const strip = read('components/FourPlayerSeatStrip.tsx');
     expect(strip).toContain('{SEAT_NAMES[seat]}');
-    expect(strip).toContain('<Text style={styles.score}>{state.score[seat]}</Text>');
+    expect(strip).toContain('<Text style={styles.score}>{seatMetric(state, seat)}</Text>'); // the score in Chess, the pieces left in Giveaway
     expect(strip).toContain('{clock.enabled && <Text style={[styles.time');
     expect(strip).toContain('formatSeatClock(seconds)');
     // Online (W5) gave the strip optional `labels`; the local game still passes `seats` and gets exactly the roster-bot / "Human" text it always did.
@@ -185,7 +185,7 @@ describe('the seat cards and the game screen (no React Native renderer available
     expect(game).toContain('setClock(past[i].clock);');
     expect(game).toContain('resetClock();');
     expect(game).toContain('<FourPlayerSeatStrip state={game} seats={seats} clock={clock} />');
-    expect(game).toContain('chooseBotMove(game, controller.elo)');
+    expect(game).toContain('chooseBotMoveFor(game, controller.elo)'); // the dispatcher: the Giveaway bot for a Giveaway position, this very Chess bot otherwise
   });
 
   it('regression: the bot effect must not depend on `apply` (which changes on every clock tick and would cancel the timer of the bot forever)', () => {
@@ -237,8 +237,8 @@ describe('isolation and wiring (no React Native renderer available)', () => {
 
   it('App.tsx starts setup with the default seats, and Back/Menu return one step / to the play menu', () => {
     const app = readFileSync(join(SRC, '../App.tsx'), 'utf8').replace(/\r\n/g, '\n');
-    expect(app).toContain("onFourPlayer={() => setScreen({ name: 'fourPlayerSetup', seats: defaultSeatConfig() })}");
-    expect(app).toContain("onBack={() => setScreen({ name: 'fourPlayerSetup', seats })}"); // from the bot picker and from the time control
+    expect(app).toContain("onFourPlayer={() => setScreen({ name: 'fourPlayerSetup', variant: 'ffa', seats: defaultSeatConfig() })}");
+    expect(app).toContain("onBack={() => setScreen({ name: 'fourPlayerSetup', variant, seats })}"); // from the bot picker and from the time control
     expect(app).toContain("onExit={() => setScreen({ name: 'playModeSelect' })} />");
   });
 
@@ -321,7 +321,7 @@ describe('why a game ended', () => {
     expect(describeResultReason('elimination')).toMatch(/eliminated/);
     expect(describeResultReason('cap')).toMatch(/Move limit/);
     expect(describeResultReason('deadPosition')).toMatch(/bare kings/);
-    expect(read('screens/FourPlayerGameScreen.tsx')).toContain('describeResultReason(game.result.reason)');
+    expect(read('screens/FourPlayerGameScreen.tsx')).toContain('describeResultNote(game.result, variant)'); // = describeResultReason(reason) for 4 Player Chess (pinned in fourPlayerGiveawayScreens.test.ts)
   });
 });
 

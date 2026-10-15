@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { ChessEngine } from '../ChessEngine';
 import { annotationsSurvive } from '../annotationLifecycle';
 import {
+  GIVEAWAY_RULES,
   addIncrement,
   chooseBotMove,
+  chooseBotMoveFor,
   clockTick,
   createClock,
   findLegalMove,
@@ -233,6 +235,123 @@ describe('wiring: every board clears through the ONE shared mechanism, keyed to 
     for (const file of ['elimination.ts', 'clock.ts', 'setup.ts', 'presentation.ts', 'premove.ts', 'annotations.ts', 'bot.ts', 'board.ts']) {
       expect(read(`logic/fourPlayer/${file}`), file).not.toMatch(/ply: [^\n]*\+ ?1|ply\+\+|ply \+= /);
     }
+  });
+});
+
+/**
+ * 4 PLAYER GIVEAWAY (FOUR_PLAYER_GIVEAWAY_SPEC.md section 8, CHECKLIST "Extra" box): the mode's position epoch is the same `state.ply`, so the rule is the same - and these
+ * are the Giveaway engine's own no-move turn advances, spelled out like the Chess ones above. Giveaway has FEWER of them (no dead king walks, no elimination by mate or
+ * stalemate) and one new one: a resignation / flag fall can leave the seat already to move STUCK, which ends the game without any move being played.
+ */
+describe('4 Player Giveaway: a turn that advances (or a game that ends) WITHOUT a move never clears arrows', () => {
+  const ga = (pieces: string[], options: Parameters<typeof stateFromPieces>[1] = {}) => stateFromPieces(pieces, { rules: GIVEAWAY_RULES, ...options });
+
+  it('a seat resigning when it is NOT its turn changes no move and no turn (the seat is frozen; its pieces become walls)', () => {
+    const before = ga([...KINGS, 'rR@d1', 'bP@b6'], { turn: BLUE });
+    const out = resign(before, YELLOW, first);
+    expect(out.state.status[YELLOW]).toBe('frozen'); // never 'dead-king': nothing walks in Giveaway
+    expect(out.state.turn).toBe(BLUE);
+    expect(moveEvents(out.events)).toEqual([]);
+    expect(survives(before, out.state)).toBe(true);
+  });
+
+  it('the seat to move resigns and the turn passes on: the NEXT seat\'s turn starts with no move, and the arrows survive', () => {
+    const before = ga([...KINGS, 'rR@d1', 'bP@b6'], { turn: GREEN });
+    const out = resign(before, GREEN, first);
+    expect(out.state.turn).toBe(RED);
+    expect(moveEvents(out.events)).toEqual([]);
+    expect(survives(before, out.state)).toBe(true);
+  });
+
+  it('a flag falling on the seat to move hands the turn on with no move, and the arrows survive', () => {
+    const before = ga([...KINGS, 'rR@d1', 'bP@b6'], { turn: YELLOW });
+    const clock = { ...createClock(600, 0, true), seconds: [600, 600, 0.5, 600] };
+    const tick = clockTick(before, clock, 2, first);
+    expect(tick.state.status[YELLOW]).toBe('frozen');
+    expect(tick.state.turn).toBe(GREEN);
+    expect(moveEvents(tick.events)).toEqual([]);
+    expect(survives(before, tick.state)).toBe(true);
+  });
+
+  it('a frozen (eliminated) seat is skipped without a move', () => {
+    const before = ga([...KINGS, 'rR@d1', 'yP@j8'], { turn: RED, status: ['active', 'frozen', 'active', 'active'] });
+    const out = resign(before, RED, first);
+    expect(out.state.turn).toBe(YELLOW); // Blue was skipped
+    expect(moveEvents(out.events)).toEqual([]);
+    expect(survives(before, out.state)).toBe(true);
+  });
+
+  it('a resignation that leaves the seat to move STUCK ends the game with no move played (the "stuck" win): the arrows survive', () => {
+    // Blue's only legal move is the forced capture of Yellow's knight; Yellow resigns, the knight becomes an uncapturable wall, Blue is left with none.
+    const before = ga(['bP@e5', 'rP@f5', 'yN@f6', 'rK@h1', 'yK@g14', 'gK@n7'], { turn: BLUE });
+    const out = resign(before, YELLOW, first);
+    expect(out.state.result).toEqual({ winners: [BLUE], reason: 'stuck' });
+    expect(moveEvents(out.events)).toEqual([]);
+    expect(survives(before, out.state)).toBe(true);
+  });
+
+  it('the last-standing end of a game by resignation / flag fall is no move either', () => {
+    const before = ga(KINGS, { turn: RED, status: ['active', 'frozen', 'frozen', 'active'] });
+    const out = resign(before, GREEN, first, 'timeout');
+    expect(out.state.result).toEqual({ winners: [RED], reason: 'lastStanding' });
+    expect(moveEvents(out.events)).toEqual([]);
+    expect(survives(before, out.state)).toBe(true);
+  });
+
+  it('the game ending ON a move (a seat\'s last piece captured, a stuck seat reached) is a move: the arrows clear with it', () => {
+    const outOfPieces = ga(['rR@e5', 'gP@m5', 'rK@h1', 'bK@a8', 'yK@g14'], { turn: RED });
+    const done = playMove(outOfPieces, findLegalMove(outOfPieces, RED, sq('e5'), sq('m5'))!, first).state;
+    expect(done.result?.reason).toBe('outOfPieces');
+    expect(survives(outOfPieces, done)).toBe(false);
+    const stuckStart = ga(['rP@g5', 'bP@f5', 'rK@h1', 'yK@g14', 'gK@n7'], { turn: RED });
+    const stuckDone = playMove(stuckStart, findLegalMove(stuckStart, RED, sq('h1'), sq('h2'))!, first).state;
+    expect(stuckDone.result?.reason).toBe('stuck');
+    expect(survives(stuckStart, stuckDone)).toBe(false);
+  });
+});
+
+describe('4 Player Giveaway: every MOVE clears, and nothing moves unseen', () => {
+  it('a move by each of the four seats changes the epoch (the openers are identical to Chess: no capture exists yet)', () => {
+    let state = initialState(GIVEAWAY_RULES);
+    for (const [from, to] of [['e2', 'e3'], ['b5', 'c5'], ['h13', 'h12'], ['m6', 'l6']]) {
+      const before = state;
+      state = playMove(state, findLegalMove(state, state.turn, sq(from), sq(to))!, first).state;
+      expect(survives(before, state), `${from}-${to} by seat ${before.turn}`).toBe(false);
+    }
+  });
+
+  it('a forced capture is a move like any other', () => {
+    const before = stateFromPieces(['rR@d5', 'bP@d9', ...KINGS], { rules: GIVEAWAY_RULES, turn: RED });
+    const out = playMove(before, findLegalMove(before, RED, sq('d5'), sq('d9'))!, first);
+    expect(positionEpoch(out.state)).toBe(positionEpoch(before) + 1);
+    expect(survives(before, out.state)).toBe(false);
+  });
+
+  it('over a whole bot-played game: the epoch rises by exactly one per move, no walking king ever moves a piece behind the arrows, and a resignation changes nothing', () => {
+    let state = initialState(GIVEAWAY_RULES);
+    let moves = 0;
+    for (let i = 0; i < 400 && !state.result; i++) {
+      const before = state;
+      const out = playMove(state, chooseBotMoveFor(state, 1500, () => 0.5)!, first);
+      state = out.state;
+      moves++;
+      expect(out.events.filter((e) => e.kind === 'deadKingMove' || e.kind === 'frozen'), `step ${i}`).toEqual([]); // nothing but the mover's own move changes the board
+      expect(positionEpoch(state) - positionEpoch(before), `step ${i}`).toBe(1);
+    }
+    expect(positionEpoch(state)).toBe(moves);
+  });
+});
+
+describe('4 Player Giveaway: wiring', () => {
+  const read = (rel: string) => readFileSync(join(__dirname, '../..', rel), 'utf8').replace(/\r\n/g, '\n');
+
+  it('the Giveaway modules never touch the ply (it goes up in applyMoveRaw only), and the board still clears through its one shared mechanism', () => {
+    expect(read('logic/fourPlayer/moves.ts').match(/ply: state\.ply \+ 1/g)).toHaveLength(1);
+    for (const file of ['giveaway.ts', 'giveawayBot.ts']) expect(read(`logic/fourPlayer/${file}`), file).not.toMatch(/ply: [^\n]*\+ ?1|ply\+\+|ply \+= /);
+    expect(read('logic/fourPlayerVariant.ts')).not.toMatch(/ply: [^\n]*\+ ?1|ply\+\+|ply \+= /);
+    const four = read('components/FourPlayerBoard.tsx');
+    expect(four).toContain('useClearAnnotationsOnMove(positionEpoch(state), () => {'); // the same board, the same epoch, in both variants
+    expect(four).not.toMatch(/keepAnnotations|previousMover|waitingSeat/);
   });
 });
 

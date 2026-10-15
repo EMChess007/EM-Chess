@@ -11,12 +11,10 @@ import {
   SEAT_COLORS,
   SEAT_NAMES,
   addIncrement,
-  chooseBotMove,
+  chooseBotMoveFor,
   defaultViewSeat,
   describeEvents,
   initialState,
-  isInCheck,
-  describeResultReason,
   describePremove,
   moveLabel,
   nextSeat,
@@ -24,9 +22,11 @@ import {
   premoveSeat,
   resolvePremove,
   resign,
+  rulesFor,
   type FourPlayerClock,
   type FourPlayerPremove,
   type FourPlayerState,
+  type FourVariant,
   type GameEvent,
   type Move,
   type Seat,
@@ -35,12 +35,15 @@ import {
 import { controllerName } from '../logic/fourPlayerBots';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { playMoveSound } from '../logic/moveSounds';
+import { describeResignWarning, describeResultNote, rankSeats, seatMetric, statusSuffix, variantModeLabel, variantTitle } from '../logic/fourPlayerVariant';
 import { useFourPlayerClock } from '../logic/useFourPlayerClock';
 import { describePremoveCancel } from '../logic/premove';
 import { usePremove } from '../logic/usePremove';
 import type { TimeControl } from '../types/timeControl';
 
 interface FourPlayerGameScreenProps {
+  /** 4 Player Chess ('ffa', the default) or 4 Player Giveaway: picks the start rules, the bot and the wording (no "in check", pieces left instead of points). */
+  variant?: FourVariant;
   seats: SeatConfig;
   timeControl: TimeControl;
   onExit: () => void;
@@ -62,14 +65,14 @@ interface Snapshot {
 }
 
 /**
- * Local 4 Player Chess (Free-for-All): hotseat humans and/or bots, per the SeatConfig, on four independent clocks. The whole game is one
+ * Local 4 Player Chess (Free-for-All) or 4 Player Giveaway (`variant`): hotseat humans and/or bots, per the SeatConfig, on four independent clocks. The whole game is one
  * immutable FourPlayerState advanced with playMove (which also resolves eliminations and walks dead kings), so Undo is a stack of earlier
  * states (with their clocks). A seat that runs out of time is eliminated by the engine ('timeout'). Not saved to history, not rated.
  */
-export default function FourPlayerGameScreen({ seats, timeControl, onExit }: FourPlayerGameScreenProps) {
+export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeControl, onExit }: FourPlayerGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const [game, setGame] = useState<FourPlayerState>(() => initialState());
+  const [game, setGame] = useState<FourPlayerState>(() => initialState(rulesFor(variant)));
   const [past, setPast] = useState<Snapshot[]>([]);
   const [lastMove, setLastMove] = useState<{ from: number; to: number } | null>(null);
   const [notice, setNotice] = useState<string[]>([]);
@@ -116,7 +119,7 @@ export default function FourPlayerGameScreen({ seats, timeControl, onExit }: Fou
   useEffect(() => {
     if (!botToMove || controller.kind !== 'bot') return;
     const timer = setTimeout(() => {
-      const move = chooseBotMove(game, controller.elo);
+      const move = chooseBotMoveFor(game, controller.elo); // the Giveaway bot for a Giveaway position, the Chess bot otherwise
       if (move) applyRef.current(move);
     }, botDelayMs(timeControl));
     return () => clearTimeout(timer);
@@ -159,24 +162,28 @@ export default function FourPlayerGameScreen({ seats, timeControl, onExit }: Fou
   const handleResign = () => {
     if (!humanToMove) return;
     const seat = game.turn;
-    appAlert(`${SEAT_NAMES[seat]} resigns?`, 'This seat is eliminated; its pieces stay on the board as dead blockers.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Resign',
-        style: 'destructive',
-        onPress: () => {
-          const { state: next, events } = resign(game, seat);
-          setPast((p) => [...p, { state: game, clock, lastMove, log }]);
-          setGame(next);
-          setNotice(describeEvents(events));
-          if (next.result) triggerGameEndHaptics();
+    appAlert(
+      `${SEAT_NAMES[seat]} resigns?`,
+      describeResignWarning(variant, false),
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Resign',
+          style: 'destructive',
+          onPress: () => {
+            const { state: next, events } = resign(game, seat);
+            setPast((p) => [...p, { state: game, clock, lastMove, log }]);
+            setGame(next);
+            setNotice(describeEvents(events));
+            if (next.result) triggerGameEndHaptics();
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   const handleNewGame = () => {
-    setGame(initialState());
+    setGame(initialState(rulesFor(variant)));
     resetClock();
     setPast([]);
     setLastMove(null);
@@ -187,7 +194,8 @@ export default function FourPlayerGameScreen({ seats, timeControl, onExit }: Fou
     cancelPremove();
   };
 
-  const ranking = useMemo(() => ([0, 1, 2, 3] as Seat[]).slice().sort((a, b) => game.score[b] - game.score[a] || a - b), [game.score]);
+  // Chess: by score. Giveaway: the winner first, then the fewest pieces left.
+  const ranking = useMemo(() => rankSeats(variant, ([0, 1, 2, 3] as Seat[]).map((seat) => seatMetric(game, seat)), game.result?.winners ?? []), [variant, game]);
 
   const mover = SEAT_NAMES[game.turn];
   let statusText: string;
@@ -197,12 +205,12 @@ export default function FourPlayerGameScreen({ seats, timeControl, onExit }: Fou
   } else if (botToMove) {
     statusText = `${mover} (bot) is thinking…`;
   } else {
-    statusText = `${mover} to move${isInCheck(game, game.turn) ? ' — in check!' : ''}`;
+    statusText = `${mover} to move${statusSuffix(game, game.turn)}`; // " — in check!" (Chess) / " — must capture" (Giveaway)
   }
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="4 Player Chess" subtitle={`Free-for-All · ${timeControl.label}`} onBack={onExit} backLabel="‹ Menu" />
+      <ScreenHeader title={variantTitle(variant)} subtitle={`${variantModeLabel(variant)} · ${timeControl.label}`} onBack={onExit} backLabel="‹ Menu" />
       <GameScreenBody
         bottomBar={
           <>
@@ -276,10 +284,10 @@ export default function FourPlayerGameScreen({ seats, timeControl, onExit }: Fou
                 <Text style={[styles.resultName, game.result!.winners.includes(seat) && { fontWeight: '800' }]}>
                   {SEAT_NAMES[seat]} <Text style={styles.resultMeta}>({controllerName(seats[seat])})</Text>
                 </Text>
-                <Text style={styles.resultScore}>{game.score[seat]}</Text>
+                <Text style={styles.resultScore}>{variant === 'giveaway' ? `${seatMetric(game, seat)} left` : seatMetric(game, seat)}</Text>
               </View>
             ))}
-            <Text style={styles.resultNote}>{describeResultReason(game.result.reason)}</Text>
+            <Text style={styles.resultNote}>{describeResultNote(game.result, variant)}</Text>
           </View>
         )}
       </GameScreenBody>

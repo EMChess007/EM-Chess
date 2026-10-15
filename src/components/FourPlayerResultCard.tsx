@@ -2,19 +2,21 @@ import { StyleSheet, Text, View } from 'react-native';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { SEAT_COLORS, SEAT_NAMES } from '../logic/fourPlayer';
 import { describeFourResultNote, resultRows } from '../logic/fourPlayerOnlineUi';
-import type { FourGameOverPayload, FourSeatInfo } from '../logic/fourPlayerWire';
+import type { FourGameOverPayload, FourSeatInfo, FourVariant } from '../logic/fourPlayerWire';
 
 interface FourPlayerResultCardProps {
   gameOver: FourGameOverPayload;
   seats: readonly FourSeatInfo[];
+  /** Which game it was; omitted = 4 Player Chess (points). Giveaway ranks the winner first and shows the pieces each seat had left. */
+  variant?: FourVariant;
 }
 
 /** The final ranking of an online 4 Player game (highest score first, winners in bold) and why it ended. An abandoned game (every human
  * left) has no result, so it shows only the note, never scores. */
-export default function FourPlayerResultCard({ gameOver, seats }: FourPlayerResultCardProps) {
+export default function FourPlayerResultCard({ gameOver, seats, variant = 'ffa' }: FourPlayerResultCardProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const rows = resultRows(gameOver, seats);
+  const rows = resultRows(gameOver, seats, variant);
   return (
     <View style={styles.card}>
       {rows.map((row) => (
@@ -24,10 +26,10 @@ export default function FourPlayerResultCard({ gameOver, seats }: FourPlayerResu
           <Text style={[styles.name, row.winner && styles.winner]} numberOfLines={1}>
             {row.name} <Text style={styles.meta}>({SEAT_NAMES[row.seat]})</Text>
           </Text>
-          <Text style={styles.score}>{row.score}</Text>
+          <Text style={styles.score}>{variant === 'giveaway' ? `${row.score} left` : row.score}</Text>
         </View>
       ))}
-      <Text style={styles.note}>{describeFourResultNote(gameOver.reason)}</Text>
+      <Text style={styles.note}>{describeFourResultNote(gameOver.reason, variant, gameOver.winners)}</Text>
     </View>
   );
 }

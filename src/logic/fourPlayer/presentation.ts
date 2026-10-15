@@ -4,6 +4,7 @@
 
 import { SEAT_NAMES, SIZE } from './board';
 import type { GameEvent } from './elimination';
+import type { FourPlayerResult } from './state';
 import type { SeatController } from './setup';
 
 /** The pixel size of one board square: as large as the width allows, capped by the height left over for the rest of the game screen. */
@@ -42,9 +43,13 @@ export function formatSeatClock(seconds: number): string {
 }
 
 /** The line under the final ranking explaining why the game ended. */
-export function describeResultReason(reason: 'elimination' | 'cap' | 'deadPosition'): string {
+export function describeResultReason(reason: FourPlayerResult['reason']): string {
   if (reason === 'cap') return 'Move limit reached — scored by points.';
   if (reason === 'deadPosition') return 'Only bare kings are left, so no checkmate is possible — highest score wins.';
+  // 4 Player GIVEAWAY reasons (W1 makes the function total; the variant-aware Giveaway wording, e.g. the cap's "fewest pieces wins", is the screens' job in W3).
+  if (reason === 'outOfPieces') return 'A player lost their last piece and wins.';
+  if (reason === 'stuck') return 'A player had no legal move and wins.';
+  if (reason === 'lastStanding') return 'Everyone else resigned or ran out of time.';
   return 'Three players eliminated — highest score wins.';
 }
 

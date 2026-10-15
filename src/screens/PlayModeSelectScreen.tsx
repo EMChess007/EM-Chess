@@ -32,6 +32,9 @@ interface PlayModeSelectScreenProps {
   onFourPlayer: () => void;
   /** Online 4 Player (behind the same login gate as every Online entry). */
   onFourPlayerOnline: () => void;
+  /** 4 Player Giveaway (4-seat Antichess): Local (seat setup, bots allowed) and Online (behind the login gate). */
+  onFourPlayerGiveaway: () => void;
+  onFourPlayerGiveawayOnline: () => void;
   /** Set while the player has left an online 4 Player game that is still going: offers "Return to your game". */
   onFourPlayerResume?: () => void;
   onEngineVsEngineClassic: () => void;
@@ -70,6 +73,8 @@ export default function PlayModeSelectScreen({
   onLocalDuckChess,
   onFourPlayer,
   onFourPlayerOnline,
+  onFourPlayerGiveaway,
+  onFourPlayerGiveawayOnline,
   onFourPlayerResume,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
@@ -100,6 +105,7 @@ export default function PlayModeSelectScreen({
   const handleChallengeFriend = requireLogin(onChallengeFriend);
   const handleTournaments = requireLogin(onTournaments);
   const handleFourPlayerOnline = requireLogin(onFourPlayerOnline);
+  const handleFourPlayerGiveawayOnline = requireLogin(onFourPlayerGiveawayOnline);
 
   return (
     <View style={styles.container}>
@@ -221,6 +227,19 @@ export default function PlayModeSelectScreen({
               <Text style={styles.spectateLinkText}>Return to your game ›</Text>
             </Pressable>
           )}
+        </View>
+
+        <View style={styles.categoryCard}>
+          <Text style={styles.categoryTitle}>4 Player Giveaway</Text>
+          <Text style={styles.categorySubtitle}>Four players, captures are mandatory — lose all your pieces to win. Pass the device, play bots, or play online</Text>
+          <View style={styles.subButtonRow}>
+            <Pressable style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onFourPlayerGiveaway}>
+              <ModeButtonLabel label="Local" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.fourPlayerSubButton]} onPress={handleFourPlayerGiveawayOnline}>
+              <ModeButtonLabel label="Online" style={styles.subButtonText} />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.categoryCard}>

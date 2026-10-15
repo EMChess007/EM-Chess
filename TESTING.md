@@ -5,6 +5,48 @@ backend test scripts import this repo's `src/logic/ChessEngine.ts` directly, sin
 actual shared chess logic, not a reimplementation. See the backend's own `TESTING.md` for that
 half; this document covers what's local to this repo.
 
+## 4 Player Giveaway — roll-up (read this first for the whole feature)
+
+**What it is.** The Antichess version of the 4-seat board: **Local, Bots and Online built together**, on the SAME engine as 4 Player Chess (`src/logic/fourPlayer/`), which dispatches on `state.rules.mode` (`'ffa'` | `'giveaway'`) at a fixed list of
+touch points (header of `giveaway.ts`). Captures are mandatory for everyone (kings are ordinary pieces, no check, no castling, promotion to Q/R/B/N); a seat that loses its last piece wins at once, a seat to move with no legal move **wins**, a resigned / flagged
+seat is eliminated and **cannot win** (its pieces stay as permanent walls that block squares and slide-rays and cannot be captured); the last active seat wins; at 1000 plies the fewest pieces win (ties shared). No points: seat cards and the result table count
+pieces left. Online uses the same queue / room / lobby / spectate machinery as 4 Player Chess, with the lobby keyed by time control **and variant**; the wire stays backward compatible (absent `variant` = Free-for-All). Spec: `FOUR_PLAYER_GIVEAWAY_SPEC.md`;
+the backend's half is in its own `TESTING.md` (same roll-up at its top).
+
+**Where each workstream is documented**
+
+| | What | Frontend | Backend |
+|---|---|---|---|
+| W1 | rules engine, wire core, FFA golden gate, generated mirror | §13 | §15 |
+| W2 | the Giveaway bot, the variant through rooms / lobbies / handlers | §14 | §16 |
+| W3 | every screen (menu card, local + online flow, variant-aware wording, D15 echo check) | §15 | §17 |
+| W4 | real-socket e2e scenarios, nightly fuzz, CI wiring | §16 | §18 |
+| W5 | this roll-up, the last mutation re-run on the final code, the online browser pass, the Resign-wording fix | §17 | §19 |
+
+**Final numbers.** Frontend vitest suite: **817 tests in 41 files** (the 4 Player Chess Online close-out had 673); Giveaway-specific: 133 in 5 files (`fourPlayerGiveaway*.test.ts` ×4 and the FFA golden gate) plus 11 added to `annotationLifecycle.test.ts`. Backend scripts at the end of W5
+(each count is the script's current total, so Giveaway additions are inside the earlier scripts' figures): mirror sync 114, engine parity 53, rooms 220, bots 160, matchmaking 74, handlers 61, **Giveaway 89**, real-socket e2e 287 (not re-run in W5: no server code changed since W4), plus the Giveaway section of the nightly fuzz (random, not counted).
+**Mutation checks, every workstream's set re-run on the final code** (always on a disposable copy, never the real files; W4's mutants run a mutated copy as a REAL server): **192 planted, 187 killed, 5 equivalent, 0 real survivors.**
+
+| | Planted | Killed | Equivalent | Survivors |
+|---|---|---|---|---|
+| W1 (52 rules / wire / client / presentation, 20 in the engine-parity script) | 72 | 72 | 0 | 0 |
+| W2 (22 bot, 17 rooms / matchmaker / handlers, 8 mirrored bot) | 47 | 45 | 2 | 0 |
+| W3 (screens, reducer and UI helpers) | 54 | 53 | 1 | 0 |
+| W4 (12 against the real-socket e2e, 7 against the fuzz) | 19 | 17 | 2 | 0 |
+| **Total** | **192** | **187** | **5** | **0** |
+
+Every equivalent has an `EQUIVALENT-MUTANT NOTE` in the code. The ones in THIS repo: `giveawayBot.ts` — ties are not broken among the best (the tie pick and the noise are each redundant with the other: both only matter when two moves score the same);
+`fourPlayerVariant.ts` — `rankSeats`'s trailing `a - b` (a stable sort already keeps seat order). The backend's three (the queue entry's own `variant` copy; the matchmaker's variant validation, which the handler's validator makes unreachable over a socket; the fuzz's cap-winner mutant, which needs a 1000-ply game) are in its roll-up.
+Two honest details of the W5 fuzz run: "last standing at two seats" is only killed at the CI setting of 80 plies (games end by resignation there), and "the rejoin room state has no variant" was killed this time by the fuzz harness failing without printing a summary (the earlier run killed it with 3 named issues).
+
+**What W5 found.** The online browser pass (below) found one real gap that no pure test had caught: the ONLINE Resign dialog said "its pieces stay on the board as dead blockers" in a Giveaway game (they are walls nobody can capture). The wording now comes from one helper, `describeResignWarning`, used by both game screens, with
+tests that pin the exact four sentences and that neither screen carries its own copy.
+
+**What was NOT verified (read this before calling it finished).** Browser-verified in W5 (the user's own logged-in tab + a scripted guest socket as the second human): the Giveaway queue screen, a live online game (a quiet move while a capture is mandatory is refused, a capture is accepted), leaving and returning, the Spectate tag, Resign and the result card.
+**Not seen rendered:** the D15 refusal screen (needs a server that does not echo the variant, i.e. an older one), a server bot taking over a seat in the browser, and the 4 Player CHESS online screens after the variant changes (they are covered by the golden gate and the pure layers, not by eyes). The v1 limits are in `TODO.md` ("4 Player Giveaway: what it still leaves out").
+
+**Merge order.** Same as 4 Player Chess Online: `ci.yml` checks out the same-named branch of this repo, so push / merge this repo's `fourPlayerGiveaway` first (or together with the backend's). Nothing has been pushed.
+
 ## 4 Player Chess Online — roll-up (read this first for the whole feature)
 
 **What it is.** Online Free-for-All 4 Player Chess, built on top of the local mode of §9. Players queue per time control (live Bullet/Blitz/Rapid only); four humans start a game at
@@ -678,7 +720,7 @@ success carrying `finished: true` + the result (a new event, so no released clie
 - None of them throws on any input (a `Symbol`, an object whose `toString` throws, an array dressed with the right property names, 1000 random shapes).
 - `clocksToWireMs` (one rounding rule for both sides) and `classifyFourRejoinAck` (the 4-player twin of `classifyRejoinAck`).
 
-**`src/logic/fourPlayer/MIRRORED_TO_BACKEND.json`** lists the files the backend copies (the six engine modules + the wire file). The owner of the
+**`src/logic/fourPlayer/MIRRORED_TO_BACKEND.json`** lists the files the backend copies (the six engine modules + the wire file at the time; `giveaway.ts` joined later, see section 13). The owner of the
 source owns the list. `fourPlayerMirrorSet.test.ts` fails here — not only later in the backend's CI — if an engine file imports a client-only
 module, a package, uses `require`/`import()`, spells an extension, or if the list stops being exactly the closure of `bot`, `clock` and the wire file.
 
@@ -788,3 +830,168 @@ player *screens* need a logged-in account (the project rule is no account creati
 Rejoin token in memory only. Chat history is not replayed after a reconnect (the server does not send it). The player screens are covered by pins and by the
 pure layers, not by a rendered test (no React Native renderer); W7 verifies them in the browser. Only move/capture sounds. The badge line adds one small text
 row to a seat card that carries one (a takeover or an offline seat); on the smallest phones the board budget is unchanged but that was not measured on a device.
+
+## 13. 4 Player Giveaway — rules + wire core (workstream W1)
+
+Spec: `FOUR_PLAYER_GIVEAWAY_SPEC.md`. W1 is the engine and the contract only: **no screen, hook, bot or server-room code changed**, so nothing a
+player can see is different yet. Rules in one paragraph: the 4 Player board and armies, but you want to LOSE your pieces — captures are mandatory
+(any capture of any other active seat; the mover picks), kings are ordinary pieces (capturable, no check, no castling), the first seat to lose its
+last piece or to be stuck on its own turn wins and ends the game, resign / flag = eliminated (its pieces become permanent **walls**: not capturable,
+never forcing, they block squares and slide-rays for good), last active seat wins, ply cap 1000 → fewest pieces win, ties shared, no draws, no points.
+
+**Where it lives.** One discriminated rules object (`FourPlayerRules = FfaRules | GiveawayRules`, `GIVEAWAY_RULES`, `rulesFor(variant)`), pure helpers in
+the new mirrored `fourPlayer/giveaway.ts` (mandatory-capture filter, piece counts, out-of-pieces, cap winners; it imports only types back, so
+no cycle), and a `state.rules.mode === 'giveaway'` dispatch at a fixed, **listed** set of touch points (the header of `giveaway.ts` is the list):
+`moves.ts` (`isCapturable`, castling, en passant against a wall, the capture filter replacing king safety, no points, captured-king bookkeeping) and
+`elimination.ts` (eliminate → `frozen`, last standing, cap = fewest pieces, `advanceGiveaway`, outOfPieces right after the move, the mover re-checked
+for "stuck" after an off-turn resignation). The snapshot text format is **unchanged** (castling field `0`, scores all zero) and the variant travels beside it.
+Order of the end checks (each tested): outOfPieces → cap → pass the turn → stuck; a resignation: lastStanding → mover stuck.
+
+**Wire (`fourPlayerWire.ts`, backward compatible).** `FourVariant`, `FourJoinQueuePayload.variant?` (omitted = `ffa`), `validateFourVariant` (strict:
+anything but undefined/`ffa`/`giveaway` — including `null` — is refused), `variant?` on match-found / room state / active-game summary (**optional in the type**
+because an older server never sends it; read with `fourVariantOf`; a client that asked for Giveaway must see it echoed — D15, built in W3), `FourReason`
+now derived from the engine's result reasons (+ `abandoned`) with a compile-checked runtime list `FOUR_REASONS` that the client's game-over validator uses.
+A join payload from an old client validates to exactly what it always did.
+
+**Regression gate for 4 Player Chess.** `fourPlayerFfaGolden.test.ts` + `fourPlayerGoldenKit.ts` replay **48 seeded FFA games (4 929 steps) and 9 hand-built scenes**
+(double mate, stalemate, cap, shuffle-to-cap, dead position, dead-king walk, both castles, mixed) and compare a SHA-256 of everything observable (position,
+full legal-move list, bot choices, action, events) with `fixtures/fourPlayerFfaGolden.json`, **recorded from the engine before any Giveaway change**. Regenerate only
+for a deliberate Chess rule change (`npx tsx src/logic/__tests__/fourPlayerGoldenKit.ts --record`). The random games alone hit 1 checkmate and no stalemate/cap/dead
+position — hence the hand-built scenes. Every pre-existing 4 Player suite passes unchanged; the **only** existing test edited is the pinned file list in
+`fourPlayerMirrorSet.test.ts` ("six engine modules" → seven, `giveaway.ts` joined).
+
+**Tests** (`src/logic/__tests__/`, 75 new, 748 in the whole suite): `fourPlayerGiveaway.test.ts` — one hand-built position per rule (forced capture vs 1/2/3
+seats, the rule is global not per piece, en passant as the only capture, king captured / captures a king / adjacent kings, no check, no castling even with every
+right set, promotion Q/R/B/N + refused king + promoting by capture + capture-promotion of a last piece, walls for rook/bishop/queen/knight/king/pawn, walls
+permanent, last piece → immediate win (and beats the cap on the cap ply, exactly one `gameOver`), stuck win, blocked-then-freed, eliminated seats skipped with 1/2/3 out,
+off-turn resign, flag fall, the mover left stuck by a resignation, last standing, cap tie / eliminated can't win / hard ceiling, three scripted games with exact events) plus a
+**property test**: 160 seeded random games (16 079 steps), after EVERY move or resignation the game is over **iff** an independently restated rule says so, with the right reason
+and winners, no points, no castling rights, only active/frozen statuses, mixed capture/quiet lists impossible, pieces never created, walls never move, snapshot round trip exact.
+Endings reached by the random games: `outOfPieces` 133, `stuck` 13, `lastStanding` 14 (the 400-ply cap is never reached randomly; it is covered by hand-built tests).
+`fourPlayerGiveawayWire.test.ts` — variant validation (omitted/ffa/giveaway, 20 hostile values refused), old-client payloads unchanged, optional-on-read fields,
+`FOUR_REASONS`, game-over payloads with the new reasons, no king promotion on the wire.
+
+**Mutation checks (copy-based, `mutate-gw1.cjs`).** 52 planted bugs across `moves.ts`, `giveaway.ts`, `elimination.ts`, `state.ts`, the wire, the client validator and the
+presentation text, including 5 Chess-side mutants for the golden gate: **52/52 killed**. First pass: 50 killed, 2 survived — both real test gaps, closed with named tests:
+a frozen seat with no pieces must not "win" by being hollow (`seatOutOfPieces` status guard), and the cap-before-outOfPieces ordering was invisible because the later result
+overwrote the earlier (now the test requires exactly one `gameOver` event). No equivalent mutants.
+
+**Performance** (40 seeded random games, 588 positions, node, this machine): `legalMoves` under Giveaway mean **5.8 µs**, p99 13.5 µs (max 2.8 ms, a one-off JIT/GC
+outlier) vs **16.1 µs / 52.3 µs** for the same positions under Chess rules — about 2.8× cheaper (no scratch board, no attack scans). A whole random game is ~100 plies and ~4 ms;
+a long sparse game costs ~9 µs per ply including the turn-pass and stuck checks (a 1000-ply game would be ≈ 9 ms — extrapolated, random play never gets that far). The snapshot is
+428 characters at the start (Chess 430): the format did not change.
+
+**Cross-feature check.** 2-player Giveaway, Atomic, Duck, bots, analysis, PGN, history and puzzles share no file with this change (`git diff` touches only `src/logic/fourPlayer*`);
+the 4 Player **Chess** bot is untouched and must not be called on a Giveaway state (it scores check and mates) — W2 adds the Giveaway bot and the server picks by variant.
+Known W1 limits, by design: `readSnapshot` and the screens still read every snapshot with Chess rules (W3), and premove / annotation lifecycle for Giveaway are W3 items.
+
+## 14. 4 Player Giveaway — the bot and the whole game loop in-process (workstream W2)
+
+Spec: `FOUR_PLAYER_GIVEAWAY_SPEC.md` §6 and §7. W2 adds **one new file** to the engine — `src/logic/fourPlayer/giveawayBot.ts` (mirrored to the server) — and
+threads the variant through the **server's** room manager, matchmaker and handlers (backend repo, its `TESTING.md` §16). **No screen, hook or client-socket code changed**:
+the app still plays 4 Player Chess exactly as before; Giveaway has no entry point until W3.
+
+**The bot** (`chooseGiveawayFourBotMove(state, elo, rng)`, same signature and **same ELO dial** as the Chess bot — `botStrength`: `bestChance`, `noise`, tiers). Not Stockfish
+(it cannot play a 4-seat game). A Giveaway bot wants to LOSE pieces without handing anyone the game. The candidate list is already the legal set (the captures, when it has any), so
+its choice is *which* capture or quiet move. Only the next ACTIVE seat answers before it moves again, so, as in the Chess bot, it looks at that one seat.
+`score = exposure − handed-win penalty − victim penalty + noise`: **exposure** = the bot's own pieces the next seat could capture after the move, **one per piece** (a piece attacked twice counts once)
+plus a tiny value tiebreak that stays far below one extra piece; the **greedy** tier (ELO < 1000) sees only that; the **careful** tier (ELO ≥ 1000) also subtracts 30 for a move that
+wins the game for someone else (it takes a seat's **last piece**, or leaves the next seat with **no legal move** — stuck wins) and a small `4 / (1 + pieces the victim has left)` for
+feeding a seat that is close to empty. **No deep tier** in v1 (decision D12), so the server's ELO clamp (1700) stays but never binds. It is a first version, on purpose.
+`chooseBotMoveFor(state, elo, rng)` dispatches on `state.rules.mode` and is now the **default chooser of the server's room manager** — a Giveaway room can never get the Chess bot — while the
+Chess path is move for move the old one (a test plays 60 Chess plies through both and compares).
+
+**Tests** (`src/logic/__tests__/fourPlayerGiveawayBot.test.ts`, 21): always a legal move over 30 full games at mixed ELOs (1 500+ decisions); null for a seat with none; only captures when one exists;
+careful won't take a last piece / won't leave the next seat stuck / prefers to be captured / prefers a richer victim; greedy does all of those blindly; a piece attacked twice counts once; the
+**next ACTIVE seat** (not a frozen one) is the one that answers; a captured piece of ANOTHER seat is not my exposure (a blocker-pawn position where only the exposure of my own pawn makes the
+difference); rook-over-pawn as a tiebreak and the documented order of the weights; the ELO dial (the right capture is chosen ~40 % at 400, ~75 % at 1500, ~95 % at 3000; measured bands asserted);
+a close call is decided partly by the noise (56 % measured, 71 % if the noise were removed); no deep tier (ELO 3000 costs within a small factor of ELO 1000: nothing searches deeper); the dispatcher; and 40 whole bot-vs-bot games from the
+start position at random ELO mixes. **Local game loop:** those bot games ARE the local game logic (the local screen is `playMove` + a chooser), with seeded replays — no screen exists yet.
+Endings of those 40 games: `outOfPieces` 37, `stuck` 3, mean 99 plies.
+
+**Mutation checks (copy-based, `mutate-gw2.cjs`).** Bot: 22 planted bugs; first pass 16 killed, 6 survived — four were real test gaps (exposure of another seat's piece; no value tiebreak; an
+oversized value tiebreak; the dispatcher test used a position where both bots happen to agree) plus the noise (the first noise test was not sensitive to it), all closed with named tests above;
+one is **equivalent and documented inline** (`EQUIVALENT-MUTANT NOTE` in `giveawayBot.ts`): taking the first best move instead of a random one among the best — the added noise already makes exact ties
+vanishingly rare, so either randomiser alone is redundant. **21/22 killed + 1 equivalent.** Mirrored bot (parity script): 8 mutants, first pass 7 killed + 1 survivor (the stuck-next-seat penalty had no
+constructed sweep), closed → **8/8**. Server plumbing: see the backend's `TESTING.md` §16.
+
+**Performance.** One bot decision, over 1 204 decisions of 12 seeded games (ELOs 800 / 1200 / 1700 / 3000): **mean 42 µs, p99 291 µs, max 577 µs** — no search, a few `legalMoves` calls per candidate
+(the Chess careful tier is ~20 ms worst case). A whole bot-vs-bot game is ~100 plies.
+
+**Compatibility matrix (spec §7) — what is tested where.** New client + new server, Giveaway ✓ (server script §1–§6, over the handlers); new client **Chess** + new server ✓ (explicit `"ffa"`
+and the unchanged Chess traffic: the one visible difference is a `variant: "ffa"` key on Chess payloads and on the active-games list rows — additive); **old client + new server** ✓ (a payload
+with no `variant` gets a Chess room, never a Giveaway one); new client **Giveaway + old server** — the *client's* refusal when the echo is missing (D15) is built and tested in **W3**; it cannot be
+tested server-side.
+
+**Existing tests edited in W2 (all pinned lists / key sets, none relaxed):** `fourPlayerMirrorSet.test.ts` (the file list and the closure's entry points gain `giveawayBot.ts`).
+Everything else, the whole frontend suite (769 tests), passes unchanged.
+
+**Known W2 limits.** The Giveaway bot is a v1 heuristic: it does not plan to *be stuck* (which wins), does not look past the next seat, and has no opening/endgame knowledge; whether it is fun to play against
+is for the browser pass (W5) and tuning. The screens still call the Chess bot (W3 swaps them to `chooseBotMoveFor`).
+
+## 15. 4 Player Giveaway — every screen (workstream W3)
+
+Spec: `FOUR_PLAYER_GIVEAWAY_SPEC.md` §8. W3 makes Giveaway playable end to end **in the app**: Local (hot-seat, with bots), and the Online client (queue, game, spectator, Spectate list). The server side
+was W2; real-socket scenarios are W4.
+
+**Entry.** Play menu → a new **4 Player Giveaway** card under the 4 Player Chess one (decision D13): **Local** (seat setup → bot picker → time control without Daily → game) and **Online** (login gate →
+time control without Daily and "No time limit" → queue → game). The variant rides in `App.tsx`'s screen state exactly like the seat choices (`variant: FourVariant`, required in every 4-player screen state, so a
+forgotten one is a compile error); every Chess entry passes `'ffa'`. "Play again" re-queues the SAME variant. `FourVariant` now lives in the engine (`fourPlayer/state.ts`, next to `rulesFor`) and the wire re-exports it,
+so the local screens still know nothing of the wire or the socket (the old isolation pin holds).
+
+**What differs on screen (all in the new pure `logic/fourPlayerVariant.ts`, unit-tested):** titles ("4 Player Giveaway · Antichess"); the setup intro and the one-line rule ("Captures are mandatory — lose all your pieces to win");
+the seat card counts **pieces left** instead of points (`seatMetric`, read from `state.rules.mode`, so every board — local, online, spectator — does it with no extra plumbing); **no king-in-check highlight** (`checkedKingSquares`
+returns none) and no "in check!" — instead the status says **"— must capture"** when the seat to move has a capture (a small extra to the spec: it explains why quiet moves are refused); the result table ranks the **winner first, then
+the fewest pieces** (`rankSeats`); the result note names the seat ("Green lost its last piece and wins.", "Yellow had no legal move and wins.", "Everyone else resigned or ran out of time — Red wins.", "Move limit reached — fewest pieces
+wins."); the resign dialog says the pieces stay as walls nobody can capture. The local game uses `initialState(rulesFor(variant))` (also for "New Game") and the dispatching bot `chooseBotMoveFor`. Premoves, arrows, Undo, Rotate, the promotion
+picker and clocks are unchanged (they read legality from the engine): a premove made illegal by a forced capture is cancelled with the existing notice; Undo is the stack of immutable states.
+
+**Online client.** The reducer's view carries `variant` (from `four_match_found` / the rejoin / spectate answers; absent = Chess) and reads **every** snapshot with that room's rules (`readSnapshot(text, rulesFor(view.variant))` — the
+snapshot text has no rules in it); an answer that names another or an unknown variant is refused (`invalid`), an unknown variant builds no view. `describeStatus`, `resultRows` and `describeFourResultNote` take the variant (default Chess).
+The Spectate list gives each 4-seat variant its own section ("4 Player Chess" keeps its header and keys; "4 Player Giveaway" is new); a game of a variant this client does not know (a newer server) is **left out** rather than
+listed under the wrong name.
+**Rollout safety (D15), built here:** `joinQueueRequest` sends `variant` **only for Giveaway** (a Chess join is byte-for-byte what released clients send); `checkMatchVariant` accepts a match only if `four_match_found` names the game that was
+asked for (a missing field means Chess, so a Giveaway request answered without an echo is an older server that started a Chess game); on a refusal the queue screen shows "This server does not support 4 Player Giveaway yet…", **resigns the seat
+it was just given** (so the table is not left waiting) and never hands over to the game screen.
+
+**Tests** (`fourPlayerGiveawayScreens.test.ts` 35, plus 11 added to `annotationLifecycle.test.ts`; 815 in the whole frontend suite). Pure: wording, `seatMetric` / singular "1 piece left", `checkedKingSquares` (Chess marks the king; Giveaway none; an eliminated
+seat's king never), `statusSuffix`, `rankSeats` (winner first, fewest next, a tied cap, ties by seat; Chess unchanged), the result notes, `resultRows`; the online view (a Giveaway match gives the Giveaway legal moves — the capture is forced — and the
+same text read as Chess does not; no variant = Chess; unknown variant = no view; later snapshots, rejoin answers and the final snapshot all read with the room's rules; mismatched / missing / unknown variant on a rejoin refused);
+**whole Giveaway games through the reducer** (6 seeded games, 300+ states, with an off-turn resignation: the client position equals the server's after every state); the optimistic move of a forced capture and its rollback on a refusal;
+the status line ("Your move — must capture"; Chess "in check!" unchanged); the join request and the D15 echo matrix; the Spectate list; a premove cancelled by a forced capture; Undo across a forced capture; and **source pins** for
+every screen (menu card and login gate, App routing, the local game, board, seat card, setup, queue, online game, spectator, result card) since there is no renderer. **Annotation lifecycle (CHECKLIST "Extra" box):** the mode's epoch is still `state.ply`;
+Giveaway's no-move turn advances are pinned like Chess's — off-turn resign (frozen, never dead-king), the mover resigning, a flag fall, a frozen seat skipped, a resignation that leaves the seat to move STUCK (the game ends with no move: arrows survive),
+last standing — and every move (including a forced capture and a whole bot game, where nothing ever moves unseen) clears.
+
+**Existing tests edited (9 pins, none relaxed):** `fourPlayerApp.test.ts` (7) and `fourPlayerOnlineApp.test.ts` (2) assert the EXACT source of the Chess flow; Giveaway threads a `variant` through the same screens, so the strings gain it
+(`variant: FourVariant` in the state union, `variant: 'ffa'` at the Chess entries, `chooseBotMoveFor`, `seatMetric`, `describeResultNote(game.result, variant)`). Each pin still protects what it did.
+
+**Mutation checks (copy-based, `mutate-gw3.cjs`; the whole `src/` is copied, the real tree is only read).** 54 planted bugs in the new logic, the online reducer / UI helpers and the screens' wiring. First pass **49 killed, 4 survived**:
+the rejoin answer was not checked for the rules it was read with (test gap → closed: the adopted position's legal moves), the result card's pass-through was unpinned (→ pinned), a game of an unknown variant was listed under "4 Player Chess"
+(a **real design flaw**, fixed: unknown variants are left out, with a test), and one **equivalent, documented inline**: the explicit `a - b` tie-break in `rankSeats` repeats what a stable sort already does. **53/53 killable killed + 1 equivalent.**
+
+**Performance.** The only new per-render work is `statusSuffix` (one `legalMoves` call for the seat to move; Giveaway's costs ~6 µs, see §13) and `seatMetric` (a 196-cell count); nothing is computed per frame beyond that.
+
+**Browser check (the local flow, done against the existing Expo web dev server, read-only).** Play menu shows the new card; Local → setup (Giveaway title/intro/rule hint) → time control ("4 Player Giveaway · Antichess") → the game: seat cards read 16 pieces each; with
+a capture available the status reads "Red to move — must capture"; a quiet move was **refused** and a capture accepted; the bots answered with legal forced captures and the cards dropped to 15. **Not checked in a browser:** anything Online (queue, game,
+spectator, the D15 refusal) and the result card — they need a second human, a login and a running backend; that is W5's pass, with the login hand-off asked up front.
+
+**Known limits.** "Return to your game" still sits on the 4 Player Chess card (one resume slot for both variants). The Giveaway setup screen shows the rule twice (intro + hint line) — kept because the spec lists the hint on the setup screen.
+
+## 16. 4 Player Giveaway — real sockets and the nightly fuzz (workstream W4)
+
+W4 changes only the backend repo's test scripts and workflows (its `TESTING.md` §18); **no app source changed**. The nightly fuzz's Giveaway clients use THIS repo's own engine (`src/logic/fourPlayer/state.ts`, `moves.ts`, `giveaway.ts`),
+independently of the server's generated mirror, which is why the fuzz can catch a server that disagrees with the app: it caught every planted server bug it could reach (capture not mandatory, points as scores, a missing variant, a missing last-piece win, last standing at two seats).
+The frontend suite and typecheck are unchanged (815 tests).
+
+## 17. 4 Player Giveaway — close-out (workstream W5)
+
+W5 adds no feature. It re-runs every workstream's mutation set on the final code, drives the online screens in a real browser, writes the roll-up at the top of this file and records what is still left out (`TODO.md`).
+
+**Online browser pass (the one W7 of 4 Player Chess skipped).** The built-in browser pane, logged in by the project owner themselves (no account was created and no password was typed by the assistant), against the owner's own dev backend on `:3000`; the second human was a scripted
+guest socket (not a second real account). Seen on screen: the Giveaway queue, a live online game, a quiet move **refused** while a capture was mandatory and a capture accepted, leaving the game and "Return to your game", the Spectate tag on the active-games list, Resign and the result card. One real finding: the online Resign dialog used the Chess wording ("dead blockers"). Fixed in `fourPlayerVariant.ts` (`describeResignWarning(variant, online)`, used by `FourPlayerGameScreen` and `FourPlayerOnlineGameScreen`), with two tests in `fourPlayerGiveawayScreens.test.ts`
+(the four exact sentences; a source pin that neither screen keeps its own copy). The local dialog was re-checked in the pane after the fix. (The header "Online · W5Guest" seen during the pass was only the label of the scripted guest, not an app issue.)
+**Not browser-verified:** the D15 refusal screen, a bot taking over in the browser, the 4 Player Chess (non-Giveaway) online screens.
+
+**Mutation re-run on the final code** (`scratchpad/w5-final`, each on a disposable copy): W1 52/52 + parity 28/28 (20 W1 + 8 W2 mirrored-bot mutants); W2 bot 21 killed + 1 equivalent, plumbing 16 + 1; W3 53 + 1; W4 real-socket 11 + 1, fuzz 6 + 1. **187 killed, 5 equivalent, 0 survivors** — every one of the five is the documented
+equivalent (names in the roll-up and in the code). Frontend vitest 817/817, `tsc --noEmit` clean in both repos (the untracked `_claude_harness.mts` / `_probe.mts` scratch files are not part of the project).

@@ -65,6 +65,19 @@ and a room only lives while both sockets stay connected. Making Daily real is it
 (see `isUnlimitedTimeControl` in the backend's `rooms.ts` and `playerClockText` in `src/logic/time.ts`). The
 Challenge screen does not offer it (nor Daily) yet — a small follow-up since the server already accepts it.
 
+## 4 Player Giveaway: what it still leaves out
+
+Built on the `fourPlayerGiveaway` branches (workstreams W1-W5; roll-up at the top of TESTING.md). Local, Bots and Online all exist; these are the deliberate v1 limits:
+
+- **No king promotion.** Promotion is Q/R/B/N only (kings are ordinary pieces that can be captured, but a pawn cannot become one) - the spec's decision, not a sourced rule.
+- **No history, ratings, saved games or analysis** for Giveaway games (same reason as 4 Player Chess: the saved-game payload and PGN are 2-player shaped).
+- **The bot is a v1 heuristic.** Same ELO dial as 4 Player Chess, no deep tier. It does not plan to get stuck on purpose (being stuck WINS) and looks only at the move and the NEXT seat, so it rarely engineers a win by running out of moves.
+- **"Return to your game" shares one resume slot** on the 4 Player card, so a player in a Chess game and a Giveaway game at once is only offered one of them.
+- **The setup screen says the rule twice** (the hint line and the intro paragraph): a copy tidy-up.
+- **The 1000-ply cap is unreachable by random or bot play.** It is pinned by hand-built positions in the engine and parity tests, but no real-socket game has ever ended by it.
+- **Not seen in a browser:** the D15 refusal screen (a server that does not echo the requested variant), a bot taking over a seat on screen, and the 4 Player Chess online screens after the variant changes (covered by the golden gate and pure tests only).
+- **Everything else under "4 Player Chess: what it still leaves out"** that is not about points or check (private rooms, a persisted rejoin token, chat history after a reconnect, small cells on phones) applies unchanged.
+
 ## 4 Player Chess: what it still leaves out
 
 The engine (`src/logic/fourPlayer/`) is built so the rest slots in without rework, but none of these exist yet:
@@ -76,9 +89,9 @@ The engine (`src/logic/fourPlayer/`) is built so the rest slots in without rewor
   server bots taking over for a dropped player (retake until the game ends), spectating, chat, premoves, a real-socket end-to-end test and a nightly fuzz section. See
   `FOUR_PLAYER_ONLINE_SPEC.md` and the "4 Player Chess Online" roll-up at the top of TESTING.md. What is still out, by design (v1): private rooms / invite links, saved games / history /
   ratings / analysis of online games, Teams and Solo online, a persisted rejoin token (an app restart or web refresh forfeits the seat to a bot), chat history after a reconnect, and the bot
-  promotion-nudge parity follow-up (the one server-bot behaviour only covered by the random parity games). **Still open, found by the W7 close-out:** nobody has looked at the player screens
-  rendered - the two-tab browser pass (queue, game, takeover and "Return to your game", spectator) was declined for W7 and is not done; do it with two humans (a lone human never gets bots) and
-  the backend started with `FOUR_FILL_MS=3000 FOUR_GRACE_MS=3000`.
+  promotion-nudge parity follow-up (the one server-bot behaviour only covered by the random parity games). **Partly open, found by the W7 close-out:** the 4 Player Chess player screens were never looked at
+  rendered. The 4 Player Giveaway browser pass (its W5) covered the screens both variants share - queue, game, leave and "Return to your game", spectate list, resign, result card - so what is still unseen for CHESS is the variant-specific wording there and a bot takeover in the browser; do it with two humans (a lone human never gets bots) and
+  the backend started with `FOUR_FILL_MS=3000 FOUR_GRACE_MS=3000` (a scripted guest socket works as the second human).
 - **Saved games / history / rating / analysis.** Games are not saved: the saved-game payload, PGN and `GameHistoryEntry` are 2-player
   shaped, and Stockfish cannot analyse a 4-seat position. Needs a 4-player record format (chess.com's FEN4/PGN4 is the obvious dialect)
   before any of that.

@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { checkedKingSquares } from '../logic/fourPlayerVariant';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { PieceImageMap } from '../types/theme';
 import BoardAnnotations from './BoardAnnotations';
@@ -20,7 +21,6 @@ import {
   getFourPlayerCellSize,
   gridToSquare,
   index,
-  isInCheck,
   isPromotedType,
   isPromotionPremove,
   positionEpoch,
@@ -242,11 +242,8 @@ export default function FourPlayerBoard({
   }, [moves, selected]);
   const movableSquares = useMemo(() => new Set(moves.map((m) => m.from)), [moves]);
 
-  const checkedSquares = useMemo(() => {
-    const squares = new Set<number>();
-    for (const seat of [0, 1, 2, 3] as Seat[]) if (state.status[seat] === 'active' && isInCheck(state, seat)) squares.add(state.kings[seat]);
-    return squares;
-  }, [state]);
+  // Kings in check (never any in 4 Player Giveaway: there a king is an ordinary piece and nothing is ever "in check").
+  const checkedSquares = useMemo(() => new Set(checkedKingSquares(state)), [state]);
 
   const handlePremovePress = (square: number) => {
     if (premoveSeat === undefined || !onPremove) return;
