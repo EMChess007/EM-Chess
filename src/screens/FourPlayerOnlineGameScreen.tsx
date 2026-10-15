@@ -19,8 +19,9 @@ import {
   type Seat,
 } from '../logic/fourPlayer';
 import { canMove, displayClock, displayState } from '../logic/fourPlayerOnline';
+import { variantTitle } from '../logic/fourPlayerVariant';
 import { LEAVE_GAME_MESSAGE, LEAVE_GAME_TITLE, describeStatus, isLiveSeat, seatLabels } from '../logic/fourPlayerOnlineUi';
-import type { FourMatchFoundPayload } from '../logic/fourPlayerWire';
+import { fourVariantOf, type FourMatchFoundPayload } from '../logic/fourPlayerWire';
 import { describePremoveCancel } from '../logic/premove';
 import { useFourPlayerOnlineGame } from '../logic/useFourPlayerOnlineGame';
 import { usePremove } from '../logic/usePremove';
@@ -107,7 +108,7 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
   if (!view) {
     return (
       <View style={styles.container}>
-        <ScreenHeader title="4 Player Chess" subtitle="Online" onBack={() => leaveNow(false)} backLabel="‹ Menu" />
+        <ScreenHeader title={variantTitle(fourVariantOf(match))} subtitle="Online" onBack={() => leaveNow(false)} backLabel="‹ Menu" />
         <Text style={styles.problem}>{problem ?? 'Loading…'}</Text>
       </View>
     );
@@ -120,7 +121,7 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="4 Player Chess" subtitle={`Online · ${view.timeControlLabel}`} onBack={handleBack} backLabel="‹ Menu" />
+      <ScreenHeader title={variantTitle(view.variant)} subtitle={`Online · ${view.timeControlLabel}`} onBack={handleBack} backLabel="‹ Menu" />
       <GameScreenBody
         bottomBar={
           <>
@@ -198,7 +199,7 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
 
         {chatOpen && <FourPlayerChatPanel messages={chat} onSend={sendChat} />}
 
-        {view.gameOver && <FourPlayerResultCard gameOver={view.gameOver} seats={view.seats} />}
+        {view.gameOver && <FourPlayerResultCard gameOver={view.gameOver} seats={view.seats} variant={view.variant} />}
       </GameScreenBody>
     </View>
   );

@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text } from 'react-native';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
-import { describeQueue, fillSecondsLeft } from '../logic/fourPlayerOnlineUi';
-import { validateFourJoinQueue, type FourAck, type FourMatchFoundPayload, type FourQueueUpdatePayload } from '../logic/fourPlayerWire';
+import { checkMatchVariant, describeQueue, fillSecondsLeft, joinQueueRequest } from '../logic/fourPlayerOnlineUi';
+import { GIVEAWAY_RULE_HINT, variantTitle } from '../logic/fourPlayerVariant';
+import { validateFourJoinQueue, type FourAck, type FourMatchFoundPayload, type FourQueueUpdatePayload, type FourVariant } from '../logic/fourPlayerWire';
 import type { TimeControl } from '../types/timeControl';
 
 interface FourPlayerMatchmakingScreenProps {
+  /** The game to queue for; omitted = 4 Player Chess. Only a Giveaway request carries the field on the wire (see `joinQueueRequest`). */
+  variant?: FourVariant;
   authToken: string;
   timeControl: TimeControl;
   onMatchFound: (match: FourMatchFoundPayload) => void;
@@ -21,8 +24,12 @@ const JOIN_ACK_TIMEOUT_MS = 10_000;
  * players are waiting and — once two are — a countdown to the moment bots fill the empty seats, and hands over to the game when
  * `four_match_found` arrives. A lone player waits as long as they like (Cancel leaves the queue). Same shape as the 2-player
  * MatchmakingScreen: a dropped connection drops the player out of the server's queue, so a reconnect joins again by itself.
+ *
+ * 4 Player Giveaway (decision D15): an older server would ignore the `variant` it does not know and put the player into a CHESS game, so the match is accepted
+ * only when `four_match_found` names the game that was asked for. Otherwise the player is told, and the seat they were just given is resigned so the
+ * table is not left waiting on someone who will not play.
  */
-export default function FourPlayerMatchmakingScreen({ authToken, timeControl, onMatchFound, onCancel }: FourPlayerMatchmakingScreenProps) {
+export default function FourPlayerMatchmakingScreen({ variant = 'ffa', authToken, timeControl, onMatchFound, onCancel }: FourPlayerMatchmakingScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const [error, setError] = useState<string | null>(null);
@@ -36,10 +43,7 @@ export default function FourPlayerMatchmakingScreen({ authToken, timeControl, on
     stillQueuedRef.current = true;
 
     const join = () => {
-      const payload = validateFourJoinQueue({
-        timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
-        timeControlLabel: timeControl.label,
-      });
+      const payload = validateFourJoinQueue(joinQueueRequest(timeControl, variant));
       if (!payload.ok) {
         stillQueuedRef.current = false;
         setError(payload.error);
@@ -59,6 +63,12 @@ export default function FourPlayerMatchmakingScreen({ authToken, timeControl, on
     const handleUpdate = (payload: FourQueueUpdatePayload) => setUpdate({ payload, receivedAt: Date.now() });
     const handleMatchFound = (payload: FourMatchFoundPayload) => {
       stillQueuedRef.current = false;
+      const check = checkMatchVariant(variant, payload);
+      if (!check.ok) {
+        socket.emit('four_resign', { roomId: payload.roomId }); // do not sit in a game we will not play
+        setError(check.error);
+        return;
+      }
       onMatchFound(payload);
     };
     const rejoinQueueOnReconnect = () => {
@@ -98,7 +108,10 @@ export default function FourPlayerMatchmakingScreen({ authToken, timeControl, on
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>4 Player Chess · {timeControl.label}</Text>
+      <Text style={styles.title}>
+        {variantTitle(variant)} · {timeControl.label}
+      </Text>
+      {variant === 'giveaway' && !error && <Text style={styles.queueDetail}>{GIVEAWAY_RULE_HINT}</Text>}
       {error ? (
         <>
           <Text style={styles.errorText}>{error}</Text>

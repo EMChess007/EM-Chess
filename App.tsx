@@ -66,7 +66,8 @@ import type { ColorChoice, PieceColor } from './src/types/chess';
 import { SEAT_NAMES, defaultSeatConfig, withController, type Seat, type SeatConfig } from './src/logic/fourPlayer';
 import { controllerForBot } from './src/logic/fourPlayerBots';
 import type { AnalyzeParams } from './src/types/history';
-import type { FourMatchFoundPayload } from './src/logic/fourPlayerWire';
+import { variantModeLabel, variantTitle } from './src/logic/fourPlayerVariant';
+import { fourVariantOf, type FourMatchFoundPayload, type FourVariant } from './src/logic/fourPlayerWire';
 import type { ActiveGameSummary, MatchFoundPayload, SetupChessPairedPayload } from './src/types/multiplayer';
 import type { TimeControl } from './src/types/timeControl';
 
@@ -132,13 +133,15 @@ type Screen =
   | { name: 'engineSelect' }
   // 4 Player Chess is its own mode, not a variant of the 2-player game (see src/logic/fourPlayer): setup picks who controls each seat.
   // The seat choices travel in the screen state so they survive the trip to the bot picker and on to the time control.
-  | { name: 'fourPlayerSetup'; seats: SeatConfig }
-  | { name: 'fourPlayerBotSelect'; seats: SeatConfig; seat: Seat }
-  | { name: 'fourPlayerTimeControl'; seats: SeatConfig }
-  | { name: 'fourPlayerGame'; seats: SeatConfig; timeControl: TimeControl }
+  // 4 Player Giveaway (FOUR_PLAYER_GIVEAWAY_SPEC.md §8) is the same flow with `variant: 'giveaway'`; the Chess entries pass 'ffa'. The variant rides in the
+  // screen state exactly like the seat choices, so it survives the trip to the bot picker and on to the time control and the game.
+  | { name: 'fourPlayerSetup'; variant: FourVariant; seats: SeatConfig }
+  | { name: 'fourPlayerBotSelect'; variant: FourVariant; seats: SeatConfig; seat: Seat }
+  | { name: 'fourPlayerTimeControl'; variant: FourVariant; seats: SeatConfig }
+  | { name: 'fourPlayerGame'; variant: FourVariant; seats: SeatConfig; timeControl: TimeControl }
   // Online 4 Player (FOUR_PLAYER_ONLINE_SPEC.md §8): pick a live time control -> queue -> the game; spectating is a separate screen.
-  | { name: 'fourPlayerOnlineTimeControl'; token: string }
-  | { name: 'fourPlayerMatchmaking'; token: string; timeControl: TimeControl }
+  | { name: 'fourPlayerOnlineTimeControl'; variant: FourVariant; token: string }
+  | { name: 'fourPlayerMatchmaking'; variant: FourVariant; token: string; timeControl: TimeControl }
   | { name: 'fourPlayerOnlineGame'; token: string; match: FourMatchFoundPayload; timeControl: TimeControl; resume: boolean }
   | { name: 'fourPlayerSpectate'; token: string | null; roomId: string }
   | { name: 'themeSelect' }
@@ -333,7 +336,9 @@ export default function App() {
         onChallengeFriend={() => authSession && setScreen({ name: 'challenge', token: authSession.token })}
         onTournaments={() => authSession && setScreen({ name: 'tournament', token: authSession.token })}
         onSpectate={() => setScreen({ name: 'spectateList', token: authSession?.token ?? null })}
-        onFourPlayerOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', token: authSession.token })}
+        onFourPlayerOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'ffa', token: authSession.token })}
+        onFourPlayerGiveaway={() => setScreen({ name: 'fourPlayerSetup', variant: 'giveaway', seats: defaultSeatConfig() })}
+        onFourPlayerGiveawayOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'giveaway', token: authSession.token })}
         onFourPlayerResume={
           fourResume && authSession?.token === fourResume.token
             ? () => setScreen({ name: 'fourPlayerOnlineGame', token: fourResume.token, match: fourResume.match, timeControl: fourResume.timeControl, resume: true })
@@ -420,7 +425,7 @@ export default function App() {
             mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: true },
           })
         }
-        onFourPlayer={() => setScreen({ name: 'fourPlayerSetup', seats: defaultSeatConfig() })}
+        onFourPlayer={() => setScreen({ name: 'fourPlayerSetup', variant: 'ffa', seats: defaultSeatConfig() })}
         onEngineVsEngineClassic={() =>
           setScreen({
             name: 'timeControlSelect',
@@ -722,52 +727,54 @@ export default function App() {
       />
     );
   } else if (screen.name === 'fourPlayerSetup') {
-    const { seats } = screen;
+    const { variant, seats } = screen;
     content = (
       <FourPlayerSetupScreen
+        variant={variant}
         seats={seats}
-        onChange={(next) => setScreen({ name: 'fourPlayerSetup', seats: next })}
-        onPickBot={(seat) => setScreen({ name: 'fourPlayerBotSelect', seats, seat })}
-        onContinue={() => setScreen({ name: 'fourPlayerTimeControl', seats })}
+        onChange={(next) => setScreen({ name: 'fourPlayerSetup', variant, seats: next })}
+        onPickBot={(seat) => setScreen({ name: 'fourPlayerBotSelect', variant, seats, seat })}
+        onContinue={() => setScreen({ name: 'fourPlayerTimeControl', variant, seats })}
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
     );
   } else if (screen.name === 'fourPlayerBotSelect') {
-    const { seats, seat } = screen;
+    const { variant, seats, seat } = screen;
     content = (
       <BotSelectScreen
-        subtitle={`4 Player Chess · ${SEAT_NAMES[seat]}`}
-        engineLabel="4 Player Chess bot"
-        onSelect={(bot) => setScreen({ name: 'fourPlayerSetup', seats: withController(seats, seat, controllerForBot(bot)) })}
-        onBack={() => setScreen({ name: 'fourPlayerSetup', seats })}
+        subtitle={`${variantTitle(variant)} · ${SEAT_NAMES[seat]}`}
+        engineLabel={`${variantTitle(variant)} bot`}
+        onSelect={(bot) => setScreen({ name: 'fourPlayerSetup', variant, seats: withController(seats, seat, controllerForBot(bot)) })}
+        onBack={() => setScreen({ name: 'fourPlayerSetup', variant, seats })}
       />
     );
   } else if (screen.name === 'fourPlayerTimeControl') {
-    const { seats } = screen;
+    const { variant, seats } = screen;
     content = (
       <TimeControlSelectScreen
-        subtitle="4 Player Chess · Free-for-All"
+        subtitle={`${variantTitle(variant)} · ${variantModeLabel(variant)}`}
         excludeCategories={['daily']}
-        onSelect={(timeControl) => setScreen({ name: 'fourPlayerGame', seats, timeControl })}
-        onBack={() => setScreen({ name: 'fourPlayerSetup', seats })}
+        onSelect={(timeControl) => setScreen({ name: 'fourPlayerGame', variant, seats, timeControl })}
+        onBack={() => setScreen({ name: 'fourPlayerSetup', variant, seats })}
       />
     );
   } else if (screen.name === 'fourPlayerGame') {
-    content = <FourPlayerGameScreen seats={screen.seats} timeControl={screen.timeControl} onExit={() => setScreen({ name: 'playModeSelect' })} />;
+    content = <FourPlayerGameScreen variant={screen.variant} seats={screen.seats} timeControl={screen.timeControl} onExit={() => setScreen({ name: 'playModeSelect' })} />;
   } else if (screen.name === 'fourPlayerOnlineTimeControl') {
-    const { token } = screen;
+    const { variant, token } = screen;
     content = (
       <TimeControlSelectScreen
-        subtitle="4 Player Chess · Online"
+        subtitle={`${variantTitle(variant)} · Online`}
         excludeCategories={['daily', 'unlimited']}
-        onSelect={(timeControl) => setScreen({ name: 'fourPlayerMatchmaking', token, timeControl })}
+        onSelect={(timeControl) => setScreen({ name: 'fourPlayerMatchmaking', variant, token, timeControl })}
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
     );
   } else if (screen.name === 'fourPlayerMatchmaking') {
-    const { token, timeControl } = screen;
+    const { variant, token, timeControl } = screen;
     content = (
       <FourPlayerMatchmakingScreen
+        variant={variant}
         authToken={token}
         timeControl={timeControl}
         onMatchFound={(match) => {
@@ -791,7 +798,7 @@ export default function App() {
         }}
         onPlayAgain={() => {
           setFourResume(null);
-          setScreen({ name: 'fourPlayerMatchmaking', token, timeControl });
+          setScreen({ name: 'fourPlayerMatchmaking', variant: fourVariantOf(match), token, timeControl }); // the same game again
         }}
       />
     );

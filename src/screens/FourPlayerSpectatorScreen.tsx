@@ -11,6 +11,7 @@ import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { SEAT_COLORS, nextSeat, type Move, type Seat } from '../logic/fourPlayer';
 import { displayClock } from '../logic/fourPlayerOnline';
 import { describeStatus, seatLabels } from '../logic/fourPlayerOnlineUi';
+import { variantTitle } from '../logic/fourPlayerVariant';
 import { useFourPlayerOnlineGame } from '../logic/useFourPlayerOnlineGame';
 
 // A stable, module-level reference: the board is read-only here (a spectator owns no seat), so a move handler would never be called.
@@ -52,7 +53,7 @@ export default function FourPlayerSpectatorScreen({ authToken, roomId, onExit }:
   const recent = view.log.slice(-4);
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Spectating" subtitle={`4 Player Chess · ${view.timeControlLabel}`} onBack={onExit} backLabel="‹ Back" />
+      <ScreenHeader title="Spectating" subtitle={`${variantTitle(view.variant)} · ${view.timeControlLabel}`} onBack={onExit} backLabel="‹ Back" />
       <GameScreenBody
         bottomBar={
           <View style={styles.controlsWrap}>
@@ -84,7 +85,7 @@ export default function FourPlayerSpectatorScreen({ authToken, roomId, onExit }:
         )}
 
         {chatOpen && <FourPlayerChatPanel messages={chat} />}
-        {view.gameOver && <FourPlayerResultCard gameOver={view.gameOver} seats={view.seats} />}
+        {view.gameOver && <FourPlayerResultCard gameOver={view.gameOver} seats={view.seats} variant={view.variant} />}
       </GameScreenBody>
     </View>
   );

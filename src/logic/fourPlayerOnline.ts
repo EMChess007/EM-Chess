@@ -39,13 +39,15 @@ import {
   describeEvents,
   parseSquare,
   promotionOf,
+  rulesFor,
   squareName,
   type FourPlayerClock,
+  type FourPlayerRules,
   type FourPlayerState,
   type Move,
   type Seat,
 } from './fourPlayer';
-import { FOUR_REASONS } from './fourPlayerWire';
+import { FOUR_REASONS, fourVariantOf, validateFourVariant } from './fourPlayerWire';
 import type {
   FourClocksMs,
   FourGameOverPayload,
@@ -58,6 +60,7 @@ import type {
   FourSeats,
   FourStatePayload,
   FourTimeControl,
+  FourVariant,
 } from './fourPlayerWire';
 
 /** A move the player has made but the server has not yet confirmed. `id` tells one pending move from the next, so a late refusal of an
@@ -71,6 +74,8 @@ export interface FourPendingMove {
 
 export interface FourOnlineView {
   roomId: string;
+  /** Which game this room plays (4 Player Chess or Giveaway): picks the rules every snapshot is read with. Absent from an older server's payloads = Chess. */
+  variant: FourVariant;
   /** The seat this client plays; null for a spectator (who owns no seat and can never move). */
   mySeat: Seat | null;
   timeControl: FourTimeControl;
@@ -136,23 +141,29 @@ export function isGameOverPayload(value: unknown): value is FourGameOverPayload 
 const isTimeControl = (value: unknown): value is FourTimeControl =>
   isObject(value) && typeof value.initialSeconds === 'number' && typeof value.incrementSeconds === 'number' && Number.isFinite(value.initialSeconds) && Number.isFinite(value.incrementSeconds);
 
-/** The engine's own parser, wrapped: server text that does not parse is "no snapshot", never an exception in a render or a listener. */
-export function readSnapshot(text: unknown): FourPlayerState | null {
+/**
+ * The engine's own parser, wrapped: server text that does not parse is "no snapshot", never an exception in a render or a listener. The text carries no
+ * rules (the snapshot format is the same for both variants), so the caller passes the room's: `rulesFor(view.variant)`. Omitted = 4 Player Chess.
+ */
+export function readSnapshot(text: unknown, rules?: FourPlayerRules): FourPlayerState | null {
   // EQUIVALENT-MUTANT NOTE (mutation set W5, "snapshot: non-string accepted"): this check is a fast path. The engine's `deserialize` throws on
   // anything but its own text format, and the catch below turns every throw into `null`, so removing the check changes no result.
   if (typeof text !== 'string') return null;
   try {
-    return deserialize(text);
+    return deserialize(text, rules);
   } catch {
     return null;
   }
 }
 
 function viewFromParts(room: Omit<FourRoomState, 'log'> & { log?: readonly FourLogEntry[] }, mySeat: Seat | null, now: number): FourOnlineView | null {
-  const state = readSnapshot(room.state);
+  const variant = validateFourVariant(room.variant); // an unknown variant is a room this client cannot play
+  if (!variant.ok) return null;
+  const state = readSnapshot(room.state, rulesFor(variant.value));
   if (!state || !isClocksMs(room.clocksMs) || !isFourSeats(room.seats) || !isTimeControl(room.timeControl) || typeof room.roomId !== 'string') return null;
   return {
     roomId: room.roomId,
+    variant: variant.value,
     mySeat,
     timeControl: room.timeControl,
     timeControlLabel: room.timeControlLabel,
@@ -216,7 +227,7 @@ export function applyFourState(view: FourOnlineView, payload: FourStatePayload, 
     const begun = needResync(view);
     return { ...begun, outcome: begun.resync ? 'gap' : 'gapPending' };
   }
-  const state = readSnapshot(payload.state);
+  const state = readSnapshot(payload.state, rulesFor(view.variant));
   if (!state || !isClocksMs(payload.clocksMs)) return { ...needResync(view), outcome: 'invalid' };
   const move = isObject(payload.move) ? payload.move : null;
   const from = move ? parseSquare(move.from) : -1;
@@ -257,7 +268,10 @@ export type FourAdoptOutcome ='adopted' | 'stale' | 'wrongRoom' | 'finished' | '
 export function adoptSnapshot(view: FourOnlineView, room: FourRoomState, now: number): { view: FourOnlineView; outcome: FourAdoptOutcome } {
   if (room.roomId !== view.roomId) return { view, outcome: 'wrongRoom' };
   if (view.gameOver) return { view, outcome: 'finished' };
-  const state = readSnapshot(room.state);
+  // A room never changes variant: an answer that names another one (or an unknown one) is not this room's.
+  const variant = validateFourVariant(room.variant);
+  if (!variant.ok || variant.value !== view.variant) return { view, outcome: 'invalid' };
+  const state = readSnapshot(room.state, rulesFor(view.variant));
   if (!state || !isClocksMs(room.clocksMs) || !isFourSeats(room.seats) || !Number.isInteger(room.seq)) return { view, outcome: 'invalid' };
   if (room.seq < view.seq) return { view: view.resyncing ? { ...view, resyncing: false } : view, outcome: 'stale' };
   const advanced = room.seq > view.seq;
@@ -294,7 +308,7 @@ export function applySeatUpdate(view: FourOnlineView, payload: FourSeatUpdatePay
  */
 export function applyGameOver(view: FourOnlineView, payload: FourGameOverPayload): FourOnlineView {
   if (!isGameOverPayload(payload) || payload.roomId !== view.roomId || view.gameOver) return view;
-  const state = readSnapshot(payload.state) ?? view.state;
+  const state = readSnapshot(payload.state, rulesFor(view.variant)) ?? view.state;
   return { ...view, state, gameOver: payload, pending: null, resyncing: false };
 }
 

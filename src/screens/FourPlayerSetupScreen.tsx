@@ -1,10 +1,13 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
-import { DEFAULT_BOT_ELO, SEAT_COLORS, SEAT_NAMES, isStartable, withController, type Seat, type SeatConfig } from '../logic/fourPlayer';
+import { DEFAULT_BOT_ELO, SEAT_COLORS, SEAT_NAMES, isStartable, withController, type FourVariant, type Seat, type SeatConfig } from '../logic/fourPlayer';
 import { botDisplayName } from '../logic/fourPlayerBots';
+import { GIVEAWAY_RULE_HINT, variantIntro, variantModeLabel, variantTitle } from '../logic/fourPlayerVariant';
 
 interface FourPlayerSetupScreenProps {
+  /** 4 Player Chess ('ffa', the default) or 4 Player Giveaway: only the wording differs - who controls each seat is rules-agnostic. */
+  variant?: FourVariant;
   /** The current choice for each seat. The setup state lives in App's navigation state (so it survives the trip to the bot picker). */
   seats: SeatConfig;
   onChange: (seats: SeatConfig) => void;
@@ -18,16 +21,17 @@ interface FourPlayerSetupScreenProps {
  * Chooses who controls each of the four seats: a human at the device, or a bot picked from the SAME named roster the other game modes use
  * (Kiddo 400 … The Unbeatable 3000). Then on to the time control.
  */
-export default function FourPlayerSetupScreen({ seats, onChange, onPickBot, onContinue, onBack }: FourPlayerSetupScreenProps) {
+export default function FourPlayerSetupScreen({ variant = 'ffa', seats, onChange, onPickBot, onContinue, onBack }: FourPlayerSetupScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const startable = isStartable(seats);
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="4 Player Chess" subtitle="Free-for-All" onBack={onBack} backLabel="‹ Back" />
+      <ScreenHeader title={variantTitle(variant)} subtitle={variantModeLabel(variant)} onBack={onBack} backLabel="‹ Back" />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.intro}>Four players, one board. Checkmate players to eliminate them and score points — the highest score wins once three are out.</Text>
+        <Text style={styles.intro}>{variantIntro(variant)}</Text>
+        {variant === 'giveaway' && <Text style={styles.intro}>{GIVEAWAY_RULE_HINT}</Text>}
 
         {([0, 1, 2, 3] as Seat[]).map((seat) => {
           const controller = seats[seat];

@@ -157,7 +157,7 @@ describe('entry, queue and leaving', () => {
     expect(menu).toContain('label="Online"');
     expect(menu).toContain('onPress={onFourPlayer}');
     expect(menu).toContain('label="Free-for-All"');
-    expect(app).toContain("onFourPlayerOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', token: authSession.token })}");
+    expect(app).toContain("onFourPlayerOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'ffa', token: authSession.token })}");
   });
 
   it('the picker leaves out Daily and No time limit, and every preset it does offer is accepted by the server\'s validator', () => {
@@ -199,7 +199,7 @@ describe('entry, queue and leaving', () => {
     const game = read('screens/FourPlayerOnlineGameScreen.tsx');
     expect(game).toContain('onPress={onPlayAgain}');
     expect(game).toContain('onPress={() => leaveNow(false)}');
-    expect(app).toContain("setScreen({ name: 'fourPlayerMatchmaking', token, timeControl });");
+    expect(app).toContain("setScreen({ name: 'fourPlayerMatchmaking', variant: fourVariantOf(match), token, timeControl });");
   });
 
   it('local 4 Player is untouched: its screens do not know the online files exist', () => {

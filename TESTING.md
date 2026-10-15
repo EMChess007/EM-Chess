@@ -886,3 +886,52 @@ Everything else, the whole frontend suite (769 tests), passes unchanged.
 
 **Known W2 limits.** The Giveaway bot is a v1 heuristic: it does not plan to *be stuck* (which wins), does not look past the next seat, and has no opening/endgame knowledge; whether it is fun to play against
 is for the browser pass (W5) and tuning. The screens still call the Chess bot (W3 swaps them to `chooseBotMoveFor`).
+
+## 15. 4 Player Giveaway — every screen (workstream W3)
+
+Spec: `FOUR_PLAYER_GIVEAWAY_SPEC.md` §8. W3 makes Giveaway playable end to end **in the app**: Local (hot-seat, with bots), and the Online client (queue, game, spectator, Spectate list). The server side
+was W2; real-socket scenarios are W4.
+
+**Entry.** Play menu → a new **4 Player Giveaway** card under the 4 Player Chess one (decision D13): **Local** (seat setup → bot picker → time control without Daily → game) and **Online** (login gate →
+time control without Daily and "No time limit" → queue → game). The variant rides in `App.tsx`'s screen state exactly like the seat choices (`variant: FourVariant`, required in every 4-player screen state, so a
+forgotten one is a compile error); every Chess entry passes `'ffa'`. "Play again" re-queues the SAME variant. `FourVariant` now lives in the engine (`fourPlayer/state.ts`, next to `rulesFor`) and the wire re-exports it,
+so the local screens still know nothing of the wire or the socket (the old isolation pin holds).
+
+**What differs on screen (all in the new pure `logic/fourPlayerVariant.ts`, unit-tested):** titles ("4 Player Giveaway · Antichess"); the setup intro and the one-line rule ("Captures are mandatory — lose all your pieces to win");
+the seat card counts **pieces left** instead of points (`seatMetric`, read from `state.rules.mode`, so every board — local, online, spectator — does it with no extra plumbing); **no king-in-check highlight** (`checkedKingSquares`
+returns none) and no "in check!" — instead the status says **"— must capture"** when the seat to move has a capture (a small extra to the spec: it explains why quiet moves are refused); the result table ranks the **winner first, then
+the fewest pieces** (`rankSeats`); the result note names the seat ("Green lost its last piece and wins.", "Yellow had no legal move and wins.", "Everyone else resigned or ran out of time — Red wins.", "Move limit reached — fewest pieces
+wins."); the resign dialog says the pieces stay as walls nobody can capture. The local game uses `initialState(rulesFor(variant))` (also for "New Game") and the dispatching bot `chooseBotMoveFor`. Premoves, arrows, Undo, Rotate, the promotion
+picker and clocks are unchanged (they read legality from the engine): a premove made illegal by a forced capture is cancelled with the existing notice; Undo is the stack of immutable states.
+
+**Online client.** The reducer's view carries `variant` (from `four_match_found` / the rejoin / spectate answers; absent = Chess) and reads **every** snapshot with that room's rules (`readSnapshot(text, rulesFor(view.variant))` — the
+snapshot text has no rules in it); an answer that names another or an unknown variant is refused (`invalid`), an unknown variant builds no view. `describeStatus`, `resultRows` and `describeFourResultNote` take the variant (default Chess).
+The Spectate list gives each 4-seat variant its own section ("4 Player Chess" keeps its header and keys; "4 Player Giveaway" is new); a game of a variant this client does not know (a newer server) is **left out** rather than
+listed under the wrong name.
+**Rollout safety (D15), built here:** `joinQueueRequest` sends `variant` **only for Giveaway** (a Chess join is byte-for-byte what released clients send); `checkMatchVariant` accepts a match only if `four_match_found` names the game that was
+asked for (a missing field means Chess, so a Giveaway request answered without an echo is an older server that started a Chess game); on a refusal the queue screen shows "This server does not support 4 Player Giveaway yet…", **resigns the seat
+it was just given** (so the table is not left waiting) and never hands over to the game screen.
+
+**Tests** (`fourPlayerGiveawayScreens.test.ts` 35, plus 11 added to `annotationLifecycle.test.ts`; 815 in the whole frontend suite). Pure: wording, `seatMetric` / singular "1 piece left", `checkedKingSquares` (Chess marks the king; Giveaway none; an eliminated
+seat's king never), `statusSuffix`, `rankSeats` (winner first, fewest next, a tied cap, ties by seat; Chess unchanged), the result notes, `resultRows`; the online view (a Giveaway match gives the Giveaway legal moves — the capture is forced — and the
+same text read as Chess does not; no variant = Chess; unknown variant = no view; later snapshots, rejoin answers and the final snapshot all read with the room's rules; mismatched / missing / unknown variant on a rejoin refused);
+**whole Giveaway games through the reducer** (6 seeded games, 300+ states, with an off-turn resignation: the client position equals the server's after every state); the optimistic move of a forced capture and its rollback on a refusal;
+the status line ("Your move — must capture"; Chess "in check!" unchanged); the join request and the D15 echo matrix; the Spectate list; a premove cancelled by a forced capture; Undo across a forced capture; and **source pins** for
+every screen (menu card and login gate, App routing, the local game, board, seat card, setup, queue, online game, spectator, result card) since there is no renderer. **Annotation lifecycle (CHECKLIST "Extra" box):** the mode's epoch is still `state.ply`;
+Giveaway's no-move turn advances are pinned like Chess's — off-turn resign (frozen, never dead-king), the mover resigning, a flag fall, a frozen seat skipped, a resignation that leaves the seat to move STUCK (the game ends with no move: arrows survive),
+last standing — and every move (including a forced capture and a whole bot game, where nothing ever moves unseen) clears.
+
+**Existing tests edited (9 pins, none relaxed):** `fourPlayerApp.test.ts` (7) and `fourPlayerOnlineApp.test.ts` (2) assert the EXACT source of the Chess flow; Giveaway threads a `variant` through the same screens, so the strings gain it
+(`variant: FourVariant` in the state union, `variant: 'ffa'` at the Chess entries, `chooseBotMoveFor`, `seatMetric`, `describeResultNote(game.result, variant)`). Each pin still protects what it did.
+
+**Mutation checks (copy-based, `mutate-gw3.cjs`; the whole `src/` is copied, the real tree is only read).** 54 planted bugs in the new logic, the online reducer / UI helpers and the screens' wiring. First pass **49 killed, 4 survived**:
+the rejoin answer was not checked for the rules it was read with (test gap → closed: the adopted position's legal moves), the result card's pass-through was unpinned (→ pinned), a game of an unknown variant was listed under "4 Player Chess"
+(a **real design flaw**, fixed: unknown variants are left out, with a test), and one **equivalent, documented inline**: the explicit `a - b` tie-break in `rankSeats` repeats what a stable sort already does. **53/53 killable killed + 1 equivalent.**
+
+**Performance.** The only new per-render work is `statusSuffix` (one `legalMoves` call for the seat to move; Giveaway's costs ~6 µs, see §13) and `seatMetric` (a 196-cell count); nothing is computed per frame beyond that.
+
+**Browser check (the local flow, done against the existing Expo web dev server, read-only).** Play menu shows the new card; Local → setup (Giveaway title/intro/rule hint) → time control ("4 Player Giveaway · Antichess") → the game: seat cards read 16 pieces each; with
+a capture available the status reads "Red to move — must capture"; a quiet move was **refused** and a capture accepted; the bots answered with legal forced captures and the cards dropped to 15. **Not checked in a browser:** anything Online (queue, game,
+spectator, the D15 refusal) and the result card — they need a second human, a login and a running backend; that is W5's pass, with the login hand-off asked up front.
+
+**Known limits.** "Return to your game" still sits on the 4 Player Chess card (one resume slot for both variants). The Giveaway setup screen shows the rule twice (intro + hint line) — kept because the spec lists the hint on the setup screen.
