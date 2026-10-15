@@ -44,8 +44,8 @@ function importsOf(rel: string): Import[] {
 const resolve = (from: string, specifier: string) => `${posix.normalize(posix.join(posix.dirname(from), specifier))}.ts`;
 
 describe('the mirrored file list', () => {
-  it('is the six engine modules plus the wire file, and nothing client-only', () => {
-    expect([...listed].sort()).toEqual(['fourPlayer/board.ts', 'fourPlayer/bot.ts', 'fourPlayer/clock.ts', 'fourPlayer/elimination.ts', 'fourPlayer/moves.ts', 'fourPlayer/state.ts', 'fourPlayerWire.ts'].sort());
+  it('is the seven engine modules (giveaway.ts joined for 4 Player Giveaway) plus the wire file, and nothing client-only', () => {
+    expect([...listed].sort()).toEqual(['fourPlayer/board.ts', 'fourPlayer/bot.ts', 'fourPlayer/clock.ts', 'fourPlayer/elimination.ts', 'fourPlayer/giveaway.ts', 'fourPlayer/moves.ts', 'fourPlayer/state.ts', 'fourPlayerWire.ts'].sort());
     for (const clientOnly of ['setup', 'presentation', 'premove', 'annotations', 'index']) expect(listed.has(`fourPlayer/${clientOnly}.ts`), clientOnly).toBe(false);
   });
 

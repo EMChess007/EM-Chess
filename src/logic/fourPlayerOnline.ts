@@ -45,6 +45,7 @@ import {
   type Move,
   type Seat,
 } from './fourPlayer';
+import { FOUR_REASONS } from './fourPlayerWire';
 import type {
   FourClocksMs,
   FourGameOverPayload,
@@ -115,7 +116,7 @@ export function isFourSeats(value: unknown): value is FourSeats {
   );
 }
 
-const REASONS: readonly unknown[] = ['elimination', 'cap', 'deadPosition', 'abandoned'];
+const REASONS: readonly unknown[] = FOUR_REASONS; // the wire's own list: a reason added to the engine cannot be missing here
 
 /** A well-formed `four_game_over`: the status line and the result card read `reason`, `winners` and `scores` while drawing. */
 export function isGameOverPayload(value: unknown): value is FourGameOverPayload {

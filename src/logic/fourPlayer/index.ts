@@ -3,6 +3,7 @@ export * from './board';
 export * from './state';
 export * from './moves';
 export * from './elimination';
+export * from './giveaway';
 export * from './bot';
 export * from './setup';
 export * from './presentation';

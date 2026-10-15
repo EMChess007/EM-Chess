@@ -678,7 +678,7 @@ success carrying `finished: true` + the result (a new event, so no released clie
 - None of them throws on any input (a `Symbol`, an object whose `toString` throws, an array dressed with the right property names, 1000 random shapes).
 - `clocksToWireMs` (one rounding rule for both sides) and `classifyFourRejoinAck` (the 4-player twin of `classifyRejoinAck`).
 
-**`src/logic/fourPlayer/MIRRORED_TO_BACKEND.json`** lists the files the backend copies (the six engine modules + the wire file). The owner of the
+**`src/logic/fourPlayer/MIRRORED_TO_BACKEND.json`** lists the files the backend copies (the six engine modules + the wire file at the time; `giveaway.ts` joined later, see section 13). The owner of the
 source owns the list. `fourPlayerMirrorSet.test.ts` fails here — not only later in the backend's CI — if an engine file imports a client-only
 module, a package, uses `require`/`import()`, spells an extension, or if the list stops being exactly the closure of `bot`, `clock` and the wire file.
 
@@ -788,3 +788,57 @@ player *screens* need a logged-in account (the project rule is no account creati
 Rejoin token in memory only. Chat history is not replayed after a reconnect (the server does not send it). The player screens are covered by pins and by the
 pure layers, not by a rendered test (no React Native renderer); W7 verifies them in the browser. Only move/capture sounds. The badge line adds one small text
 row to a seat card that carries one (a takeover or an offline seat); on the smallest phones the board budget is unchanged but that was not measured on a device.
+
+## 13. 4 Player Giveaway — rules + wire core (workstream W1)
+
+Spec: `FOUR_PLAYER_GIVEAWAY_SPEC.md`. W1 is the engine and the contract only: **no screen, hook, bot or server-room code changed**, so nothing a
+player can see is different yet. Rules in one paragraph: the 4 Player board and armies, but you want to LOSE your pieces — captures are mandatory
+(any capture of any other active seat; the mover picks), kings are ordinary pieces (capturable, no check, no castling), the first seat to lose its
+last piece or to be stuck on its own turn wins and ends the game, resign / flag = eliminated (its pieces become permanent **walls**: not capturable,
+never forcing, they block squares and slide-rays for good), last active seat wins, ply cap 1000 → fewest pieces win, ties shared, no draws, no points.
+
+**Where it lives.** One discriminated rules object (`FourPlayerRules = FfaRules | GiveawayRules`, `GIVEAWAY_RULES`, `rulesFor(variant)`), pure helpers in
+the new mirrored `fourPlayer/giveaway.ts` (mandatory-capture filter, piece counts, out-of-pieces, cap winners; it imports only types back, so
+no cycle), and a `state.rules.mode === 'giveaway'` dispatch at a fixed, **listed** set of touch points (the header of `giveaway.ts` is the list):
+`moves.ts` (`isCapturable`, castling, en passant against a wall, the capture filter replacing king safety, no points, captured-king bookkeeping) and
+`elimination.ts` (eliminate → `frozen`, last standing, cap = fewest pieces, `advanceGiveaway`, outOfPieces right after the move, the mover re-checked
+for "stuck" after an off-turn resignation). The snapshot text format is **unchanged** (castling field `0`, scores all zero) and the variant travels beside it.
+Order of the end checks (each tested): outOfPieces → cap → pass the turn → stuck; a resignation: lastStanding → mover stuck.
+
+**Wire (`fourPlayerWire.ts`, backward compatible).** `FourVariant`, `FourJoinQueuePayload.variant?` (omitted = `ffa`), `validateFourVariant` (strict:
+anything but undefined/`ffa`/`giveaway` — including `null` — is refused), `variant?` on match-found / room state / active-game summary (**optional in the type**
+because an older server never sends it; read with `fourVariantOf`; a client that asked for Giveaway must see it echoed — D15, built in W3), `FourReason`
+now derived from the engine's result reasons (+ `abandoned`) with a compile-checked runtime list `FOUR_REASONS` that the client's game-over validator uses.
+A join payload from an old client validates to exactly what it always did.
+
+**Regression gate for 4 Player Chess.** `fourPlayerFfaGolden.test.ts` + `fourPlayerGoldenKit.ts` replay **48 seeded FFA games (4 929 steps) and 9 hand-built scenes**
+(double mate, stalemate, cap, shuffle-to-cap, dead position, dead-king walk, both castles, mixed) and compare a SHA-256 of everything observable (position,
+full legal-move list, bot choices, action, events) with `fixtures/fourPlayerFfaGolden.json`, **recorded from the engine before any Giveaway change**. Regenerate only
+for a deliberate Chess rule change (`npx tsx src/logic/__tests__/fourPlayerGoldenKit.ts --record`). The random games alone hit 1 checkmate and no stalemate/cap/dead
+position — hence the hand-built scenes. Every pre-existing 4 Player suite passes unchanged; the **only** existing test edited is the pinned file list in
+`fourPlayerMirrorSet.test.ts` ("six engine modules" → seven, `giveaway.ts` joined).
+
+**Tests** (`src/logic/__tests__/`, 75 new, 748 in the whole suite): `fourPlayerGiveaway.test.ts` — one hand-built position per rule (forced capture vs 1/2/3
+seats, the rule is global not per piece, en passant as the only capture, king captured / captures a king / adjacent kings, no check, no castling even with every
+right set, promotion Q/R/B/N + refused king + promoting by capture + capture-promotion of a last piece, walls for rook/bishop/queen/knight/king/pawn, walls
+permanent, last piece → immediate win (and beats the cap on the cap ply, exactly one `gameOver`), stuck win, blocked-then-freed, eliminated seats skipped with 1/2/3 out,
+off-turn resign, flag fall, the mover left stuck by a resignation, last standing, cap tie / eliminated can't win / hard ceiling, three scripted games with exact events) plus a
+**property test**: 160 seeded random games (16 079 steps), after EVERY move or resignation the game is over **iff** an independently restated rule says so, with the right reason
+and winners, no points, no castling rights, only active/frozen statuses, mixed capture/quiet lists impossible, pieces never created, walls never move, snapshot round trip exact.
+Endings reached by the random games: `outOfPieces` 133, `stuck` 13, `lastStanding` 14 (the 400-ply cap is never reached randomly; it is covered by hand-built tests).
+`fourPlayerGiveawayWire.test.ts` — variant validation (omitted/ffa/giveaway, 20 hostile values refused), old-client payloads unchanged, optional-on-read fields,
+`FOUR_REASONS`, game-over payloads with the new reasons, no king promotion on the wire.
+
+**Mutation checks (copy-based, `mutate-gw1.cjs`).** 52 planted bugs across `moves.ts`, `giveaway.ts`, `elimination.ts`, `state.ts`, the wire, the client validator and the
+presentation text, including 5 Chess-side mutants for the golden gate: **52/52 killed**. First pass: 50 killed, 2 survived — both real test gaps, closed with named tests:
+a frozen seat with no pieces must not "win" by being hollow (`seatOutOfPieces` status guard), and the cap-before-outOfPieces ordering was invisible because the later result
+overwrote the earlier (now the test requires exactly one `gameOver` event). No equivalent mutants.
+
+**Performance** (40 seeded random games, 588 positions, node, this machine): `legalMoves` under Giveaway mean **5.8 µs**, p99 13.5 µs (max 2.8 ms, a one-off JIT/GC
+outlier) vs **16.1 µs / 52.3 µs** for the same positions under Chess rules — about 2.8× cheaper (no scratch board, no attack scans). A whole random game is ~100 plies and ~4 ms;
+a long sparse game costs ~9 µs per ply including the turn-pass and stuck checks (a 1000-ply game would be ≈ 9 ms — extrapolated, random play never gets that far). The snapshot is
+428 characters at the start (Chess 430): the format did not change.
+
+**Cross-feature check.** 2-player Giveaway, Atomic, Duck, bots, analysis, PGN, history and puzzles share no file with this change (`git diff` touches only `src/logic/fourPlayer*`);
+the 4 Player **Chess** bot is untouched and must not be called on a Giveaway state (it scores check and mates) — W2 adds the Giveaway bot and the server picks by variant.
+Known W1 limits, by design: `readSnapshot` and the screens still read every snapshot with Chess rules (W3), and premove / annotation lifecycle for Giveaway are W3 items.

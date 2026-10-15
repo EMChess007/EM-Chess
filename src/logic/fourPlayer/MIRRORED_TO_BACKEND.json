@@ -5,6 +5,7 @@
     "fourPlayer/state.ts",
     "fourPlayer/moves.ts",
     "fourPlayer/elimination.ts",
+    "fourPlayer/giveaway.ts",
     "fourPlayer/bot.ts",
     "fourPlayer/clock.ts",
     "fourPlayerWire.ts"
