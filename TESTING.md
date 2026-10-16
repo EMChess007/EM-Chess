@@ -45,7 +45,7 @@ tests that pin the exact four sentences and that neither screen carries its own 
 **What was NOT verified (read this before calling it finished).** Browser-verified in W5 (the user's own logged-in tab + a scripted guest socket as the second human): the Giveaway queue screen, a live online game (a quiet move while a capture is mandatory is refused, a capture is accepted), leaving and returning, the Spectate tag, Resign and the result card.
 **Not seen rendered:** the D15 refusal screen (needs a server that does not echo the variant, i.e. an older one), a server bot taking over a seat in the browser, and the 4 Player CHESS online screens after the variant changes (they are covered by the golden gate and the pure layers, not by eyes). The v1 limits are in `TODO.md` ("4 Player Giveaway: what it still leaves out").
 
-**Merge order.** Same as 4 Player Chess Online: `ci.yml` checks out the same-named branch of this repo, so push / merge this repo's `fourPlayerGiveaway` first (or together with the backend's). Nothing has been pushed.
+**Merge order.** Same as 4 Player Chess Online: the backend's `ci.yml` tests against a branch of this repo only when the backend branch is named `paired/<x>` and this repo has the same `paired/<x>` (otherwise it uses this repo's default branch; rule and reasons in the backend's `TESTING.md` §20), so push / merge this repo's PR first (or together with the backend's). `fourPlayerGiveaway` is merged in both repos, frontend first.
 
 ## 4 Player Chess Online — roll-up (read this first for the whole feature)
 
@@ -100,7 +100,7 @@ rendered was **not performed**: the project owner declined it for this workstrea
 was driven over real sockets against the real backend (17/17, W5), but nobody has looked at them on screen yet. Other deliberate v1 limits: rejoin token in memory only, no chat history after a reconnect, no private rooms,
 no saved games / ratings, no Teams/Solo online, the bot promotion-nudge parity follow-up, and no game in the nightly fuzz ends by the engine itself within 80 plies (those endings are unit-tested).
 
-**Merge order.** The backend's nightly fuzz imports the app's 4-seat engine from this repo's DEFAULT branch, and its CI checks out the same-named branch of this repo: merge this repo's `fourPlayerOnline` first (or together with the backend's).
+**Merge order.** The backend's nightly fuzz imports the app's 4-seat engine from this repo's DEFAULT branch, and its CI pairs with a branch of this repo only for `paired/<x>` names (backend `TESTING.md` §20; it used to match any same-named branch): merge this repo's `fourPlayerOnline` first (or together with the backend's).
 
 ## 1. What runs on every commit/PR (`.github/workflows/ci.yml`)
 
