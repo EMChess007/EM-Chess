@@ -1076,6 +1076,10 @@ ends a Horde game) and **"White has nothing left"** (no moves, no check = "stale
 - The Horde bot is a shallow heuristic: it is not trying to be strong, and long endgames (a few White pieces against Black's
   army) can shuffle until the move cap.
 
+**Mutation check on the merged code (CHECKLIST §2; on a copy).** 24 bugs planted in the rules (start position and pawn count, the first-rank double step: rank-2 / landing-square blockers, rank restriction, landing rank, en passant after it; the winner rule and the horde count; promotions; en passant in the move list), the engine (the double step as a target and as a
+move, pawn-only and White-only, the empty-horde game over, the legal-move count, the draw rules) and the pickers. **First pass 20 killed, 4 survived — all four real gaps**: nothing pinned that the move LIST reports an en passant capture as a capture; that a first-rank double step can be captured en passant; that the double step is a pawn rule (a knight on b1 must not
+reach b3); or that a position with no White piece is game over with BLACK to move. Closed by `hordeEngine.test.ts`: **24/24 killed, 0 equivalents.** The backend half (12 server mutants, also 12/12) is the backend's `TESTING.md` §22.
+
 ## 20. Crazyhouse — scope, decisions and known limits
 
 Added following CHECKLIST.md. Rules and helpers live in `src/logic/crazyhouse.ts` (the shared rules block is mirrored VERBATIM in
