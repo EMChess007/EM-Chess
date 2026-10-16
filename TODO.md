@@ -125,3 +125,14 @@ The engine (`src/logic/fourPlayer/`) is built so the rest slots in without rewor
   2-player screens is a pure refactor, deliberately left alone until Online can be properly exercised. Note the shared hook clears its "illegal"
   notice after the player has moved, where the inline copies keep it until the next premove/cancel: decide which behaviour wins when they merge.
 - **Threefold repetition / no-progress draws** are not detected (the ply cap — 1000 — ends a runaway game by points instead).
+
+## Crazyhouse: no analysis / Game Review, and per-ply state helpers could be shared
+
+**What's missing.** A saved Crazyhouse game cannot be opened for analysis or Game Review: Stockfish cannot read a reserve or
+play a drop, and `replayPgn` / `parsePgn` refuse `[Variant "Crazyhouse"]` (the `P@e5` drops are not moves, and the reserves and
+promoted pieces are not in a PGN). Supporting it would need a Crazyhouse-capable engine (e.g. Fairy-Stockfish via UCI_Variant) plus a
+PGN/FEN dialect that carries the pockets and the `~` promoted marks (the same dialect lichess/chess.com use).
+
+**Small follow-up.** `src/logic/perPlyState.ts` (`latestPlyState` / `plyStateAtView`) is the shared way to read per-ply side-channel state.
+Crazyhouse uses it; Duck Chess (`displayDuck`) and Spell Chess (`displaySpellState`) still carry equivalent inline copies in each game screen and
+could migrate to it without any behaviour change.

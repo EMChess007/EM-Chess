@@ -49,6 +49,9 @@ interface SquareProps {
    * plus a faint tint rather than a fill, so it reads differently from isFrozen's solid overlay and from the
    * legal-move dot, and still shows if an isFrozen square happens to sit under it. Cleared with the cast. */
   isPendingFreeze?: boolean;
+  /** Crazyhouse only — true when the piece on this square is a PROMOTED pawn (it will go to the reserve as a pawn if
+   * captured, see crazyhouse.ts). A small "~" in the corner, the notation other implementations print after the letter. */
+  isPromoted?: boolean;
   size: number;
   /** The active board theme's colors and the active piece theme's images — see ChessBoard.tsx. */
   lightColor: string;
@@ -72,6 +75,7 @@ export default function Square({
   isFrozen,
   isJumpSquare,
   isPendingFreeze,
+  isPromoted,
   size,
   lightColor,
   darkColor,
@@ -97,6 +101,7 @@ export default function Square({
         <>
           {isLegalTarget && <View style={styles.legalDot} />}
           {data.piece && !hidePiece && <Piece piece={data.piece} images={pieceImages} />}
+          {isPromoted && data.piece && !hidePiece && <Text style={[styles.promotedMark, { fontSize: Math.max(10, size * 0.3) }]}>~</Text>}
           {isDuck && (
             <View style={[styles.duck, { width: size * 0.78, height: size * 0.78, borderRadius: size * 0.39 }]}>
               <Text style={[styles.duckGlyph, { fontSize: size * 0.56 }]}>🦆</Text>
@@ -135,6 +140,13 @@ const styles = StyleSheet.create({
   },
   checked: {
     backgroundColor: '#ef5350',
+  },
+  promotedMark: {
+    position: 'absolute',
+    top: 0,
+    right: 3,
+    fontWeight: '800',
+    color: '#c62828',
   },
   legalDot: {
     position: 'absolute',

@@ -99,7 +99,7 @@ describe('the bot roster is the app\'s ONE roster (not a copy)', () => {
     const screen = read('screens/BotSelectScreen.tsx');
     expect(screen).toContain('subtitle={subtitle ?? variantName}');
     expect(screen).toContain('{engineLabel ?? (atomic ?');
-    expect(screen).toContain('{customEngines.length > 0 && !engineLabel && !horde && ('); // Horde (also heuristic-free of UCI engines) adds its own term
+    expect(screen).toContain('{customEngines.length > 0 && !engineLabel && !horde && !crazyhouse && ('); // the heuristic-free variants add their own terms
     expect(screen).toContain('BOT_CATEGORIES.map(');
   });
 });

@@ -22,6 +22,7 @@ interface PlayModeSelectScreenProps {
   onBotDuckChess: () => void;
   onBotSpellChess: () => void;
   onBotHorde: () => void;
+  onBotCrazyhouse: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
   onLocalKingOfTheHill: () => void;
@@ -41,6 +42,7 @@ interface PlayModeSelectScreenProps {
   onFourPlayerResume?: () => void;
   onLocalSpellChess: () => void;
   onLocalHorde: () => void;
+  onLocalCrazyhouse: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
@@ -68,6 +70,7 @@ export default function PlayModeSelectScreen({
   onBotDuckChess,
   onBotSpellChess,
   onBotHorde,
+  onBotCrazyhouse,
   onLocalClassic,
   onLocalChess960,
   onLocalKingOfTheHill,
@@ -84,6 +87,7 @@ export default function PlayModeSelectScreen({
   onFourPlayerResume,
   onLocalSpellChess,
   onLocalHorde,
+  onLocalCrazyhouse,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
@@ -183,6 +187,11 @@ export default function PlayModeSelectScreen({
               <ModeButtonLabel label="Horde" style={styles.subButtonText} />
             </Pressable>
           </View>
+          <View style={styles.subButtonRow}>
+            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotCrazyhouse}>
+              <ModeButtonLabel label="Crazyhouse" style={styles.subButtonText} />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.categoryCard}>
@@ -227,6 +236,11 @@ export default function PlayModeSelectScreen({
             </Pressable>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalHorde}>
               <ModeButtonLabel label="Horde" style={styles.subButtonText} />
+            </Pressable>
+          </View>
+          <View style={styles.subButtonRow}>
+            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalCrazyhouse}>
+              <ModeButtonLabel label="Crazyhouse" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>

@@ -17,6 +17,18 @@ import {
 } from './atomic';
 import { collapseFenRank, expandFenRank, getChess960BackRankFiles } from './chess960';
 import { isCastleBlockedByDuck, isMoveBlockedByDuck } from './duckChess';
+import {
+  applyCrazyhouseDrop,
+  applyCrazyhouseMove,
+  cloneCrazyhouseState,
+  crazyhouseDropSan,
+  initialCrazyhouseState,
+  legalDropSquares,
+  legalDrops,
+  type CrazyhouseDrop,
+  type CrazyhouseState,
+  type ReservePieceType,
+} from './crazyhouse';
 import { HORDE_FIRST_RANK_DOUBLE_STEP_ALLOWS_EN_PASSANT, getHordeWinnerFromFen, hordeFirstRankDoubleStep } from './horde';
 import { castlingRookOrigin, getJumpAugmentedCaptures } from './spellChess';
 
@@ -249,6 +261,16 @@ export interface ChessEngineOptions {
    * movePseudoLegal are not Horde-aware (nothing calls them in Horde — the bot uses getHordeMoves).
    */
   horde?: boolean;
+  /**
+   * Crazyhouse only — see crazyhouse.ts for the rules and the state it carries. chess.js stays authoritative for every
+   * ordinary move; this option adds a DROP (drop(), getLegalDropSquares(), getLegalDrops()) and keeps the reserve and the
+   * promoted-piece set (`crazyhouseState`, passed in because it is NOT part of the FEN, like duckSquare) up to date on every
+   * move()/drop() — read it back with getCrazyhouseState(). getStatus()/isGameOver()/getLegalMoveCount() are overridden:
+   * a side is only checkmated/stalemated if it also has no legal drop (a drop can interpose), and chess.js's insufficient-
+   * material draw is never used (a reserve can still be dropped). Not combinable with any other variant.
+   */
+  crazyhouse?: boolean;
+  crazyhouseState?: CrazyhouseState | null;
 }
 
 export class ChessEngine {
@@ -261,6 +283,8 @@ export class ChessEngine {
   private duckSquare: string | null;
   private spellChess: boolean;
   private horde: boolean;
+  private crazyhouse: boolean;
+  private crazyhouseState: CrazyhouseState;
   private frozenSquares: string[];
   private jumpSquare: string | null;
   private freezeEscapeActive: boolean;
@@ -277,6 +301,8 @@ export class ChessEngine {
     this.duckSquare = options?.duckChess ? (options.duckSquare ?? null) : null;
     this.spellChess = options?.spellChess ?? false;
     this.horde = options?.horde ?? false;
+    this.crazyhouse = options?.crazyhouse ?? false;
+    this.crazyhouseState = cloneCrazyhouseState(options?.crazyhouse ? (options.crazyhouseState ?? initialCrazyhouseState()) : initialCrazyhouseState());
     this.frozenSquares = options?.spellChess ? (options.frozenSquares ?? []) : [];
     this.jumpSquare = options?.spellChess ? (options.jumpSquare ?? null) : null;
     this.freezeEscapeActive = options?.spellChess ? (options.freezeEscapeActive ?? false) : false;
@@ -357,13 +383,25 @@ export class ChessEngine {
       // would tag every ordinary move as if it ended in a promotion. A real promotion is
       // always to n/b/r/q (chess.js's PieceSymbol type is just broader than that in practice).
       const actualPromotion = result.promotion as 'n' | 'b' | 'r' | 'q' | undefined;
-      return {
+      const played: Move = {
         from: result.from,
         to: result.to,
         promotion: actualPromotion,
         san: result.san,
         captured: result.captured as Move['captured'],
       };
+      if (!this.crazyhouse) return played;
+      // Crazyhouse: bank the capture (a promoted piece becomes a pawn) and carry the promoted status along — see crazyhouse.ts.
+      const rank = result.color === 'w' ? '1' : '8';
+      this.crazyhouseState = applyCrazyhouseMove(this.crazyhouseState, result.color, {
+        from: result.from,
+        to: result.to,
+        promotion: actualPromotion,
+        captured: result.captured,
+        enPassant: result.flags.includes('e'),
+        castleRook: result.flags.includes('k') ? { from: `h${rank}`, to: `f${rank}` } : result.flags.includes('q') ? { from: `a${rank}`, to: `d${rank}` } : undefined,
+      });
+      return { ...played, crazyhouse: cloneCrazyhouseState(this.crazyhouseState) };
     } catch {
       return null;
     }
@@ -382,6 +420,15 @@ export class ChessEngine {
     if (this.atomic) {
       this.atomicStatusCache ??= getAtomicStatus(this.getAtomicPosition(), this.getAtomicLegal());
       return this.atomicStatusCache;
+    }
+    if (this.crazyhouse) {
+      // A side is only mated/stalemated if it ALSO has no legal drop (a drop can interpose or simply be played), and chess.js's
+      // isDraw() is never consulted: it calls king-versus-king a draw, but a reserve can still be dropped. The fifty-move rule
+      // stays (a drop resets the halfmove clock, see drop()).
+      const inCheck = this.chess.isCheck();
+      if (this.chess.moves().length === 0 && !this.hasLegalDrop()) return inCheck ? 'checkmate' : 'stalemate';
+      if (this.chess.isDrawByFiftyMoves()) return 'draw';
+      return inCheck ? 'check' : 'playing';
     }
     if (this.horde) {
       // Never chess.js's isDraw(): its insufficient-material rule misreads Horde (see ChessEngineOptions.horde). The
@@ -402,6 +449,10 @@ export class ChessEngine {
   isGameOver(): boolean {
     if (this.atomic) {
       if (getAtomicKingWinner(this.getAtomicPosition())) return true;
+      const status = this.getStatus();
+      return status === 'checkmate' || status === 'stalemate' || status === 'draw';
+    }
+    if (this.crazyhouse) {
       const status = this.getStatus();
       return status === 'checkmate' || status === 'stalemate' || status === 'draw';
     }
@@ -437,6 +488,7 @@ export class ChessEngine {
    * cheap "how complex is this position" proxy (e.g. for scaling bot thinking time). */
   getLegalMoveCount(): number {
     if (this.atomic) return this.getAtomicLegal().length;
+    if (this.crazyhouse) return this.chess.moves().length + this.getLegalDrops().length;
     if (this.horde) {
       let doubleSteps = 0;
       for (const file of FILES) if (this.hordeDoubleStepTarget(`${file}1`)) doubleSteps++;
@@ -606,6 +658,61 @@ export class ChessEngine {
       if (m.promotion === 'q') out.push({ ...m, promotion: 'k' });
     }
     return out;
+  }
+
+  // --- Crazyhouse (see crazyhouse.ts) ------------------------------------
+
+  /** The reserves and promoted squares after everything this engine has played (a copy). Always the initial empty state
+   * outside Crazyhouse. */
+  getCrazyhouseState(): CrazyhouseState {
+    return cloneCrazyhouseState(this.crazyhouseState);
+  }
+
+  /** Where the side to move may drop a `piece` right now (empty outside Crazyhouse, and when the reserve has none). */
+  getLegalDropSquares(piece: ReservePieceType): string[] {
+    if (!this.crazyhouse) return [];
+    return legalDropSquares(this.crazyhouseState, this.chess.turn(), piece, (sq) => this.getPieceAt(sq));
+  }
+
+  /** Every legal drop for the side to move. */
+  getLegalDrops(): CrazyhouseDrop[] {
+    if (!this.crazyhouse) return [];
+    return legalDrops(this.crazyhouseState, this.chess.turn(), (sq) => this.getPieceAt(sq));
+  }
+
+  /** Whether the side to move has any legal drop (stops at the first). */
+  private hasLegalDrop(): boolean {
+    const turn = this.chess.turn();
+    for (const piece of ['q', 'r', 'b', 'n', 'p'] as ReservePieceType[]) {
+      if (legalDropSquares(this.crazyhouseState, turn, piece, (sq) => this.getPieceAt(sq)).length > 0) return true;
+    }
+    return false;
+  }
+
+  /** Plays a drop for the side to move: the piece goes on `square`, the turn passes, the en passant square is cleared (a drop is
+   * never "a pawn that just double-stepped"), the halfmove clock resets and the fullmove number advances after Black. Castling
+   * rights are FLAGS in the FEN that chess.js keeps, so a rook dropped back on h1 does not restore a lost right. Returns the
+   * move ("N@f3", from === to === the square, with the new state in `crazyhouse`), or null when the drop is not legal. */
+  drop(piece: ReservePieceType, square: string): Move | null {
+    if (!this.crazyhouse) return null;
+    const turn = this.chess.turn();
+    if (!this.getLegalDropSquares(piece).includes(square)) return null;
+    if (!this.chess.put({ type: piece, color: turn }, square as ChessJsSquare)) return null;
+    const fields = this.chess.fen().split(' ');
+    fields[1] = turn === 'w' ? 'b' : 'w';
+    fields[3] = '-';
+    fields[4] = '0';
+    if (turn === 'b') fields[5] = String(Number(fields[5]) + 1);
+    this.chess.load(fields.join(' '));
+    this.crazyhouseState = applyCrazyhouseDrop(this.crazyhouseState, turn, piece);
+    const status = this.getStatus();
+    return {
+      from: square,
+      to: square,
+      san: crazyhouseDropSan(piece, square, status === 'checkmate' ? '#' : status === 'check' ? '+' : ''),
+      drop: piece,
+      crazyhouse: cloneCrazyhouseState(this.crazyhouseState),
+    };
   }
 
   // --- Horde (see horde.ts) ----------------------------------------------
