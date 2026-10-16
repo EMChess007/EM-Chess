@@ -47,6 +47,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
         isGiveaway: false, // ...nor Giveaway
         isAtomic: false, // ...nor Atomic
         isDuckChess: false, // ...nor Duck Chess
+        isSpellChess: false, // ...nor Spell Chess
         fen: payload.fen,
         whiteMs: payload.whiteMs,
         blackMs: payload.blackMs,
@@ -88,6 +89,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
         isGiveaway: false, // ...nor Giveaway
         isAtomic: false, // ...nor Atomic
         isDuckChess: false, // ...nor Duck Chess
+        isSpellChess: false, // ...nor Spell Chess
       fen: match.fen,
       whiteMs: match.whiteMs ?? 0,
       blackMs: match.blackMs ?? 0,

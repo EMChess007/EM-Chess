@@ -26,6 +26,14 @@ interface BuildGamePayloadArgs {
   duckChessWinner?: PieceColor | null;
   /** Tags the saved PGN [Variant "Duck"] for the same reason as `giveaway`/`atomic` above. */
   duckChess?: boolean;
+  /** Spell Chess: the side that captured the enemy king via a Jump-augmented move, if any (see
+   * spellChess.ts). Checkmate/stalemate/draw endings still come through `chessStatus` as normal — this
+   * is only the one additional win path spellChess.ts adds on top. */
+  spellChessWinner?: PieceColor | null;
+  /** Tags the saved PGN [Variant "Spell Chess"] for the same reason as `giveaway`/`atomic`/`duckChess`
+   * above — replay/analysis assume ordinary chess rules and would otherwise mis-replay a Jump-augmented
+   * king capture or a move made past a frozen-attacker check-escape. */
+  spellChess?: boolean;
   history: GameHistoryEntry[];
   initialFen: string;
   chess960: boolean;
@@ -51,7 +59,8 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
     args.fogOfWarWinner ?? null,
     args.giveawayWinner ?? null,
     args.atomicWinner ?? null,
-    args.duckChessWinner ?? null
+    args.duckChessWinner ?? null,
+    args.spellChessWinner ?? null
   );
   if (!outcome.over || args.history.length === 0) return null;
 
@@ -59,7 +68,12 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
     opponentType: args.opponentType,
     opponentElo: args.opponentElo ?? null,
     result: outcome.result,
-    pgn: buildPgn(args.initialFen, args.history, outcome.result, args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : args.duckChess ? 'Duck' : undefined),
+    pgn: buildPgn(
+      args.initialFen,
+      args.history,
+      outcome.result,
+      args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : args.duckChess ? 'Duck' : args.spellChess ? 'Spell Chess' : undefined
+    ),
     timeControl: args.timeControl.label,
     isChess960: args.chess960,
   };

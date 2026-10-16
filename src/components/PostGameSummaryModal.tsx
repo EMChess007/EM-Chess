@@ -36,6 +36,10 @@ interface PostGameSummaryModalProps {
   /** Duck Chess only — same reasoning as `giveaway`/`atomic`: Stockfish knows nothing of the duck or of a game
    * with no check, so no accuracy analysis runs and Game Review is not offered. */
   duckChess?: boolean;
+  /** Spell Chess only — same reasoning as `giveaway`/`atomic`/`duckChess`: Stockfish knows nothing of
+   * frozen squares, jump transparency, or a kingless position after a Jump-king-capture, so no
+   * accuracy analysis runs and Game Review is not offered. */
+  spellChess?: boolean;
   history: GameHistoryEntry[];
   /** One entry (Bot/Online: just the user) or two (Local: White and Black). */
   players: SummaryPlayer[];
@@ -66,6 +70,7 @@ export default function PostGameSummaryModal({
   giveaway = false,
   atomic = false,
   duckChess = false,
+  spellChess = false,
   history,
   players,
   onGameReview,
@@ -83,7 +88,10 @@ export default function PostGameSummaryModal({
   // attachBridge() on the same engine, and the second one silently steals the connection from the
   // first (same reasoning EngineVsEngineGameScreen documents for reusing one runtime across two
   // engines that happen to share an id — except here we specifically want isolation, not sharing).
-  const scratchEngine = useMemo(() => (visible && !giveaway && !atomic && !duckChess ? new StockfishEngineAdapter() : null), [visible, giveaway, atomic, duckChess]);
+  const scratchEngine = useMemo(
+    () => (visible && !giveaway && !atomic && !duckChess && !spellChess ? new StockfishEngineAdapter() : null),
+    [visible, giveaway, atomic, duckChess, spellChess]
+  );
   const bridgeRef = useRef<StockfishBridgeHandle>(null);
   const handleBridgeRef = useCallback(
     (handle: StockfishBridgeHandle | null) => {
@@ -144,6 +152,7 @@ export default function PostGameSummaryModal({
           !giveaway &&
           !atomic &&
           !duckChess &&
+          !spellChess &&
           (!summary ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color={colors.text} />
@@ -176,7 +185,7 @@ export default function PostGameSummaryModal({
           ))}
 
         <View style={styles.buttonColumn}>
-          {!giveaway && !atomic && !duckChess && (
+          {!giveaway && !atomic && !duckChess && !spellChess && (
             <Pressable style={styles.primaryButton} onPress={onGameReview}>
               <Text style={styles.primaryButtonText}>Game Review</Text>
             </Pressable>

@@ -72,14 +72,14 @@ import type { ActiveGameSummary, MatchFoundPayload, SetupChessPairedPayload } fr
 import type { TimeControl } from './src/types/timeControl';
 
 type TimeControlFlowMode =
-  | { kind: 'local'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean }
-  | { kind: 'bot'; bot: BotPersonality; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean }
+  | { kind: 'local'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean }
+  | { kind: 'bot'; bot: BotPersonality; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean }
   | { kind: 'engineVsEngine'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean };
 
 type Screen =
   | { name: 'main' }
   | { name: 'playModeSelect' }
-  | { name: 'botSelect'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean }
+  | { name: 'botSelect'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean }
   | { name: 'timeControlSelect'; mode: TimeControlFlowMode }
   | {
       name: 'game';
@@ -92,6 +92,7 @@ type Screen =
       giveaway: boolean;
       atomic: boolean;
       duckChess: boolean;
+      spellChess: boolean;
       initialFen?: string;
     }
   | {
@@ -106,6 +107,7 @@ type Screen =
       giveaway: boolean;
       atomic: boolean;
       duckChess: boolean;
+      spellChess: boolean;
       initialFen?: string;
       colorChoice: ColorChoice;
     }
@@ -345,84 +347,93 @@ export default function App() {
             : undefined
         }
         onBotClassic={() =>
-          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false })
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false })
         }
         onBotChess960={() =>
-          setScreen({ name: 'botSelect', chess960: true, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false })
+          setScreen({ name: 'botSelect', chess960: true, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false })
         }
         onBotKingOfTheHill={() =>
-          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: true, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false })
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: true, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false })
         }
         onBotThreeCheck={() =>
-          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: true, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false })
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: true, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false })
         }
         onBotSetupChess={() =>
-          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: true, fogOfWar: false, giveaway: false, atomic: false, duckChess: false })
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: true, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false })
         }
         onBotFogOfWar={() =>
-          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: true, giveaway: false, atomic: false, duckChess: false })
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: true, giveaway: false, atomic: false, duckChess: false, spellChess: false })
         }
         onBotGiveaway={() =>
-          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: true, atomic: false, duckChess: false })
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: true, atomic: false, duckChess: false, spellChess: false })
         }
         onBotAtomic={() =>
-          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: true, duckChess: false })
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: true, duckChess: false, spellChess: false })
         }
         onBotDuckChess={() =>
-          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: true })
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: true, spellChess: false })
+        }
+        onBotSpellChess={() =>
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: true })
         }
         onLocalClassic={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false },
           })
         }
         onLocalChess960={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: true, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false },
+            mode: { kind: 'local', chess960: true, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false },
           })
         }
         onLocalKingOfTheHill={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: true, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: true, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false },
           })
         }
         onLocalThreeCheck={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: true, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: true, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false },
           })
         }
         onLocalSetupChess={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: true, fogOfWar: false, giveaway: false, atomic: false, duckChess: false },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: true, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false },
           })
         }
         onLocalFogOfWar={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: true, giveaway: false, atomic: false, duckChess: false },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: true, giveaway: false, atomic: false, duckChess: false, spellChess: false },
           })
         }
         onLocalGiveaway={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: true, atomic: false, duckChess: false },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: true, atomic: false, duckChess: false, spellChess: false },
           })
         }
         onLocalAtomic={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: true, duckChess: false },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: true, duckChess: false, spellChess: false },
           })
         }
         onLocalDuckChess={() =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: true },
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: true, spellChess: false },
+          })
+        }
+        onLocalSpellChess={() =>
+          setScreen({
+            name: 'timeControlSelect',
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: true },
           })
         }
         onFourPlayer={() => setScreen({ name: 'fourPlayerSetup', variant: 'ffa', seats: defaultSeatConfig() })}
@@ -583,7 +594,7 @@ export default function App() {
       />
     );
   } else if (screen.name === 'botSelect') {
-    const { chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess } = screen;
+    const { chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess } = screen;
     content = (
       <BotSelectScreen
         chess960={chess960}
@@ -594,10 +605,11 @@ export default function App() {
         giveaway={giveaway}
         atomic={atomic}
         duckChess={duckChess}
+        spellChess={spellChess}
         onSelect={(bot) =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'bot', bot, chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess },
+            mode: { kind: 'bot', bot, chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess },
           })
         }
         onBack={() => setScreen({ name: 'playModeSelect' })}
@@ -621,7 +633,9 @@ export default function App() {
                   ? 'Atomic'
                   : mode.kind !== 'engineVsEngine' && mode.duckChess
                     ? 'Duck Chess'
-                    : undefined;
+                    : mode.kind !== 'engineVsEngine' && mode.spellChess
+                      ? 'Spell Chess'
+                      : undefined;
     const subtitle =
       mode.kind === 'bot'
         ? variantLabel
@@ -662,6 +676,7 @@ export default function App() {
                   giveaway: mode.giveaway,
                   atomic: mode.atomic,
                   duckChess: mode.duckChess,
+                  spellChess: mode.spellChess,
                 }
               : mode.kind === 'bot'
                 ? {
@@ -676,6 +691,7 @@ export default function App() {
                     giveaway: mode.giveaway,
                   atomic: mode.atomic,
                   duckChess: mode.duckChess,
+                  spellChess: mode.spellChess,
                     colorChoice: colorChoice ?? 'random',
                   }
                 : {
@@ -704,6 +720,7 @@ export default function App() {
                   giveaway: mode.giveaway,
                   atomic: mode.atomic,
                   duckChess: mode.duckChess,
+                  spellChess: mode.spellChess,
                 }
               : { name: 'playModeSelect' }
           )
@@ -898,6 +915,7 @@ export default function App() {
         giveaway={screen.giveaway}
         atomic={screen.atomic}
         duckChess={screen.duckChess}
+        spellChess={screen.spellChess}
         initialFen={screen.initialFen}
         colorChoice={screen.colorChoice}
         authToken={authSession?.token ?? null}
@@ -918,7 +936,7 @@ export default function App() {
             threeCheck: false,
             setupChess: true,
             fogOfWar: false,
-            giveaway: false, atomic: false, duckChess: false,
+            giveaway: false, atomic: false, duckChess: false, spellChess: false,
             initialFen,
           })
         }
@@ -941,7 +959,7 @@ export default function App() {
             threeCheck: false,
             setupChess: true,
             fogOfWar: false,
-            giveaway: false, atomic: false, duckChess: false,
+            giveaway: false, atomic: false, duckChess: false, spellChess: false,
             initialFen,
             colorChoice: color,
           })
@@ -961,6 +979,7 @@ export default function App() {
         giveaway={screen.giveaway}
         atomic={screen.atomic}
         duckChess={screen.duckChess}
+        spellChess={screen.spellChess}
         initialFen={screen.initialFen}
         authToken={authSession?.token ?? null}
         onExit={() => setScreen({ name: 'main' })}

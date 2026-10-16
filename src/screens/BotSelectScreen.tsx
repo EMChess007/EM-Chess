@@ -21,6 +21,7 @@ interface BotSelectScreenProps {
   /** When set, shown instead of the engine name on every card and the custom-engine section is hidden: used by modes whose bots are
    * heuristics rather than Stockfish (4 Player Chess), where an engine name would be wrong. */
   engineLabel?: string;
+  spellChess?: boolean;
 }
 
 /** A placeholder ELO shown for custom-engine cards — irrelevant to actual play, since
@@ -50,6 +51,7 @@ export default function BotSelectScreen({
   duckChess,
   subtitle,
   engineLabel,
+  spellChess,
 }: BotSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
@@ -70,7 +72,9 @@ export default function BotSelectScreen({
                 ? 'Atomic'
                 : duckChess
                   ? 'Duck Chess'
-                  : undefined;
+                  : spellChess
+                    ? 'Spell Chess'
+                    : undefined;
 
   return (
     <View style={styles.container}>
