@@ -22,6 +22,7 @@ interface BotSelectScreenProps {
    * heuristics rather than Stockfish (4 Player Chess), where an engine name would be wrong. */
   engineLabel?: string;
   spellChess?: boolean;
+  horde?: boolean;
 }
 
 /** A placeholder ELO shown for custom-engine cards — irrelevant to actual play, since
@@ -52,6 +53,7 @@ export default function BotSelectScreen({
   subtitle,
   engineLabel,
   spellChess,
+  horde,
 }: BotSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
@@ -74,7 +76,9 @@ export default function BotSelectScreen({
                   ? 'Duck Chess'
                   : spellChess
                     ? 'Spell Chess'
-                    : undefined;
+                    : horde
+                      ? 'Horde'
+                      : undefined;
 
   return (
     <View style={styles.container}>
@@ -95,7 +99,7 @@ export default function BotSelectScreen({
                         transparency, not as something to pick. */}
                     {/* Atomic bots never use a UCI engine (see chooseAtomicBotMove), so naming one here
                         would be wrong. */}
-                    <Text style={styles.cardEngine}>{engineLabel ?? (atomic ? 'Atomic search bot' : duckChess ? 'Duck Chess bot' : getEngineName(getEngineIdForElo(bot.elo)))}</Text>
+                    <Text style={styles.cardEngine}>{engineLabel ?? (atomic ? 'Atomic search bot' : duckChess ? 'Duck Chess bot' : horde ? 'Horde bot' : getEngineName(getEngineIdForElo(bot.elo)))}</Text>
                   </View>
                 </Pressable>
               ))}
@@ -103,7 +107,7 @@ export default function BotSelectScreen({
           </View>
         ))}
 
-        {customEngines.length > 0 && !engineLabel && (
+        {customEngines.length > 0 && !engineLabel && !horde && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>My Engines</Text>
             <View style={styles.cardList}>

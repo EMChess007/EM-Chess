@@ -34,6 +34,10 @@ interface BuildGamePayloadArgs {
    * above — replay/analysis assume ordinary chess rules and would otherwise mis-replay a Jump-augmented
    * king capture or a move made past a frozen-attacker check-escape. */
   spellChess?: boolean;
+  /** Horde: Black's win — White has no pieces left (see horde.ts). White's win is a normal checkmate via `chessStatus`. */
+  hordeWinner?: PieceColor | null;
+  /** Tags the saved PGN [Variant "Horde"] for the same reason as `giveaway`/`atomic`/`duckChess`/`spellChess` above. */
+  horde?: boolean;
   history: GameHistoryEntry[];
   initialFen: string;
   chess960: boolean;
@@ -60,7 +64,8 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
     args.giveawayWinner ?? null,
     args.atomicWinner ?? null,
     args.duckChessWinner ?? null,
-    args.spellChessWinner ?? null
+    args.spellChessWinner ?? null,
+    args.hordeWinner ?? null
   );
   if (!outcome.over || args.history.length === 0) return null;
 
@@ -72,7 +77,7 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
       args.initialFen,
       args.history,
       outcome.result,
-      args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : args.duckChess ? 'Duck' : args.spellChess ? 'Spell Chess' : undefined
+      args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : args.duckChess ? 'Duck' : args.spellChess ? 'Spell Chess' : args.horde ? 'Horde' : undefined
     ),
     timeControl: args.timeControl.label,
     isChess960: args.chess960,
