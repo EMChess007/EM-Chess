@@ -39,8 +39,8 @@ describe('Spell Chess online: the spell state follows every way a position reach
   });
 
   it('there is no premove in Spell Chess (a possible cast changes which moves are legal) - online, against a bot and local', () => {
-    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess ? undefined : myColor}');
-    expect(read('screens/BotGameScreen.tsx')).toContain('premoveColor={giveaway || atomic || duckChess || spellChess ? undefined : userColor}');
+    expect(online).toMatch(/premoveColor=\{[^}]*\bspellChess\b[^}]*\? undefined : myColor\}/);
+    expect(read('screens/BotGameScreen.tsx')).toMatch(/premoveColor=\{[^}]*\bspellChess\b[^}]*\? undefined : userColor\}/);
   });
 });
 
