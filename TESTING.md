@@ -996,6 +996,36 @@ guest socket (not a second real account). Seen on screen: the Giveaway queue, a 
 **Mutation re-run on the final code** (`scratchpad/w5-final`, each on a disposable copy): W1 52/52 + parity 28/28 (20 W1 + 8 W2 mirrored-bot mutants); W2 bot 21 killed + 1 equivalent, plumbing 16 + 1; W3 53 + 1; W4 real-socket 11 + 1, fuzz 6 + 1. **187 killed, 5 equivalent, 0 survivors** — every one of the five is the documented
 equivalent (names in the roll-up and in the code). Frontend vitest 817/817, `tsc --noEmit` clean in both repos (the untracked `_claude_harness.mts` / `_probe.mts` scratch files are not part of the project).
 
+## 18. Spell Chess — scope, decisions and known limits
+
+Branch pair `paired/spell-chess` (frontend + backend), landed on the refactored board of `master`. Rules and helpers: `src/logic/spellChess.ts` (its "shared rules block" is mirrored VERBATIM in `backend/src/game/spellChess.ts`, guarded by the backend's `test-spell.mjs`);
+the engine pieces sit behind `ChessEngine`'s opt-in `spellChess` / `frozenSquares` / `jumpSquare` / `freezeEscapeActive` options. Local, Bots and Online were built together; the backend half is the backend's `TESTING.md` §21.
+
+**Rules (from chess.com's help pages, see the header of `spellChess.ts`).** A turn is an OPTIONAL cast (at most one, before the move) and then the move. **Freeze**: 3x3 zone around any square (clipped at the edges); those pieces cannot move during the opponent's NEXT
+turn only (a castling move is refused when its rook is frozen); casting it while in check waives the check when the zone covers EVERY checker. **Jump**: over one occupied square S, for the caster's own move and the opponent's reply, a rook / bishop / queen blocked only by S may capture
+the first piece beyond it, the king included (a king capture ends the game, reason `spellChess`). 5 Freeze and 2 Jump charges each, a 3-own-turn cooldown per spell. Checkmate / stalemate / draw all still apply. The spell state (charges, cooldowns, pending effects) is NOT in the FEN: it travels
+next to it, per ply in `GameHistoryEntry.spellState`, and the whole `SpellChessState` is echoed by the server on every payload.
+
+**Mutually exclusive** with every other variant (Chess960, King of the Hill, Three-Check, Setup Chess, Fog of War, Giveaway, Atomic, Duck Chess, Horde, Crazyhouse): the `VariantSelector` is a single choice, and the server refuses `isSpellChess` combined with any other flag ("cannot be combined with another variant").
+No Hint and **no premoves** in Spell Chess (online, against a bot and local): a queued move cannot carry a cast, and a possible cast changes which moves are legal after the opponent's reply. Stockfish plays the bot's MOVES (it has no concept of Freeze, so a frozen-piece suggestion falls back to
+`getSpellChessLegalMoves`); the CAST is the heuristic `chooseSpellChessBotCast`, so the bot is ELO-calibrated for moves only.
+
+**The turn context (the trap).** `spellTurnContext(state, mover, cast)` reads the frozen squares from the state BEFORE the cast (a frozen mover who casts their own Freeze must stay frozen), the jump square AFTER it (a Jump takes effect at once) and the zone cast THIS turn (only that zone may waive check).
+It is used at every read site: `ChessBoard` (via its own derivation), `OnlineGameScreen` (opponent-move replay and the rejoin rebuild) and the server's `RoomManager.applyMove`. A mutant that reads the frozen squares after the cast is killed by the server test.
+
+**Annotations / epoch (CHECKLIST).** The mode's position epoch is the FEN, like Classic: arrows and highlights are cleared when a move is played and at no other time. Entering cast mode, picking a Freeze/Jump target and cancelling the pending cast do NOT clear them (checked in the browser).
+
+**Tests (frontend).** `spellChess.test.ts` (26: zone clipping, charges, cooldowns, lifetimes, the turn context, Jump captures, the check waiver, notation, plus a seeded random-game property test in `spellChessFreeze.test.ts`), `spellChessFreeze.test.ts` (13), `spellChessBot.test.ts` (8), `spellChessLayout.test.ts` (9, source pins for the bar and the zone preview),
+`spellChessEngine.test.ts` (5: Jump charges, Freeze at 0 charges, engine-level Jump captures and Freeze waiver) and `spellChessOnline.test.ts` (14 source pins for what lives in screens: the rejoin restore, the spectator path, no premove, and that the Spell layer sits on the shared gesture hook and `PromotionPicker`, never the old inline PanResponder / Modal).
+
+**Mutation check (CHECKLIST §2), on the merged code, on a copy.** 44 bugs planted in the rules, the engine, the board and the screens (zone shapes, expiry, charges, cooldowns, the turn-context trap, the check waiver, castling with a frozen rook, king capture, notation, the board's cast / preview / reset, the rejoin restore, opponent / ack /
+refused-move / spectator state adoption, premove, the cast sent to the server). **First pass 40 killed, 4 survived — all four real test gaps**: casting Jump never cost a charge in any test; Freeze was never tried with 0 charges; the engine's own `getLegalMoves` / `move()` Jump captures and Freeze waiver were only exercised through helpers.
+Closed by `spellChessEngine.test.ts`: **44/44 killed, 0 equivalents.**
+
+**Browser (the built-in pane against the dev server, the real Bots screen, Kiddo).** 360x640 / 390x760 / 412x915: the board is the same size as Classic's (192 / 304 / 376 px) and, in every state (idle, Freeze mode with its hint, a pending Freeze with the 3x3 zone previewed live and the cancel chip, a cancelled cast, Jump mode, a Jump target on a pawn,
+the bot thinking, after its reply), no element is clipped or overlaps another (measured from the DOM rectangles). Arrows persist through selecting a piece and while the bot thinks and are cleared by the move; the same in Classic, where a queued premove plays after the bot's reply and the spell bar is absent.
+
+**Known limits.** No React Native renderer in this project (touch handling is verified in the web build, not on a device); Spell Chess is not offered in Tournaments (they exclude it in `TournamentScreen`) or Engine-vs-Engine. Not checked: the Analysis screen on a finished Spell game (the analysis engine knows nothing about spells; the saved PGN carries a `[Variant "Spell Chess"]` tag and `F@e4` / `J@d5` comment tags).
 ## 19. Horde — scope, decisions and known limits
 
 Added following CHECKLIST.md. Rules and helpers live in `src/logic/horde.ts` (the shared rules block is mirrored VERBATIM in

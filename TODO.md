@@ -45,107 +45,16 @@ unannounced.
 verified whether the server tracks repetition itself), and a decision on whether Fog of War / Giveaway /
 King of the Hill / Three-Check also want it (Fog of War and Giveaway probably not).
 
-## Spell Chess: Local + Bot + Online/backend wired, tsc-clean on both projects
+## Spell Chess: what it still leaves out
 
-**What's done, on the `spell-chess` branch.** The rules engine, `ChessEngine` wiring,
-`gameResult.ts`/`gameOutcomeText.ts`/`gamePayload.ts`, `onlineVariants.ts`'s wire flag,
-`VariantSelector.tsx`, the `chess.ts`/`history.ts` types, the bot heuristic
-(`chooseSpellChessBotCast`), and `ChessBoard.tsx`/`Square.tsx`'s UI (spell bar, cast-then-move,
-frozen/jump-square rendering) were all already in place before this pass — see this file's git
-history for the detailed breakdown. `LocalGameScreen.tsx`/`BotGameScreen.tsx` (own a
-`SpellChessState`, apply `castFreeze`/`castJump` then `afterSpellChessMove`, disable Hint/premoves,
-short-circuit `chessStatus` around the kingless-FEN stalemate misreport) were wired in the previous
-pass on this branch.
+Built on the `paired/spell-chess` branches (rules, Local, Bots and Online together; see TESTING.md §18 and the backend's §21 for what is tested and mutation-checked). The old status log that used to sit here ("no test-spell.mjs", "no mutation run", "tsx cannot run in the sandbox") is obsolete:
+`test-spell.mjs`, a real-socket scenario in `test-multiplayer.mjs`, the mutation checks and the live opponent script all exist now. What is still open:
 
-**This pass: Online/backend.** Mirrored the existing "Duck Chess wiring" shape (identified as the
-closest template — the only other variant with genuine extra per-turn client input validated
-together with the move, plus genuine extra persistent room state echoed on every payload) rather
-than Giveaway/Atomic/Fog of War's (all stateless or purely-derived):
-
-- `backend/src/game/spellChess.ts` (new) — the rules engine's server-side twin.
-  `FREEZE_INITIAL_CHARGES`/`JUMP_INITIAL_CHARGES`/`SPELL_COOLDOWN_TURNS` through
-  `activeJumpSquare` are a byte-identical "Shared rules block" with the mobile
-  `src/logic/spellChess.ts` (same markers Duck Chess's two files already use — add this project's
-  own `scripts/test-spell.mjs` later to enforce it automatically, same as `test-duck.mjs` does).
-  `getJumpAugmentedCaptures`/`getCheckingPieceSquares`/`checkIsWaivedByFreeze`/
-  `getSpellChessWinner`/`spellMoveNotation` are the server-only, engine-dependent twins — adapted
-  to `RoomChessEngine` (which has no `getBoard()`, so `getCheckingPieceSquares` scans all 64
-  squares via the new `getPieceAt` instead).
-- `RoomChessEngine.ts` — added `getPieceAt`; `RoomChessEngineOptions.spellChess`/`frozenSquares`/
-  `jumpSquare`/`freezeEscapeActive`; `skipValidation` extended with `|| this.spellChess`;
-  `move()` dispatches to a new `moveSpellChess`/`applyRawSpellMove` pair (ported from mobile
-  `ChessEngine.ts`'s identical methods) that are normal validated chess.js moves except for a
-  Jump-augmented capture (force-applied via the same unvalidated `_makeMove` giveaway/duck already
-  use) or a move played during a waived check (falls back to `movePseudoLegal`). `AppliedMove`
-  gained an optional `spell` field (mirrors `duck`).
-- `rooms.ts` — `Room`/`CreateRoomParams` gained `spellChess`/`spellState`; `applyMove` gained a
-  scratch-engine two-part-turn block (cast validated against `room.spellState` first, then the
-  move probed on a scratch `RoomChessEngine` built with the resulting frozenSquares/jumpSquare/
-  freezeEscapeActive) — "cast is optional, move is mandatory", the mirror image of Duck Chess's
-  "move is mandatory, placement is mandatory unless king capture"; a king-capture-via-Jump checked
-  *before* `isGameOver()`/`getStatus()` (so the kingless resulting position is never asked, which
-  would otherwise misreport it as a stalemate draw — the backend's version of the mobile
-  `chessStatus` short-circuit); `rejoin`/`spectate`/the move-opponent/spectator payloads/the PGN
-  variant tag all thread `isSpellChess`/`spellState`/`spell` through, same sites Duck Chess's
-  `isDuckChess`/`duckSquare`/`duck` already use.
-- `types.ts`, mobile `src/types/multiplayer.ts` — `MakeMovePayload.spell` (client sends only
-  `{type, center|square}` — the server recomputes Freeze's `squares` itself, never trusting the
-  client's), `OpponentMovePayload`/`RejoinStatePayload`/`SpectateStatePayload`/`MatchFoundPayload`
-  gained `isSpellChess`/`spellState`/`spell` (the server echoes the *whole* `SpellChessState` back,
-  unlike Duck Chess's single `duckSquare`, since there's materially more of it — charges,
-  cooldowns, pending effects).
-- `socketHandlers.ts`, `matchmaking.ts`, `challenges.ts`, `setupChessPairing.ts`, `tournaments.ts` —
-  `isSpellChess` added everywhere `isDuckChess` already was (queue/challenge entry shapes, the
-  matcher's exact-match predicate, `conflictingVariantError`'s mutual-exclusivity set, and
-  `spellChess: false`/`isSpellChess: false` on the Setup-Chess/tournament paths that can never be
-  it). `pgn.ts` gained a `{F@e4}`/`{J@d5}` move-comment prefix (mirrors Duck Chess's trailing
-  `{@g6}`, just positioned before the SAN like the mobile app's own `spellMoveNotation`).
-- Mobile `OnlineGameScreen.tsx` — a `spellState` + `spellRef` pair (mirrors `duckSquare`/`duckRef`);
-  `handleOpponentMove`'s classification replay now constructs its throwaway engine with the correct
-  `frozenSquares`/`jumpSquare`/`freezeEscapeActive` (derived from the state *after* applying the
-  payload's own cast, exactly like the server) so a Jump-augmented or freeze-escape opponent move
-  still classifies correctly instead of silently failing to replay; the rejoin resync rebuilds the
-  move list the same "fresh engine per ply from a running state" way Duck Chess's replay already
-  does, just carrying a whole `SpellChessState` forward instead of one square; `handleMove` applies
-  `castFreeze`/`castJump`+`afterSpellChessMove` optimistically and sends `spell` alongside the move;
-  header subtitle, move list, `ChessBoard`/`PostGameSummaryModal` props, premove disabling, and the
-  rated-game/achievement exclusions all gained the same `spellChess` branch Duck Chess already has.
-- Mobile `SpectatorGameScreen.tsx` — simpler, purely read-only: merges `spellState` off
-  `spectator_move` the same way it already merges `duckSquare`, and passes `spellChess`/`spellState`
-  straight into `<ChessBoard disabled>`.
-- `TournamentScreen.tsx`'s `VariantSelector` `excludeVariants` gained `'spellChess'` (tournaments
-  hardcode `spellChess: false`, same as every other non-classical variant there).
-- Fixed a real, pre-existing bug surfaced by this pass: `src/logic/__tests__/duckOnline.test.ts`'s
-  `variantWireFlags('duckChess')` `toEqual` assertion didn't include `isSpellChess` — now does.
-
-**Verified for real this time**: `npx tsc --noEmit` run directly against *both* projects' own
-`node_modules`/tsconfig — `backend/` (covering every backend file above) and the mobile app's root
-(covering every mobile file above, plus `TournamentStandingsScreen.tsx`'s two `MatchFoundPayload`
-literals, which needed `isSpellChess: false` too) — exit 0, zero errors, logs empty, on both.
-`npx tsx scripts/test-duck.mjs` (and every other existing `backend/scripts/test-*.mjs`) could not be
-run to regression-check this pass against: this sandboxed environment's `backend/node_modules` has
-`@esbuild/win32-x64` installed (not `@esbuild/linux-x64`), so `tsx` itself fails before any of this
-project's own code runs — a pre-existing environment/tooling gap unrelated to Spell Chess (confirmed
-by `test-unlimited.mjs` failing identically), the same class of gap as this file's existing `vitest`
-note below. Run the backend test scripts yourself on a real Linux `node_modules` install to cover
-this gap, ideally after writing `scripts/test-spell.mjs` (see below). `vitest` for the Local/Bot
-pieces still has the same pre-existing `rolldown` native-binding gap noted below.
-
-**Not done:**
-- **No `backend/scripts/test-spell.mjs`** (the NO-DRIFT / THE AUTHORITY / PARITY harness
-  `test-duck.mjs` already has for Duck Chess) — couldn't be authored *and run* in one pass given
-  the `tsx`/esbuild gap above; the mobile/backend files are already set up for the NO-DRIFT layer
-  (matching "Shared rules block" markers in both `spellChess.ts` files) once it's written.
-- **No CHECKLIST.md "new variant" extras yet**: no explicit mutual-exclusivity declaration checked
-  against the other variants' own UI gating list (every site that gates on `giveaway`/`atomic`/
-  `duckChess` was in fact updated to gate on `spellChess` too, across both passes on this branch,
-  but there's no single canonical list it was checked against), and no mutation-testing pass
-  actually run against `spellChess.ts` (designed for it — see the doc comments — but not executed).
-
-**Suggested next step.** Write and run `backend/scripts/test-spell.mjs` on a working Linux
-`node_modules` install (closes both the NO-DRIFT and PARITY verification gaps at once), then a real
-end-to-end two-client online Spell Chess game to exercise the one path no automated test here
-covers: an actual Jump-augmented king capture ending an Online game with reason `'spellChess'`.
+- **No premoves, no Hint** (by design: a queued move cannot carry a cast, and a possible cast changes which moves are legal after the opponent's reply). If premoves are ever wanted they need a cast-aware premove model first.
+- **The bot's moves are Stockfish's, its casts a heuristic.** Stockfish has no concept of Freeze, so when its suggestion is a frozen piece the bot falls back to a random legal move (`getSpellChessLegalMoves`); the cast (`chooseSpellChessBotCast`) is an ELO-scaled chance plus a few rules of thumb, not a search. A strong bot therefore does not play Spell Chess strongly.
+- **Not offered in Tournaments or Engine-vs-Engine**, and **not checked: the Analysis screen on a finished Spell game** (the analysis engine knows nothing about spells; the saved PGN carries a `[Variant "Spell Chess"]` tag and `F@e4` / `J@d5` comment tags).
+- **No React Native renderer in the project**: the board, the spell bar and the layout were verified in the web build (360x640, 390x760, 412x915), not on a device.
+- **Online is offered in Quick Match and Challenge** (the variant picker); `npm run spell-opponent` (backend) is a manual guest opponent for exercising it from the app.
 
 ## Daily (correspondence) games Online
 
