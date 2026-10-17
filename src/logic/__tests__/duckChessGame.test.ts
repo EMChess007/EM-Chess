@@ -122,7 +122,7 @@ describe('wiring (no React Native renderer available)', () => {
     it(`${screen} derives the duck from the history (so Undo restores it), feeds the winner into getGameOutcome and the payload`, () => {
       const src = read(screen);
       expect(src).toContain('history[history.length - 1].duckSquare ?? null');
-      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner,\s*duckWinner,\s*spellChessWinner,\s*hordeWinner\s*\)/);
+      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner,\s*duckWinner,\s*spellChessWinner,\s*hordeWinner,\s*repetitionDraw\s*\)/);
       expect(src).toContain('duckChessWinner: duckWinner,\n        duckChess,');
       expect(src).toContain('duckChess={duckChess}');
       expect(src).toContain('onDuckPlacementChange={setPlacingDuck}');
