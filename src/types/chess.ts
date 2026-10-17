@@ -38,6 +38,9 @@ export interface Move {
    * ChessEngineOptions.giveaway. */
   promotion?: 'n' | 'b' | 'r' | 'q' | 'k';
   san: string;
+  /** Fog of War only - the notation WITH its '+'/'#' as chess.js computed it on the engine's own board; `san` has them stripped
+   * because no Fog of War player is ever told about a check (see fogOfWarNotation.ts). Never show this to a player in a live game. */
+  trueSan?: string;
   /** The type of piece captured by this move (regular capture or en passant), if any. */
   captured?: PieceType;
   /** Atomic only — every piece the move's explosion removed: the capturing piece, the captured
