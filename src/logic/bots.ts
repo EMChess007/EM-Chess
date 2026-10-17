@@ -327,6 +327,45 @@ export function chooseAtomicBotMove(engine: ChessEngine, elo: number, rng: () =>
   return describeAtomicMove(pos, best[Math.floor(rng() * best.length)].move);
 }
 
+// --- Fog of War -----------------------------------------------------------------------------
+
+/**
+ * The castles Fog of War allows but ordinary chess does not — O-O/O-O-O out of, through or into check (chess.com: "the king
+ * can castle while in check, and can castle through, or into check"). Stockfish plays by ordinary rules, so it can never
+ * suggest one; this is how the Fog of War bot gets to use them. Pseudo-legal castles (ChessEngine.getPseudoLegalMoves) that
+ * chess.js's own legal set for the king does not contain, each paired with whether the bot's king is attacked right now.
+ */
+export function getFogOfWarExtraCastles(engine: ChessEngine, color: PieceColor): Move[] {
+  const rank = color === 'w' ? '1' : '8';
+  const from = `e${rank}`;
+  if (engine.getPieceAt(from)?.type !== 'k') return [];
+  const ordinary = new Set(engine.getLegalMoves(from));
+  return engine
+    .getPseudoLegalMoves(color)
+    .filter((m) => m.from === from && (m.to === `g${rank}` || m.to === `c${rank}`) && !ordinary.has(m.to));
+}
+
+/**
+ * A Fog of War bot's own use of the "no check" castling rule, tried BEFORE Stockfish is asked (like the king-capture check in
+ * BotGameScreen): an extra castle (see getFogOfWarExtraCastles) is only considered when it leaves the king on a square the
+ * opponent cannot capture next move — castling out of check onto a safe square is then always taken, any other qualifying castle
+ * with probability 1/2 (Stockfish still decides the rest of the time). Returns null when there is none.
+ */
+export function chooseFogOfWarExtraCastle(engine: ChessEngine, color: PieceColor, rng: () => number = Math.random): Move | null {
+  const extras = getFogOfWarExtraCastles(engine, color);
+  if (extras.length === 0) return null;
+  const fen = engine.getFen();
+  const safe = extras.filter((m) => {
+    const scratch = new ChessEngine(fen);
+    if (!scratch.movePseudoLegal(m.from, m.to, m.promotion)) return false;
+    return !scratch.getPseudoLegalMoves(color === 'w' ? 'b' : 'w').some((r) => r.captured === 'k');
+  });
+  if (safe.length === 0) return null;
+  const inCheck = engine.getPseudoLegalMoves(color === 'w' ? 'b' : 'w').some((r) => r.captured === 'k');
+  if (!inCheck && rng() >= 0.5) return null;
+  return safe[Math.floor(rng() * safe.length)];
+}
+
 // --- Duck Chess ---------------------------------------------------------------------------
 
 /** Piece values for Duck Chess scoring; the king is worth "the game" — capturing it wins, losing it loses. */

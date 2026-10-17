@@ -16,6 +16,7 @@ import { unlockAchievement } from '../logic/achievementStorage';
 import {
   chooseAtomicBotMove,
   chooseDuckBotMove,
+  chooseFogOfWarExtraCastle,
   chooseGiveawayBotMove,
   chooseHordeBotMove,
   chooseCrazyhouseBotMove,
@@ -575,6 +576,13 @@ export default function BotGameScreen({
           if (captureKing) {
             move = moveEngine.movePseudoLegal(captureKing.from, captureKing.to, captureKing.promotion);
           }
+        }
+
+        // Fog of War only — castling out of, through or into check is legal here (chess.com), which Stockfish (ordinary
+        // rules) can never suggest; see chooseFogOfWarExtraCastle.
+        if (fogOfWar && !move) {
+          const castle = chooseFogOfWarExtraCastle(engine, botColor);
+          if (castle) move = moveEngine.movePseudoLegal(castle.from, castle.to, castle.promotion);
         }
 
         if (!move) {

@@ -163,6 +163,40 @@ function toAppMoveFromRaw(raw: InternalMove): Move {
   };
 }
 
+// BEGIN unrestricted-castles (byte-identical in the backend's RoomChessEngine.ts — backend/scripts/test-fogOfWarCastling.mjs checks it)
+/**
+ * Adds back every castle chess.js's pseudo-legal generator withholds for ATTACK reasons, to `moves` (and returns it).
+ *
+ * Two variants have no check at all — Fog of War (chess.com: "the king can castle while in check, and can castle through,
+ * or into check") and Duck Chess — so castling there needs only: the king on e1/e8 and the rook on its corner, both still
+ * carrying the castling right, and the squares between them empty (b/c/d for the queenside, f/g for the kingside). Nothing
+ * about attacked squares. chess.js's `_moves({ legal: false })` skips the king-safety filter for every other move but still
+ * refuses O-O/O-O-O when the king is in check or crosses/lands on an attacked square, which in Fog of War is also an
+ * information leak: the server (which sees the true board) would refuse a castle the client (which sees only its own
+ * fog) offered, and that refusal tells the player a hidden piece attacks their king. `isBlocked` lets a variant add its
+ * own obstruction (the duck). Only ever adds: a castle chess.js already offered is left alone.
+ */
+function addUnrestrictedCastles(source: Chess, moves: InternalMove[], isBlocked?: (from: string, to: string) => boolean): InternalMove[] {
+  const color = source.turn();
+  const rank = color === 'w' ? '1' : '8';
+  const king = source.get(`e${rank}` as ChessJsSquare);
+  if (!king || king.type !== 'k' || king.color !== color) return moves;
+  const rights = source.getCastlingRights(color);
+  for (const side of ['k', 'q'] as const) {
+    if (!rights[side]) continue;
+    const rook = source.get((side === 'k' ? `h${rank}` : `a${rank}`) as ChessJsSquare);
+    if (!rook || rook.type !== 'r' || rook.color !== color) continue;
+    const between = side === 'k' ? ['f', 'g'] : ['b', 'c', 'd'];
+    if (between.some((file) => source.get(`${file}${rank}` as ChessJsSquare))) continue;
+    const to = side === 'k' ? `g${rank}` : `c${rank}`;
+    if (moves.some((m) => m.flags & CASTLE_FLAGS && m.to === indexFromSquare(to))) continue; // chess.js already offered it
+    if (isBlocked && isBlocked(`e${rank}`, to)) continue;
+    moves.push({ color, from: indexFromSquare(`e${rank}`), to: indexFromSquare(to), piece: 'k', flags: side === 'k' ? 32 : 64 });
+  }
+  return moves;
+}
+// END unrestricted-castles
+
 export interface ChessEngineOptions {
   /**
    * When true, castling is resolved using Chess960 (Fischer Random) rules instead of
@@ -583,8 +617,9 @@ export class ChessEngine {
    * getPseudoLegalMoves) — i.e. a legal piece-movement pattern, with no check on whether it
    * leaves the mover's own king exposed, and no restriction against landing on the enemy king's
    * square (Fog of War's whole win condition). Returns null if nothing matches (illegal shape,
-   * wrong turn, blocked path, etc.) — same contract as move(). Doesn't handle Chess960 castling —
-   * Fog of War and Chess960 aren't combinable from the UI today. */
+   * wrong turn, blocked path, etc.) — same contract as move(). Castling needs only its right, the rook and
+   * empty squares between — never an unattacked king/path (see addUnrestrictedCastles). Doesn't handle Chess960
+   * castling — Fog of War and Chess960 aren't combinable from the UI today. */
   movePseudoLegal(from: string, to: string, promotion?: Move['promotion']): Move | null {
     const internals = this.chess as unknown as ChessInternals;
     const candidates = this.generateRaw(this.chess);
@@ -627,29 +662,17 @@ export class ChessEngine {
           )
         : raw.slice();
 
-      // There is no check in Duck Chess, so castling has no attack-based restrictions either (out of, through
-      // or into "check"). chess.js's generator withholds O-O/O-O-O when the king's squares are attacked, so add
-      // back every castle whose right remains and whose squares are merely empty (and not blocked by the duck).
-      const color = source.turn();
-      const rank = color === 'w' ? '1' : '8';
-      const king = source.get(`e${rank}` as ChessJsSquare);
-      if (king && king.type === 'k' && king.color === color) {
-        const rights = source.getCastlingRights(color);
-        for (const side of ['k', 'q'] as const) {
-          if (!rights[side]) continue;
-          const rook = source.get((side === 'k' ? `h${rank}` : `a${rank}`) as ChessJsSquare);
-          if (!rook || rook.type !== 'r' || rook.color !== color) continue;
-          const between = side === 'k' ? ['f', 'g'] : ['b', 'c', 'd'];
-          if (between.some((file) => source.get(`${file}${rank}` as ChessJsSquare))) continue;
-          const to = side === 'k' ? `g${rank}` : `c${rank}`;
-          if (kept.some((m) => m.flags & CASTLE_FLAGS && m.to === indexFromSquare(to))) continue; // chess.js already offered it
-          if (duck && isCastleBlockedByDuck(`e${rank}`, to, duck)) continue;
-          kept.push({ color, from: indexFromSquare(`e${rank}`), to: indexFromSquare(to), piece: 'k', flags: side === 'k' ? 32 : 64 });
-        }
-      }
-      return kept;
+      // No check in Duck Chess, so no attack-based castling restriction either: add back the castles chess.js withholds
+      // (see addUnrestrictedCastles) — still blocked when the duck sits on a square the king or rook crosses.
+      return addUnrestrictedCastles(source, kept, (from, to) => (duck ? isCastleBlockedByDuck(from, to, duck) : false));
     }
-    if (!this.giveaway) return raw;
+    if (!this.giveaway) {
+      // Fog of War (the pseudo-legal API's main caller): no check concept, so castling out of, through and into "check" is
+      // legal too — and MUST be, on the server as on the client, or a refusal would tell the player a hidden piece attacks
+      // their king. Spell Chess is the one caller that mixes this API with real check rules (its freeze-escape move),
+      // so it keeps chess.js's own castling.
+      return this.spellChess ? raw : addUnrestrictedCastles(source, raw.slice());
+    }
     const out: InternalMove[] = [];
     for (const m of raw) {
       if (m.flags & (CASTLE_FLAGS)) continue;
