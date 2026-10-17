@@ -1,4 +1,5 @@
 import type { Move } from './chess';
+import type { SpellChessState } from '../logic/spellChess';
 
 export interface GameHistoryEntry {
   move: Move;
@@ -8,6 +9,11 @@ export interface GameHistoryEntry {
    * the ply is the previous entry's duckSquare (none before White's first move), which is what Undo and
    * position review restore. Undefined in every other mode. */
   duckSquare?: string | null;
+  /** Spell Chess only — charges/cooldowns/pending freeze+jump AFTER this ply (the state before is the
+   * previous entry's spellState, or spellChess.initialSpellChessState() before White's first move) —
+   * exactly the same "carried per ply, restored by Undo/position review" shape as duckSquare above.
+   * Undefined in every other mode. */
+  spellState?: SpellChessState;
 }
 
 export interface AnalyzeParams {

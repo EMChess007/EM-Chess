@@ -45,6 +45,17 @@ unannounced.
 verified whether the server tracks repetition itself), and a decision on whether Fog of War / Giveaway /
 King of the Hill / Three-Check also want it (Fog of War and Giveaway probably not).
 
+## Spell Chess: what it still leaves out
+
+Built on the `paired/spell-chess` branches (rules, Local, Bots and Online together; see TESTING.md §18 and the backend's §21 for what is tested and mutation-checked). The old status log that used to sit here ("no test-spell.mjs", "no mutation run", "tsx cannot run in the sandbox") is obsolete:
+`test-spell.mjs`, a real-socket scenario in `test-multiplayer.mjs`, the mutation checks and the live opponent script all exist now. What is still open:
+
+- **No premoves, no Hint** (by design: a queued move cannot carry a cast, and a possible cast changes which moves are legal after the opponent's reply). If premoves are ever wanted they need a cast-aware premove model first.
+- **The bot's moves are Stockfish's, its casts a heuristic.** Stockfish has no concept of Freeze, so when its suggestion is a frozen piece the bot falls back to a random legal move (`getSpellChessLegalMoves`); the cast (`chooseSpellChessBotCast`) is an ELO-scaled chance plus a few rules of thumb, not a search. A strong bot therefore does not play Spell Chess strongly.
+- **Not offered in Tournaments or Engine-vs-Engine**, and **not checked: the Analysis screen on a finished Spell game** (the analysis engine knows nothing about spells; the saved PGN carries a `[Variant "Spell Chess"]` tag and `F@e4` / `J@d5` comment tags).
+- **No React Native renderer in the project**: the board, the spell bar and the layout were verified in the web build (360x640, 390x760, 412x915), not on a device.
+- **Online is offered in Quick Match and Challenge** (the variant picker); `npm run spell-opponent` (backend) is a manual guest opponent for exercising it from the app.
+
 ## Daily (correspondence) games Online
 
 **What's wrong / what's missing.** Online play is live-only. Daily time controls (1–14 days) exist for Local and Bot

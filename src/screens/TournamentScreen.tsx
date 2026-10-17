@@ -185,7 +185,7 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
           {/* Setup Chess needs a per-match blind-setup phase that hasn't been designed for
               round-robin pairing yet (one army for the whole tournament vs. a new one per match)
               — excluded here until that's settled, unlike the 1v1 Online/Challenge flows. */}
-          <VariantSelector value={variant} onChange={setVariant} excludeVariants={['setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess']} />
+          <VariantSelector value={variant} onChange={setVariant} excludeVariants={['setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess']} />
           {error && <Text style={styles.errorText}>{error}</Text>}
           <ScrollView contentContainerStyle={styles.setupScrollContent}>
             {CATEGORIES.map(({ category, label }) => (

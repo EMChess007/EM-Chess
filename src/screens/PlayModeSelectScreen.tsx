@@ -20,6 +20,7 @@ interface PlayModeSelectScreenProps {
   onBotGiveaway: () => void;
   onBotAtomic: () => void;
   onBotDuckChess: () => void;
+  onBotSpellChess: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
   onLocalKingOfTheHill: () => void;
@@ -37,6 +38,7 @@ interface PlayModeSelectScreenProps {
   onFourPlayerGiveawayOnline: () => void;
   /** Set while the player has left an online 4 Player game that is still going: offers "Return to your game". */
   onFourPlayerResume?: () => void;
+  onLocalSpellChess: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
@@ -62,6 +64,7 @@ export default function PlayModeSelectScreen({
   onBotGiveaway,
   onBotAtomic,
   onBotDuckChess,
+  onBotSpellChess,
   onLocalClassic,
   onLocalChess960,
   onLocalKingOfTheHill,
@@ -76,6 +79,7 @@ export default function PlayModeSelectScreen({
   onFourPlayerGiveaway,
   onFourPlayerGiveawayOnline,
   onFourPlayerResume,
+  onLocalSpellChess,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
@@ -168,6 +172,9 @@ export default function PlayModeSelectScreen({
             <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotDuckChess}>
               <ModeButtonLabel label="Duck Chess" style={styles.subButtonText} />
             </Pressable>
+            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotSpellChess}>
+              <ModeButtonLabel label="Spell Chess" style={styles.subButtonText} />
+            </Pressable>
           </View>
         </View>
 
@@ -207,6 +214,9 @@ export default function PlayModeSelectScreen({
           <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalDuckChess}>
               <ModeButtonLabel label="Duck Chess" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalSpellChess}>
+              <ModeButtonLabel label="Spell Chess" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>

@@ -13,7 +13,14 @@ import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { unlockAchievement } from '../logic/achievementStorage';
-import { chooseAtomicBotMove, chooseDuckBotMove, chooseGiveawayBotMove, getBotThinkTimeMs } from '../logic/bots';
+import {
+  chooseAtomicBotMove,
+  chooseDuckBotMove,
+  chooseGiveawayBotMove,
+  chooseSpellChessBotCast,
+  getBotThinkTimeMs,
+  getSpellChessLegalMoves,
+} from '../logic/bots';
 import { logDiagnostic } from '../logic/diagnosticLog';
 import { generateChess960Position } from '../logic/chess960';
 import { ChessEngine } from '../logic/ChessEngine';
@@ -34,6 +41,17 @@ import { getAtomicWinner, isAtomicThreefoldRepetition } from '../logic/atomic';
 import { duckMoveNotation, getDuckChessWinner, hasNoDuckMoves } from '../logic/duckChess';
 import { getGiveawayMoves, getGiveawayWinner } from '../logic/giveaway';
 import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
+import {
+  activeJumpSquare,
+  afterSpellChessMove,
+  castFreeze,
+  castJump,
+  checkIsWaivedByFreeze,
+  frozenSquaresFor,
+  getSpellChessWinner,
+  initialSpellChessState,
+  spellMoveNotation,
+} from '../logic/spellChess';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
 import { lookupOpening } from '../logic/openings';
@@ -67,6 +85,12 @@ interface BotGameScreenProps {
   /** Duck Chess — see duckChess.ts. Bots play it with chooseDuckBotMove (a regular move plus where to put the
    * duck), NOT Stockfish (which knows nothing of the duck). Mutually exclusive with every other variant. */
   duckChess?: boolean;
+  /** Spell Chess — see spellChess.ts. The move itself is ordinary legal chess, so the bot still plays
+   * it with real Stockfish — the spell-cast decision (if any) is chooseSpellChessBotCast's own
+   * heuristic, layered on top before the move. Stockfish can still suggest a move that's illegal only
+   * because of an active Freeze (it has no concept of the frozen zone); see the getSpellChessLegalMoves
+   * fallback below for that one case. Mutually exclusive with every other variant. */
+  spellChess?: boolean;
   /** The merged starting position from the Setup Chess builder flow — used instead of
    * self-generating one when present. `colorChoice` must already be the concrete color the human
    * built their army as (not 'random') when this is set, see BotSetupChessFlowScreen. */
@@ -88,6 +112,7 @@ export default function BotGameScreen({
   giveaway = false,
   atomic = false,
   duckChess = false,
+  spellChess = false,
   initialFen: initialFenProp,
   colorChoice = 'random',
   authToken,
@@ -129,10 +154,10 @@ export default function BotGameScreen({
   // See LocalGameScreen's identical effect for why a miss here doesn't clear the name — it only
   // ever upgrades to a deeper/more specific match as the game continues.
   useEffect(() => {
-    if (chess960 || setupChess || fogOfWar || giveaway || atomic || duckChess) return;
+    if (chess960 || setupChess || fogOfWar || giveaway || atomic || duckChess || spellChess) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic, duckChess]);
+  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess]);
 
   // skipValidation: once a Fog of War game ends via king capture, `fen` genuinely has no king
   // for the losing side — see ChessEngine's own doc comment on the option (this is the exact
@@ -141,9 +166,17 @@ export default function BotGameScreen({
   // last turn's duck — which also makes Undo restore it for free (a turn is one history entry: move + duck).
   const duckSquare = useMemo(() => (duckChess && history.length > 0 ? history[history.length - 1].duckSquare ?? null : null), [duckChess, history]);
   const [placingDuck, setPlacingDuck] = useState(false);
+  // Spell Chess (see spellChess.ts and LocalGameScreen's identical block for the full rationale): the
+  // charges/cooldowns/pending freeze+jump carried per ply. This screen's own `engine` only needs
+  // skipValidation fixed for it — frozenSquares/jumpSquare only matter for move GENERATION, done
+  // separately below for the bot's own moveEngine (and by ChessBoard for the human's).
+  const spellState = useMemo(
+    () => (spellChess ? history[history.length - 1]?.spellState ?? initialSpellChessState() : initialSpellChessState()),
+    [spellChess, history]
+  );
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess, giveaway, atomic, duckChess, duckSquare }),
-    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess || spellChess, giveaway, atomic, duckChess, duckSquare }),
+    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare, spellChess]
   );
   const turn = engine.getTurn();
   // Atomic: see LocalGameScreen's identical block — the engine answers status from atomic.ts, a blown-up
@@ -160,7 +193,23 @@ export default function BotGameScreen({
     [duckChess, history]
   );
   const duckBlockade = useMemo(() => duckChess && duckWinner === null && history.length > 0 && hasNoDuckMoves(engine), [duckChess, duckWinner, history.length, engine]);
-  const chessStatus = duckChess ? (duckBlockade ? 'draw' : 'playing') : atomicRepetition ? 'draw' : engine.getStatus();
+  // Spell Chess has normal checkmate/stalemate/draw PLUS one extra win path: capturing the enemy king
+  // outright via a Jump-augmented move (see spellChess.ts). Read off the last turn, so it's right after
+  // Undo too, mirroring duckWinner above exactly.
+  const spellChessWinner = useMemo(
+    () => (spellChess && history.length > 0 ? getSpellChessWinner(history[history.length - 1].move, (history.length - 1) % 2 === 0 ? 'w' : 'b') : null),
+    [spellChess, history]
+  );
+  // Explicit short-circuit — see LocalGameScreen's identical block for why (chess.js's own
+  // isStalemate()/isDraw() both return true on the kingless fen a Jump-king-capture leaves behind,
+  // which would otherwise misreport this decisive win as a draw).
+  const chessStatus = duckChess
+    ? (duckBlockade ? 'draw' : 'playing')
+    : spellChess && spellChessWinner
+      ? 'playing'
+      : atomicRepetition
+        ? 'draw'
+        : engine.getStatus();
   // Chess.js has no idea this rule exists — checked independently, only when actually playing
   // this variant (see kingOfTheHill.ts).
   const kingOfTheHillWinner = kingOfTheHill ? getKingOfTheHillWinner(engine) : null;
@@ -182,7 +231,9 @@ export default function BotGameScreen({
       ? giveawayWinner !== null
       : fogOfWar
         ? false
-        : engine.isGameOver() || atomicRepetition;
+        : spellChess
+          ? spellChessWinner !== null || engine.isGameOver()
+          : engine.isGameOver() || atomicRepetition;
   // Auto-tick runs for whichever side's turn it is — including the bot's — so its clock counts
   // down live, second by second, in real wall-clock time while it "thinks" (the engine really
   // does take approximately thinkTimeMs to respond), exactly like the human side already did.
@@ -274,6 +325,8 @@ export default function BotGameScreen({
         atomic,
         duckChessWinner: duckWinner,
         duckChess,
+        spellChessWinner,
+        spellChess,
         history,
         initialFen,
         chess960,
@@ -295,6 +348,8 @@ export default function BotGameScreen({
       atomic,
       duckWinner,
       duckChess,
+      spellChessWinner,
+      spellChess,
       history,
       initialFen,
       chess960,
@@ -362,7 +417,32 @@ export default function BotGameScreen({
       try {
         // Giveaway positions can legitimately lack a king (kings are capturable pieces there), so
         // this engine needs skipValidation too — the other variants never reach a kingless fen here.
-        const moveEngine = new ChessEngine(fen, { chess960, initialFen, skipValidation: giveaway || duckChess, giveaway, atomic, duckChess, duckSquare });
+        // Spell Chess: decide the cast (if any) BEFORE the move itself, mirroring ChessBoard's own
+        // castMode-then-pendingCast ordering for the human — chooseSpellChessBotCast only ever looks
+        // at the pre-move position/state. The move itself stays plain legal chess (Stockfish has no
+        // concept of spells at all), so this is the one place spellChess affects move GENERATION for
+        // the bot: frozenSquares (an earlier Freeze against the bot) always carries over from
+        // spellState; jumpSquare is this cast's own square immediately if the bot just cast Jump (same
+        // timing as the human's own cast — see spellChess.ts's own doc comment), else whatever's still
+        // active from spellState.
+        const spellCast = spellChess ? chooseSpellChessBotCast(engine, botColor, spellState, bot.elo) : null;
+        const spellFrozenForBot = spellChess ? frozenSquaresFor(spellState, botColor) : [];
+        const spellJumpForBot = spellChess ? (spellCast?.type === 'jump' ? spellCast.square : activeJumpSquare(spellState)) : null;
+        const spellFreezeEscapeForBot =
+          spellChess && spellCast?.type === 'freeze' ? checkIsWaivedByFreeze(engine, botColor, spellCast.squares) : false;
+        const moveEngine = new ChessEngine(fen, {
+          chess960,
+          initialFen,
+          skipValidation: giveaway || duckChess || spellChess,
+          giveaway,
+          atomic,
+          duckChess,
+          duckSquare,
+          spellChess,
+          frozenSquares: spellFrozenForBot,
+          jumpSquare: spellJumpForBot,
+          freezeEscapeActive: spellFreezeEscapeForBot,
+        });
         let move: Move | null = null;
 
         // Giveaway: Stockfish is bypassed entirely (see chooseGiveawayBotMove) — a normal engine move
@@ -464,16 +544,60 @@ export default function BotGameScreen({
           move = fogOfWar
             ? moveEngine.movePseudoLegal(parsed.from, parsed.to, parsed.promotion)
             : moveEngine.move(parsed.from, parsed.to, parsed.promotion);
+
+          // Spell Chess only: Stockfish has no concept of the frozen zone, so its suggested move can be
+          // ordinary-legal chess yet still illegal here because its origin square is frozen (an earlier
+          // Freeze cast against the bot). Rather than surface that as a crash, fall back to a random
+          // still-legal move for this ply — see getSpellChessLegalMoves's own doc comment.
+          if (!move && spellChess) {
+            const fallbackMoves = getSpellChessLegalMoves(fen, botColor, {
+              chess960,
+              initialFen,
+              frozenSquares: spellFrozenForBot,
+              jumpSquare: spellJumpForBot,
+              freezeEscapeActive: spellFreezeEscapeForBot,
+            });
+            if (fallbackMoves.length > 0) {
+              const picked = fallbackMoves[Math.floor(Math.random() * fallbackMoves.length)];
+              move = moveEngine.move(picked.from, picked.to, picked.promotion);
+            }
+          }
+
           if (!move) throw new Error(`Invalid move from engine: "${uciMove}"`);
         }
         if (cancelled) return;
+
+        // Spell Chess: attach the cast (if any) to the move that actually landed, then advance
+        // cooldowns/expire whatever was still pending — same castFreeze/castJump-then-
+        // afterSpellChessMove ordering as handleMove above, just with the bot's own spellCast instead
+        // of a human-committed move.spell.
+        if (spellChess && spellCast) move = { ...move, spell: spellCast };
+        const spellStateAfter = spellChess
+          ? afterSpellChessMove(
+              spellCast
+                ? spellCast.type === 'freeze'
+                  ? castFreeze(spellState, botColor, spellCast.center)
+                  : castJump(spellState, botColor, spellCast.square)
+                : spellState,
+              botColor
+            )
+          : spellState;
 
         // The bot's clock was already ticking down live via auto-tick while it "thought" (see
         // the useChessClock call above) — only the post-move increment still needs applying here.
         clock.applyIncrement(botColor);
         playMoveSound(move);
         triggerMoveHaptics(move);
-        setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: moveEngine.getFen(), ...(duckChess ? { duckSquare: duckAfter } : {}) }]);
+        setHistory((h) => [
+          ...h,
+          {
+            move,
+            fenBefore: fen,
+            fenAfter: moveEngine.getFen(),
+            ...(duckChess ? { duckSquare: duckAfter } : {}),
+            ...(spellChess ? { spellState: spellStateAfter } : {}),
+          },
+        ]);
         setLastMove(move);
         setFen(moveEngine.getFen());
         if (fogOfWar) {
@@ -552,6 +676,9 @@ export default function BotGameScreen({
   if (duckWinner) {
     statusText = `${duckWinner === userColor ? 'You win' : `${bot.name} wins`} by capturing the king!`;
   }
+  if (spellChessWinner) {
+    statusText = `${spellChessWinner === userColor ? 'You win' : `${bot.name} wins`} by capturing the king!`;
+  }
   if (fogOfWarWinner) {
     statusText = `${fogOfWarWinner === userColor ? 'You win' : `${bot.name} wins`} by capturing the king!`;
   }
@@ -567,7 +694,8 @@ export default function BotGameScreen({
     fogOfWarWinner,
     giveawayWinner,
     atomicWinner,
-    duckWinner
+    duckWinner,
+    spellChessWinner
   );
   const winnerColor: PieceColor | null =
     outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
@@ -588,7 +716,10 @@ export default function BotGameScreen({
     const result = outcome.result === '1/2-1/2' ? 0.5 : winnerColor === userColor ? 1 : 0;
     const ratingCategory = toRatingCategory(timeControl.category);
     // Giveaway and Atomic are different games with a heuristic (not ELO-calibrated) opponent — they must
-    // not move the player's chess rating or unlock rating-based achievements.
+    // not move the player's chess rating or unlock rating-based achievements. Spell Chess was deliberately
+    // considered and left OUT of this exclusion: its base move comes from the real Stockfish call like Classic's
+    // (only the spell CAST is heuristic, chooseSpellChessBotCast), so the opponent IS ELO-calibrated. Not an
+    // oversight — do not add !spellChess here.
     if (ratingCategory && !giveaway && !atomic && !duckChess) recordRatedGame(ratingCategory, bot.elo, result, authToken);
 
     if (result === 1 && !giveaway && !atomic && !duckChess) {
@@ -607,8 +738,31 @@ export default function BotGameScreen({
       clock.applyIncrement(userColor);
       playMoveSound(move);
       triggerMoveHaptics(move);
+      // Spell Chess: see LocalGameScreen's identical block — a cast (if any) is applied first, THEN
+      // afterSpellChessMove advances cooldowns/expires whatever was still pending, exactly once per
+      // ply. This handleMove is only ever reached for the human's own move (the bot's move is applied
+      // directly in the bot-move effect below), so the mover here is always userColor.
+      const spellStateAfter = spellChess
+        ? afterSpellChessMove(
+            move.spell
+              ? move.spell.type === 'freeze'
+                ? castFreeze(spellState, userColor, move.spell.center)
+                : castJump(spellState, userColor, move.spell.square)
+              : spellState,
+            userColor
+          )
+        : spellState;
       // Duck Chess: one history entry is one TURN (move + duck); a king capture ends the game with no duck move.
-      setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: newFen, ...(duckChess ? { duckSquare: move.duck ?? duckSquare } : {}) }]);
+      setHistory((h) => [
+        ...h,
+        {
+          move,
+          fenBefore: fen,
+          fenAfter: newFen,
+          ...(duckChess ? { duckSquare: move.duck ?? duckSquare } : {}),
+          ...(spellChess ? { spellState: spellStateAfter } : {}),
+        },
+      ]);
       setLastMove(move);
       setFen(newFen);
       setHintText(null);
@@ -617,7 +771,7 @@ export default function BotGameScreen({
         if (winner) setFogOfWarWinner(winner);
       }
     },
-    [viewIndex, clock.applyIncrement, userColor, fen, fogOfWar, duckChess, duckSquare]
+    [viewIndex, clock.applyIncrement, userColor, fen, fogOfWar, duckChess, duckSquare, spellChess, spellState]
   );
 
   // Premove: queued while the bot is "thinking" (see ChessBoard's premoveColor/onPremove), played
@@ -703,7 +857,7 @@ export default function BotGameScreen({
   // Disabled for Fog of War — see LocalGameScreen's identical handleHintPress for why (reads the
   // true, full position, which would just hand the player a way around the whole variant).
   const handleHintPress = () => {
-    if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess) return;
+    if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess) return;
     setHintText(null);
     setHintLoading(true);
     setHintRequestKey((k) => k + 1);
@@ -727,9 +881,24 @@ export default function BotGameScreen({
   };
 
   const fogMoveListMoves = fogRedactedHistory?.map((entry) => ({ san: entry.revealed ? entry.san : '?' })) ?? [];
-  const lastMoveSanDisplay = lastMoveRevealed ? (lastMove && duckChess ? duckMoveNotation(lastMove) : lastMove?.san) : '???';
+  const lastMoveSanDisplay = lastMoveRevealed
+    ? lastMove && duckChess
+      ? duckMoveNotation(lastMove)
+      : lastMove && spellChess
+        ? spellMoveNotation(lastMove, lastMove.spell ?? null)
+        : lastMove?.san
+    : '???';
   // Duck Chess: where the duck stood in the position being DISPLAYED (position 0 = the start, with no duck yet).
   const displayDuck = duckChess ? (isReviewing ? (viewIndex === 0 ? null : history[(viewIndex as number) - 1]?.duckSquare ?? null) : duckSquare) : null;
+  // Spell Chess: the state feeding ChessBoard's frozenSquares/jumpSquare for the position currently
+  // being DISPLAYED (position 0 = the start, before any cast), mirroring displayDuck exactly.
+  const displaySpellState = spellChess
+    ? isReviewing
+      ? viewIndex === 0
+        ? initialSpellChessState()
+        : history[(viewIndex as number) - 1]?.spellState ?? initialSpellChessState()
+      : spellState
+    : undefined;
 
   // Flipping the board also swaps which row (You / the bot) sits on top vs bottom, so each row
   // always stays next to "its own" side of the board.
@@ -768,18 +937,25 @@ export default function BotGameScreen({
                         ? 'Atomic'
                         : duckChess
                           ? 'Duck Chess'
-                          : undefined
+                          : spellChess
+                            ? 'Spell Chess'
+                            : undefined
         }
         onBack={onExit}
         backLabel="‹ Menu"
       />
       <MoveListStrip
-        moves={fogOfWar ? fogMoveListMoves : history.map((h) => ({ san: duckChess ? duckMoveNotation(h.move) : h.move.san }))}
+        moves={
+          fogOfWar
+            ? fogMoveListMoves
+            : history.map((h) => ({ san: duckChess ? duckMoveNotation(h.move) : spellChess ? spellMoveNotation(h.move, h.move.spell ?? null) : h.move.san }))
+        }
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
         onSelectMove={handleSelectMove}
       />
       <GameScreenBody
+        compact={spellChess}
         bottomBar={
           <>
             <View style={styles.controlsWrap}>
@@ -791,7 +967,7 @@ export default function BotGameScreen({
                     key: 'hint',
                     label: 'Hint',
                     onPress: handleHintPress,
-                    disabled: gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess,
+                    disabled: gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess,
                   },
                   {
                     key: 'undo',
@@ -821,14 +997,22 @@ export default function BotGameScreen({
         <Text style={styles.subtitle}>
           {giveaway ? 'Giveaway bot' : atomic ? 'Atomic bot' : duckChess ? 'Duck Chess bot' : getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
         </Text>
-        {!gameOver && <Text style={styles.status}>{statusText}</Text>}
-        {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
-        {botThinking && (
-          <View style={styles.thinkingRow}>
-            <ActivityIndicator size="small" color={colors.text} />
-            <Text style={styles.thinkingText}>The bot is thinking...</Text>
+        {/* The "bot is thinking" indicator rides inline on the status row instead of its own row --
+            giving it a separate row (as before) adds enough height that Spell Chess's extra Freeze/Jump
+            button row inside ChessBoard pushes the bottom clock past GameScreenBody's overflow:hidden
+            content area, clipping it. Keeping everything on one row keeps the height budget unchanged. */}
+        {!gameOver && (
+          <View style={styles.statusRow}>
+            <Text style={styles.status}>{statusText}</Text>
+            {botThinking && (
+              <>
+                <ActivityIndicator size="small" color={colors.text} style={styles.thinkingIndicator} />
+                <Text style={styles.thinkingText}>Thinking...</Text>
+              </>
+            )}
           </View>
         )}
+        {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
         {engineError && <Text style={styles.errorText}>Engine error: {engineError}</Text>}
         {premoveInvalid && <Text style={styles.errorText}>Premove was no longer legal — cancelled.</Text>}
         {premove && turn === botColor && (
@@ -850,7 +1034,7 @@ export default function BotGameScreen({
           <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
 
-        {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && !duckChess && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={resetCount}
@@ -869,13 +1053,17 @@ export default function BotGameScreen({
           duckChess={duckChess}
           duckSquare={displayDuck}
           onDuckPlacementChange={setPlacingDuck}
+          spellChess={spellChess}
+          spellState={displaySpellState}
           visibleSquares={visibleSquares}
           // No premoves in Giveaway: mandatory capture changes which moves are legal after the
           // opponent's reply, so a queued move is almost never still valid when its turn comes. Atomic
           // has none either: explosions change the legal moves just as drastically, and the premove
           // executor (see the premove effect) builds a plain engine that knows nothing of its rules.
-          premoveColor={giveaway || atomic || duckChess ? undefined : userColor}
-          onPremove={giveaway || atomic || duckChess ? undefined : handleQueuePremove}
+          // Spell Chess: no premoves either, for the same root reason — a queued move can't carry a
+          // cast, and frozen squares/an active jump can flip whether it's even still legal.
+          premoveColor={giveaway || atomic || duckChess || spellChess ? undefined : userColor}
+          onPremove={giveaway || atomic || duckChess || spellChess ? undefined : handleQueuePremove}
         />
 
         <View style={styles.playerRow}>
@@ -900,6 +1088,7 @@ export default function BotGameScreen({
         giveaway={giveaway}
         atomic={atomic}
         duckChess={duckChess}
+        spellChess={spellChess}
         history={history}
         players={[{ label: 'You', color: userColor }]}
         onGameReview={() => onAnalyze({ initialFen, chess960, fogOfWar, history })}
@@ -924,6 +1113,14 @@ function createStyles(colors: AppColors) {
       fontSize: 16,
       color: colors.text,
     },
+    statusRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    thinkingIndicator: {
+      marginLeft: 2,
+    },
     openingName: {
       fontSize: 12,
       fontStyle: 'italic',
@@ -937,11 +1134,6 @@ function createStyles(colors: AppColors) {
       color: colors.gold,
     },
     playerRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    thinkingRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
