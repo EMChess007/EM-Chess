@@ -20,7 +20,8 @@ export type GameOutcome =
         | 'giveaway'
         | 'atomic'
         | 'duckChess'
-        | 'spellChess';
+        | 'spellChess'
+        | 'horde';
     };
 
 /**
@@ -40,7 +41,8 @@ export function getGameOutcome(
   giveawayWinner: PieceColor | null = null,
   atomicWinner: PieceColor | null = null,
   duckChessWinner: PieceColor | null = null,
-  spellChessWinner: PieceColor | null = null
+  spellChessWinner: PieceColor | null = null,
+  hordeWinner: PieceColor | null = null
 ): GameOutcome {
   // Checked first of all — Fog of War has no checkmate/stalemate/draw concept whatsoever (see
   // ChessBoard's own fogOfWar doc comment), so king capture is the ONLY way a Fog of War game
@@ -60,6 +62,13 @@ export function getGameOutcome(
   // chess.js's own legality never allows one) still has to be checked before `chessStatus`, because the
   // position it leaves behind is missing a king and chessStatus's own checkmate/stalemate detection was
   // never run against it.
+  // Horde's one extra result: Black wins the instant White has no pieces left (see horde.ts). It sits in this top tier
+  // — ahead of chessStatus, resignation and the clock — because the position it leaves behind (White to move, with
+  // nothing on the board) is reported by chess.js as STALEMATE, which would otherwise be read as a draw. White's own win
+  // (checkmating Black's king) and every stalemate/50-move draw come in through chessStatus under the usual reasons.
+  if (hordeWinner) {
+    return { over: true, result: hordeWinner === 'w' ? '1-0' : '0-1', reason: 'horde' };
+  }
   if (spellChessWinner) {
     return { over: true, result: spellChessWinner === 'w' ? '1-0' : '0-1', reason: 'spellChess' };
   }

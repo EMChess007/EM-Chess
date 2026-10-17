@@ -308,7 +308,7 @@ describe('wiring (no RN renderer available)', () => {
     it(`${screen} feeds the Giveaway winner into getGameOutcome and the saved-game payload`, () => {
       const src = read(screen);
       // atomicWinner follows giveawayWinner as getGameOutcome's last argument (see the Atomic variant).
-      expect(src).toMatch(/getGameOutcome\([\s\S]*?giveawayWinner,\s*atomicWinner,\s*duckWinner,\s*spellChessWinner\s*\)/);
+      expect(src).toMatch(/getGameOutcome\([\s\S]*?giveawayWinner,\s*atomicWinner,\s*duckWinner,\s*spellChessWinner,\s*hordeWinner\s*\)/);
       expect(src).toContain('giveawayWinner,\n        giveaway,');
     });
   }

@@ -6,6 +6,7 @@ import { ChessEngine } from './ChessEngine';
 import { applyAtomicMove, generateAtomicMoves, getAtomicKingWinner, isAtomicCheck, squareName, type AtomicMove, type AtomicPosition } from './atomic';
 import { getLegalDuckPlacementSquares } from './duckChess';
 import { getGiveawayMoves } from './giveaway';
+import { getHordeMoves, getHordeWinnerFromFen } from './horde';
 import {
   canCastFreeze,
   canCastJump,
@@ -538,4 +539,87 @@ export function getSpellChessLegalMoves(
     if (played) legal.push(played);
   }
   return legal;
+}
+
+// --- Horde ----------------------------------------------------------------------------------
+
+/** Score for a decided game — far above any material total. */
+const HORDE_WIN = 1000;
+/** A stalemate is a draw (chess.com); in Horde the side that is ahead (almost always the one delivering it) should
+ * mind throwing the game away, so it is mildly penalised rather than treated as neutral. */
+const HORDE_STALEMATE = -30;
+/** How many of the cheaply-scored moves get the (costlier) reply look-ahead. */
+const HORDE_LOOKAHEAD_CANDIDATES = 8;
+
+/**
+ * Picks a move for a bot playing Horde, on EITHER side. Deliberately NOT Stockfish: the White side has no king, which a
+ * UCI engine cannot be given a position for (same reason as Giveaway/Atomic/Duck Chess, unlike Spell Chess whose base
+ * move is ordinary chess). Chess.js's legality stays authoritative, so every candidate comes from getHordeMoves.
+ *
+ *  - Pass 1 scores EVERY legal move against a scratch engine: what it captures, a promotion's gain, a small reward for
+ *    White pawn advances (the horde wins by marching and promoting) and for giving check, and the decisive outcomes
+ *    outright — checkmate (+1000, White's win), taking White's last piece (+1000, Black's win), a stalemate (a draw,
+ *    mildly penalised).
+ *  - Pass 2 takes the best few and subtracts the opponent's best reply: the most valuable piece it could capture, and
+ *    a large penalty if ANY reply is checkmate (so Black does not walk into a mate in one, and White finds them).
+ *  - ELO is the only strength dial, like the other custom bots: the chance of using that scored choice rather than a
+ *    random legal move rises from ~20% at 400 ELO to ~90% at 3000. A random pick never under-promotes.
+ *
+ * Returns null only when the bot has no legal move (the game would already be over).
+ */
+export function chooseHordeBotMove(engine: ChessEngine, elo: number, rng: () => number = Math.random): Move | null {
+  const moves = getHordeMoves(engine);
+  if (moves.length === 0) return null;
+  const queenOrPlain = (m: Move) => !m.promotion || m.promotion === 'q';
+  if (moves.length === 1) return moves[0];
+
+  const bestChance = 0.2 + 0.7 * Math.min(1, Math.max(0, (elo - 400) / 2600));
+  if (rng() >= bestChance) {
+    const plain = moves.filter(queenOrPlain);
+    return plain[Math.floor(rng() * plain.length)];
+  }
+
+  const me = engine.getTurn();
+  const fen = engine.getFen();
+  const options = { horde: true } as const;
+
+  // Pass 1: every legal move, scored on its own merits.
+  const pass1 = moves.filter((m) => !m.promotion || m.promotion === 'q' || m.promotion === 'n').map((move) => {
+    const scratch = new ChessEngine(fen, options);
+    const played = scratch.move(move.from, move.to, move.promotion);
+    let score = 0;
+    if (move.captured) score += PIECE_VALUES[move.captured];
+    if (move.promotion) score += PIECE_VALUES[move.promotion] - 1;
+    if (me === 'w' && !move.captured) score += 0.08 * Number(move.to[1]); // march forward
+    if (played && /[+#]/.test(played.san)) score += 0.5;
+    const status = scratch.getStatus();
+    if (getHordeWinnerFromFen(scratch.getFen()) === me) score += HORDE_WIN;
+    else if (status === 'checkmate') score += HORDE_WIN;
+    else if (status === 'stalemate' || status === 'draw') score += HORDE_STALEMATE;
+    return { move, score, fen: scratch.getFen(), decided: score >= HORDE_WIN };
+  });
+  pass1.sort((a, b) => b.score - a.score || rng() - 0.5);
+  if (pass1[0].decided) return pass1[0].move;
+
+  // Pass 2: look one reply ahead for the best few.
+  const scored = pass1.slice(0, HORDE_LOOKAHEAD_CANDIDATES).map((candidate) => {
+    const afterMe = new ChessEngine(candidate.fen, options);
+    const replies = getHordeMoves(afterMe);
+    let bestReply = 0;
+    let matedInOne = false;
+    for (const reply of replies) {
+      if (reply.captured) bestReply = Math.max(bestReply, PIECE_VALUES[reply.captured]);
+      // Only a reply that could give check can be mate — cheap to try them all: a scratch engine per reply.
+      const probe = new ChessEngine(candidate.fen, options);
+      probe.move(reply.from, reply.to, reply.promotion);
+      if (probe.getStatus() === 'checkmate') {
+        matedInOne = true;
+        break;
+      }
+    }
+    return { move: candidate.move, score: candidate.score - bestReply - (matedInOne ? HORDE_WIN : 0) };
+  });
+  const top = Math.max(...scored.map((s) => s.score));
+  const best = scored.filter((s) => s.score === top);
+  return best[Math.floor(rng() * best.length)].move;
 }
