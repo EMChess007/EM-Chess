@@ -29,6 +29,8 @@ export interface ExplodedPiece {
  * module can import it alongside Move/Piece/PieceColor without types/chess.ts depending on logic/. */
 export type SpellCast = { type: 'freeze'; center: Square; squares: Square[] } | { type: 'jump'; square: Square };
 
+import type { CrazyhouseState } from '../logic/crazyhouse';
+
 export interface Move {
   from: Square;
   to: Square;
@@ -50,6 +52,12 @@ export interface Move {
   /** Spell Chess only — the spell (if any) cast immediately before this move, see spellChess.ts's
    * SpellCast and spellMoveNotation. Absent for every other mode, and for a turn nothing was cast on. */
   spell?: SpellCast;
+  /** Crazyhouse only — set for a DROP: the type of the piece placed from the reserve onto `to` (`from` equals `to`; a drop is a
+   * single-action turn, not a two-step one like Duck Chess). Its SAN is "N@f3". Absent for every ordinary move. */
+  drop?: PieceType;
+  /** Crazyhouse only — the reserve and promoted-piece state AFTER this ply (see crazyhouse.ts). Screens copy it into
+   * GameHistoryEntry.crazyhouse, exactly as Duck Chess copies move.duck into duckSquare. */
+  crazyhouse?: CrazyhouseState;
 }
 
 export type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'check';

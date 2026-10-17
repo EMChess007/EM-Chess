@@ -94,6 +94,6 @@ describe('Spell Chess on the shared board: the Spell layer sits on the refactore
   });
 
   it('the cast state is dropped when the position changes (a move landed, Undo, a new game)', () => {
-    expect(board).toMatch(/setCastMode\(null\);\n\s+setPendingCast\(null\);\n\s+\}, \[fen\]\);/);
+    expect(board).toMatch(/setCastMode\(null\);\n\s+setPendingCast\(null\);\n(\s+set\w+\(null\);\n)*\s+\}, \[fen\]\);/);
   });
 });

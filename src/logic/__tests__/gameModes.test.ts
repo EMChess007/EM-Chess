@@ -86,6 +86,24 @@ describe('getGameOutcome', () => {
     });
   });
 
+  describe('Crazyhouse (needs no slot of its own)', () => {
+    // Every Crazyhouse ending is already one getGameOutcome knows: checkmate/stalemate/draw come in through chessStatus (the engine's
+    // getStatus() is drop-aware, so a side that can still drop is neither mated nor stalemated), and the clock/resignation/agreement
+    // tiers are unchanged. There is no king-capture, no extinction, no extra winner to pass — hence no 14th argument.
+    it('checkmate (by a move or by a drop), stalemate and draws keep the ordinary reasons for either color', () => {
+      expect(getGameOutcome('checkmate', 'b', null)).toEqual({ over: true, result: '1-0', reason: 'checkmate' });
+      expect(getGameOutcome('checkmate', 'w', null)).toEqual({ over: true, result: '0-1', reason: 'checkmate' });
+      expect(getGameOutcome('stalemate', 'w', null)).toEqual({ over: true, result: '1/2-1/2', reason: 'stalemate' });
+      expect(getGameOutcome('draw', 'b', null)).toEqual({ over: true, result: '1/2-1/2', reason: 'draw' });
+    });
+    it('a game in progress (including check) is not over, and a flag fall or resignation still ends it', () => {
+      expect(getGameOutcome('playing', 'w', null)).toEqual({ over: false });
+      expect(getGameOutcome('check', 'b', null)).toEqual({ over: false });
+      expect(getGameOutcome('playing', 'w', 'b')).toEqual({ over: true, result: '0-1', reason: 'timeout' });
+      expect(getGameOutcome('playing', 'w', null, 'w')).toEqual({ over: true, result: '0-1', reason: 'resignation' });
+    });
+  });
+
   describe('Horde', () => {
     // hordeWinner is getGameOutcome's 13th argument (after spellChessWinner).
     const horde = (status: Parameters<typeof getGameOutcome>[0], turn: 'w' | 'b', hordeWinner: 'w' | 'b' | null) =>

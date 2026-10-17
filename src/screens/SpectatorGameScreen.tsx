@@ -6,6 +6,7 @@ import MoveListStrip from '../components/MoveListStrip';
 import ScreenHeader from '../components/ScreenHeader';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import { initialCrazyhouseState } from '../logic/crazyhouse';
 import { duckMoveNotation } from '../logic/duckChess';
 import { initialSpellChessState, spellMoveNotation } from '../logic/spellChess';
 import { THREE_CHECK_TARGET, getThreeCheckCounts } from '../logic/threeCheck';
@@ -72,6 +73,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
               blackMs: payload.blackMs,
               ...(payload.duckSquare !== undefined ? { duckSquare: payload.duckSquare } : {}),
               ...(payload.spellState !== undefined ? { spellState: payload.spellState } : {}),
+              ...(payload.crazyhouse !== undefined ? { crazyhouse: payload.crazyhouse } : {}),
             }
           : prev
       );
@@ -136,7 +138,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
     <View style={styles.container}>
       <ScreenHeader title="Spectating" onBack={handleExit} backLabel="‹ Back" />
       <MoveListStrip moves={moves} selectedIndex={moves.length - 1} autoScroll onSelectMove={() => {}} />
-      <GameScreenBody bottomBar={<View />} compact={state.isSpellChess}>
+      <GameScreenBody bottomBar={<View />} compact={state.isSpellChess || state.isCrazyhouse}>
         <Text style={styles.subtitle}>
           {whiteUsername} vs {blackUsername}
           {state.isChess960
@@ -159,7 +161,9 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
                             ? ' · Spell Chess'
                             : state.isHorde
                               ? ' · Horde'
-                              : ''}
+                              : state.isCrazyhouse
+                                ? ' · Crazyhouse'
+                                : ''}
         </Text>
         <Text style={styles.status}>{statusText}</Text>
 
@@ -183,6 +187,8 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
           duckSquare={state.duckSquare ?? null}
           spellChess={state.isSpellChess}
           horde={state.isHorde}
+          crazyhouse={state.isCrazyhouse}
+          crazyhouseState={state.crazyhouse ?? initialCrazyhouseState()}
           spellState={state.spellState ?? initialSpellChessState()}
         />
 

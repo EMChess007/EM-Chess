@@ -13,6 +13,7 @@ export interface OnlineVariantFlags {
   isDuckChess: boolean;
   isSpellChess: boolean;
   isHorde: boolean;
+  isCrazyhouse: boolean;
 }
 
 /** Turns the single-select VariantSelector value into the wire flags — one place instead of a
@@ -29,6 +30,7 @@ export function variantWireFlags(variant: GameVariant): OnlineVariantFlags {
     isDuckChess: variant === 'duckChess',
     isSpellChess: variant === 'spellChess',
     isHorde: variant === 'horde',
+    isCrazyhouse: variant === 'crazyhouse',
   };
 }
 
@@ -55,6 +57,8 @@ export function variantTitlePrefix(variant: GameVariant): string {
       return 'Spell Chess · ';
     case 'horde':
       return 'Horde · ';
+    case 'crazyhouse':
+      return 'Crazyhouse · ';
     default:
       return '';
   }
