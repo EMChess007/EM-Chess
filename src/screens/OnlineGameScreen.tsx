@@ -19,6 +19,7 @@ import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { describeEndReason } from '../logic/gameOutcomeText';
 import { logDiagnostic } from '../logic/diagnosticLog';
 import { getVisibleSquares, logFogOfWarGameStart, logFogOfWarPly } from '../logic/fogOfWar';
+import { stripCheckSuffix } from '../logic/fogOfWarNotation';
 import { duckMoveNotation } from '../logic/duckChess';
 import { getGiveawayMoves } from '../logic/giveaway';
 import {
@@ -293,12 +294,14 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             ? { ...replayedMove, spell: payload.spell }
             : replayedMove;
 
+      // Fog of War never announces a check: the server already omits the marker, this guards against an older server that still sends it.
+      const payloadSan = match.isFogOfWar ? stripCheckSuffix(payload.san!) : payload.san!;
       setLastMoveSan(
         duckChess && payload.duck
           ? duckMoveNotation({ san: payload.san!, duck: payload.duck })
           : spellChess
             ? spellMoveNotation({ san: payload.san! }, payload.spell ?? null)
-            : payload.san!
+            : payloadSan
       );
       playMoveSound(replayed);
       triggerMoveHaptics(replayed);
@@ -306,7 +309,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         logFogOfWarPly({
           ply: ++plyCounterRef.current,
           mover: opponentColor,
-          san: payload.san!,
+          san: payloadSan,
           to: payload.to!,
           perspectives: [{ label: `visibleTo(${myColor}, you)`, revealed: true, visible: new Set(payload.visibleSquares ?? []) }],
         });
@@ -320,7 +323,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           move: replayed ?? {
             from: '',
             to: '',
-            san: payload.san!,
+            san: payloadSan,
             ...(payload.duck ? { duck: payload.duck } : {}),
             ...(payload.spell ? { spell: payload.spell } : {}),
             ...(payload.drop ? { drop: payload.drop } : {}),
@@ -466,7 +469,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
 
               if (!m.san || replayBroken) {
                 replayBroken = true;
-                rebuilt.push({ move: { from: m.from ?? '', to: m.to ?? '', san: m.san ?? '?' }, mover, fenBefore, fenAfter: fenBefore });
+                rebuilt.push({ move: { from: m.from ?? '', to: m.to ?? '', san: m.san ? (match.isFogOfWar ? stripCheckSuffix(m.san) : m.san) : '?' }, mover, fenBefore, fenAfter: fenBefore });
                 return;
               }
 
@@ -514,7 +517,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                 rebuilt.push({ move: result, mover, fenBefore, fenAfter: replayEngine.getFen(), ...(crazyhouse ? { crazyhouse: replayEngine.getCrazyhouseState() } : {}) });
               } else if (match.isFogOfWar) {
                 replayBroken = true;
-                rebuilt.push({ move: { from: m.from!, to: m.to!, san: m.san! }, mover, fenBefore, fenAfter: fenBefore });
+                rebuilt.push({ move: { from: m.from!, to: m.to!, san: stripCheckSuffix(m.san!) }, mover, fenBefore, fenAfter: fenBefore });
               }
             });
             setMoveList(rebuilt);

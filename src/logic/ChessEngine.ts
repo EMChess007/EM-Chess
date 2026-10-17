@@ -31,6 +31,7 @@ import {
 } from './crazyhouse';
 import { HORDE_FIRST_RANK_DOUBLE_STEP_ALLOWS_EN_PASSANT, getHordeWinnerFromFen, hordeFirstRankDoubleStep } from './horde';
 import { castlingRookOrigin, getJumpAugmentedCaptures } from './spellChess';
+import { hideCheckFromPlayers } from './fogOfWarNotation';
 
 const FILES = 'abcdefgh';
 
@@ -637,7 +638,10 @@ export class ChessEngine {
     const applied = toAppMove(pretty);
     // Duck Chess has no check either, so no '+'/'#' (and its games end at a king capture, so no rebuild is needed).
     if (this.duckChess) return { ...applied, san: applied.san.replace(/[+#]$/, '') };
-    if (!this.giveaway) return applied;
+    // Fog of War (the plain pseudo-legal path): a player is never told about a check, so '+'/'#' go too - the real notation is
+    // kept in `trueSan` for the server's spectators and saved PGN (see fogOfWarNotation.ts). Spell Chess is the one other user of
+    // this path (its freeze-escape move) and has real check rules, so it keeps chess.js's SAN.
+    if (!this.giveaway) return this.spellChess ? applied : hideCheckFromPlayers(applied);
     // Giveaway only: a game CARRIES ON after a king is captured, and chess.js's live internal state does not
     // cope — its _kings entry for the captured side keeps pointing at the old square and the castling rights
     // survive, so the next move's SAN computation throws ("Cannot read properties of undefined (reading

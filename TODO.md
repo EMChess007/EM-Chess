@@ -141,10 +141,3 @@ PGN/FEN dialect that carries the pockets and the `~` promoted marks (the same di
 Crazyhouse uses it; Duck Chess (`displayDuck`) and Spell Chess (`displaySpellState`) still carry equivalent inline copies in each game screen and
 could migrate to it without any behaviour change.
 
-## Fog of War: the SAN's `+` / `#` notifies a player of a check by a piece they cannot see
-
-**What's wrong.** `movePseudoLegal` (client `ChessEngine` and server `RoomChessEngine`) returns chess.js's SAN, whose `+`/`#` is computed on the TRUE board. In Fog of War, `opponent_move` (and the rejoin history, and the move list) carry that SAN whenever the destination is visible to the receiver, so a **discovered check** (or any check whose destination the receiver can see) tells the player "you are in check" although the checking piece is hidden — chess.com explicitly does not notify Fog of War players of check. Duck Chess and Giveaway already strip the suffix inside `movePseudoLegal`.
-
-**How it was verified.** Server probe (found while auditing the castling fix, Command #5): initial FEN `4k3/6b1/8/8/4N3/8/8/4R1K1 w - - 0 1`, Fog of War; White plays e4-c3 (c3 is on Black's bishop g7's diagonal, so visible to Black): Black receives `san: "Nc3+"` while its redacted FEN contains no white rook. The mover's own ack is not a leak (it attacks the king, so it sees it); `#` also reveals "no legal ordinary reply".
-
-**Suggested fix.** Needs an engine-level notion of "this is Fog of War" (today there is none — the engines are built with `skipValidation` only, and `generateRaw` treats the plain pseudo-legal path as Fog of War), then strip `[+#]$` in `movePseudoLegal` like Duck/Giveaway do, in both engines, and re-check the Fog of War goldens / PGN export / analysis expectations. Not part of the castling fix (different rule, different blast radius: SAN in the move list, PGN, analysis).

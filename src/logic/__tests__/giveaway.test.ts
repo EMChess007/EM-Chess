@@ -196,7 +196,7 @@ describe('no castling, no check marks', () => {
   it("SAN carries no '+' (chess.js's check marker means nothing here), unlike ordinary chess", () => {
     // Ra1-a8 gives "check" to the king on h8 along the back rank in ordinary chess.
     const fen = '7k/8/8/8/8/8/8/R3K3 w - - 0 1';
-    expect(ordinaryEngine(fen).movePseudoLegal('a1', 'a8')?.san).toBe('Ra8+');
+    expect(ordinaryEngine(fen).move('a1', 'a8')?.san).toBe('Ra8+'); // (the plain engine's own pseudo-legal path is Fog of War now, which hides it too)
     expect(giveawayEngine(fen).movePseudoLegal('a1', 'a8')?.san).toBe('Ra8');
   });
 });
