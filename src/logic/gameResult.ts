@@ -11,6 +11,7 @@ export type GameOutcome =
         | 'checkmate'
         | 'stalemate'
         | 'draw'
+        | 'repetition'
         | 'timeout'
         | 'resignation'
         | 'agreement'
@@ -48,7 +49,8 @@ export function getGameOutcome(
   atomicWinner: PieceColor | null = null,
   duckChessWinner: PieceColor | null = null,
   spellChessWinner: PieceColor | null = null,
-  hordeWinner: PieceColor | null = null
+  hordeWinner: PieceColor | null = null,
+  repetitionDraw = false
 ): GameOutcome {
   // Checked first of all — Fog of War has no checkmate/stalemate/draw concept whatsoever (see
   // ChessBoard's own fogOfWar doc comment), so king capture is the ONLY way a Fog of War game
@@ -108,6 +110,11 @@ export function getGameOutcome(
   }
   if (timeoutWinner) {
     return { over: true, result: timeoutWinner === 'w' ? '1-0' : '0-1', reason: 'timeout' };
+  }
+  // Threefold repetition (repetition.ts) - an automatic draw in every two-player mode, after every decisive result above (a position that
+  // is checkmate/stalemate/won ends the game the first time it occurs, so it can never be the third).
+  if (repetitionDraw) {
+    return { over: true, result: '1/2-1/2', reason: 'repetition' };
   }
   if (chessStatus === 'checkmate') {
     // `turn` is the side TO MOVE in the final position, i.e. the side that got checkmated.

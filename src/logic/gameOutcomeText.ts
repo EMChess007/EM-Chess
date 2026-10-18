@@ -6,6 +6,7 @@ export type EndReason =
   | 'checkmate'
   | 'stalemate'
   | 'draw'
+  | 'repetition'
   | 'timeout'
   | 'resignation'
   | 'abandonment'
@@ -49,6 +50,8 @@ export function describeEndReason(reason: EndReason): string {
       return 'by Abandonment';
     case 'agreement':
       return 'by Agreement';
+    case 'repetition':
+      return 'by Repetition';
     case 'draw':
       // Chess.js's isDraw() (repetition / insufficient material / 50-move rule) doesn't expose
       // which of those it was, so this is as specific as it gets without new detection logic.

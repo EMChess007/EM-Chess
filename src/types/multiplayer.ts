@@ -15,6 +15,7 @@ export type GameOverReason =
   | 'checkmate'
   | 'stalemate'
   | 'draw'
+  | 'repetition'
   | 'timeout'
   | 'abandonment'
   | 'resignation'

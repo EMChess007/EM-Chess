@@ -17,6 +17,7 @@ import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getBotStrengthOptions, getEngineIdForElo } from '../logic/engines';
 import { describeEndReason } from '../logic/gameOutcomeText';
 import { getGameOutcome } from '../logic/gameResult';
+import { isRepetitionDraw } from '../logic/repetitionHistory';
 import { getKingOfTheHillWinner } from '../logic/kingOfTheHill';
 import { computeCapturedMaterial, materialValue } from '../logic/material';
 import { playMoveSound } from '../logic/moveSounds';
@@ -131,9 +132,11 @@ export default function EngineVsEngineGameScreen({
   // Auto-tick runs for whichever engine's turn it is, so its clock counts down live, second by
   // second, in real wall-clock time while it "thinks" (each engine really does take
   // approximately thinkTimeMs to respond) — same mechanism as a human's clock.
-  const clock = useChessClock(timeControl, turn, engine.isGameOver());
+  // Threefold repetition (repetition.ts): derived from the history, like every other screen.
+  const repetitionDraw = useMemo(() => isRepetitionDraw(initialFen, history, { threeCheck }), [initialFen, history, threeCheck]);
+  const clock = useChessClock(timeControl, turn, engine.isGameOver() || repetitionDraw);
   const gameOver =
-    engine.isGameOver() || clock.timeoutWinner !== null || stopped || kingOfTheHillWinner !== null || threeCheckWinner !== null;
+    engine.isGameOver() || repetitionDraw || clock.timeoutWinner !== null || stopped || kingOfTheHillWinner !== null || threeCheckWinner !== null;
 
   const bridgeRef1 = useRef<StockfishBridgeHandle>(null);
   const handleBridgeRef1 = useCallback(
@@ -233,6 +236,7 @@ export default function EngineVsEngineGameScreen({
   if (chessStatus === 'checkmate') statusText = `Checkmate! Winner: ${winnerLabel}`;
   if (chessStatus === 'stalemate') statusText = 'Draw (Stalemate)';
   if (chessStatus === 'draw') statusText = 'Draw';
+  if (repetitionDraw) statusText = 'Draw by repetition';
   if (clock.timeoutWinner) {
     statusText = `Win on time: ${clock.timeoutWinner === c1 ? engine1.name : engine2.name}`;
   }
@@ -244,7 +248,7 @@ export default function EngineVsEngineGameScreen({
     statusText = `${threeCheckWinner === c1 ? engine1.name : engine2.name} wins by Three-Check!`;
   }
 
-  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, null, false, kingOfTheHillWinner, threeCheckWinner);
+  const outcome = getGameOutcome(chessStatus, turn, clock.timeoutWinner, null, false, kingOfTheHillWinner, threeCheckWinner, null, null, null, null, null, null, repetitionDraw);
   const outcomeWinnerColor: PieceColor | null =
     outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
   const summaryTitle = stopped

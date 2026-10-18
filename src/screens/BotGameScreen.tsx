@@ -40,7 +40,8 @@ import {
   useIncrementalFogRedaction,
 } from '../logic/fogOfWar';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
-import { getAtomicWinner, isAtomicThreefoldRepetition } from '../logic/atomic';
+import { getAtomicWinner } from '../logic/atomic';
+import { isRepetitionDraw } from '../logic/repetitionHistory';
 import { duckMoveNotation, getDuckChessWinner, hasNoDuckMoves } from '../logic/duckChess';
 import { HORDE_START_FEN, getHordeWinner } from '../logic/horde';
 import { initialCrazyhouseState } from '../logic/crazyhouse';
@@ -199,9 +200,11 @@ export default function BotGameScreen({
   // Atomic: see LocalGameScreen's identical block — the engine answers status from atomic.ts, a blown-up
   // king is atomicWinner, and threefold repetition comes from the history's FENs.
   const atomicWinner = useMemo(() => (atomic ? getAtomicWinner(engine) : null), [atomic, engine]);
-  const atomicRepetition = useMemo(
-    () => atomic && isAtomicThreefoldRepetition([initialFen, ...history.map((h) => h.fenAfter)]),
-    [atomic, initialFen, history]
+  // Threefold repetition, in EVERY mode (repetition.ts / repetitionHistory.ts): derived from the history, so it survives the per-render
+  // FEN rebuild and is right after Undo. Fog of War counts the TRUE position (this screen holds the whole board).
+  const repetitionDraw = useMemo(
+    () => isRepetitionDraw(initialFen, history, { threeCheck, crazyhouse, duckChess, spellChess }),
+    [initialFen, history, threeCheck, crazyhouse, duckChess, spellChess]
   );
   // Duck Chess has no check/checkmate/stalemate: the only decisive result is a king capture (read off the last
   // turn, so it is right after Undo), and a side to move with no regular move at all is a blockade — a draw.
@@ -228,8 +231,6 @@ export default function BotGameScreen({
       ? 'playing'
       : horde && hordeWinner
         ? 'playing' // chess.js calls "White has nothing left" stalemate; hordeWinner decides it (see gameResult.ts)
-        : atomicRepetition
-        ? 'draw'
         : engine.getStatus();
   // Chess.js has no idea this rule exists — checked independently, only when actually playing
   // this variant (see kingOfTheHill.ts).
@@ -246,7 +247,7 @@ export default function BotGameScreen({
   // Giveaway: no checkmate/stalemate/draw either — whoever is to move with no legal move WINS (see
   // giveaway.ts). Derived from the position rather than stored, so it is right after Undo too.
   const giveawayWinner = useMemo(() => (giveaway ? getGiveawayWinner(engine) : null), [giveaway, engine]);
-  const engineGameOver = duckChess
+  const engineGameOverByRules = duckChess
     ? duckWinner !== null || duckBlockade
     : giveaway
       ? giveawayWinner !== null
@@ -254,7 +255,8 @@ export default function BotGameScreen({
         ? false
         : spellChess
           ? spellChessWinner !== null || engine.isGameOver()
-          : engine.isGameOver() || atomicRepetition;
+          : engine.isGameOver();
+  const engineGameOver = engineGameOverByRules || repetitionDraw;
   // Auto-tick runs for whichever side's turn it is — including the bot's — so its clock counts
   // down live, second by second, in real wall-clock time while it "thinks" (the engine really
   // does take approximately thinkTimeMs to respond), exactly like the human side already did.
@@ -728,6 +730,7 @@ export default function BotGameScreen({
   if (!fogOfWar && !giveaway && chessStatus === 'checkmate') statusText = `Checkmate! Winner: ${winnerLabel}`;
   if (!fogOfWar && !giveaway && chessStatus === 'stalemate') statusText = 'Draw (Stalemate)';
   if (!fogOfWar && !giveaway && chessStatus === 'draw') statusText = 'Draw';
+  if (repetitionDraw) statusText = 'Draw by repetition';
   if (mustCapture && turn === userColor) statusText = `Turn: ${turnLabel} — must capture`;
   if (clock.timeoutWinner) {
     statusText = `Win on time: ${clock.timeoutWinner === userColor ? 'You' : bot.name}`;
@@ -773,7 +776,8 @@ export default function BotGameScreen({
     atomicWinner,
     duckWinner,
     spellChessWinner,
-    hordeWinner
+    hordeWinner,
+    repetitionDraw
   );
   const winnerColor: PieceColor | null =
     outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
