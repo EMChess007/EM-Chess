@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { CAPTURER_OUTLINE_COLOR, CAPTURER_RING_COLOR, fourPlayerCapturingSquares } from '../logic/giveawayHints';
 import { checkedKingSquares } from '../logic/fourPlayerVariant';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { PieceImageMap } from '../types/theme';
@@ -66,6 +67,9 @@ interface FourPlayerBoardProps {
   onPremove?: (premove: FourPlayerPremove) => void;
   /** Long-press-drag draws arrows, long-press highlights a square (the same gesture as the 2-player board). Off by default. */
   enableAnnotations?: boolean;
+  /** 4 Player Giveaway only - the player tapped one of their own pieces that cannot move because a capture is mandatory (the pieces that CAN capture are
+   * ringed). The screen answers with the "A capture is mandatory" message (MandatoryCaptureBanner / useCaptureNudge). */
+  onMandatoryCaptureBlocked?: () => void;
 }
 
 interface PieceArtProps {
@@ -122,6 +126,8 @@ interface CellProps {
   selected: boolean;
   /** 0 none, 1 quiet target, 2 capture target. */
   target: 0 | 1 | 2;
+  /** Giveaway: this piece can capture while a capture is mandatory - ringed in amber. */
+  capturer: boolean;
   last: boolean;
   /** One of the two squares of the queued premove. */
   premoveMark: boolean;
@@ -131,12 +137,12 @@ interface CellProps {
   onPress: (square: number) => void;
 }
 
-const Cell = memo(function Cell({ square, size, background, code, dead, selected, target, last, premoveMark, checked, images, onPress }: CellProps) {
+const Cell = memo(function Cell({ square, size, background, code, dead, selected, target, capturer, last, premoveMark, checked, images, onPress }: CellProps) {
   const seat: Seat = code > 0 ? seatOf(code) : 0;
   const type = code > 0 ? typeOf(code) : 0;
   const bg = checked ? '#ef5350' : selected ? '#a2d149' : premoveMark ? PREMOVE_COLOR : last ? '#f7ec74' : background;
   const label =
-    code > 0 ? `${squareName(square)}, ${dead ? 'eliminated ' : ''}${SEAT_NAMES[seat]} ${TYPE_NAMES[type]}${target ? ', can move here' : ''}` : `${squareName(square)}${target ? ', can move here' : ''}`;
+    code > 0 ? `${squareName(square)}, ${dead ? 'eliminated ' : ''}${SEAT_NAMES[seat]} ${TYPE_NAMES[type]}${target ? ', can move here' : ''}${capturer ? ', can capture (a capture is mandatory)' : ''}` : `${squareName(square)}${target ? ', can move here' : ''}`;
   return (
     <View
       accessible
@@ -145,6 +151,8 @@ const Cell = memo(function Cell({ square, size, background, code, dead, selected
       onAccessibilityTap={() => onPress(square)}
       style={[{ width: size, height: size, backgroundColor: bg }, styles.cell]}
     >
+      {capturer && <View pointerEvents="none" style={[styles.capturerOutline, { width: size - 1, height: size - 1, borderRadius: (size - 1) / 2 }]} />}
+      {capturer && <View pointerEvents="none" style={[styles.capturerRing, { width: size - 4, height: size - 4, borderRadius: (size - 4) / 2 }]} />}
       {code > 0 && <PieceArt seat={seat} type={type} size={size} dead={dead} images={images} />}
       {target === 1 && <View style={[styles.dot, { width: size * 0.32, height: size * 0.32, borderRadius: size * 0.16 }]} />}
       {target === 2 && <View style={[styles.ring, { width: size * 0.9, height: size * 0.9, borderRadius: size * 0.45 }]} />}
@@ -176,6 +184,7 @@ export default function FourPlayerBoard({
   premove = null,
   onPremove,
   enableAnnotations = false,
+  onMandatoryCaptureBlocked,
 }: FourPlayerBoardProps) {
   const { width, height } = useWindowDimensions();
   const theme = useActiveBoardTheme();
@@ -241,6 +250,8 @@ export default function FourPlayerBoard({
     return map;
   }, [moves, selected]);
   const movableSquares = useMemo(() => new Set(moves.map((m) => m.from)), [moves]);
+  // 4 Player Giveaway: while a capture is mandatory for the player to move, the pieces that can capture are ringed (empty otherwise).
+  const captureSquares = useMemo(() => (interactive ? new Set(fourPlayerCapturingSquares(state, state.turn)) : new Set<number>()), [state, interactive]);
 
   // Kings in check (never any in 4 Player Giveaway: there a king is an ordinary piece and nothing is ever "in check").
   const checkedSquares = useMemo(() => new Set(checkedKingSquares(state)), [state]);
@@ -282,6 +293,12 @@ export default function FourPlayerBoard({
       }
       setSelected(null);
       onMove(options[0]);
+      return;
+    }
+    // A capture is mandatory and this is one of the mover's own pieces that cannot capture: explain instead of doing nothing.
+    if (captureSquares.size > 0 && !captureSquares.has(square) && state.cells[square] > 0 && seatOf(state.cells[square]) === state.turn) {
+      setSelected(null);
+      onMandatoryCaptureBlocked?.();
       return;
     }
     setSelected(movableSquares.has(square) && square !== selected ? square : null);
@@ -329,6 +346,7 @@ export default function FourPlayerBoard({
           dead={code > 0 && state.status[seatOf(code)] !== 'active'}
           selected={selected === square}
           target={target ? (target[0].captured ? 2 : 1) : 0}
+          capturer={captureSquares.has(square)}
           last={!!lastMove && (lastMove.from === square || lastMove.to === square)}
           premoveMark={!!premove && (premove.from === square || premove.to === square)}
           checked={checkedSquares.has(square)}
@@ -420,6 +438,16 @@ const styles = StyleSheet.create({
   dot: {
     position: 'absolute',
     backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  capturerOutline: {
+    position: 'absolute',
+    borderWidth: 1.5,
+    borderColor: CAPTURER_OUTLINE_COLOR,
+  },
+  capturerRing: {
+    position: 'absolute',
+    borderWidth: 3,
+    borderColor: CAPTURER_RING_COLOR,
   },
   ring: {
     position: 'absolute',

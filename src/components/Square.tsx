@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 import type { BoardSquare } from '../types/chess';
+import { CAPTURER_OUTLINE_COLOR, CAPTURER_RING_COLOR } from '../logic/giveawayHints';
 import type { PieceImageMap } from '../types/theme';
 import Piece from './Piece';
 
@@ -52,6 +53,9 @@ interface SquareProps {
   /** Crazyhouse only — true when the piece on this square is a PROMOTED pawn (it will go to the reserve as a pawn if
    * captured, see crazyhouse.ts). A small "~" in the corner, the notation other implementations print after the letter. */
   isPromoted?: boolean;
+  /** Giveaway only - this square holds a piece that CAN capture while a capture is mandatory: a ring drawn over the square (amber with a thin dark
+   * outline, so it shows on every board theme, light or dark) - see getGiveawayCapturingSquares. */
+  isCapturer?: boolean;
   size: number;
   /** The active board theme's colors and the active piece theme's images — see ChessBoard.tsx. */
   lightColor: string;
@@ -76,6 +80,7 @@ export default function Square({
   isJumpSquare,
   isPendingFreeze,
   isPromoted,
+  isCapturer,
   size,
   lightColor,
   darkColor,
@@ -100,6 +105,8 @@ export default function Square({
       ) : (
         <>
           {isLegalTarget && <View style={styles.legalDot} />}
+          {isCapturer && <View pointerEvents="none" style={[styles.capturerOutline, { width: size - 1, height: size - 1, borderRadius: (size - 1) / 2 }]} />}
+          {isCapturer && <View pointerEvents="none" style={[styles.capturerRing, { width: size - 5, height: size - 5, borderRadius: (size - 5) / 2 }]} />}
           {data.piece && !hidePiece && <Piece piece={data.piece} images={pieceImages} />}
           {isPromoted && data.piece && !hidePiece && <Text style={[styles.promotedMark, { fontSize: Math.max(10, size * 0.3) }]}>~</Text>}
           {isDuck && (
@@ -147,6 +154,16 @@ const styles = StyleSheet.create({
     right: 3,
     fontWeight: '800',
     color: '#c62828',
+  },
+  capturerOutline: {
+    position: 'absolute',
+    borderWidth: 1.5,
+    borderColor: CAPTURER_OUTLINE_COLOR,
+  },
+  capturerRing: {
+    position: 'absolute',
+    borderWidth: 3,
+    borderColor: CAPTURER_RING_COLOR,
   },
   legalDot: {
     position: 'absolute',

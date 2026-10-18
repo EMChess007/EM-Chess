@@ -20,6 +20,8 @@ import { describeEndReason } from '../logic/gameOutcomeText';
 import { logDiagnostic } from '../logic/diagnosticLog';
 import { getVisibleSquares, logFogOfWarGameStart, logFogOfWarPly } from '../logic/fogOfWar';
 import { stripCheckSuffix } from '../logic/fogOfWarNotation';
+import MandatoryCaptureBanner from '../components/MandatoryCaptureBanner';
+import { useCaptureNudge } from '../logic/useCaptureNudge';
 import { duckMoveNotation } from '../logic/duckChess';
 import { getGiveawayMoves } from '../logic/giveaway';
 import {
@@ -888,6 +890,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     () => giveaway && isMyTurn && getGiveawayMoves(new ChessEngine(fen, { skipValidation: true, giveaway: true })).some((m) => m.captured),
     [giveaway, isMyTurn, fen]
   );
+  // The "A capture is mandatory" message after a tap on a piece that cannot move (see MandatoryCaptureBanner).
+  const { nudged: captureNudged, nudge: nudgeCapture } = useCaptureNudge();
   let statusText = isMyTurn ? (mustCapture ? 'Your turn — must capture' : placingDuck ? 'Your turn — place the duck 🦆' : 'Your turn') : `${opponentName}'s turn`;
   if (connectionState === 'reconnecting') statusText = 'Reconnecting...';
   if (connectionState === 'unavailable') statusText = 'Game unavailable';
@@ -1007,7 +1011,12 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           </View>
         )}
 
-        {!gameOver && <Text style={styles.status}>{statusText}</Text>}
+        {!gameOver &&
+          (mustCapture && connectionState === 'connected' && !isReviewing ? (
+            <MandatoryCaptureBanner lead="Your turn" nudged={captureNudged} />
+          ) : (
+            <Text style={styles.status}>{statusText}</Text>
+          ))}
         {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
 
         <View style={styles.playerRow}>
@@ -1032,6 +1041,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           kingOfTheHill={match.isKingOfTheHill}
           fogOfWar={match.isFogOfWar}
           giveaway={giveaway}
+          onMandatoryCaptureBlocked={nudgeCapture}
           atomic={atomic}
           duckChess={duckChess}
           duckSquare={displayDuck}

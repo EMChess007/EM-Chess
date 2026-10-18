@@ -3,6 +3,7 @@ import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View, useWindo
 import { ChessEngine } from '../logic/ChessEngine';
 import { getLegalDuckPlacementSquares } from '../logic/duckChess';
 import { getGiveawayMoves } from '../logic/giveaway';
+import { getGiveawayCapturingSquares } from '../logic/giveawayHints';
 import { isTouchInside, subscribeToScreenTouches } from '../logic/screenTouches';
 import { PROMOTION_LABELS, type PromotionPiece, getPromotionChoices, isPromotionMove } from '../logic/promotion';
 import {
@@ -97,6 +98,9 @@ interface ChessBoardProps {
   /** Duck Chess: told whenever the board enters/leaves the "placing the duck" state, so the screen can
    * say so in its status line. */
   onDuckPlacementChange?: (placing: boolean) => void;
+  /** Giveaway only - the player tapped one of their own pieces that cannot move because a capture is mandatory (and the pieces that CAN capture are
+   * ringed). The screen answers with the "A capture is mandatory" message (MandatoryCaptureBanner / useCaptureNudge). */
+  onMandatoryCaptureBlocked?: () => void;
   /** Spell Chess only — see spellChess.ts. A turn is "optionally cast a spell, THEN make a move" — the
    * reverse order of Duck Chess's "move, then place the duck", but the same shape: this component owns
    * the in-progress cast (see pendingCast/castMode below) and only calls `onMove` once a real move is
@@ -187,6 +191,7 @@ function ChessBoard({
   duckChess = false,
   duckSquare = null,
   onDuckPlacementChange,
+  onMandatoryCaptureBlocked,
   spellChess = false,
   horde = false,
   crazyhouse = false,
@@ -451,6 +456,12 @@ function ChessBoard({
         : engine.getLegalMoves(selectedSquare)
       : [];
 
+  // Giveaway: the pieces that can capture, ringed on the board while a capture is mandatory and it is this board's player to move.
+  const captureSquares = useMemo(
+    () => (giveaway && !disabled && !gameOver && !isPremoveMode && !pendingDuck ? getGiveawayCapturingSquares(engine) : []),
+    [giveaway, disabled, gameOver, isPremoveMode, pendingDuck, engine]
+  );
+
   /** Applies a human move on a SCRATCH engine (never the memoized one — see handleSquarePress) and
    * returns the resulting move + fen, or null if the position doesn't allow it. In Giveaway the
    * attempted move is first checked against getGiveawayMoves: unlike Fog of War, not every
@@ -513,6 +524,12 @@ function ChessBoard({
     setDropPiece(null);
     const squareData = board.flat().find((s) => s.square === square);
     if (squareData?.piece && squareData.piece.color === selectableColor) {
+      // Giveaway: a capture is mandatory and this piece cannot make one - say so instead of selecting a piece with nothing to show.
+      if (captureSquares.length > 0 && !captureSquares.includes(square)) {
+        setSelectedSquare(null);
+        onMandatoryCaptureBlocked?.();
+        return;
+      }
       setSelectedSquare(square);
     } else {
       setSelectedSquare(null);
@@ -708,6 +725,7 @@ function ChessBoard({
               isLight={(rowIndex + colIndex) % 2 === 0}
               isSelected={square.square === selectedSquare}
               isLegalTarget={legalTargets.includes(square.square)}
+              isCapturer={captureSquares.includes(square.square)}
               isChecked={square.square === checkedKingSquare}
               isLastMove={square.square === lastMove?.from || square.square === lastMove?.to}
               isKingOfTheHillTarget={kingOfTheHill && KING_OF_THE_HILL_SQUARES.includes(square.square)}

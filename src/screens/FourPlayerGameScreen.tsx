@@ -5,6 +5,7 @@ import FourPlayerBoard from '../components/FourPlayerBoard';
 import FourPlayerSeatStrip from '../components/FourPlayerSeatStrip';
 import GameControlBar from '../components/GameControlBar';
 import GameScreenBody from '../components/GameScreenBody';
+import MandatoryCaptureBanner from '../components/MandatoryCaptureBanner';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import {
@@ -34,7 +35,9 @@ import {
 } from '../logic/fourPlayer';
 import { controllerName } from '../logic/fourPlayerBots';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
+import { fourPlayerCapturingSquares } from '../logic/giveawayHints';
 import { playMoveSound } from '../logic/moveSounds';
+import { useCaptureNudge } from '../logic/useCaptureNudge';
 import { describeResignWarning, describeResultNote, rankSeats, seatMetric, statusSuffix, variantModeLabel, variantTitle } from '../logic/fourPlayerVariant';
 import { useFourPlayerClock } from '../logic/useFourPlayerClock';
 import { describePremoveCancel } from '../logic/premove';
@@ -198,6 +201,9 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
   const ranking = useMemo(() => rankSeats(variant, ([0, 1, 2, 3] as Seat[]).map((seat) => seatMetric(game, seat)), game.result?.winners ?? []), [variant, game]);
 
   const mover = SEAT_NAMES[game.turn];
+  // 4 Player Giveaway: a capture is mandatory for the human to move - a bold status instead of the plain one, and a message when they tap a piece that cannot capture.
+  const { nudged: captureNudged, nudge: nudgeCapture } = useCaptureNudge();
+  const mustCapture = !game.result && humanToMove && fourPlayerCapturingSquares(game, game.turn).length > 0;
   let statusText: string;
   if (game.result) {
     const names = game.result.winners.map((seat) => SEAT_NAMES[seat]).join(' & ');
@@ -233,7 +239,11 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
       >
         <FourPlayerSeatStrip state={game} seats={seats} clock={clock} />
 
-        <Text style={[styles.status, { color: game.result ? colors.gold : colors.text }]}>{statusText}</Text>
+        {mustCapture ? (
+          <MandatoryCaptureBanner lead={`${mover} to move`} nudged={captureNudged} />
+        ) : (
+          <Text style={[styles.status, { color: game.result ? colors.gold : colors.text }]}>{statusText}</Text>
+        )}
 
         <FourPlayerBoard
           key={round}
@@ -246,6 +256,7 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
           premove={premove}
           onPremove={queuePremove}
           enableAnnotations
+          onMandatoryCaptureBlocked={nudgeCapture}
         />
 
         {premoveCancelReason && <Text style={styles.errorText}>{describePremoveCancel(premoveCancelReason)}</Text>}

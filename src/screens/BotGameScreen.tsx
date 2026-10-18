@@ -41,6 +41,8 @@ import {
 } from '../logic/fogOfWar';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { getAtomicWinner } from '../logic/atomic';
+import MandatoryCaptureBanner from '../components/MandatoryCaptureBanner';
+import { useCaptureNudge } from '../logic/useCaptureNudge';
 import { isRepetitionDraw } from '../logic/repetitionHistory';
 import { duckMoveNotation, getDuckChessWinner, hasNoDuckMoves } from '../logic/duckChess';
 import { HORDE_START_FEN, getHordeWinner } from '../logic/horde';
@@ -722,6 +724,8 @@ export default function BotGameScreen({
     () => giveaway && !giveawayWinner && getGiveawayMoves(engine).some((m) => m.captured),
     [giveaway, giveawayWinner, engine]
   );
+  // The "A capture is mandatory" message after a tap on a piece that cannot move (see MandatoryCaptureBanner).
+  const { nudged: captureNudged, nudge: nudgeCapture } = useCaptureNudge();
   const turnLabel = turn === userColor ? 'You' : bot.name;
   const winnerLabel = turn === userColor ? bot.name : 'You';
 
@@ -1096,7 +1100,11 @@ export default function BotGameScreen({
             content area, clipping it. Keeping everything on one row keeps the height budget unchanged. */}
         {!gameOver && (
           <View style={styles.statusRow}>
-            <Text style={styles.status}>{statusText}</Text>
+            {mustCapture && turn === userColor && !isReviewing ? (
+              <MandatoryCaptureBanner lead="Your turn" nudged={captureNudged} />
+            ) : (
+              <Text style={styles.status}>{statusText}</Text>
+            )}
             {botThinking && (
               <>
                 <ActivityIndicator size="small" color={colors.text} style={styles.thinkingIndicator} />
@@ -1142,6 +1150,7 @@ export default function BotGameScreen({
           kingOfTheHill={kingOfTheHill}
           fogOfWar={fogOfWar}
           giveaway={giveaway}
+          onMandatoryCaptureBlocked={nudgeCapture}
           atomic={atomic}
           duckChess={duckChess}
           duckSquare={displayDuck}
