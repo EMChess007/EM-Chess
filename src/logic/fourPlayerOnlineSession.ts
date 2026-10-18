@@ -11,8 +11,8 @@
  * on every change, calling the one subscriber. Nothing in a handler may throw out of it: a malformed event from the server is logged and
  * dropped, never an uncaught exception in a socket callback.
  *
- * Like the 2-player screen, the rejoin token lives in memory only (it is the `match` the session was given): an app restart forfeits the
- * seat to a bot.
+ * The rejoin token is the `match` the session was given. App.tsx also persists it (activeGameStorage.ts), so an app restart or a web refresh
+ * reopens the screen with `resume: true` and rejoins the seat (it used to forfeit the seat to a bot).
  */
 
 import { moveLabel, type Move } from './fourPlayer';

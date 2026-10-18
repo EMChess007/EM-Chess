@@ -56,10 +56,6 @@ Built on the `paired/spell-chess` branches (rules, Local, Bots and Online togeth
 - **No React Native renderer in the project**: the board, the spell bar and the layout were verified in the web build (360x640, 390x760, 412x915), not on a device.
 - **Online is offered in Quick Match and Challenge** (the variant picker); `npm run spell-opponent` (backend) is a manual guest opponent for exercising it from the app.
 
-## 2-player Online: a page reload or app restart mid-game cannot rejoin
-
-**What is missing.** Rejoining after a dropped connection works (the app re-sends `rejoin_game` with the player token and restores the position, clocks and, for Spell Chess, the charges, cooldowns and frozen zone - checked in the browser). But the token only lives in memory: reloading the web page, or restarting the app, opens the home screen and the seat is forfeited when the 45 s grace expires. 4 Player Online made the same decision (see its section below); a persisted token (sessionStorage / AsyncStorage, cleared when the game ends) would fix both.
-
 ## Daily (correspondence) games Online
 
 **What's wrong / what's missing.** Online play is live-only. Daily time controls (1–14 days) exist for Local and Bot

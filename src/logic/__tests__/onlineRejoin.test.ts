@@ -79,8 +79,9 @@ describe('OnlineGameScreen wiring (no React Native renderer available)', () => {
   });
 
   it('a game the server no longer has ends the "Reconnecting…" limbo with an honest message', () => {
-    expect(screen).toMatch(/if \(outcome\.kind === 'unavailable'\) \{\s*setConnectionState\('unavailable'\);\s*return;\s*\}/);
-    expect(screen).toContain("useState<'connected' | 'reconnecting' | 'unavailable'>('connected')");
+    // (it also tells the app to forget the remembered rejoin token - activeGame.test.ts pins that call)
+    expect(screen).toMatch(/if \(outcome\.kind === 'unavailable'\) \{\s*setConnectionState\('unavailable'\);\s*onGameEndedRef\.current\?\.\(\);[^\n]*\s*return;\s*\}/);
+    expect(screen).toContain("useState<'connected' | 'reconnecting' | 'unavailable'>(resume ? 'reconnecting' : 'connected')");
     expect(screen).toContain("if (connectionState === 'unavailable') statusText = 'Game unavailable';");
     expect(screen).toContain("connectionState === 'unavailable' && (");
     expect(screen).toContain('This game is no longer available');
@@ -93,8 +94,9 @@ describe('OnlineGameScreen wiring (no React Native renderer available)', () => {
 
   it('once a result is on screen a reconnect does not disturb it: no rejoin is sent, and an answer already in flight is ignored', () => {
     const guard = /if \(gameOverHandledRef\.current\) \{\s*setConnectionState\('connected'\);\s*return;\s*\}/;
-    // 1. handleReconnect: the guard comes BEFORE the rejoin request is emitted.
-    const reconnectStart = screen.indexOf('const handleReconnect = () => {');
+    // 1. rejoinNow (the handshake a restored connection AND a resumed screen share; handleReconnect is an alias of it): the guard comes BEFORE the
+    // rejoin request is emitted.
+    const reconnectStart = screen.indexOf('const rejoinNow = () => {');
     const emit = screen.indexOf("socket.emit(\n        'rejoin_game'", reconnectStart);
     expect(reconnectStart).toBeGreaterThan(-1);
     expect(emit).toBeGreaterThan(reconnectStart);
