@@ -29,10 +29,9 @@ import type { ExplodedPiece, GameStatus, Move, Piece, PieceColor, PieceType } fr
  *    yields the same board; the UI auto-picks a queen for those (see ChessBoard).
  *  - Rooks that are exploded (not just captured) lose their castling right.
  *
- * Draws: 50-move (halfmove clock), stalemate, Atomic's own insufficient-material rule, and — for
- * Atomic only — threefold repetition derived from the game's FEN history (see
- * isAtomicThreefoldRepetition; the app-wide engines are rebuilt from FEN every render so chess.js can't
- * see repetitions at all, tracked separately in TODO.md).
+ * Draws: 50-move (halfmove clock), stalemate, Atomic's own insufficient-material rule, and threefold
+ * repetition - which every two-player mode now has, through the shared history-based key in
+ * repetition.ts (isAtomicThreefoldRepetition below is the original Atomic-only version, kept for its oracle test).
  *
  * Mutually exclusive with every other variant; Local + Bots only (Online would need a server twin of
  * all of this). A finished game's FEN has no king for the loser, so every ChessEngine used for Atomic

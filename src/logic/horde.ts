@@ -30,8 +30,8 @@ import type { Move, PieceColor, PieceType } from '../types/chess';
  * Mutually exclusive with every other variant. Every engine used with this file MUST be constructed with
  * { horde: true } (which implies skipValidation: a Horde FEN has no White king).
  *
- * KNOWN LIMIT (same as every non-Atomic mode, see TODO.md): threefold repetition is never detected, because screens
- * rebuild the engine from the FEN each move; the fifty-move rule is read from the FEN's halfmove clock and works.
+ * Draws: threefold repetition ends the game like in every two-player mode (repetition.ts, derived from the history because the
+ * screens rebuild the engine from the FEN each move); the fifty-move rule is read from the FEN's halfmove clock and works.
  */
 
 // --- Shared rules block (mirrored VERBATIM in backend/src/game/horde.ts; scripts/test-horde.mjs fails if the two

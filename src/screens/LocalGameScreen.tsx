@@ -26,7 +26,8 @@ import {
   logFogOfWarPly,
   useIncrementalFogRedaction,
 } from '../logic/fogOfWar';
-import { getAtomicWinner, isAtomicThreefoldRepetition } from '../logic/atomic';
+import { getAtomicWinner } from '../logic/atomic';
+import { isRepetitionDraw } from '../logic/repetitionHistory';
 import { duckMoveNotation, getDuckChessWinner, hasNoDuckMoves } from '../logic/duckChess';
 import { HORDE_START_FEN, getHordeWinner } from '../logic/horde';
 import { initialCrazyhouseState } from '../logic/crazyhouse';
@@ -197,9 +198,11 @@ export default function LocalGameScreen({
   // the history's FENs (the engine is rebuilt from FEN every render, so it can never see repetitions),
   // which also keeps it right after Undo.
   const atomicWinner = useMemo(() => (atomic ? getAtomicWinner(engine) : null), [atomic, engine]);
-  const atomicRepetition = useMemo(
-    () => atomic && isAtomicThreefoldRepetition([initialFen, ...history.map((h) => h.fenAfter)]),
-    [atomic, initialFen, history]
+  // Threefold repetition, in EVERY mode (repetition.ts / repetitionHistory.ts): derived from the history, so it survives the per-render
+  // FEN rebuild and is right after Undo. Fog of War counts the TRUE position (this screen holds the whole board).
+  const repetitionDraw = useMemo(
+    () => isRepetitionDraw(initialFen, history, { threeCheck, crazyhouse, duckChess, spellChess }),
+    [initialFen, history, threeCheck, crazyhouse, duckChess, spellChess]
   );
   // Duck Chess has no check/checkmate/stalemate: the only decisive result is a king capture (read off the last
   // turn, so it is right after Undo), and a side to move with no regular move at all is a blockade — a draw.
@@ -229,8 +232,6 @@ export default function LocalGameScreen({
       ? 'playing'
       : horde && hordeWinner
         ? 'playing' // chess.js calls "White has nothing left" stalemate; hordeWinner decides it (see gameResult.ts)
-        : atomicRepetition
-        ? 'draw'
         : engine.getStatus();
   // Chess.js has no idea this rule exists — checked independently, only when actually playing
   // this variant (see kingOfTheHill.ts).
@@ -252,7 +253,7 @@ export default function LocalGameScreen({
   // Whether the side to move must capture this turn — surfaced in the status line so a player who
   // finds only one piece movable understands why.
   const mustCapture = useMemo(() => giveaway && !giveawayWinner && getGiveawayMoves(engine).some((m) => m.captured), [giveaway, giveawayWinner, engine]);
-  const engineGameOver = duckChess
+  const engineGameOverByRules = duckChess
     ? duckWinner !== null || duckBlockade
     : giveaway
       ? giveawayWinner !== null
@@ -260,7 +261,8 @@ export default function LocalGameScreen({
         ? false
         : spellChess
           ? spellChessWinner !== null || engine.isGameOver()
-          : engine.isGameOver() || atomicRepetition;
+          : engine.isGameOver();
+  const engineGameOver = engineGameOverByRules || repetitionDraw;
   const clock = useChessClock(timeControl, turn, engineGameOver);
   const gameOver =
     engineGameOver ||
@@ -410,6 +412,7 @@ export default function LocalGameScreen({
   if (threeCheckWinner) statusText = `${threeCheckWinner === 'w' ? 'White' : 'Black'} wins by Three-Check!`;
   if (fogOfWarWinner) statusText = `${fogOfWarWinner === 'w' ? 'White' : 'Black'} wins by capturing the king!`;
   if (giveawayWinner) statusText = `${giveawayWinner === 'w' ? 'White' : 'Black'} wins — no legal moves left!`;
+  if (repetitionDraw) statusText = 'Draw by repetition';
   if (atomicWinner) statusText = `${atomicWinner === 'w' ? 'White' : 'Black'} wins by exploding the king!`;
   if (placingDuck && !duckWinner) statusText = `${turnLabel} — place the duck 🦆`;
   if (duckBlockade) statusText = 'Draw — no legal moves (blockaded by the duck)';
@@ -432,7 +435,8 @@ export default function LocalGameScreen({
     atomicWinner,
     duckWinner,
     spellChessWinner,
-    hordeWinner
+    hordeWinner,
+    repetitionDraw
   );
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : outcome.result === '1-0' ? 'White Won' : 'Black Won';
   const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';

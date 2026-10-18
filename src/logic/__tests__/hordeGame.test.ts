@@ -107,7 +107,7 @@ describe('Horde wiring (no React Native renderer available)', () => {
       const src = read(screen);
       expect(src).toContain('horde ? HORDE_START_FEN : chess960');
       expect(src).toContain('const hordeWinner = useMemo(() => (horde ? getHordeWinner(engine) : null), [horde, engine]);');
-      expect(src).toMatch(/getGameOutcome\([\s\S]*?spellChessWinner,\s*hordeWinner\s*\)/);
+      expect(src).toMatch(/getGameOutcome\([\s\S]*?spellChessWinner,\s*hordeWinner,\s*repetitionDraw\s*\)/);
       expect(src).toContain('hordeWinner,\n        horde,');
       expect(src).toContain("? 'playing' // chess.js calls \"White has nothing left\" stalemate");
       expect(src).toContain('horde={horde}');
