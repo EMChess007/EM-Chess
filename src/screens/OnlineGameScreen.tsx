@@ -63,6 +63,12 @@ interface OnlineGameScreenProps {
    * keep receiving its own push updates (participant tracking is keyed by socket.id), so this
    * skips the disconnect a normal exit-to-menu does. */
   keepSocketAlive?: boolean;
+  /** The screen was reopened for a game already in progress after a page reload / app restart: rejoin the seat straight away (the same
+   * handshake a dropped-and-restored connection does) instead of showing the starting position. */
+  resume?: boolean;
+  /** The game is over for this player (a live game_over, a result found on rejoin, or a game the server no longer has): the app forgets the
+   * remembered rejoin token. */
+  onGameEnded?: () => void;
 }
 
 // Extends the shared GameHistoryEntry shape (move/fenBefore/fenAfter — what analysis/summary
@@ -77,7 +83,7 @@ interface ChatEntry {
   text: string;
 }
 
-export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, keepSocketAlive }: OnlineGameScreenProps) {
+export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, keepSocketAlive, resume, onGameEnded }: OnlineGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const myColor = match.color;
@@ -135,7 +141,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   const [boardKey, setBoardKey] = useState(0);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [gameOver, setGameOver] = useState<GameOverPayload | null>(null);
-  const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'unavailable'>('connected');
+  const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'unavailable'>(resume ? 'reconnecting' : 'connected');
   const [opponentGraceSeconds, setOpponentGraceSeconds] = useState<number | null>(null);
   const [openingName, setOpeningName] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
@@ -153,6 +159,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // `gameOver` and every other piece of state here it belongs to ONE match, and App mounts this screen fresh for each (every route into
   // 'onlineGame' comes from a different screen).
   const gameOverHandledRef = useRef(false);
+  const resumeRef = useRef(resume === true);
+  const onGameEndedRef = useRef(onGameEnded);
+  onGameEndedRef.current = onGameEnded;
   // Fog of War only — the server always redacts `fen` for this recipient already (see
   // MatchFoundPayload.visibleSquares), but ChessBoard still needs this explicit set to tell a
   // genuinely-empty-and-visible square apart from a fogged one (see ChessBoard's own doc comment
@@ -341,6 +350,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     const handleGameOver = (payload: GameOverPayload) => {
       if (gameOverHandledRef.current) return;
       gameOverHandledRef.current = true;
+      onGameEndedRef.current?.();
       setGameOver(payload);
       setDrawOfferPending(false);
       setIncomingDrawOffer(false);
@@ -387,7 +397,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       setConnectionState('reconnecting');
     };
 
-    const handleReconnect = () => {
+    // The rejoin handshake, shared by a restored connection and by a screen reopened after a page reload / app restart (`resume`).
+    const rejoinNow = () => {
       // The result is already on screen (a live game_over, or an earlier rejoin answer): there is nothing to rejoin, and whatever the server
       // said now could only disturb it ("Game unavailable" over a finished game, a move being reviewed snapped back to live).
       if (gameOverHandledRef.current) {
@@ -420,6 +431,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           // The server has no such game any more (too long ago, a restarted server): say so instead of "Reconnecting…" for ever.
           if (outcome.kind === 'unavailable') {
             setConnectionState('unavailable');
+            onGameEndedRef.current?.(); // nothing to come back to: forget the token
             return;
           }
           if (outcome.kind === 'state') {
@@ -533,6 +545,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       );
     };
 
+    const handleReconnect = rejoinNow;
+
     socket.on('opponent_move', handleOpponentMove);
     socket.on('game_over', handleGameOver);
     socket.on('opponent_disconnected', handleOpponentDisconnected);
@@ -543,7 +557,15 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     socket.on('draw_declined', handleDrawDeclined);
     socket.on('chat_message', handleChatMessage);
 
+    // Reopened for a game in progress: this is the first connection of a brand-new process, so nothing will ever fire 'reconnect' - ask now.
+    if (resumeRef.current) {
+      resumeRef.current = false;
+      if (socket.connected) rejoinNow();
+      else socket.once('connect', rejoinNow);
+    }
+
     return () => {
+      socket.off('connect', rejoinNow);
       socket.off('opponent_move', handleOpponentMove);
       socket.off('game_over', handleGameOver);
       socket.off('opponent_disconnected', handleOpponentDisconnected);

@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { setSessionExpiredHandler } from './src/api/client';
 import type { GameVariant } from './src/components/VariantSelector';
 import { notifyScreenTouch } from './src/logic/screenTouches';
+import { clearActiveGame, loadResumableGame, saveActiveGame, touchActiveGame } from './src/api/activeGameStorage';
 import { clearAuthSession, loadAuthSession, type AuthSession } from './src/api/authStorage';
 import AppAlertHost, { appAlert } from './src/components/AppAlert';
 import BottomTabBar, { type MainTab } from './src/components/BottomTabBar';
@@ -133,7 +134,7 @@ type Screen =
   | { name: 'challenge'; token: string }
   | { name: 'spectateList'; token: string | null }
   | { name: 'spectatorGame'; token: string | null; roomId: string; whiteUsername: string; blackUsername: string }
-  | { name: 'onlineGame'; token: string; match: MatchFoundPayload; returnToTournamentId?: string }
+  | { name: 'onlineGame'; token: string; match: MatchFoundPayload; returnToTournamentId?: string; resume?: boolean }
   | { name: 'tournament'; token: string }
   | { name: 'tournamentStandings'; token: string; tournamentId: string }
   | { name: 'engineSelect' }
@@ -198,7 +199,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   // An online 4 Player game the player left while their seat was still live (a bot plays it after 45 s; they may return until it ends). Kept in
-  // memory only, like the 2-player rejoin token: an app restart or a web refresh forgets it, and the seat stays with the bot.
+  // memory for the "Return to your game" card; the same game is ALSO persisted (activeGameStorage.ts) so an app restart or a web refresh rejoins it.
   const [fourResume, setFourResume] = useState<{ token: string; match: FourMatchFoundPayload; timeControl: TimeControl } | null>(null);
   // Gates the very first render on the persisted Dark/Light preference having actually loaded —
   // without this, every screen mounts once with useAppColors()'s synchronous default ('light',
@@ -225,6 +226,20 @@ export default function App() {
       // Keystore-invalidation case, not an app-level bug.
       logDiagnostic(`[App] Startup session check: ${session ? `restored (user ${session.user.username})` : 'no session found'}`);
       setAuthSession(session);
+      // A page reload / app kill in the middle of an online game: walk straight back into the seat (the server holds it for 45 s, and keeps a
+      // result that arrived meanwhile for 5 minutes). Only if nothing else has been opened yet, and only for the SAME account that was playing.
+      if (session) {
+        loadResumableGame(session.user.id).then((game) => {
+          if (!game) return;
+          logDiagnostic(`[App] Resuming a ${game.kind} online game after a restart (room ${game.match.roomId}).`);
+          setScreen((current) => {
+            if (current.name !== 'main') return current;
+            return game.kind === 'twoPlayer'
+              ? { name: 'onlineGame', token: session.token, match: game.match, returnToTournamentId: game.returnToTournamentId, resume: true }
+              : { name: 'fourPlayerOnlineGame', token: session.token, match: game.match, timeControl: game.timeControl, resume: true };
+          });
+        });
+      }
     });
     restoreCustomEngines();
     restoreSoundSetting();
@@ -270,7 +285,27 @@ export default function App() {
     return () => setSessionExpiredHandler(null);
   }, []);
 
+  // The online game on screen is remembered (id + rejoin token + variant, in SecureStore / AsyncStorage - see activeGameStorage.ts) so a reload or
+  // app kill can rejoin it. Saved when a game screen opens; refreshed every 20 s while one is open; cleared by the screens when the game ends, on
+  // resign / leave and on logout.
+  useEffect(() => {
+    if (!authSession) return;
+    if (screen.name === 'onlineGame') {
+      void saveActiveGame({ kind: 'twoPlayer', userId: authSession.user.id, match: screen.match, returnToTournamentId: screen.returnToTournamentId });
+    } else if (screen.name === 'fourPlayerOnlineGame') {
+      void saveActiveGame({ kind: 'fourPlayer', userId: authSession.user.id, match: screen.match, timeControl: screen.timeControl });
+    }
+  }, [screen, authSession]);
+  const liveGameRoomId =
+    screen.name === 'onlineGame' || screen.name === 'fourPlayerOnlineGame' ? screen.match.roomId : (fourResume?.match.roomId ?? null);
+  useEffect(() => {
+    if (!liveGameRoomId) return;
+    const id = setInterval(() => void touchActiveGame(liveGameRoomId), 20_000);
+    return () => clearInterval(id);
+  }, [liveGameRoomId]);
+
   const handleLogout = () => {
+    void clearActiveGame();
     clearAuthSession();
     setAuthSession(null);
   };
@@ -527,9 +562,12 @@ export default function App() {
         authToken={token}
         match={screen.match}
         keepSocketAlive={!!returnToTournamentId}
-        onExit={() =>
-          setScreen(returnToTournamentId ? { name: 'tournamentStandings', token, tournamentId: returnToTournamentId } : { name: 'main' })
-        }
+        resume={screen.resume}
+        onGameEnded={() => void clearActiveGame()}
+        onExit={() => {
+          void clearActiveGame(); // leaving is a decision: the seat is not kept
+          setScreen(returnToTournamentId ? { name: 'tournamentStandings', token, tournamentId: returnToTournamentId } : { name: 'main' });
+        }}
         onAnalyze={(params) => setScreen({ name: 'analysis', params })}
       />
     );
@@ -843,11 +881,14 @@ export default function App() {
         authToken={token}
         match={match}
         resume={resume}
+        onGameEnded={() => void clearActiveGame()}
         onExit={(resumable) => {
+          if (!resumable) void clearActiveGame();
           setFourResume(resumable ? { token, match, timeControl } : null);
           setScreen({ name: 'playModeSelect' });
         }}
         onPlayAgain={() => {
+          void clearActiveGame();
           setFourResume(null);
           setScreen({ name: 'fourPlayerMatchmaking', variant: fourVariantOf(match), token, timeControl }); // the same game again
         }}

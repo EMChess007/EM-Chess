@@ -34,6 +34,8 @@ interface FourPlayerOnlineGameScreenProps {
   /** Back to the menu. `resumable` = the player still holds a live seat, so the menu may offer "Return to your game". */
   onExit: (resumable: boolean) => void;
   onPlayAgain: () => void;
+  /** The game is over for this player (or the server no longer has it): the app forgets the remembered rejoin token. */
+  onGameEnded?: () => void;
 }
 
 /**
@@ -43,11 +45,17 @@ interface FourPlayerOnlineGameScreenProps {
  * game's `FourPlayerBoard` seen from the player's own seat, with premoves always on (`premoveSeat` = the player's seat: there is no
  * hot-seat ambiguity online). Chat, Resign and Rotate sit in the control bar; leaving mid-game asks first, because a bot takes the seat.
  */
-export default function FourPlayerOnlineGameScreen({ authToken, match, resume, onExit, onPlayAgain }: FourPlayerOnlineGameScreenProps) {
+export default function FourPlayerOnlineGameScreen({ authToken, match, resume, onExit, onPlayAgain, onGameEnded }: FourPlayerOnlineGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const game = useFourPlayerOnlineGame(authToken, { kind: 'player', match, resume });
   const { view, connection, problem, chat, chatUnread, boardKey, now, sendMove, resign, sendChat, markChatRead, leave } = game;
+
+  const ended = !!view && (!!view.gameOver || !!view.state.result);
+  useEffect(() => {
+    if (ended || connection === 'unavailable') onGameEnded?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ended, connection]);
 
   const [viewSeat, setViewSeat] = useState<Seat>(match.seat);
   const [chatOpen, setChatOpen] = useState(false);
