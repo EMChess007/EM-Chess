@@ -27,6 +27,8 @@ import {
   useIncrementalFogRedaction,
 } from '../logic/fogOfWar';
 import { getAtomicWinner } from '../logic/atomic';
+import MandatoryCaptureBanner from '../components/MandatoryCaptureBanner';
+import { useCaptureNudge } from '../logic/useCaptureNudge';
 import { isRepetitionDraw } from '../logic/repetitionHistory';
 import { duckMoveNotation, getDuckChessWinner, hasNoDuckMoves } from '../logic/duckChess';
 import { HORDE_START_FEN, getHordeWinner } from '../logic/horde';
@@ -253,6 +255,8 @@ export default function LocalGameScreen({
   // Whether the side to move must capture this turn — surfaced in the status line so a player who
   // finds only one piece movable understands why.
   const mustCapture = useMemo(() => giveaway && !giveawayWinner && getGiveawayMoves(engine).some((m) => m.captured), [giveaway, giveawayWinner, engine]);
+  // The "A capture is mandatory" message after a tap on a piece that cannot move (see MandatoryCaptureBanner).
+  const { nudged: captureNudged, nudge: nudgeCapture } = useCaptureNudge();
   const engineGameOverByRules = duckChess
     ? duckWinner !== null || duckBlockade
     : giveaway
@@ -697,7 +701,12 @@ export default function LocalGameScreen({
           </View>
         ) : (
           <>
-            {!gameOver && <Text style={styles.status}>{statusText}</Text>}
+            {!gameOver &&
+              (mustCapture && !isReviewing ? (
+                <MandatoryCaptureBanner lead={`${turnLabel} to move`} nudged={captureNudged} />
+              ) : (
+                <Text style={styles.status}>{statusText}</Text>
+              ))}
             {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
 
             {hintActive && (
@@ -728,6 +737,7 @@ export default function LocalGameScreen({
               kingOfTheHill={kingOfTheHill}
               fogOfWar={fogOfWar}
               giveaway={giveaway}
+              onMandatoryCaptureBlocked={nudgeCapture}
               atomic={atomic}
               duckChess={duckChess}
               duckSquare={displayDuck}

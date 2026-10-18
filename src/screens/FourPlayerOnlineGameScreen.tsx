@@ -7,6 +7,7 @@ import FourPlayerResultCard from '../components/FourPlayerResultCard';
 import FourPlayerSeatStrip from '../components/FourPlayerSeatStrip';
 import GameControlBar from '../components/GameControlBar';
 import GameScreenBody from '../components/GameScreenBody';
+import MandatoryCaptureBanner from '../components/MandatoryCaptureBanner';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import {
@@ -22,7 +23,9 @@ import { canMove, displayClock, displayState } from '../logic/fourPlayerOnline';
 import { describeResignWarning, variantTitle } from '../logic/fourPlayerVariant';
 import { LEAVE_GAME_MESSAGE, LEAVE_GAME_TITLE, describeStatus, isLiveSeat, seatLabels } from '../logic/fourPlayerOnlineUi';
 import { fourVariantOf, type FourMatchFoundPayload } from '../logic/fourPlayerWire';
+import { fourPlayerCapturingSquares } from '../logic/giveawayHints';
 import { describePremoveCancel } from '../logic/premove';
+import { useCaptureNudge } from '../logic/useCaptureNudge';
 import { useFourPlayerOnlineGame } from '../logic/useFourPlayerOnlineGame';
 import { usePremove } from '../logic/usePremove';
 
@@ -57,6 +60,8 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ended, connection]);
 
+  // 4 Player Giveaway: the "A capture is mandatory" message after a tap on a piece that cannot capture (see MandatoryCaptureBanner).
+  const { nudged: captureNudged, nudge: nudgeCapture } = useCaptureNudge();
   const [viewSeat, setViewSeat] = useState<Seat>(match.seat);
   const [chatOpen, setChatOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -157,7 +162,11 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
       >
         <FourPlayerSeatStrip state={shown} clock={displayClock(view, now)} labels={seatLabels(view, now)} />
 
-        <Text style={[styles.status, { color: view.gameOver ? colors.gold : colors.text }]}>{describeStatus(view)}</Text>
+        {canMove(view, connected) && !view.gameOver && fourPlayerCapturingSquares(shown, shown.turn).length > 0 ? (
+          <MandatoryCaptureBanner lead="Your move" nudged={captureNudged} />
+        ) : (
+          <Text style={[styles.status, { color: view.gameOver ? colors.gold : colors.text }]}>{describeStatus(view)}</Text>
+        )}
 
         {connection === 'reconnecting' && <Text style={styles.warning}>Connection lost — trying to reconnect...</Text>}
         {connection === 'unavailable' && <Text style={styles.problem}>{problem ?? 'This game is no longer available.'}</Text>}
@@ -174,6 +183,7 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
           premove={premove}
           onPremove={queuePremove}
           enableAnnotations
+          onMandatoryCaptureBlocked={nudgeCapture}
         />
 
         {view.moveError && <Text style={styles.errorText}>{view.moveError}</Text>}
