@@ -41,6 +41,9 @@ interface BuildGamePayloadArgs {
   /** Tags the saved PGN [Variant "Crazyhouse"]. There is no Crazyhouse winner argument: checkmate/stalemate/timeout come
    * through `chessStatus` (ChessEngine.getStatus is drop-aware), so getGameOutcome needs no new slot. */
   crazyhouse?: boolean;
+  /** Threefold repetition (repetition.ts): the game ended as a draw by repetition. Without this a repetition draw is "not over" here, so the
+   * game would never be saved to the history (a regression of the first threefold release, which only fixed the screens). */
+  repetitionDraw?: boolean;
   history: GameHistoryEntry[];
   initialFen: string;
   chess960: boolean;
@@ -68,7 +71,8 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
     args.atomicWinner ?? null,
     args.duckChessWinner ?? null,
     args.spellChessWinner ?? null,
-    args.hordeWinner ?? null
+    args.hordeWinner ?? null,
+    args.repetitionDraw ?? false
   );
   if (!outcome.over || args.history.length === 0) return null;
 
