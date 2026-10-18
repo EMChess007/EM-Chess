@@ -15,6 +15,14 @@ for Giveaway and Atomic although those variants never use a UCI engine.
 does (one conditional in `BotSelectScreen`) and decide whether custom-engine cards should be hidden for variants
 that can't use them.
 
+## Rejoin after a reload / app kill: two known limits
+
+The persisted rejoin record (activeGame.ts / activeGameStorage.ts, TESTING.md §25) works for 2-player and 4 Player games. Two cases are knowingly not handled:
+
+**Two tabs / devices of the same account.** The record is per browser profile / device and the server seats whoever presents the token last. A second tab (or a second device with the same record) that restores the game rejoins the seat too and the two fight over it - the last rejoin wins, the other keeps showing a game it no longer owns until its next action fails. Not verified beyond reading the code. A fix needs a "this seat was taken over" event from the server (rooms.ts rejoin already knows the old socket id: emit it to that socket and have the screen leave with a message), plus a test in test-rejoin-persist.mjs with two live sockets on one token.
+
+**Tournament games resume without the standings screen behind them.** The record stores `returnToTournamentId`, so leaving the resumed game goes back to the tournament standings, but the socket the tournament screens rely on (participant tracking is keyed by socket.id, see OnlineGameScreen's `keepSocketAlive`) is a brand-new one after a restart and has not re-registered as a tournament participant: the live standings push updates may not reach it until the player re-enters the tournament screen. Not verified in a browser (needs a tournament with two logged-in players); the e2e covers Classic / variants / 4 Player only.
+
 ## Spell Chess: what it still leaves out
 
 Built on the `paired/spell-chess` branches (rules, Local, Bots and Online together; see TESTING.md §18 and the backend's §21 for what is tested and mutation-checked). The old status log that used to sit here ("no test-spell.mjs", "no mutation run", "tsx cannot run in the sandbox") is obsolete:
