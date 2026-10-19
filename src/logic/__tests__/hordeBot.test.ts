@@ -93,7 +93,7 @@ describe('chooseHordeBotMove', () => {
       return hit / 120;
     };
     expect(frequency(3000)).toBeGreaterThan(frequency(400) + 0.3);
-  }, 30_000);
+  }, 120_000); // ~18 s alone (240 searches): the old 30 s budget failed when three suites shared the machine
 
   it('a random pick never under-promotes', () => {
     for (let seed = 1; seed <= 40; seed++) {

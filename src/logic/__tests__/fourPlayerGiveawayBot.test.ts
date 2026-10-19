@@ -27,6 +27,21 @@ import { mulberry32 } from './fourPlayerGoldenKit';
  */
 const RED: Seat = 0;
 const first = () => 0;
+
+/**
+ * Wall time of one deterministic call, robust to a busy machine: the BEST of `n` identical runs. A call that always does the same work can only be
+ * slowed down by the machine (a scheduler pause, a garbage collection, another test suite), never sped up, so the minimum is its real cost. Comparing
+ * two single timings taken at different moments is what made these tests fail when the suite ran next to another one.
+ */
+const bestOf = (n: number, run: () => void): number => {
+  let best = Infinity;
+  for (let i = 0; i < n; i++) {
+    const t0 = performance.now();
+    run();
+    best = Math.min(best, performance.now() - t0);
+  }
+  return best;
+};
 const gp = (pieces: string[], options: PositionOptions = {}): FourPlayerState => stateFromPieces(pieces, { rules: GIVEAWAY_RULES, ...options });
 const label = (move: Move | null) => (move ? moveLabel(move) : null);
 /** An rng whose first draw takes the scored branch, then a seeded stream. */
@@ -223,14 +238,14 @@ describe('the ELO dial is the same one as the Chess bot\'s', () => {
       const moves = legalMoves(state, state.turn);
       state = playMove(state, moves[Math.floor(rng() * moves.length)], first).state;
     }
-    const time = (elo: number) => {
-      const t0 = performance.now();
-      for (let rep = 0; rep < 5; rep++) for (const s of states) chooseGiveawayFourBotMove(s, elo, scored(rep + 1));
-      return performance.now() - t0;
-    };
-    time(1000); // warm-up
-    const careful = time(1000);
-    const top = time(3000);
+    // Per position, best of 5 identical runs, the two strengths measured one after the other (so a load spike hits both or neither), then summed.
+    let careful = 0;
+    let top = 0;
+    for (const s of states) chooseGiveawayFourBotMove(s, 1000, scored(1)); // warm-up
+    for (const s of states) {
+      careful += bestOf(5, () => chooseGiveawayFourBotMove(s, 1000, scored(1)));
+      top += bestOf(5, () => chooseGiveawayFourBotMove(s, 3000, scored(1)));
+    }
     expect(top).toBeLessThan(careful * 4 + 50); // same tier: not an order of magnitude apart (a deep search would be)
   });
 });
@@ -298,10 +313,12 @@ describe('whole bot games: the local game loop, seeded', () => {
       let state = initialState(GIVEAWAY_RULES);
       while (!state.result) {
         const elo = [800, 1200, 1700, 3000][state.turn];
-        const t0 = performance.now();
-        const move = chooseGiveawayFourBotMove(state, elo, rng)!;
-        samples.push(performance.now() - t0);
-        state = playMove(state, move, rng).state;
+        // The decision is timed 3 times with an identical fresh rng (same work each time) and the best time is the sample: one scheduler pause or GC
+        // in a busy run would otherwise be a 30 ms "p99" for a decision that costs a fraction of a millisecond. The game advances on the last result.
+        const decisionSeed = seed * 100_003 + state.ply;
+        let move!: ReturnType<typeof chooseGiveawayFourBotMove>;
+        samples.push(bestOf(3, () => (move = chooseGiveawayFourBotMove(state, elo, mulberry32(decisionSeed)))));
+        state = playMove(state, move!, rng).state;
       }
     }
     samples.sort((a, b) => a - b);
