@@ -509,7 +509,7 @@ describe('screens: the Giveaway flow is wired through the same screens (no rende
     for (const file of ['screens/FourPlayerGameScreen.tsx', 'screens/FourPlayerSetupScreen.tsx']) {
       expect(read(file), file).not.toMatch(/fourPlayerOnline|FourPlayerOnline|api\/socket|fourPlayerWire/);
     }
-    expect(read('logic/fourPlayer/state.ts')).toContain("export type FourVariant = 'ffa' | 'giveaway';");
+    expect(read('logic/fourPlayer/state.ts')).toContain("export type FourVariant = 'ffa' | 'giveaway' | 'chaturaji';"); // Chaturaji W1 added the third value
     expect(read('logic/fourPlayerWire.ts')).toContain('export type { FourVariant };');
   });
 });

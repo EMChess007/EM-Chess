@@ -60,8 +60,11 @@ export function describeEvents(events: readonly GameEvent[]): string[] {
     if (event.kind === 'eliminated') {
       const name = SEAT_NAMES[event.seat];
       if (event.reason === 'checkmate') lines.push(`${name} was checkmated${event.credit !== null ? ` by ${SEAT_NAMES[event.credit]} (+20)` : ''}`);
-      else if (event.reason === 'stalemate') lines.push(`${name} was stalemated (+20 to ${name}, +10 to the others)`);
+      else if (event.reason === 'stalemate') lines.push(event.points.every((p) => p === 0) ? `${name} had no legal move and is out` : `${name} was stalemated (+20 to ${name}, +10 to the others)`);
+      else if (event.reason === 'kingCaptured') lines.push(`${name}'s king was captured${event.credit !== null ? ` by ${SEAT_NAMES[event.credit]}` : ''}`);
       else lines.push(`${name} ${event.reason === 'resign' ? 'resigned' : 'ran out of time'}`);
+    } else if (event.kind === 'fork') {
+      lines.push(`${SEAT_NAMES[event.seat]} attacks ${event.kings} kings at once (+${event.points})`);
     } else if (event.kind === 'frozen') {
       lines.push(`${SEAT_NAMES[event.seat]}'s king can no longer move`);
     }

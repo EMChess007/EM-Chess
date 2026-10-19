@@ -120,14 +120,14 @@ export function describeQueue(update: FourQueueUpdatePayload | null, secondsLeft
 // --- Queue: asking for a variant, and checking that is what we got --------------------------------------------------------------
 
 /**
- * The `four_join_queue` payload (before validation). The `variant` field is sent ONLY for Giveaway (decision D15): a Chess player's payload is
+ * The `four_join_queue` payload (before validation). The `variant` field is sent ONLY for a variant other than 4 Player Chess (decision D15): a Chess player's payload is
  * byte-for-byte what every released client sends, so an older server and this one see the same thing.
  */
 export function joinQueueRequest(timeControl: { initialSeconds: number; incrementSeconds: number; label: string }, variant: FourVariant): Record<string, unknown> {
   return {
     timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
     timeControlLabel: timeControl.label,
-    ...(variant === 'giveaway' ? { variant } : {}),
+    ...(variant !== 'ffa' ? { variant } : {}),
   };
 }
 
@@ -135,7 +135,7 @@ export type FourMatchCheck = { ok: true } | { ok: false; error: string };
 
 /**
  * Decision D15 (rollout safety): an older server ignores a `variant` it does not know and would queue the player into a Chess game, so the client plays on
- * only when `four_match_found` EXPLICITLY names the game it asked for. Chess is the default for a missing field (an older server only has Chess), Giveaway needs
+ * only when `four_match_found` EXPLICITLY names the game it asked for. Chess is the default for a missing field (an older server only has Chess), Giveaway and Chaturaji need
  * its echo. Any other mismatch - or a value that is not a known variant - is refused.
  */
 export function checkMatchVariant(requested: FourVariant, match: Pick<FourMatchFoundPayload, 'variant'>): FourMatchCheck {
@@ -144,8 +144,8 @@ export function checkMatchVariant(requested: FourVariant, match: Pick<FourMatchF
   return {
     ok: false,
     error:
-      requested === 'giveaway'
-        ? 'This server does not support 4 Player Giveaway yet, so it started a different game. You have left it. Please try again later.'
+      requested === 'giveaway' || requested === 'chaturaji'
+        ? `This server does not support ${requested === 'chaturaji' ? 'Chaturaji' : '4 Player Giveaway'} yet, so it started a different game. You have left it. Please try again later.`
         : 'The server started a different game than the one you asked for. You have left it.',
   };
 }

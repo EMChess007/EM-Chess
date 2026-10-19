@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  CHATURAJI_RULES,
   CROSS14,
   FFA_OPTIONS,
   FFA_RULES,
@@ -84,8 +85,9 @@ describe('the cross board is one geometry among others', () => {
     expect(GIVEAWAY_RULES.options).toBeUndefined();
     expect(optionsOf(FFA_RULES)).toBe(FFA_OPTIONS);
     expect(optionsOf(GIVEAWAY_RULES)).toBe(GIVEAWAY_OPTIONS);
-    expect(FFA_OPTIONS).toEqual({ board: 'cross14', pawnDoubleStep: true, castling: true, promotionTypes: PROMOTABLE_TYPES });
-    expect(GIVEAWAY_OPTIONS).toEqual({ board: 'cross14', pawnDoubleStep: true, castling: false, promotionTypes: PROMOTABLE_TYPES });
+    // The Capture-the-King options exist on every set and are OFF for the two older games (Chaturaji W1).
+    expect(FFA_OPTIONS).toEqual({ board: 'cross14', pawnDoubleStep: true, castling: true, promotionTypes: PROMOTABLE_TYPES, captureTheKing: false, kingPoints: 0, forkPoints: null, deadPositionEnds: true, lastStandingKingBonus: 0 });
+    expect(GIVEAWAY_OPTIONS).toEqual({ ...FFA_OPTIONS, castling: false });
   });
 
   it('geometryOf resolves the board a rules object names; both shipped presets play on the cross', () => {
@@ -346,8 +348,8 @@ describe('the validator accepts only the shipped presets', () => {
     for (const junk of [null, undefined, 0, 'ffa', [], {}]) expect(validateRules(junk).ok).toBe(false);
   });
 
-  it('exactly two presets exist (Chaturaji adds the third in W1), and the 4 Player start position still has 20 pseudo-legal moves for Red', () => {
-    expect(KNOWN_RULES).toEqual([FFA_RULES, GIVEAWAY_RULES]);
+  it('exactly three presets exist (4 Player Chess, Giveaway, Chaturaji), and the 4 Player start position still has 20 pseudo-legal moves for Red', () => {
+    expect(KNOWN_RULES).toEqual([FFA_RULES, GIVEAWAY_RULES, CHATURAJI_RULES]);
     expect(pseudoMoves(initialState(), 0)).toHaveLength(20); // 8 pawns x 2 + 2 knights x 2
   });
 });
