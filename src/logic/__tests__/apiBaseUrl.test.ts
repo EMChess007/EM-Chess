@@ -47,6 +47,12 @@ describe('with no override the answer is what it always was', () => {
     expect(resolveApiBaseUrl({ ...base, platform: 'ios', lanHost: '192.168.1.42' })).toBe('http://192.168.1.42:3000');
     expect(resolveApiBaseUrl({ ...base, platform: 'android' })).toBe('http://localhost:3000');
   });
+
+  it('the local port is the one given, on the web and on a phone', () => {
+    expect(resolveApiBaseUrl({ ...base, localPort: 4123 })).toBe('http://localhost:4123');
+    expect(resolveApiBaseUrl({ ...base, platform: 'ios', lanHost: '192.168.1.42', localPort: 4123 })).toBe('http://192.168.1.42:4123');
+    expect(resolveApiBaseUrl({ ...base, platform: 'ios', localPort: 4123 })).toBe('http://localhost:4123');
+  });
 });
 
 describe('the override', () => {
@@ -62,9 +68,15 @@ describe('the override', () => {
     expect(parseApiUrlOverride('  http://localhost:3191/ ')).toBe('http://localhost:3191');
     expect(parseApiUrlOverride('https://backend.example')).toBe('https://backend.example');
     expect(parseApiUrlOverride('HTTP://LocalHost:3191')).toBe('http://localhost:3191');
-    for (const bad of [undefined, '', '   ', 'localhost:3191', 'ws://localhost:3191', 'ftp://h', 'file:///x', 'http://user:secret@host:1', 'http://:secret@host:1', 'http://host:1/api', 'http://host:1?x=1', 'http://host:1#top', 'javascript:alert(1)', 'http://']) {
+    for (const bad of [undefined, '', '   ', 'localhost:3191', 'ws://localhost:3191', 'ftp://h', 'file:///x', 'http://user:secret@host:1', 'http://:secret@host:1', 'http://user@host:1', 'http://host:1/api', 'http://host:1?x=1', 'http://host:1#top', 'javascript:alert(1)', 'http://']) {
       expect(parseApiUrlOverride(bad), String(bad)).toBeNull();
     }
+  });
+
+  it('the two equivalent-mutant notes in apiBaseUrl.ts hold: an empty string is no URL, and an http(s) URL always has a pathname', () => {
+    expect(() => new URL('')).toThrow();
+    expect(new URL('http://host:1').pathname).toBe('/');
+    expect(new URL('https://host').pathname).toBe('/');
   });
 
   it('an invalid override is ignored: the answer is the default for that environment', () => {

@@ -32,6 +32,7 @@ export interface ApiBaseUrlInputs {
 export function parseApiUrlOverride(value: string | undefined): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
+  // EQUIVALENT-MUTANT NOTE (W4 set): dropping the empty check changes nothing - `new URL('')` throws and the catch below answers null (pinned in apiBaseUrl.test.ts).
   if (trimmed === '') return null;
   let url: URL;
   try {
@@ -41,6 +42,7 @@ export function parseApiUrlOverride(value: string | undefined): string | null {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
   if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') return null;
+  // EQUIVALENT-MUTANT NOTE (W4 set): the `=== ''` half is unreachable for an http(s) URL - its pathname is never empty ("http://h" has "/", pinned in apiBaseUrl.test.ts).
   if (url.pathname !== '/' && url.pathname !== '') return null;
   return url.origin;
 }
