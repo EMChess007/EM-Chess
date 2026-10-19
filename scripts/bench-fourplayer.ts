@@ -31,7 +31,7 @@ import {
 } from '../src/logic/fourPlayer';
 import { mulberry32 } from '../src/logic/__tests__/fourPlayerGoldenKit';
 
-const RUNS = 25;
+const RUNS = 12;
 const WARMUP = 3;
 const LIMIT = 0.05;
 

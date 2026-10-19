@@ -9,9 +9,9 @@
  * promotion line, scoring or elimination rule needs no change: legality always comes from `findLegalMove`.
  */
 
-import { forwardCoord, squareName, type Seat } from './board';
+import { squareName, type Seat } from './board';
 import { findLegalMove, type Move } from './moves';
-import { BISHOP, KNIGHT, PAWN, QUEEN, ROOK, seatOf, typeOf, type FourPlayerState } from './state';
+import { BISHOP, KNIGHT, PAWN, QUEEN, ROOK, geometryOf, seatOf, typeOf, type FourPlayerState } from './state';
 
 export interface FourPlayerPremove {
   from: number;
@@ -30,6 +30,7 @@ export function isPromotionPremove(state: Pick<FourPlayerState, 'cells' | 'rules
   const code = state.cells[from];
   if (code <= 0 || seatOf(code) !== seat || typeOf(code) !== PAWN) return false;
   const line = state.rules.promotionCoord;
+  const { forwardCoord } = geometryOf(state.rules);
   return forwardCoord(seat, from) === line - 1 && forwardCoord(seat, to) >= line;
 }
 

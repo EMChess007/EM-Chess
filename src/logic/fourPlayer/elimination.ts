@@ -31,7 +31,7 @@
 import { nextSeat, seatBefore, type Seat } from './board';
 import { applyMoveRaw, attackers, legalMoves, type Move } from './moves';
 import { capWinners, giveawayResult, seatOutOfPieces } from './giveaway';
-import { activeSeats, HARD_MAX_PLIES, KING, seatOf, typeOf, type FourPlayerResult, type FourPlayerState, type SeatStatus } from './state';
+import { activeSeats, geometryOf, HARD_MAX_PLIES, KING, seatOf, typeOf, type FourPlayerResult, type FourPlayerState, type SeatStatus } from './state';
 
 export type EliminationReason = 'checkmate' | 'stalemate' | 'resign' | 'timeout';
 
@@ -53,7 +53,7 @@ type Rng = () => number;
 export function mateCredit(state: FourPlayerState, seat: Seat): Seat | null {
   const king = state.kings[seat];
   if (king < 0) return null;
-  const mask = attackers(state.cells, state.status, king, seat);
+  const mask = attackers(state.cells, state.status, king, seat, geometryOf(state.rules));
   for (let steps = 1; steps <= 3; steps++) {
     const candidate = seatBefore(seat, steps);
     if (mask & (1 << candidate)) return candidate;
@@ -162,7 +162,7 @@ export function advance(state: FourPlayerState, events: GameEvent[], rng: Rng = 
     const moves = legalMoves(current, seat);
     if (status === 'active') {
       if (moves.length > 0) return current;
-      const inCheck = current.kings[seat] >= 0 && attackers(current.cells, current.status, current.kings[seat], seat) !== 0;
+      const inCheck = current.kings[seat] >= 0 && attackers(current.cells, current.status, current.kings[seat], seat, geometryOf(current.rules)) !== 0;
       current = eliminateSeat(current, seat, inCheck ? 'checkmate' : 'stalemate', events);
       continue;
     }
