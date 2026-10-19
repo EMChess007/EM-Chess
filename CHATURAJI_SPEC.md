@@ -1,6 +1,6 @@
 # Chaturaji (4-seat, 8x8) — spec (v1, SPEC ONLY — nothing is implemented)
 
-Status: **draft for review. No code, no branch, no engine work exists for this yet.** Written per CHECKLIST.md ("spec before code"), in the same shape as `FOUR_PLAYER_GIVEAWAY_SPEC.md` and `FOUR_PLAYER_ONLINE_SPEC.md`. Covers both repos: frontend `EM-Chess` (this one) and backend `chess-app-backend` (`backend/`).
+Status: **draft for review. No code and no engine work exists for this yet; the only branch is `docs/chaturaji-spec` (this file).** Written per CHECKLIST.md ("spec before code"), in the same shape as `FOUR_PLAYER_GIVEAWAY_SPEC.md` and `FOUR_PLAYER_ONLINE_SPEC.md`. Covers both repos: frontend `EM-Chess` (this one) and backend `chess-app-backend` (`backend/`).
 Same process as the two earlier 4-seat features: **every workstream builds Local, Bots and Online together for its slice** (§10), after each workstream I stop and wait for an explicit "go", nothing is pushed or merged unless asked. Items marked **[confirm]** are details where the sources disagree or are silent and I chose a default; they are collected in §14. **Read §1 first: chess.com's own Chaturaji rules are not available in one authoritative, readable place, and the sources I could read contradict each other on the single most important rule (check / checkmate).**
 
 ## 0. Summary (the 3-5 sentences)
