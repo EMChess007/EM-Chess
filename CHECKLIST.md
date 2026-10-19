@@ -74,3 +74,13 @@ was called "done" — don't repeat that on anything else.
   a time with the result written down as it finishes (a long unbounded background run can be lost to a
   suspended laptop). A test that reads a constant from the module under mutation cannot kill a mutant of
   that constant: pin constants as literals.
+
+## 7. Test-only switches (a knob that exists for tests must not exist in production)
+- A test-only environment variable or build-time setting is read in ONE small module, has an opt-in name that says
+  what it does, is ignored when `NODE_ENV=production` (one warning at startup that does not print the value), only
+  accepts a finite value inside a bound (it can raise a limit, never switch it off), is set only by the test
+  stack's own child process (never in a workflow `env`, `.env.example`, `render.yaml` or any deployment config),
+  and has tests for: the default unchanged, ignored in production, honoured outside it, no secret read or logged.
+- **Auth rate-limit override absent/ignored in production**: `AUTH_RATE_LIMIT_TEST_OVERRIDE` (backend
+  `src/lib/authRateLimit.ts`) - `npm run test:authRateLimit` in the backend pins all of the above. The same rule
+  for the app: `EXPO_PUBLIC_API_URL` is honoured by dev builds only (`src/api/apiBaseUrl.ts`, `apiBaseUrl.test.ts`).
