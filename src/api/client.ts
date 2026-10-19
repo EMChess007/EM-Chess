@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import type { AuthResponse, AuthUser } from '../types/auth';
+import { parseApiUrlOverride, resolveApiBaseUrl } from './apiBaseUrl';
 
 const LOCAL_API_PORT = 3000;
 
@@ -47,26 +48,33 @@ function detectLanHost(): string | null {
   return host || null;
 }
 
-function resolveApiBaseUrl(): string {
-  // A release build (TestFlight/Play Store/EAS production build) has no "your computer" on a
-  // LAN to reach — it must always talk to the deployed backend, unconditionally.
-  if (!__DEV__) return RENDER_BACKEND_URL;
+/**
+ * EXPO_PUBLIC_API_URL (dev builds only): an explicit backend origin, e.g. `http://localhost:3191` for a private test backend (the Chaturaji browser end-to-end tests). Read at
+ * bundle time like every EXPO_PUBLIC_ variable; unset = no change. The decision itself is `resolveApiBaseUrl` in apiBaseUrl.ts (pure, tested), where a release build still
+ * always wins.
+ */
+const API_URL_OVERRIDE = process.env.EXPO_PUBLIC_API_URL;
 
-  if (USE_ONLINE_BACKEND_IN_DEV) return RENDER_BACKEND_URL;
-
-  if (Platform.OS === 'web') return `http://localhost:${LOCAL_API_PORT}`;
-
-  const host = detectLanHost() ?? MANUAL_LAN_IP;
-  if (!host) {
+function resolveBaseUrl(): string {
+  const lanHost = Platform.OS === 'web' ? null : detectLanHost();
+  if (__DEV__ && Platform.OS !== 'web' && !lanHost && !MANUAL_LAN_IP && !USE_ONLINE_BACKEND_IN_DEV && !parseApiUrlOverride(API_URL_OVERRIDE)) {
     console.warn(
       "[api/client] Could not auto-detect your computer's LAN IP. Set MANUAL_LAN_IP in src/api/client.ts."
     );
-    return `http://localhost:${LOCAL_API_PORT}`;
   }
-  return `http://${host}:${LOCAL_API_PORT}`;
+  return resolveApiBaseUrl({
+    dev: __DEV__,
+    useOnlineBackend: USE_ONLINE_BACKEND_IN_DEV,
+    apiUrlOverride: API_URL_OVERRIDE,
+    platform: Platform.OS,
+    lanHost,
+    manualLanIp: MANUAL_LAN_IP,
+    localPort: LOCAL_API_PORT,
+    renderUrl: RENDER_BACKEND_URL,
+  });
 }
 
-export const API_BASE_URL = resolveApiBaseUrl();
+export const API_BASE_URL = resolveBaseUrl();
 // Always visible at startup (not just per-request) so a wrong address is obvious immediately,
 // before the first screen that happens to call the API is even opened.
 console.log(
