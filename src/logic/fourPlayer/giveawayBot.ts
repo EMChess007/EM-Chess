@@ -23,9 +23,10 @@
 
 import { nextSeat, type Seat } from './board';
 import { botStrength, chooseBotMove } from './bot';
+import { chooseChaturajiBotMove } from './chaturajiBot';
 import { piecesLeft } from './giveaway';
 import { applyMoveRaw, legalMoves, type Move } from './moves';
-import { seatOf, typeOf, type FourPlayerState } from './state';
+import { seatOf, typeOf, variantOfRules, type FourPlayerState } from './state';
 
 type Rng = () => number;
 
@@ -102,7 +103,8 @@ export function chooseGiveawayFourBotMove(state: FourPlayerState, elo: number, r
   return pick(scored.filter((s) => s.score >= best - 1e-9)).move;
 }
 
-/** The bot for whatever game `state` is: the Giveaway heuristic for Giveaway, the 4 Player Chess bot otherwise. Same signature as both. */
+/** The bot for whatever game `state` is: the Giveaway heuristic for Giveaway, the Chaturaji heuristic for Chaturaji, the 4 Player Chess bot otherwise. Same signature as all three. */
 export function chooseBotMoveFor(state: FourPlayerState, elo: number, rng: Rng = Math.random): Move | null {
-  return state.rules.mode === 'giveaway' ? chooseGiveawayFourBotMove(state, elo, rng) : chooseBotMove(state, elo, rng);
+  if (state.rules.mode === 'giveaway') return chooseGiveawayFourBotMove(state, elo, rng);
+  return variantOfRules(state.rules) === 'chaturaji' ? chooseChaturajiBotMove(state, elo, rng) : chooseBotMove(state, elo, rng);
 }
