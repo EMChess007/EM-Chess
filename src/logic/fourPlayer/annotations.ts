@@ -11,7 +11,7 @@
  * dy upward, so row = SIZE - 1 - dy. The four 3 x 3 corners are not squares: a gesture that starts or ends in one draws nothing.
  */
 
-import { SIZE, VALID, fromDisplay, index, toDisplay, fileOf, rankOf, type Seat } from './board';
+import { CROSS14, type Geometry, type Seat } from './board';
 import type { FourPlayerState } from './state';
 
 export interface GridCell {
@@ -24,17 +24,21 @@ export interface SquareArrow {
   to: number;
 }
 
-/** The screen cell where `square` is drawn when `viewSeat` is at the bottom. */
-export function squareToGrid(square: number, viewSeat: Seat): GridCell {
-  const [dx, dy] = toDisplay(fileOf(square), rankOf(square), viewSeat);
-  return { row: SIZE - 1 - dy, col: dx };
+/**
+ * The screen cell where `square` is drawn when `viewSeat` is at the bottom. `geo` is the board of the game (Chaturaji's 8 x 8 square or the 14 x 14 cross; the cross
+ * is the default, so every 4 Player Chess / Giveaway caller is unchanged).
+ */
+export function squareToGrid(square: number, viewSeat: Seat, geo: Geometry = CROSS14): GridCell {
+  const [dx, dy] = geo.toDisplay(geo.fileOf(square), geo.rankOf(square), viewSeat);
+  return { row: geo.size - 1 - dy, col: dx };
 }
 
-/** The square under a screen cell when `viewSeat` is at the bottom, or null for one of the four cut corners. */
-export function gridToSquare(cell: GridCell, viewSeat: Seat): number | null {
-  const [file, rank] = fromDisplay(cell.col, SIZE - 1 - cell.row, viewSeat);
-  const square = index(file, rank);
-  return VALID[square] ? square : null;
+/** The square under a screen cell when `viewSeat` is at the bottom, or null for a cell that is not a square (one of the cross board's four cut corners). */
+export function gridToSquare(cell: GridCell, viewSeat: Seat, geo: Geometry = CROSS14): number | null {
+  if (cell.row < 0 || cell.col < 0 || cell.row >= geo.size || cell.col >= geo.size) return null;
+  const [file, rank] = geo.fromDisplay(cell.col, geo.size - 1 - cell.row, viewSeat);
+  const square = geo.index(file, rank);
+  return geo.valid[square] ? square : null;
 }
 
 /** Appends an arrow (like the 2-player board, drawing the same arrow twice simply adds it again). Returns the same list for a degenerate arrow. */

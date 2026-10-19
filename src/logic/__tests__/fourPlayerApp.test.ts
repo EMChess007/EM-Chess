@@ -172,7 +172,7 @@ describe('the seat cards and the game screen (no React Native renderer available
     expect(strip).toContain('formatSeatClock(seconds)');
     // Online (W5) gave the strip optional `labels`; the local game still passes `seats` and gets exactly the roster-bot / "Human" text it always did.
     expect(strip).toContain("const playerName = label ? label.name : seats ? controllerName(seats[seat]) : '';");
-    expect(strip).toContain("{out ? 'out' : playerName}");
+    expect(strip).toContain("{out ? outWord : playerName}");
     expect(strip).toContain('state.turn === seat'); // the seat to move is highlighted
     expect(strip).toContain('out && styles.out'); // an eliminated seat is greyed (its clock is frozen)
   });
@@ -184,7 +184,7 @@ describe('the seat cards and the game screen (no React Native renderer available
     expect(game).toContain('setPast((p) => [...p, { state: game, clock, lastMove, log }]);');
     expect(game).toContain('setClock(past[i].clock);');
     expect(game).toContain('resetClock();');
-    expect(game).toContain('<FourPlayerSeatStrip state={game} seats={seats} clock={clock} />');
+    expect(game).toContain('<FourPlayerSeatStrip state={game} seats={seats} clock={clock} gains={gains} />');
     expect(game).toContain('chooseBotMoveFor(game, controller.elo)'); // the dispatcher: the Giveaway bot for a Giveaway position, this very Chess bot otherwise
   });
 
@@ -253,7 +253,7 @@ describe('isolation and wiring (no React Native renderer available)', () => {
   it('the board is drawn from the engine state: rotation is a render-only transform, and the 36 corner cells are not pressable', () => {
     const board = read('components/FourPlayerBoard.tsx');
     expect(board).toContain('fromDisplay(dx, dy, viewSeat)');
-    expect(board).toContain('if (!VALID[square])');
+    expect(board).toContain('if (!geo.valid[square])');
     expect(board).toContain('currentMoves(state)'); // legal squares come from the engine, not recomputed in the component
   });
 });
@@ -362,11 +362,11 @@ describe('arrows and premoves on the 4 Player board: shared code, wired in (no R
 
   it('the 4 Player board maps cells to squares through the view seat in ONE place each way, and stores annotations as squares', () => {
     const board = read('components/FourPlayerBoard.tsx');
-    expect(board).toContain('gridToSquare(cell, viewSeat)');
-    expect(board).toContain('squareToGrid(a.from, viewSeat)');
+    expect(board).toContain('gridToSquare(cell, viewSeat, geo)');
+    expect(board).toContain('squareToGrid(a.from, viewSeat, geo)');
     expect(board).toContain('useState<readonly SquareArrow[]>([])');
-    expect(board).toContain('rows={SIZE}');
-    expect(board).toContain('cols={SIZE}');
+    expect(board).toContain('rows={boardSize}');
+    expect(board).toContain('cols={boardSize}');
     expect(board).toContain('enableAnnotations={enableAnnotations}'.replace('={enableAnnotations}', '')); // passed to the hook and the overlay
     expect(board).not.toContain('Pressable'); // taps come from the gesture hook; a Pressable per cell would steal the touches
   });
@@ -393,7 +393,7 @@ describe('arrows and premoves on the 4 Player board: shared code, wired in (no R
     expect(screen).toContain('gameOver: !!game.result');
     expect(screen.match(/cancelPremove\(\);/g)?.length).toBe(2); // Undo and New Game
     expect(screen).toContain('describePremoveCancel(premoveCancelReason)');
-    expect(screen).toContain('Premove queued: {describePremove(premove)}');
+    expect(screen).toContain('Premove queued: {describePremove(premove, geo)}');
     const hook = read('logic/usePremove.ts');
     expect(hook).toContain('const [premove, setPremove] = useState<I | null>(null);'); // a single intent, not a list
     expect(hook).toContain('setPremove(intent);'); // queueing REPLACES

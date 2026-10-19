@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { ChessEngine } from '../ChessEngine';
 import { annotationsSurvive } from '../annotationLifecycle';
 import {
+  CHATURAJI_RULES,
+  SQUARE8,
   GIVEAWAY_RULES,
   addIncrement,
   chooseBotMove,
@@ -352,6 +354,83 @@ describe('4 Player Giveaway: wiring', () => {
     const four = read('components/FourPlayerBoard.tsx');
     expect(four).toContain('useClearAnnotationsOnMove(positionEpoch(state), () => {'); // the same board, the same epoch, in both variants
     expect(four).not.toMatch(/keepAnnotations|previousMover|waitingSeat/);
+  });
+});
+
+/**
+ * CHATURAJI (W3): the same invariant on the 8 x 8 board. Its no-move turn advances are the 4 Player Chess ones (a resignation, a flag fall, a seat skipped, a seat eliminated at
+ * its turn for having no move) plus the one Capture the King adds: a king capture ELIMINATES a seat, but it is itself a move, so it clears - and the skip of the eliminated seat
+ * that follows it is not a move. The dead king's random walk IS a move (it goes through `applyMoveRaw`), so it clears, as in 4 Player Chess.
+ */
+describe('Chaturaji: a turn that advances WITHOUT a move never clears arrows', () => {
+  const cj = (pieces: string[], options: Parameters<typeof stateFromPieces>[1] = {}) => stateFromPieces(pieces, { rules: CHATURAJI_RULES, ...options });
+  const KINGS8 = ['rK@a1', 'bK@a8', 'yK@h8', 'gK@h1'];
+
+  it('a resignation off-turn and on-turn, and a flag fall, change no move', () => {
+    const offTurn = cj([...KINGS8, 'rR@d4'], { turn: BLUE });
+    const out = resign(offTurn, YELLOW, first);
+    expect(out.state.status[YELLOW]).toBe('dead-king');
+    expect(moveEvents(out.events)).toEqual([]);
+    expect(survives(offTurn, out.state)).toBe(true);
+
+    const onTurn = cj([...KINGS8, 'rR@d4'], { turn: GREEN });
+    const next = resign(onTurn, GREEN, first);
+    expect(next.state.turn).toBe(RED);
+    expect(moveEvents(next.events)).toEqual([]);
+    expect(survives(onTurn, next.state)).toBe(true);
+
+    const flag = cj([...KINGS8, 'rR@d4'], { turn: YELLOW });
+    const clock = { ...createClock(600, 0, true), seconds: [600, 600, 0.5, 600] };
+    const tick = clockTick(flag, clock, 2, first);
+    expect(tick.state.status[YELLOW]).toBe('dead-king');
+    expect(moveEvents(tick.events)).toEqual([]);
+    expect(survives(flag, tick.state)).toBe(true);
+  });
+
+  it('a seat with no legal move is eliminated at its turn without a move: the arrows survive', () => {
+    // Blue's king on h1... boxed in by its own pawns and attacked by a knight (the W1 position): found when Blue's turn comes after Red's quiet move
+    const before = cj(['bK@h1', 'bP@g1', 'bP@g2', 'bP@h2', 'rK@a1', 'rN@f2', 'yK@h8', 'gK@a8'], { turn: RED });
+    const moved = playMove(before, findLegalMove(before, RED, SQUARE8.parseSquare('a1'), SQUARE8.parseSquare('a2'))!, first);
+    const stalemate = moved.events.filter((e) => e.kind === 'eliminated');
+    expect(stalemate.map((e) => e.kind === 'eliminated' && [e.seat, e.reason])).toEqual([[BLUE, 'stalemate']]);
+    expect(positionEpoch(moved.state)).toBe(positionEpoch(before) + 1); // only Red's own move counted; the elimination added no ply
+  });
+
+  it('a seat whose king was captured is skipped without a move, and a frozen seat never moves', () => {
+    const before = cj([...KINGS8, 'rR@d4', 'yP@e7'], { turn: RED, status: ['active', 'frozen', 'active', 'active'] });
+    const out = resign(before, RED, first);
+    expect(out.state.turn).toBe(YELLOW);
+    expect(moveEvents(out.events)).toEqual([]);
+    expect(survives(before, out.state)).toBe(true);
+  });
+});
+
+describe('Chaturaji: every MOVE clears, a king capture included, and so does a dead king\'s walk', () => {
+  const cj = (pieces: string[], options: Parameters<typeof stateFromPieces>[1] = {}) => stateFromPieces(pieces, { rules: CHATURAJI_RULES, ...options });
+
+  it('capturing a king is one move: the epoch goes up by exactly one, and the elimination it causes adds none', () => {
+    const before = cj(['rK@a1', 'rR@d4', 'bK@d8', 'yK@h8', 'gK@h1'], { turn: RED });
+    const out = playMove(before, findLegalMove(before, RED, SQUARE8.parseSquare('d4'), SQUARE8.parseSquare('d8'))!, first);
+    expect(out.state.status[BLUE]).toBe('frozen');
+    expect(positionEpoch(out.state)).toBe(positionEpoch(before) + 1);
+    expect(survives(before, out.state)).toBe(false);
+  });
+
+  it('a walking king moves in the same step as the move before it: that step counts every move it made', () => {
+    const before = cj(['rK@a1', 'rP@a2', 'bK@a8', 'yK@h8', 'gK@h1'], { turn: RED, status: ['active', 'dead-king', 'active', 'active'] });
+    const out = playMove(before, findLegalMove(before, RED, SQUARE8.parseSquare('a2'), SQUARE8.parseSquare('a3'))!, first);
+    const moves = out.events.filter((e) => e.kind === 'move' || e.kind === 'deadKingMove').length;
+    expect(moves).toBe(2); // Red's pawn, then Blue's walking king
+    expect(positionEpoch(out.state)).toBe(positionEpoch(before) + moves);
+    expect(survives(before, out.state)).toBe(false);
+  });
+
+  it('the Chaturaji board clears through the same one mechanism, keyed to the ply', () => {
+    const read = (rel: string) => readFileSync(join(__dirname, '../..', rel), 'utf8').replace(/\r\n/g, '\n');
+    const board = read('components/FourPlayerBoard.tsx');
+    expect(board).toContain('useClearAnnotationsOnMove(positionEpoch(state), () => {');
+    expect(read('logic/chaturajiUi.ts')).not.toMatch(/ply: [^\n]*\+ ?1|ply\+\+|ply \+= /);
+    expect(read('logic/useScoreGains.ts')).not.toMatch(/ply: [^\n]*\+ ?1|ply\+\+|ply \+= /); // the "+N" hook only READS the ply
   });
 });
 

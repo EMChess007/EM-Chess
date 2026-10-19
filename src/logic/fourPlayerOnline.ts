@@ -37,7 +37,7 @@ import {
   applyMoveRaw,
   deserialize,
   describeEvents,
-  parseSquare,
+  geometryOf,
   promotionOf,
   rulesFor,
   squareName,
@@ -91,7 +91,7 @@ export interface FourOnlineView {
   /** When `clocksMs` was received: the seat on move runs down from here on the screen (cosmetic; the server decides flag falls). */
   clocksAt: number;
   log: readonly FourLogEntry[];
-  lastMove: { from: number; to: number } | null;
+  lastMove: { from: number; to: number; /** The move was a promotion (Chaturaji's automatic one is announced on the board). */ promoted?: boolean } | null;
   /** Presentation lines for the latest state ("Blue was checkmated by Red (+20)"). */
   notices: readonly string[];
   pending: FourPendingMove | null;
@@ -230,8 +230,9 @@ export function applyFourState(view: FourOnlineView, payload: FourStatePayload, 
   const state = readSnapshot(payload.state, rulesFor(view.variant));
   if (!state || !isClocksMs(payload.clocksMs)) return { ...needResync(view), outcome: 'invalid' };
   const move = isObject(payload.move) ? payload.move : null;
-  const from = move ? parseSquare(move.from) : -1;
-  const to = move ? parseSquare(move.to) : -1;
+  const parse = geometryOf(state.rules).parseSquare; // the squares the server named are the room's own board's
+  const from = move ? parse(move.from) : -1;
+  const to = move ? parse(move.to) : -1;
   return {
     outcome: 'applied',
     resync: false,
@@ -244,7 +245,7 @@ export function applyFourState(view: FourOnlineView, payload: FourStatePayload, 
       // EQUIVALENT-MUTANT NOTE (mutation set W5, "state: log entry has wrong seat"): replacing `move.seat` with `view.state.turn` changes nothing
       // observable, because in any valid flow the mover's seat IS the previous snapshot's turn. `move.seat` is kept as the server's own word for who moved.
       log: move && isSeatNumber(move.seat) && typeof move.label === 'string' ? [...view.log, { seat: move.seat, text: move.label }] : view.log,
-      lastMove: from >= 0 && to >= 0 ? { from, to } : view.lastMove,
+      lastMove: from >= 0 && to >= 0 ? { from, to, ...(move && typeof move.promotion === 'string' ? { promoted: true } : {}) } : view.lastMove,
       notices: Array.isArray(payload.events) ? describeEvents(payload.events) : [],
       pending: null,
       moveError: null,
@@ -371,11 +372,16 @@ export function moveRejected(view: FourOnlineView, id: number, error: string): {
   return { rolledBack, view: { ...view, moveError: error, pending: rolledBack ? null : view.pending } };
 }
 
-/** The wire payload for a move the engine produced (squares as names, the promotion piece as q/r/b/n). */
-export function movePayloadFor(roomId: string, move: Move): FourMakeMovePayload {
+/**
+ * The wire payload for a move the engine produced (squares as names, the promotion piece as q/r/b/n). The squares are named on the board of the ROOM (`rules`): the same
+ * square index is "e4" on one board and a different square on the other, and the server validates against its room's board (Chaturaji W3 - found by a screen-level test:
+ * the cross board's names would have sent every Chaturaji move to the wrong square).
+ */
+export function movePayloadFor(roomId: string, move: Move, rules?: FourPlayerRules): FourMakeMovePayload {
   const piece = promotionOf(move);
   const promotion: FourPromotion | undefined = piece === ROOK ? 'r' : piece === BISHOP ? 'b' : piece === KNIGHT ? 'n' : piece === QUEEN ? 'q' : undefined;
-  return { roomId, from: squareName(move.from), to: squareName(move.to), ...(promotion ? { promotion } : {}) };
+  const name = rules ? geometryOf(rules).squareName : squareName;
+  return { roomId, from: name(move.from), to: name(move.to), ...(promotion ? { promotion } : {}) };
 }
 
 // --- What to draw -------------------------------------------------------------------------------------------------------------------

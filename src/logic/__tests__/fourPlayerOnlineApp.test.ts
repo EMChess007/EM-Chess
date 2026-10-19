@@ -97,7 +97,7 @@ describe('the server stays the only authority', () => {
     expect(session).toContain('if (begun.id === null) return;');
     expect(session).toContain("this.current.connection !== 'connected'");
     expect(session).toContain('moveRejected(latest, id, text)');
-    expect(session).toContain('movePayloadFor(view.roomId, move)');
+    expect(session).toContain('movePayloadFor(view.roomId, move, view.state.rules)');
     expect(session).toContain('if (!reply) this.startResync();'); // no answer = unknown outcome = read the room again
     expect(session).toContain('export const FOUR_ACK_TIMEOUT_MS = 8000;');
   });
