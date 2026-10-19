@@ -581,9 +581,17 @@ describe('performance', () => {
     const times: number[] = [];
     let current = view;
     for (const payload of payloads) {
-      const t0 = performance.now();
-      current = applyFourState(current, payload, T0).view;
-      times.push(performance.now() - t0);
+      // Best of 3 adoptions of the same payload onto the same view (a pure reducer: identical work each time), so one scheduler pause / GC / a second suite
+      // on the machine cannot become the "max" (a 484 ms outlier failed this when three suites ran at once; the work itself is ~0.1 ms).
+      let best = Infinity;
+      let next = current;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const t0 = performance.now();
+        next = applyFourState(current, payload, T0).view;
+        best = Math.min(best, performance.now() - t0);
+      }
+      current = next;
+      times.push(best);
     }
     expect(current.seq).toBe(payloads.length);
     const total = times.reduce((a, b) => a + b, 0);
