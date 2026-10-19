@@ -60,3 +60,17 @@ was called "done" — don't repeat that on anything else.
   flagged without a move. Name the mode's position epoch (classic: the FEN; 4 Player: the ply),
   clear through `useClearAnnotationsOnMove`, and add the mode's no-move turn-advance paths to
   `annotationLifecycle.test.ts`. This applies to Online boards too.
+- A mode with a different BOARD (Chaturaji's 8 x 8 square) reaches the screens through the game's geometry
+  (`geometryOf(state.rules)`): no UI or client file may name a square, parse one, size the board or map a
+  cell through the cross board's module-level helpers (`SIZE`, `squareName`, `parseSquare`, `fromDisplay`,
+  `getFourPlayerCellSize`, ...). `chaturajiWiring.test.ts` pins it for the 4-seat files; a new board adds
+  its files to that list.
+- Screens are tested RENDERED, not only by source scans: the `dom` vitest project (`*.dom.test.tsx`, jsdom +
+  react-native-web, `src/test/domSetup.ts` / `domKit.tsx`) renders the real screens against the real engine
+  or a server simulator. A new mode adds a menu / setup / game / result test there, with fake timers and
+  no wall-clock assertions. What a screen shows that comes from the engine (points, statuses, the result)
+  is compared with the engine, never recomputed in the test or the UI.
+- Mutation chunks are bounded: at most ~20 mutants per chunk with a hard per-mutant time limit, run one at
+  a time with the result written down as it finishes (a long unbounded background run can be lost to a
+  suspended laptop). A test that reads a constant from the module under mutation cannot kill a mutant of
+  that constant: pin constants as literals.
