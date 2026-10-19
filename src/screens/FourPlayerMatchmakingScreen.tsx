@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text } from 're
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { checkMatchVariant, describeQueue, fillSecondsLeft, joinQueueRequest } from '../logic/fourPlayerOnlineUi';
-import { GIVEAWAY_RULE_HINT, variantTitle } from '../logic/fourPlayerVariant';
+import { CHATURAJI_RULE_HINT, GIVEAWAY_RULE_HINT, variantTitle } from '../logic/fourPlayerVariant';
 import { validateFourJoinQueue, type FourAck, type FourMatchFoundPayload, type FourQueueUpdatePayload, type FourVariant } from '../logic/fourPlayerWire';
 import type { TimeControl } from '../types/timeControl';
 
@@ -112,6 +112,7 @@ export default function FourPlayerMatchmakingScreen({ variant = 'ffa', authToken
         {variantTitle(variant)} · {timeControl.label}
       </Text>
       {variant === 'giveaway' && !error && <Text style={styles.queueDetail}>{GIVEAWAY_RULE_HINT}</Text>}
+      {variant === 'chaturaji' && !error && <Text style={styles.queueDetail}>{CHATURAJI_RULE_HINT}</Text>}
       {error ? (
         <>
           <Text style={styles.errorText}>{error}</Text>

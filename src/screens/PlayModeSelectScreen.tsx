@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { appAlert } from '../components/AppAlert';
+import ChaturajiRulesSheet from '../components/ChaturajiRulesSheet';
 import ModeButtonLabel from '../components/ModeButtonLabel';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import type { FourVariant } from '../logic/fourPlayer';
 import type { AuthUser } from '../types/auth';
 
 interface PlayModeSelectScreenProps {
@@ -38,8 +41,13 @@ interface PlayModeSelectScreenProps {
   /** 4 Player Giveaway (4-seat Antichess): Local (seat setup, bots allowed) and Online (behind the login gate). */
   onFourPlayerGiveaway: () => void;
   onFourPlayerGiveawayOnline: () => void;
+  /** Chaturaji (4 players on an 8 x 8 board): Local (seat setup, bots allowed) and Online (behind the login gate). */
+  onChaturaji: () => void;
+  onChaturajiOnline: () => void;
   /** Set while the player has left an online 4 Player game that is still going: offers "Return to your game". */
   onFourPlayerResume?: () => void;
+  /** Which game that left online game is, so the link sits under its card (4 Player Chess when omitted, as before Chaturaji). */
+  fourPlayerResumeVariant?: FourVariant;
   onLocalSpellChess: () => void;
   onLocalHorde: () => void;
   onLocalCrazyhouse: () => void;
@@ -84,7 +92,10 @@ export default function PlayModeSelectScreen({
   onFourPlayerOnline,
   onFourPlayerGiveaway,
   onFourPlayerGiveawayOnline,
+  onChaturaji,
+  onChaturajiOnline,
   onFourPlayerResume,
+  fourPlayerResumeVariant = 'ffa',
   onLocalSpellChess,
   onLocalHorde,
   onLocalCrazyhouse,
@@ -118,6 +129,14 @@ export default function PlayModeSelectScreen({
   const handleTournaments = requireLogin(onTournaments);
   const handleFourPlayerOnline = requireLogin(onFourPlayerOnline);
   const handleFourPlayerGiveawayOnline = requireLogin(onFourPlayerGiveawayOnline);
+  const handleChaturajiOnline = requireLogin(onChaturajiOnline);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const resumeLink = (variant: FourVariant) =>
+    onFourPlayerResume && fourPlayerResumeVariant === variant ? (
+      <Pressable style={styles.spectateLink} onPress={onFourPlayerResume}>
+        <Text style={styles.spectateLinkText}>Return to your game ›</Text>
+      </Pressable>
+    ) : null;
 
   return (
     <View style={styles.container}>
@@ -256,11 +275,7 @@ export default function PlayModeSelectScreen({
               <ModeButtonLabel label="Online" style={styles.subButtonText} />
             </Pressable>
           </View>
-          {onFourPlayerResume && (
-            <Pressable style={styles.spectateLink} onPress={onFourPlayerResume}>
-              <Text style={styles.spectateLinkText}>Return to your game ›</Text>
-            </Pressable>
-          )}
+          {resumeLink('ffa')}
         </View>
 
         <View style={styles.categoryCard}>
@@ -274,7 +289,26 @@ export default function PlayModeSelectScreen({
               <ModeButtonLabel label="Online" style={styles.subButtonText} />
             </Pressable>
           </View>
+          {resumeLink('giveaway')}
         </View>
+
+        <View style={styles.categoryCard} testID="chaturaji-card">
+          <Text style={styles.categoryTitle}>Chaturaji</Text>
+          <Text style={styles.categorySubtitle}>Four armies on an 8 × 8 board — capture the kings, most points wins. Pass the device, play bots, or play online</Text>
+          <View style={styles.subButtonRow}>
+            <Pressable accessibilityLabel="Chaturaji local" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onChaturaji}>
+              <ModeButtonLabel label="Local" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable accessibilityLabel="Chaturaji online" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={handleChaturajiOnline}>
+              <ModeButtonLabel label="Online" style={styles.subButtonText} />
+            </Pressable>
+          </View>
+          <Pressable accessibilityLabel="Chaturaji rules" testID="chaturaji-rules-link" style={styles.spectateLink} onPress={() => setRulesOpen(true)}>
+            <Text style={styles.spectateLinkText}>How to play ›</Text>
+          </Pressable>
+          {resumeLink('chaturaji')}
+        </View>
+        <ChaturajiRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />
 
         <View style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>Engine vs Engine</Text>

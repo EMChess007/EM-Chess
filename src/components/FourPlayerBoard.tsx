@@ -1,38 +1,38 @@
-import { memo, useEffect, useMemo, useState } from 'react';
-import { Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { CAPTURER_OUTLINE_COLOR, CAPTURER_RING_COLOR, fourPlayerCapturingSquares } from '../logic/giveawayHints';
 import { checkedKingSquares } from '../logic/fourPlayerVariant';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { PieceImageMap } from '../types/theme';
 import BoardAnnotations from './BoardAnnotations';
+import BoatIcon from './BoatIcon';
 import PromotionPicker from './PromotionPicker';
 import { useBoardGestures } from './useBoardGestures';
 import { useClearAnnotationsOnMove } from './useClearAnnotationsOnMove';
 import {
   PROMOTABLE_TYPES,
+  PROMOTED_ROOK,
+  ROOK,
   SEAT_COLORS,
   SEAT_NAMES,
-  SIZE,
-  VALID,
+  SEAT_PIECE_SET,
   addArrow,
   canPremove,
   currentMoves,
-  fileOf,
-  fromDisplay,
-  getFourPlayerCellSize,
+  geometryOf,
+  getBoardCellSize,
   gridToSquare,
-  index,
   isPromotedType,
   isPromotionPremove,
+  onlyPromotionType,
   positionEpoch,
   promotionOf,
-  rankOf,
   seatOf,
   seatPieceImageKey,
-  squareName,
   squareToGrid,
   toggleHighlight,
   typeOf,
+  variantOfRules,
   type FourPlayerPremove,
   type FourPlayerState,
   type Move,
@@ -52,8 +52,8 @@ interface FourPlayerBoardProps {
   viewSeat: Seat;
   /** Whether a human may move right now (false while a bot is thinking, after the game, etc.). */
   interactive: boolean;
-  /** The last move played (any seat), highlighted. */
-  lastMove: { from: number; to: number } | null;
+  /** The last move played (any seat), highlighted. `promoted`: it was a promotion (Chaturaji's is automatic, so the board announces it). */
+  lastMove: { from: number; to: number; promoted?: boolean } | null;
   onMove: (move: Move) => void;
   /**
    * The seat whose player may PREMOVE while it is not their turn (with three other seats to move, that is most of the time). Omit for
@@ -79,6 +79,8 @@ interface PieceArtProps {
   dead: boolean;
   /** The active piece theme's images (undefined for the built-in Classic theme, which keeps the tinted glyphs). */
   images: PieceImageMap | undefined;
+  /** Chaturaji: this rook is a BOAT and is drawn as one (BoatIcon), on every theme. */
+  boat?: boolean;
 }
 
 /**
@@ -86,9 +88,27 @@ interface PieceArtProps {
  * in the seat's colour (see `seatPieceImageKey`); the built-in Classic theme keeps its tinted glyphs. An eliminated seat's pieces are
  * grey and faded; a promoted piece carries a small bar (an underline for a glyph).
  */
-const PieceArt = memo(function PieceArt({ seat, type, size, dead, images }: PieceArtProps) {
+const PieceArt = memo(function PieceArt({ seat, type, size, dead, images, boat = false }: PieceArtProps) {
   const imageUri = images?.[seatPieceImageKey(seat, type)];
   const promoted = isPromotedType(type);
+  if (boat) {
+    // A boat on a themed board sits on the seat's disc like every other piece (white boat on the dark seats, black on Yellow's); on the glyph theme it is drawn in the seat's colour.
+    const light = SEAT_PIECE_SET[seat] === 'w';
+    return images ? (
+      <View
+        testID="boat"
+        style={[styles.disc, { width: size * 0.96, height: size * 0.96, borderRadius: size * 0.48, backgroundColor: dead ? DEAD_COLOR : SEAT_COLORS[seat] }, dead && styles.dead]}
+      >
+        <BoatIcon size={size * 0.8} color={light ? '#ffffff' : '#111111'} outline={light ? '#1b1b1b' : '#000000'} />
+        {promoted && <View style={[styles.promotedBar, { width: size * 0.4, bottom: size * 0.05 }]} />}
+      </View>
+    ) : (
+      <View testID="boat" style={[styles.disc, { width: size, height: size }, dead && styles.dead]}>
+        <BoatIcon size={size * 0.9} color={dead ? DEAD_COLOR : SEAT_COLORS[seat]} outline="rgba(0,0,0,0.85)" />
+        {promoted && <View style={[styles.promotedBar, { width: size * 0.4, bottom: size * 0.04 }]} />}
+      </View>
+    );
+  }
   if (imageUri) {
     return (
       <View
@@ -117,6 +137,17 @@ const PieceArt = memo(function PieceArt({ seat, type, size, dead, images }: Piec
   );
 });
 
+/** A ring that grows and fades once over the square a pawn has just become a boat on (Chaturaji promotes automatically, so this is what tells the player it happened). */
+const PromotionBurst = memo(function PromotionBurst({ size }: { size: number }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(progress, { toValue: 1, duration: 800, useNativeDriver: false }).start();
+  }, [progress]);
+  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1.45] });
+  const opacity = progress.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 0.8, 0] });
+  return <Animated.View testID="promotion-burst" pointerEvents="none" style={[styles.burst, { width: size, height: size, borderRadius: size / 2, opacity, transform: [{ scale }] }]} />;
+});
+
 interface CellProps {
   square: number;
   size: number;
@@ -132,17 +163,27 @@ interface CellProps {
   /** One of the two squares of the queued premove. */
   premoveMark: boolean;
   checked: boolean;
+  /** Chaturaji: the king on this square is attacked - an amber ring (a threat, never a red "check" that must be answered). */
+  attacked: boolean;
+  /** Chaturaji: this rook is a boat. */
+  boat: boolean;
+  /** Chaturaji: a pawn just became a boat here - a marker that pulses once. */
+  promoted: boolean;
+  /** The square's name on THIS game's board ("e4"; the 8 x 8 board's names are not the cross board's). */
+  squareLabel: string;
   images: PieceImageMap | undefined;
   /** Screen-reader activation only: touches are handled for the whole board by useBoardGestures. */
   onPress: (square: number) => void;
 }
 
-const Cell = memo(function Cell({ square, size, background, code, dead, selected, target, capturer, last, premoveMark, checked, images, onPress }: CellProps) {
+const Cell = memo(function Cell({ square, size, background, code, dead, selected, target, capturer, last, premoveMark, checked, attacked, boat, promoted, squareLabel, images, onPress }: CellProps) {
   const seat: Seat = code > 0 ? seatOf(code) : 0;
   const type = code > 0 ? typeOf(code) : 0;
   const bg = checked ? '#ef5350' : selected ? '#a2d149' : premoveMark ? PREMOVE_COLOR : last ? '#f7ec74' : background;
   const label =
-    code > 0 ? `${squareName(square)}, ${dead ? 'eliminated ' : ''}${SEAT_NAMES[seat]} ${TYPE_NAMES[type]}${target ? ', can move here' : ''}${capturer ? ', can capture (a capture is mandatory)' : ''}` : `${squareName(square)}${target ? ', can move here' : ''}`;
+    code > 0
+      ? `${squareLabel}, ${dead ? 'eliminated ' : ''}${SEAT_NAMES[seat]} ${boat ? 'boat' : TYPE_NAMES[type]}${attacked ? ', king attacked' : ''}${promoted ? ', just promoted' : ''}${target ? ', can move here' : ''}${capturer ? ', can capture (a capture is mandatory)' : ''}`
+      : `${squareLabel}${target ? ', can move here' : ''}`;
   return (
     <View
       accessible
@@ -153,7 +194,10 @@ const Cell = memo(function Cell({ square, size, background, code, dead, selected
     >
       {capturer && <View pointerEvents="none" style={[styles.capturerOutline, { width: size - 1, height: size - 1, borderRadius: (size - 1) / 2 }]} />}
       {capturer && <View pointerEvents="none" style={[styles.capturerRing, { width: size - 4, height: size - 4, borderRadius: (size - 4) / 2 }]} />}
-      {code > 0 && <PieceArt seat={seat} type={type} size={size} dead={dead} images={images} />}
+      {attacked && <View testID="king-attacked" pointerEvents="none" style={[styles.capturerOutline, { width: size - 1, height: size - 1, borderRadius: (size - 1) / 2 }]} />}
+      {attacked && <View pointerEvents="none" style={[styles.capturerRing, { width: size - 4, height: size - 4, borderRadius: (size - 4) / 2 }]} />}
+      {code > 0 && <PieceArt seat={seat} type={type} size={size} dead={dead} images={images} boat={boat} />}
+      {promoted && <PromotionBurst size={size} />}
       {target === 1 && <View style={[styles.dot, { width: size * 0.32, height: size * 0.32, borderRadius: size * 0.16 }]} />}
       {target === 2 && <View style={[styles.ring, { width: size * 0.9, height: size * 0.9, borderRadius: size * 0.45 }]} />}
     </View>
@@ -189,7 +233,12 @@ export default function FourPlayerBoard({
   const { width, height } = useWindowDimensions();
   const theme = useActiveBoardTheme();
   const pieceTheme = useActivePieceTheme();
-  const size = getFourPlayerCellSize(width, height);
+  // The board is the game's own: the 14 x 14 cross or Chaturaji's 8 x 8 square (read from the rules, which travel with the position).
+  const geo = geometryOf(state.rules);
+  const chaturaji = variantOfRules(state.rules) === 'chaturaji';
+  const boardSize = geo.size;
+  const size = getBoardCellSize(geo.id, width, height);
+  const forcedPromotion = onlyPromotionType(state); // Chaturaji: a pawn always becomes a boat, so nobody is asked
   const [selected, setSelected] = useState<number | null>(null);
   /** The four promotion moves of a tapped promotion square, while the player is choosing. */
   const [pendingPromotion, setPendingPromotion] = useState<Move[] | null>(null);
@@ -206,15 +255,15 @@ export default function FourPlayerBoard({
 
   const { containerRef, onLayout, panHandlers, liveArrow, clearLiveArrow } = useBoardGestures({
     squareSize: size,
-    rows: SIZE,
-    cols: SIZE,
+    rows: boardSize,
+    cols: boardSize,
     enableAnnotations,
     onTap: (cell) => {
-      const square = gridToSquare(cell, viewSeat);
+      const square = gridToSquare(cell, viewSeat, geo);
       if (square !== null) handlePress(square);
     },
-    onArrow: (from, to) => setArrows((prev) => addArrow(prev, gridToSquare(from, viewSeat), gridToSquare(to, viewSeat))),
-    onHighlight: (cell) => setHighlights((prev) => toggleHighlight(prev, gridToSquare(cell, viewSeat))),
+    onArrow: (from, to) => setArrows((prev) => addArrow(prev, gridToSquare(from, viewSeat, geo), gridToSquare(to, viewSeat, geo))),
+    onHighlight: (cell) => setHighlights((prev) => toggleHighlight(prev, gridToSquare(cell, viewSeat, geo))),
   });
   // A new position wipes any half-made normal move. While premoving, a position change is just another seat having moved — with three of
   // them in a row it must not undo the player's own selection or an open promotion choice, so those survive as long as the piece they
@@ -253,7 +302,8 @@ export default function FourPlayerBoard({
   // 4 Player Giveaway: while a capture is mandatory for the player to move, the pieces that can capture are ringed (empty otherwise).
   const captureSquares = useMemo(() => (interactive ? new Set(fourPlayerCapturingSquares(state, state.turn)) : new Set<number>()), [state, interactive]);
 
-  // Kings in check (never any in 4 Player Giveaway: there a king is an ordinary piece and nothing is ever "in check").
+  // Kings in check (never any in 4 Player Giveaway: there a king is an ordinary piece and nothing is ever "in check"). In Chaturaji the same squares are kings that are
+  // ATTACKED: a threat, not a check that has to be answered, so they get the amber ring instead of the red "check" fill and nothing about them blocks a move.
   const checkedSquares = useMemo(() => new Set(checkedKingSquares(state)), [state]);
 
   const handlePremovePress = (square: number) => {
@@ -271,6 +321,11 @@ export default function FourPlayerBoard({
       return;
     }
     if (isPromotionPremove(state, premoveSeat, selected, square)) {
+      if (forcedPromotion !== null) {
+        onPremove({ from: selected, to: square, promotion: forcedPromotion }); // Chaturaji: it becomes a boat, nobody is asked
+        setSelected(null);
+        return;
+      }
       setPendingPremove({ from: selected, to: square }); // ask which piece, then queue
       return;
     }
@@ -325,23 +380,24 @@ export default function FourPlayerBoard({
   };
 
   const rows = [];
-  for (let dy = SIZE - 1; dy >= 0; dy--) {
+  for (let dy = boardSize - 1; dy >= 0; dy--) {
     const cells = [];
-    for (let dx = 0; dx < SIZE; dx++) {
-      const [file, rank] = fromDisplay(dx, dy, viewSeat);
-      const square = index(file, rank);
-      if (!VALID[square]) {
+    for (let dx = 0; dx < boardSize; dx++) {
+      const [file, rank] = geo.fromDisplay(dx, dy, viewSeat);
+      const square = geo.index(file, rank);
+      if (!geo.valid[square]) {
         cells.push(<View key={dx} style={{ width: size, height: size }} />);
         continue;
       }
       const code = state.cells[square];
       const target = targetMoves.get(square);
+      const pieceType = code > 0 ? typeOf(code) : 0;
       cells.push(
         <Cell
           key={dx}
           square={square}
           size={size}
-          background={(fileOf(square) + rankOf(square)) % 2 === 1 ? theme.lightColor : theme.darkColor}
+          background={(geo.fileOf(square) + geo.rankOf(square)) % 2 === 1 ? theme.lightColor : theme.darkColor}
           code={code}
           dead={code > 0 && state.status[seatOf(code)] !== 'active'}
           selected={selected === square}
@@ -349,7 +405,11 @@ export default function FourPlayerBoard({
           capturer={captureSquares.has(square)}
           last={!!lastMove && (lastMove.from === square || lastMove.to === square)}
           premoveMark={!!premove && (premove.from === square || premove.to === square)}
-          checked={checkedSquares.has(square)}
+          checked={!chaturaji && checkedSquares.has(square)}
+          attacked={chaturaji && checkedSquares.has(square)}
+          boat={chaturaji && (pieceType === ROOK || pieceType === PROMOTED_ROOK)}
+          promoted={chaturaji && !!lastMove?.promoted && lastMove.to === square}
+          squareLabel={geo.squareName(square)}
           images={pieceTheme.images}
           onPress={handlePress}
         />
@@ -363,8 +423,8 @@ export default function FourPlayerBoard({
   }
 
   // Annotations are stored as squares and drawn through the CURRENT rotation.
-  const gridArrows = arrows.map((a) => ({ from: squareToGrid(a.from, viewSeat), to: squareToGrid(a.to, viewSeat) }));
-  const gridHighlights = highlights.map((s) => squareToGrid(s, viewSeat));
+  const gridArrows = arrows.map((a) => ({ from: squareToGrid(a.from, viewSeat, geo), to: squareToGrid(a.to, viewSeat, geo) }));
+  const gridHighlights = highlights.map((s) => squareToGrid(s, viewSeat, geo));
 
   const pickerSeat: Seat = pendingPremove && premoveSeat !== undefined ? premoveSeat : pendingPromotion ? seatOf(state.cells[pendingPromotion[0].from]) : state.turn;
   const pickerSize = Math.max(48, size * 1.8);
@@ -372,16 +432,16 @@ export default function FourPlayerBoard({
     <View
       ref={containerRef}
       onLayout={onLayout}
-      accessibilityLabel="4 Player Chess board"
-      style={[styles.board, { width: size * SIZE }]}
+      accessibilityLabel={chaturaji ? 'Chaturaji board' : '4 Player Chess board'}
+      style={[styles.board, { width: size * boardSize }]}
       {...panHandlers}
     >
       {rows}
       {enableAnnotations && (
         <BoardAnnotations
           squareSize={size}
-          rows={SIZE}
-          cols={SIZE}
+          rows={boardSize}
+          cols={boardSize}
           scale={Math.min(1, size / 40)}
           arrows={gridArrows}
           highlights={gridHighlights}
@@ -453,5 +513,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderWidth: 2,
     borderColor: 'rgba(0,0,0,0.35)',
+  },
+  burst: {
+    position: 'absolute',
+    borderWidth: 3,
+    borderColor: '#ffd54f',
   },
 });

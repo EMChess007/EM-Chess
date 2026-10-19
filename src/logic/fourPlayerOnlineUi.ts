@@ -11,7 +11,8 @@
  * bot took over keeps the human's name and gets a "bot playing" badge; a human who dropped shows "offline" with the grace countdown.
  */
 
-import { SEAT_NAMES, type Seat } from './fourPlayer';
+import { SEAT_NAMES, deserialize, rulesFor, type FourPlayerState, type Seat } from './fourPlayer';
+import { chaturajiResultRows } from './chaturajiUi';
 import type { FourOnlineView } from './fourPlayerOnline';
 import { describeResultNote, rankSeats, statusSuffix } from './fourPlayerVariant';
 import { fourVariantOf, validateFourVariant, type FourActiveGameSummary, type FourGameOverPayload, type FourMatchFoundPayload, type FourQueueUpdatePayload, type FourSeatInfo, type FourVariant } from './fourPlayerWire';
@@ -85,6 +86,38 @@ export function resultRows(gameOver: FourGameOverPayload, seats: readonly FourSe
   if (gameOver.reason === 'abandoned') return [];
   return rankSeats(variant, gameOver.scores, gameOver.winners)
     .map((seat, index) => ({ place: index + 1, seat, name: seats[seat]?.name ?? seatName(seat), score: gameOver.scores[seat] ?? 0, winner: gameOver.winners.includes(seat) }));
+}
+
+export interface ChaturajiOnlineRow extends FourResultRow {
+  /** Points that are the surviving-kings bonus (0 for everyone but the last seat standing). */
+  bonus: number;
+  /** "12 points — 3 from play + 9 for 3 kings left" (or just "9 points"). */
+  detail: string;
+}
+
+/**
+ * Chaturaji's final table with its points breakdown. The scores are the SERVER's (`four_game_over.scores`); the final snapshot in the same payload says how many kings were
+ * left for the bonus. An unreadable snapshot costs only the breakdown (every row still shows the server's score). Empty for an abandoned game.
+ */
+export function chaturajiOnlineRows(gameOver: FourGameOverPayload, seats: readonly FourSeatInfo[]): ChaturajiOnlineRow[] {
+  if (gameOver.reason === 'abandoned') return [];
+  let final: Pick<FourPlayerState, 'rules' | 'status' | 'kings'> | null = null;
+  try {
+    final = deserialize(gameOver.state, rulesFor('chaturaji'));
+  } catch {
+    final = null;
+  }
+  const rules = rulesFor('chaturaji');
+  const fallback = { rules, status: ['frozen', 'frozen', 'frozen', 'frozen'] as FourPlayerState['status'], kings: [-1, -1, -1, -1] };
+  return chaturajiResultRows(final ?? fallback, gameOver.scores, gameOver.winners, gameOver.reason).map((row) => ({
+    place: row.place,
+    seat: row.seat,
+    name: seats[row.seat]?.name ?? seatName(row.seat),
+    score: row.total,
+    winner: row.winner,
+    bonus: row.bonus,
+    detail: row.detail,
+  }));
 }
 
 export function describeFourResultNote(reason: FourGameOverPayload['reason'], variant: FourVariant = 'ffa', winners: readonly Seat[] = []): string {
@@ -194,6 +227,11 @@ export function buildSpectateRows(two: readonly ActiveGameSummary[], four: reado
   if (giveaway.length > 0) {
     rows.push({ key: 'header:fourGiveaway', kind: 'header', title: '4 Player Giveaway' });
     for (const game of giveaway) rows.push({ key: `four:${game.roomId}`, kind: 'four', game });
+  }
+  const chaturaji = (four ?? []).filter((game) => fourVariantOf(game) === 'chaturaji');
+  if (chaturaji.length > 0) {
+    rows.push({ key: 'header:fourChaturaji', kind: 'header', title: 'Chaturaji' });
+    for (const game of chaturaji) rows.push({ key: `four:${game.roomId}`, kind: 'four', game });
   }
   if (two.length > 0) {
     if (rows.length > 0) rows.push({ key: 'header:two', kind: 'header', title: 'Head to head' });

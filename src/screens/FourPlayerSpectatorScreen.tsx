@@ -13,6 +13,7 @@ import { displayClock } from '../logic/fourPlayerOnline';
 import { describeStatus, seatLabels } from '../logic/fourPlayerOnlineUi';
 import { variantTitle } from '../logic/fourPlayerVariant';
 import { useFourPlayerOnlineGame } from '../logic/useFourPlayerOnlineGame';
+import { useScoreGains } from '../logic/useScoreGains';
 
 // A stable, module-level reference: the board is read-only here (a spectator owns no seat), so a move handler would never be called.
 const noopMove = (_move: Move) => {};
@@ -36,6 +37,7 @@ export default function FourPlayerSpectatorScreen({ authToken, roomId, onExit }:
   const { view, connection, problem, chat, chatUnread, now, markChatRead } = useFourPlayerOnlineGame(authToken, { kind: 'spectator', roomId });
   const [viewSeat, setViewSeat] = useState<Seat>(0);
   const [chatOpen, setChatOpen] = useState(false);
+  const gains = useScoreGains(view?.state ?? null, !!view && view.variant === 'chaturaji'); // Chaturaji: the "+N" of the seat that scored
 
   useEffect(() => {
     if (chatOpen) markChatRead();
@@ -66,7 +68,7 @@ export default function FourPlayerSpectatorScreen({ authToken, roomId, onExit }:
           </View>
         }
       >
-        <FourPlayerSeatStrip state={view.state} clock={displayClock(view, now)} labels={seatLabels(view, now)} />
+        <FourPlayerSeatStrip state={view.state} clock={displayClock(view, now)} labels={seatLabels(view, now)} gains={gains} />
         <Text style={[styles.status, { color: view.gameOver ? colors.gold : colors.text }]}>{describeStatus(view)}</Text>
         {connection === 'reconnecting' && <Text style={styles.warning}>Connection lost — trying to reconnect...</Text>}
         {connection === 'unavailable' && <Text style={styles.problem}>{problem ?? 'This game is no longer available.'}</Text>}

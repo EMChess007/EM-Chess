@@ -380,6 +380,9 @@ export default function App() {
         onFourPlayerOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'ffa', token: authSession.token })}
         onFourPlayerGiveaway={() => setScreen({ name: 'fourPlayerSetup', variant: 'giveaway', seats: defaultSeatConfig() })}
         onFourPlayerGiveawayOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'giveaway', token: authSession.token })}
+        onChaturaji={() => setScreen({ name: 'fourPlayerSetup', variant: 'chaturaji', seats: defaultSeatConfig() })}
+        onChaturajiOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'chaturaji', token: authSession.token })}
+        fourPlayerResumeVariant={fourResume ? fourVariantOf(fourResume.match) : undefined}
         onFourPlayerResume={
           fourResume && authSession?.token === fourResume.token
             ? () => setScreen({ name: 'fourPlayerOnlineGame', token: fourResume.token, match: fourResume.match, timeControl: fourResume.timeControl, resume: true })
