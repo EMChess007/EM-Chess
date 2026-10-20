@@ -8,3 +8,13 @@ Use the Edit / Write tools for every file change. If a change really needs a pro
 # Expo HAS CHANGED
 
 Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before writing any code.
+
+# Rules learned building Chaturaji (W2-W5): they apply to every later change
+
+- A square name, a square parse, a cell size or a cell <-> square map in 4-seat code goes through `geometryOf(state.rules)` - never the cross board's module-level `squareName` / `parseSquare` / `SIZE` / `fromDisplay` (it silently misreads an 8 x 8 game: every online move once went to the wrong square). `chaturajiWiring.test.ts` and `chaturajiOnlineSquares.test.ts` pin it.
+- A constant that a mutation-targeted test checks is written in the test as a LITERAL (a test that reads the constant from the module under mutation can never kill a mutant of it).
+- Mutation runs: on a COPY of the source (never in place), chunks of at most ~20 mutants / 20 minutes, a hard timeout per mutant, one chunk at a time and never next to other gates, results written outside the repo after each chunk; every survivor is killed with a test or proven equivalent with a test that pins the proof.
+- A switch that exists only for tests (an environment variable, a build-time setting, an endpoint) follows CHECKLIST.md section 7: opt-in name, ignored in production with one warning that does not print the value, a finite validated value, set only by the test stack's own process.
+- A test asserts nothing about wall-clock time: waits end on a condition (their bounds only turn a hang into a failure), no 5-second timeouts, seeded randomness, fake timers in rendered tests. A check whose NUMBER depends on what an unseeded server did is counted apart as "conditional", so the printed total is the same on every run.
+- The browser end-to-end runs only against its OWN private backend and web build (never :3000, :8081, :8082 or the deployed backend), registers throw-away accounts and deletes them, and kills only the processes it started, proven by PID and command line first.
+- A screen is tested rendered (the `dom` project) as well as by source scans, and what it shows that comes from the engine is compared with the engine, never recomputed in the test.

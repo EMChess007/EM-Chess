@@ -1415,3 +1415,49 @@ The move clocks are never part of a position. *Known approximation:* the en pass
 **Gates.** `tsc` clean; **1483 / 1483 in 83 files** (1473 / 81 before: +10 tests in the two new files); goldens byte-identical (no tracked file changed; the golden tests green); `sync:fourplayer --check` in sync (11 generated files). **Mutation** (copies, results outside the repo): the server-URL resolver and the payload helper, 26 mutants: 24 killed, 2 equivalent (`new URL('')` throws so the empty check is redundant; an http(s) URL's pathname is never empty), each now annotated in `apiBaseUrl.ts` and pinned by a test that the premise holds; first pass 21 killed, 5 survived (a user name without a password accepted, the web port fixed at 3000, the promotion piece dropped from the payload, and the two equivalents): the first three are real test gaps, closed with a test each.
 
 **The test-only switch rule** (CHECKLIST.md section 7): a knob that exists for tests must not exist in production. `EXPO_PUBLIC_API_URL` is ignored by release builds; the backend's `AUTH_RATE_LIMIT_TEST_OVERRIDE` (backend TESTING.md section 33) follows the same rule.
+
+## 33. Chaturaji W5 - close-out: every Chaturaji suite in one place, and the final mutation re-run
+
+**Where everything runs.** Frontend per push (`.github/workflows/ci.yml`: `npm run typecheck`, `npm test` = `vitest run`, both projects, 83 files / **1483 tests**): the 449 tests of the 23 files below are inside that run. Backend per push (backend `ci.yml`, with this repo checked out next to it on the same `paired/<x>` branch): the first nine scripts below. Backend nightly (`nightly.yml`): the online fuzz (Chaturaji is its last argument, 40 games) and the browser suite. `npm run ...` lines are in the backend unless marked.
+
+| Suite | Command | Checks | Runs |
+|---|---|---|---|
+| Engine, geometry seam, goldens (FFA / Giveaway / Chaturaji) | `npm test` (frontend): `fourPlayerSeam` 30, `fourPlayerGeometry` 15, `fourPlayerFfaGolden` 11, `fourPlayerGiveawayGolden` 16, `fourPlayerChaturajiGolden` 22 | 94 | CI per push |
+| Chaturaji rules, wire, no-move seat | `fourPlayerChaturaji` 45, `fourPlayerChaturajiWire` 11, `fourPlayerChaturajiNoMove` 6 | 62 | CI per push |
+| Chaturaji bot | `fourPlayerChaturajiBot` 36 (the other bots: `fourPlayerBot` 21) | 36 | CI per push |
+| UI logic and client helpers | `chaturajiUi` 20, `chaturajiClient` 16, `chaturajiWiring` 8, `chaturajiOnlineSquares` 3, `apiBaseUrl` 7, `useScoreGains.dom` 10 | 64 | CI per push |
+| Online client | `fourPlayerOnline` 42, `fourPlayerOnlineSession` 44, `fourPlayerOnlineUi` 24, `fourPlayerOnlineApp` 18, `fourPlayerAnnotations` 9 | 137 | CI per push |
+| Rendered screens (jsdom + react-native-web) | `chaturajiLocal.dom` 20, `chaturajiOnline.dom` 15 | 35 | CI per push |
+| Mirror in sync / mirror check | `npm run sync:fourplayer -- --check` / `npm run test:fourplayerSync` | 11 files / 117 | CI per push |
+| Engine parity (client engine vs server copy) | `npm run test:fourplayer` | 70 | CI per push |
+| Room manager | `npm run test:fourplayerRooms` | 237 | CI per push |
+| Bots over the room manager | `npm run test:fourplayerBots` | 160 | CI per push |
+| Matchmaker (queue key `timeControl|variant`) | `npm run test:fourplayerMatchmaking` | 74 | CI per push |
+| Socket handlers | `npm run test:fourplayerHandlers` | 61 | CI per push |
+| Giveaway server | `npm run test:fourplayerGiveaway` | 89 | CI per push |
+| Chaturaji server (bot over whole games, takeover, every ending, three variants in three rooms) | `npm run test:fourplayerChaturaji` | 121 | CI per push |
+| Auth rate-limit override | `npm run test:authRateLimit` | 43 | CI per push |
+| Test-only 4-seat switches (seed, start-position endpoint), incl. a real production-mode boot | `npm run test:fourTestSwitches` | 73 | CI per push |
+| Production-style install and build | `npm run check:productionInstall` | pass / fail | CI per push |
+| Real-socket e2e (Chess, Giveaway, Chaturaji; scenarios 17-22) | `npm run test:fourplayerOnline` (needs a server with `FOUR_GRACE_MS` / `FOUR_FILL_MS`, and a second one for `FOUR_E2E_REAL_FILL_URL`) | **427 fixed** + 5 conditional | CI per push |
+| Rejoin after restart | `npm run test:rejoinPersist` | 58 | CI per push |
+| Online fuzz, Chaturaji section | `npx tsx scripts/nightly-fuzz-online.mjs ... 40` (last argument) | 40 games, 0 issues | nightly |
+| Browser end-to-end (real app, real server) | `npm run test:e2eBrowser` | 11 scenarios | nightly |
+
+**Final mutation re-run (everything Chaturaji touched in W0-W5; copies of the source, results outside the repo, one chunk at a time, none over the 20-minute limit; the sets are the ones built during W0-W5, re-run against the final code, plus a new one for the W5 server code).** 378 mutants in 29 chunks: **373 killed, 4 equivalent (3 distinct), 1 placeholder, 0 unexplained survivors.**
+
+| Chunk (mutants) | Scope | Killed | Survivors | Time |
+|---|---|---|---|---|
+| seam (47) | W0 geometry / rule-option seam, goldens | 47 (45 first pass; the 2 whose patterns had gone stale were rewritten against the current code and killed, one of them against the Chaturaji engine tests, which is where sliding attacks are pinned) | 0 | 381 s + 37 s |
+| engine 1 (53, two chunks) | W1 rules: preset, points, forks, elimination, bonus, snapshot, wire | 51 | 1 placeholder (a mutant whose replacement text is identical to the original in the old config), 1 equivalent (below) | 1201 s (cut at the limit: 32 done) + 701 s (the other 21) |
+| engine 2 (52, two chunks) | W1/W2 second pass (strengthened tests) | 51 | 1 equivalent (the same mutant) | 962 s + 890 s |
+| bot (62, seven chunks) | W2 bot: constants, entry, scores, careful, helpers, choice | 62 | 0 | 345 + 345 + 413 + 417 + 279 + 197 + 193 s |
+| W3 UI (73, five chunks) | gains, status, pill, bonus and table, sheet, score-gains hook, client helpers, cell sizes, premoves, annotations | 73 | 0 | 45 + 63 + 85 + 119 + 55 s |
+| W4 front (26) | URL resolver, online payload helper | 24 | 2 equivalent | 82 s |
+| server loop (13) | W2 room / handlers / matchmaking plumbing | 13 (12 first pass; the 13th's pattern had gone stale when the snapshot hook was added to the same call, rewritten and killed) | 0 | 38 s |
+| auth rate limit (22) | W4 module | 22 (the first run of this chunk could not even start: its baseline was red, see below) | 0 | ~60 s |
+| W5 switches (30, two chunks) | seed, setup switch, router, snapshot, room, handler hook | 30 (27 first pass; 3 survived and were closed, below) | 0 | 73 s + 105 s + 3 x 13 s |
+
+**Every survivor, named.** *Real gaps, killed by a stronger test:* (1) the shuffle source rounding up (`Math.ceil`): the test drew 200 values from a FRESH generator each time, i.e. the same value 200 times; it now draws from one generator and checks that every value 0..3 occurs; (2) the unknown-variant case of the setup endpoint: its snapshot was invalid for the default rules anyway, so a variant check removed from the code still answered 400; it now uses a snapshot that is valid for them; (3) the production warning printing the value: the mutant was a no-op (a `${...}` inside a plain string) and was rewritten as a template string; killed. *Stale patterns* (the code under mutation had moved on): the two ray scans and the 13th server-loop mutant above. *A real regression found by the re-run's baseline:* the auth rate-limit test failed (its "the variable appears nowhere but ..." scan found the new switch test, which sets the variable on a real production-mode process): the baseline of that chunk was red, which is how it surfaced; the allow-list was extended. *Equivalent mutants, proofs:* (a) **`last.length === 1` -> `>= 1` in `endGame`'s bonus** (elimination.ts): an `'elimination'` ending is only ever reached through `activeSeats(state).length <= 1` (its one caller), so the number of active seats there is 0 or 1 and the two conditions cannot differ - pinned on whole seeded games by an assertion in `chaturajiUi.test.ts` (an elimination ending leaves at most one active seat); (b) `new URL('')` throws and the catch answers null, so the empty-string check in `parseApiUrlOverride` is redundant; (c) an http(s) URL's pathname is never empty, so `pathname !== ''` is unreachable; both pinned in `apiBaseUrl.test.ts` (and annotated in the source).
+
+**Gates, final commit** (details in the backend's TESTING.md section 34): `tsc` clean in both repos; vitest **1483 / 1483, 83 files**; the goldens (FFA, Giveaway, Chaturaji, geometry) green and no tracked file changed; mirror in sync; every backend suite at the counts above; the real-socket e2e printed **427 (conditional 5)** three times; rejoin 58; the Chaturaji fuzz **40 / 40, 2891 plies, 0 issues**; the browser suite 11 / 11 in three consecutive runs (6:38, 6:30, 6:37, no retry) and once under load on every core (8:33, no retry). The local database ends with the 7 accounts it started with.

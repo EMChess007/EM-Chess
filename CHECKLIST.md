@@ -51,13 +51,15 @@ was called "done" — don't repeat that on anything else.
   traps from zero.
 
 ### Extra, specifically when the change is a new game variant/mode
-- Explicit mutual-exclusivity declaration with every other variant.
+- Explicit mutual-exclusivity declaration with every other variant. Every variant-wide statement or list
+  names ALL of them, the 4-seat games included (4 Player Chess, 4 Player Giveaway, Chaturaji): menu card,
+  setup, queue (the queue key is `timeControl|variant`), Spectate list section, rejoin, resume link, result.
 - Fits the existing pattern: VariantSelector entry, screen prop threading (fogOfWar/chess960/
   setupChess-style), gameResult.ts priority slot.
 - Board annotations (arrows/highlights) follow the app-wide invariant in
   `src/logic/annotationLifecycle.ts`: cleared when a MOVE is played, by anyone, and at no other
   time — never keyed to whose turn it is, a turn starting, or a seat being skipped/eliminated/
-  flagged without a move. Name the mode's position epoch (classic: the FEN; 4 Player: the ply),
+  flagged without a move. Name the mode's position epoch (classic: the FEN; the 4-seat games - 4 Player Chess, 4 Player Giveaway and Chaturaji -: the ply),
   clear through `useClearAnnotationsOnMove`, and add the mode's no-move turn-advance paths to
   `annotationLifecycle.test.ts`. This applies to Online boards too.
 - A mode with a different BOARD (Chaturaji's 8 x 8 square) reaches the screens through the game's geometry
