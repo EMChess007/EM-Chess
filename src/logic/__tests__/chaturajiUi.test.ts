@@ -163,6 +163,9 @@ describe('the final table and its breakdown', () => {
       const twin = game.withoutBonus;
       expect(final.result, `seed ${seed}`).not.toBeNull();
       expect(twin.result?.reason, `seed ${seed}: the twin ends the same way`).toBe(final.result!.reason);
+      // EQUIVALENT-MUTANT PREMISE (W5 mutation re-run, "the bonus for every seat, not only the last": `last.length === 1` -> `>= 1` in elimination.ts endGame): an 'elimination' ending is
+      // only ever reached with AT MOST ONE active seat (the one caller is `activeSeats(state).length <= 1`), so the two conditions cannot differ. This pins the premise on whole games.
+      if (final.result!.reason === 'elimination') expect(final.status.filter((s) => s === 'active').length, `seed ${seed}: an elimination ending leaves at most one active seat`).toBeLessThanOrEqual(1);
       const rows = chaturajiResultRows(final, final.score, final.result!.winners, final.result!.reason);
       for (const row of rows) {
         const engineBonus = final.score[row.seat] - twin.score[row.seat];
