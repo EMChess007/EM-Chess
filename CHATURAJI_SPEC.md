@@ -238,7 +238,7 @@ No Teams / alliances (C14); no claim win / autoclaim (C10); no draw-by-repetitio
 | W2 bot and the server game loop | `bbb7e37`, `c000e77`, `3f8b695` | `2da23fd`, `322ecf6`, `2167f97`, `25cc229` | 30 / 31 |
 | W3 every screen, the `dom` test project | `eca6384`, `2f52fb0`, `3eb4443`, `394e019` | `9f8294d`, `54da5d2` | 31 / 32 |
 | W4 the real app against the real server in a browser | `e90574d`, `ba6af7d`, `7633c5c` | `c5ca9db`, `938366a` | 32 / 33 |
-| W5 close-out, merge readiness | `675dad3` the equivalent-mutant premise pin, and the docs commit that follows it (`git log` of the branch tip) | `06328ff` fixed e2e total, `1708926` test switches + browser scenarios, `94b717c` production-mode build, `48ac90e` docs | 33 / 34 |
+| W5 close-out, merge readiness | `675dad3` the equivalent-mutant premise pin, and the docs commit that follows it (`git log` of the branch tip) | `06328ff` fixed e2e total, `1708926` test switches + browser scenarios, `94b717c` production-mode build, `48ac90e` docs, `11af106` a ci.yml step-name YAML fix | 33 / 34 |
 
 **Deviations, each approved, with the reason in one line:**
 1. *(W1)* The hand-written room manager changed beyond the spec's list: squares, labels and the payload check use the room's own board, and a promotion with no piece named is the boat - the cross board's names are wrong for 8 x 8.
