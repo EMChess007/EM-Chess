@@ -9,9 +9,9 @@
  * promotion line, scoring or elimination rule needs no change: legality always comes from `findLegalMove`.
  */
 
-import { forwardCoord, squareName, type Seat } from './board';
+import { CROSS14, type Geometry, type Seat } from './board';
 import { findLegalMove, type Move } from './moves';
-import { BISHOP, KNIGHT, PAWN, QUEEN, ROOK, seatOf, typeOf, type FourPlayerState } from './state';
+import { BISHOP, KNIGHT, PAWN, QUEEN, ROOK, geometryOf, optionsOf, seatOf, typeOf, type FourPlayerState } from './state';
 
 export interface FourPlayerPremove {
   from: number;
@@ -30,17 +30,25 @@ export function isPromotionPremove(state: Pick<FourPlayerState, 'cells' | 'rules
   const code = state.cells[from];
   if (code <= 0 || seatOf(code) !== seat || typeOf(code) !== PAWN) return false;
   const line = state.rules.promotionCoord;
+  const { forwardCoord } = geometryOf(state.rules);
   return forwardCoord(seat, from) === line - 1 && forwardCoord(seat, to) >= line;
 }
 
 /** The legal move a premove denotes in the CURRENT position, or null if it is no longer legal (blocked, captured, pinned, in check…). */
 export function resolvePremove(state: FourPlayerState, seat: Seat, premove: FourPlayerPremove): Move | null {
-  return findLegalMove(state, seat, premove.from, premove.to, premove.promotion ?? QUEEN);
+  // No piece named = the first piece the rules allow: a queen in 4 Player Chess (the order is queen first), the boat in Chaturaji (the only one).
+  return findLegalMove(state, seat, premove.from, premove.to, premove.promotion ?? optionsOf(state.rules).promotionTypes[0]);
+}
+
+/** The piece a promotion MUST become when the rules allow exactly one (Chaturaji's boat), else null: the player is asked, as before. */
+export function onlyPromotionType(state: Pick<FourPlayerState, 'rules'>): number | null {
+  const types = optionsOf(state.rules).promotionTypes;
+  return types.length === 1 ? types[0] : null;
 }
 
 const PROMOTION_LETTER: Record<number, string> = { [QUEEN]: 'Q', [ROOK]: 'R', [BISHOP]: 'B', [KNIGHT]: 'N' };
 
-/** "e2-e4" / "e7-e8=N" — for the "Premove queued" line. */
-export function describePremove(premove: FourPlayerPremove): string {
-  return `${squareName(premove.from)}-${squareName(premove.to)}${premove.promotion ? `=${PROMOTION_LETTER[premove.promotion] ?? ''}` : ''}`;
+/** "e2-e4" / "e7-e8=N" — for the "Premove queued" line, with the squares named on the board of the game (the cross board unless said otherwise). */
+export function describePremove(premove: FourPlayerPremove, geo: Geometry = CROSS14): string {
+  return `${geo.squareName(premove.from)}-${geo.squareName(premove.to)}${premove.promotion ? `=${PROMOTION_LETTER[premove.promotion] ?? ''}` : ''}`;
 }

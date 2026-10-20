@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { appAlert } from '../components/AppAlert';
+import ChaturajiRulesSheet from '../components/ChaturajiRulesSheet';
 import FourPlayerBoard from '../components/FourPlayerBoard';
 import FourPlayerSeatStrip from '../components/FourPlayerSeatStrip';
 import GameControlBar from '../components/GameControlBar';
 import GameScreenBody from '../components/GameScreenBody';
+import KingAttackedPill from '../components/KingAttackedPill';
 import MandatoryCaptureBanner from '../components/MandatoryCaptureBanner';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
@@ -17,7 +19,9 @@ import {
   describeEvents,
   initialState,
   describePremove,
-  moveLabel,
+  moveLabelOn,
+  geometryOf,
+  FLAG_PROMOTION,
   nextSeat,
   playMove,
   premoveSeat,
@@ -33,6 +37,7 @@ import {
   type Seat,
   type SeatConfig,
 } from '../logic/fourPlayer';
+import { chaturajiResultRows, seatStatusOf } from '../logic/chaturajiUi';
 import { controllerName } from '../logic/fourPlayerBots';
 import { triggerGameEndHaptics, triggerMoveHaptics } from '../logic/haptics';
 import { fourPlayerCapturingSquares } from '../logic/giveawayHints';
@@ -40,6 +45,7 @@ import { playMoveSound } from '../logic/moveSounds';
 import { useCaptureNudge } from '../logic/useCaptureNudge';
 import { describeResignWarning, describeResultNote, rankSeats, seatMetric, statusSuffix, variantModeLabel, variantTitle } from '../logic/fourPlayerVariant';
 import { useFourPlayerClock } from '../logic/useFourPlayerClock';
+import { useScoreGains } from '../logic/useScoreGains';
 import { describePremoveCancel } from '../logic/premove';
 import { usePremove } from '../logic/usePremove';
 import type { TimeControl } from '../types/timeControl';
@@ -49,6 +55,8 @@ interface FourPlayerGameScreenProps {
   variant?: FourVariant;
   seats: SeatConfig;
   timeControl: TimeControl;
+  /** A TEST SEAM: begin from this position instead of the start (a hand-built end-game, a pawn one step from promotion). The app never passes it; New Game always starts from the real start. */
+  startFrom?: FourPlayerState;
   onExit: () => void;
 }
 
@@ -63,7 +71,7 @@ interface LogEntry {
 interface Snapshot {
   state: FourPlayerState;
   clock: FourPlayerClock;
-  lastMove: { from: number; to: number } | null;
+  lastMove: { from: number; to: number; promoted?: boolean } | null;
   log: LogEntry[];
 }
 
@@ -72,12 +80,12 @@ interface Snapshot {
  * immutable FourPlayerState advanced with playMove (which also resolves eliminations and walks dead kings), so Undo is a stack of earlier
  * states (with their clocks). A seat that runs out of time is eliminated by the engine ('timeout'). Not saved to history, not rated.
  */
-export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeControl, onExit }: FourPlayerGameScreenProps) {
+export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeControl, startFrom, onExit }: FourPlayerGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const [game, setGame] = useState<FourPlayerState>(() => initialState(rulesFor(variant)));
+  const [game, setGame] = useState<FourPlayerState>(() => startFrom ?? initialState(rulesFor(variant)));
   const [past, setPast] = useState<Snapshot[]>([]);
-  const [lastMove, setLastMove] = useState<{ from: number; to: number } | null>(null);
+  const [lastMove, setLastMove] = useState<{ from: number; to: number; promoted?: boolean } | null>(null);
   const [notice, setNotice] = useState<string[]>([]);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [viewSeat, setViewSeat] = useState<Seat>(() => defaultViewSeat(seats));
@@ -100,14 +108,14 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
     (move: Move) => {
       const mover = game.turn;
       const { state: next, events } = playMove(game, move);
-      const sounds = { san: moveLabel(move), captured: move.captured ? ('p' as const) : undefined };
+      const sounds = { san: moveLabelOn(move, geometryOf(game.rules)), captured: move.captured ? ('p' as const) : undefined };
       playMoveSound(sounds);
       triggerMoveHaptics(sounds);
       setPast((p) => [...p, { state: game, clock, lastMove, log }]);
       setGame(next);
       setClock((c) => addIncrement(c, mover, game)); // the mover's increment; nobody else's, and never a dead king's walk
-      setLog((l) => [...l, { seat: mover, text: moveLabel(move) }]);
-      setLastMove({ from: move.from, to: move.to });
+      setLog((l) => [...l, { seat: mover, text: moveLabelOn(move, geometryOf(game.rules)) }]);
+      setLastMove({ from: move.from, to: move.to, ...(move.flags & FLAG_PROMOTION ? { promoted: true } : {}) });
       setNotice(describeEvents(events));
       if (next.result) triggerGameEndHaptics();
     },
@@ -200,10 +208,22 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
   // Chess: by score. Giveaway: the winner first, then the fewest pieces left.
   const ranking = useMemo(() => rankSeats(variant, ([0, 1, 2, 3] as Seat[]).map((seat) => seatMetric(game, seat)), game.result?.winners ?? []), [variant, game]);
 
+  const chaturaji = variant === 'chaturaji';
+  const [rulesOpen, setRulesOpen] = useState(false);
+  // Chaturaji: the points each seat just scored ("+3" at its card), straight from the engine's score; and the final table with its breakdown (the +3 per surviving king).
+  const gains = useScoreGains(game, chaturaji);
+  const chaturajiRows = useMemo(
+    () => (chaturaji && game.result ? chaturajiResultRows(game, game.score, game.result.winners, game.result.reason) : []),
+    [chaturaji, game]
+  );
+  const geo = geometryOf(game.rules);
+
   const mover = SEAT_NAMES[game.turn];
   // 4 Player Giveaway: a capture is mandatory for the human to move - a bold status instead of the plain one, and a message when they tap a piece that cannot capture.
   const { nudged: captureNudged, nudge: nudgeCapture } = useCaptureNudge();
   const mustCapture = !game.result && humanToMove && fourPlayerCapturingSquares(game, game.turn).length > 0;
+  // Chaturaji: the human to move has a king under attack. A notice only - nothing is blocked and nothing has to be answered.
+  const kingAttacked = chaturaji && !game.result && humanToMove && seatStatusOf(game, game.turn).kind === 'attacked';
   let statusText: string;
   if (game.result) {
     const names = game.result.winners.map((seat) => SEAT_NAMES[seat]).join(' & ');
@@ -226,21 +246,29 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
                   { key: 'rotate', label: 'Rotate', onPress: () => setViewSeat((v) => nextSeat(v)) },
                   { key: 'resign', label: 'Resign', onPress: handleResign, disabled: !humanToMove },
                   { key: 'undo', label: 'Undo', onPress: handleUndo, disabled: !canUndo || !!game.result },
+                  ...(chaturaji ? [{ key: 'rules', label: 'Rules', onPress: () => setRulesOpen(true) }] : []),
                 ]}
               />
             </View>
             <View style={styles.footer}>
-              <Pressable style={styles.resetButton} onPress={handleNewGame}>
-                <Text style={styles.resetButtonText}>New Game</Text>
+              <Pressable testID="new-game" style={styles.resetButton} onPress={handleNewGame}>
+                <Text style={styles.resetButtonText}>{chaturaji && game.result ? 'Rematch' : 'New Game'}</Text>
               </Pressable>
+              {chaturaji && game.result && (
+                <Pressable testID="back-to-menu" style={styles.menuButton} onPress={onExit}>
+                  <Text style={styles.resetButtonText}>Back to menu</Text>
+                </Pressable>
+              )}
             </View>
           </>
         }
       >
-        <FourPlayerSeatStrip state={game} seats={seats} clock={clock} />
+        <FourPlayerSeatStrip state={game} seats={seats} clock={clock} gains={gains} />
 
         {mustCapture ? (
           <MandatoryCaptureBanner lead={`${mover} to move`} nudged={captureNudged} />
+        ) : kingAttacked ? (
+          <KingAttackedPill text={`${mover}: your king is attacked — it can be captured`} />
         ) : (
           <Text style={[styles.status, { color: game.result ? colors.gold : colors.text }]}>{statusText}</Text>
         )}
@@ -262,7 +290,7 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
         {premoveCancelReason && <Text style={styles.errorText}>{describePremoveCancel(premoveCancelReason)}</Text>}
         {premove && !humanToMove && (
           <View style={styles.premoveRow}>
-            <Text style={styles.premoveText}>Premove queued: {describePremove(premove)}</Text>
+            <Text style={styles.premoveText}>Premove queued: {describePremove(premove, geo)}</Text>
             <Pressable style={styles.premoveCancelButton} onPress={cancelPremove}>
               <Text style={styles.premoveCancelButtonText}>Cancel</Text>
             </Pressable>
@@ -286,7 +314,32 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
           </Text>
         )}
 
-        {game.result && (
+        {game.result && chaturaji && (
+          <View testID="result-card" style={styles.resultCard}>
+            {chaturajiRows.map((row) => (
+              <View key={row.seat} style={styles.resultBlock}>
+                <View style={styles.resultRow}>
+                  <Text style={styles.resultPlace}>{row.place}.</Text>
+                  <View style={[styles.seatDot, { backgroundColor: SEAT_COLORS[row.seat] }]} />
+                  <Text style={[styles.resultName, row.winner && { fontWeight: '800' }]}>
+                    {SEAT_NAMES[row.seat]} <Text style={styles.resultMeta}>({controllerName(seats[row.seat])})</Text>
+                  </Text>
+                  <Text testID={`result-score-${row.seat}`} style={styles.resultScore}>
+                    {row.total}
+                  </Text>
+                </View>
+                {row.bonus > 0 && (
+                  <Text testID={`result-detail-${row.seat}`} style={styles.resultDetail}>
+                    {row.detail}
+                  </Text>
+                )}
+              </View>
+            ))}
+            <Text style={styles.resultNote}>{describeResultNote(game.result, variant)}</Text>
+          </View>
+        )}
+
+        {game.result && !chaturaji && (
           <View style={styles.resultCard}>
             {ranking.map((seat, position) => (
               <View key={seat} style={styles.resultRow}>
@@ -302,6 +355,7 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
           </View>
         )}
       </GameScreenBody>
+      {chaturaji && <ChaturajiRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
     </View>
   );
 }
@@ -310,7 +364,7 @@ function createStyles(colors: AppColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     controlsWrap: { position: 'relative' },
-    footer: { alignItems: 'center', gap: 6 },
+    footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
     resetButton: { paddingVertical: 10, paddingHorizontal: 22, backgroundColor: colors.buttonBackground, borderRadius: 10 },
     resetButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
     seatDot: { width: 10, height: 10, borderRadius: 5 },
@@ -332,6 +386,9 @@ function createStyles(colors: AppColors) {
       borderWidth: 1,
       borderColor: colors.border,
     },
+    menuButton: { paddingVertical: 10, paddingHorizontal: 22, backgroundColor: colors.textSecondary, borderRadius: 10 },
+    resultBlock: { gap: 1 },
+    resultDetail: { marginLeft: 36, fontSize: 11, color: colors.gold },
     resultRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     resultPlace: { width: 18, fontSize: 14, color: colors.textSecondary },
     resultName: { flex: 1, fontSize: 14, color: colors.text },

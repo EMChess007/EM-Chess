@@ -1,0 +1,58 @@
+{
+ "env": {
+  "node": "v24.21.0",
+  "cpu": "Intel(R) Core(TM) 3 N355",
+  "cores": 8,
+  "platform": "win32",
+  "runs": 25,
+  "positions": {
+   "ffa": 660,
+   "giveaway": 218
+  },
+  "mergedRuns": 5
+ },
+ "results": {
+  "ffa.legalMoves (all seats, every position)": {
+   "min": 113.47949999999992,
+   "median": 160.19500000000016
+  },
+  "ffa.isInCheck (all seats, every position)": {
+   "min": 55.32060000000001,
+   "median": 82.3177999999998
+  },
+  "ffa.playMove (replay 3 seeded games)": {
+   "min": 82.89499999999862,
+   "median": 114.22479999999996
+  },
+  "ffa.bot (careful 1400 + greedy 600)": {
+   "min": 33.402000000000044,
+   "median": 50.04320000000007
+  },
+  "giveaway.legalMoves (all seats, every position)": {
+   "min": 86.3163999999997,
+   "median": 123.73619999999937
+  },
+  "giveaway.playMove (replay 3 seeded games)": {
+   "min": 56.584100000000035,
+   "median": 85.27549999999974
+  },
+  "giveaway.bot (careful 1500)": {
+   "min": 40.961199999997916,
+   "median": 62.10410000000047
+  },
+  "serialize + deserialize (every position)": {
+   "min": 36.278699999998935,
+   "median": 57.169200000000274
+  }
+ },
+ "spread": {
+  "ffa.legalMoves (all seats, every position)": 10.9,
+  "ffa.isInCheck (all seats, every position)": 6.6,
+  "ffa.playMove (replay 3 seeded games)": 10.8,
+  "ffa.bot (careful 1400 + greedy 600)": 17.1,
+  "giveaway.legalMoves (all seats, every position)": 22.2,
+  "giveaway.playMove (replay 3 seeded games)": 6.7,
+  "giveaway.bot (careful 1500)": 9.5,
+  "serialize + deserialize (every position)": 9
+ }
+}

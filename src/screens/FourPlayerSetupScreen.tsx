@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import ChaturajiRulesSheet from '../components/ChaturajiRulesSheet';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { DEFAULT_BOT_ELO, SEAT_COLORS, SEAT_NAMES, isStartable, withController, type FourVariant, type Seat, type SeatConfig } from '../logic/fourPlayer';
 import { botDisplayName } from '../logic/fourPlayerBots';
-import { GIVEAWAY_RULE_HINT, variantIntro, variantModeLabel, variantTitle } from '../logic/fourPlayerVariant';
+import { CHATURAJI_RULE_HINT, GIVEAWAY_RULE_HINT, variantIntro, variantModeLabel, variantTitle } from '../logic/fourPlayerVariant';
 
 interface FourPlayerSetupScreenProps {
   /** 4 Player Chess ('ffa', the default) or 4 Player Giveaway: only the wording differs - who controls each seat is rules-agnostic. */
@@ -25,6 +27,7 @@ export default function FourPlayerSetupScreen({ variant = 'ffa', seats, onChange
   const colors = useAppColors();
   const styles = createStyles(colors);
   const startable = isStartable(seats);
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -32,6 +35,14 @@ export default function FourPlayerSetupScreen({ variant = 'ffa', seats, onChange
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.intro}>{variantIntro(variant)}</Text>
         {variant === 'giveaway' && <Text style={styles.intro}>{GIVEAWAY_RULE_HINT}</Text>}
+        {variant === 'chaturaji' && (
+          <>
+            <Text style={styles.intro}>{CHATURAJI_RULE_HINT}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="How to play Chaturaji" testID="how-to-play" style={styles.rulesButton} onPress={() => setRulesOpen(true)}>
+              <Text style={styles.rulesButtonText}>How to play ›</Text>
+            </Pressable>
+          </>
+        )}
 
         {([0, 1, 2, 3] as Seat[]).map((seat) => {
           const controller = seats[seat];
@@ -73,6 +84,7 @@ export default function FourPlayerSetupScreen({ variant = 'ffa', seats, onChange
           <Text style={styles.startText}>Choose time control</Text>
         </Pressable>
       </ScrollView>
+      {variant === 'chaturaji' && <ChaturajiRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
     </View>
   );
 }
@@ -83,6 +95,8 @@ function createStyles(colors: AppColors) {
     container: { flex: 1, backgroundColor: colors.background },
     content: { padding: 16, gap: 12 },
     intro: { fontSize: 13, color: colors.textSecondary },
+    rulesButton: { alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+    rulesButtonText: { fontSize: 14, fontWeight: '700', color: colors.text },
     seatCard: { padding: 12, gap: 10, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
     seatHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     dot: { width: 16, height: 16, borderRadius: 8 },

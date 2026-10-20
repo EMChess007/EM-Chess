@@ -2,23 +2,27 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { appAlert } from '../components/AppAlert';
 import FourPlayerBoard from '../components/FourPlayerBoard';
+import ChaturajiRulesSheet from '../components/ChaturajiRulesSheet';
 import FourPlayerChatPanel from '../components/FourPlayerChatPanel';
 import FourPlayerResultCard from '../components/FourPlayerResultCard';
 import FourPlayerSeatStrip from '../components/FourPlayerSeatStrip';
 import GameControlBar from '../components/GameControlBar';
 import GameScreenBody from '../components/GameScreenBody';
+import KingAttackedPill from '../components/KingAttackedPill';
 import MandatoryCaptureBanner from '../components/MandatoryCaptureBanner';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import {
   SEAT_COLORS,
   describePremove,
+  geometryOf,
   nextSeat,
   resolvePremove,
   type FourPlayerPremove,
   type Move,
   type Seat,
 } from '../logic/fourPlayer';
+import { KING_ATTACKED_PILL, showKingAttackedPill } from '../logic/chaturajiUi';
 import { canMove, displayClock, displayState } from '../logic/fourPlayerOnline';
 import { describeResignWarning, variantTitle } from '../logic/fourPlayerVariant';
 import { LEAVE_GAME_MESSAGE, LEAVE_GAME_TITLE, describeStatus, isLiveSeat, seatLabels } from '../logic/fourPlayerOnlineUi';
@@ -28,6 +32,7 @@ import { describePremoveCancel } from '../logic/premove';
 import { useCaptureNudge } from '../logic/useCaptureNudge';
 import { useFourPlayerOnlineGame } from '../logic/useFourPlayerOnlineGame';
 import { usePremove } from '../logic/usePremove';
+import { useScoreGains } from '../logic/useScoreGains';
 
 interface FourPlayerOnlineGameScreenProps {
   authToken: string;
@@ -118,6 +123,11 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
     ]);
   };
 
+  // Chaturaji: the "+N" at the seat that scored, from consecutive authoritative snapshots; and the rules sheet.
+  const chaturaji = !!view && view.variant === 'chaturaji';
+  const gains = useScoreGains(view?.state ?? null, chaturaji);
+  const [rulesOpen, setRulesOpen] = useState(false);
+
   if (!view) {
     return (
       <View style={styles.container}>
@@ -144,6 +154,7 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
                   { key: 'rotate', label: 'Rotate', onPress: () => setViewSeat((v) => nextSeat(v)) },
                   { key: 'resign', label: 'Resign', onPress: handleResign, disabled: over || !iAmActive },
                   { key: 'chat', label: chatUnread > 0 ? `Chat (${chatUnread})` : 'Chat', onPress: () => setChatOpen((open) => !open), active: chatOpen },
+                  ...(chaturaji ? [{ key: 'rules', label: 'Rules', onPress: () => setRulesOpen(true) }] : []),
                 ]}
               />
             </View>
@@ -160,10 +171,12 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
           </>
         }
       >
-        <FourPlayerSeatStrip state={shown} clock={displayClock(view, now)} labels={seatLabels(view, now)} />
+        <FourPlayerSeatStrip state={shown} clock={displayClock(view, now)} labels={seatLabels(view, now)} gains={gains} />
 
         {canMove(view, connected) && !view.gameOver && fourPlayerCapturingSquares(shown, shown.turn).length > 0 ? (
           <MandatoryCaptureBanner lead="Your move" nudged={captureNudged} />
+        ) : chaturaji && !over && showKingAttackedPill(view.state, mySeat) ? (
+          <KingAttackedPill text={KING_ATTACKED_PILL} />
         ) : (
           <Text style={[styles.status, { color: view.gameOver ? colors.gold : colors.text }]}>{describeStatus(view)}</Text>
         )}
@@ -191,7 +204,7 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
         {cancelReason && <Text style={styles.errorText}>{describePremoveCancel(cancelReason)}</Text>}
         {premove && !myTurnReady && !over && (
           <View style={styles.premoveRow}>
-            <Text style={styles.premoveText}>Premove queued: {describePremove(premove)}</Text>
+            <Text style={styles.premoveText}>Premove queued: {describePremove(premove, geometryOf(view.state.rules))}</Text>
             <Pressable style={styles.premoveCancelButton} onPress={cancelPremove}>
               <Text style={styles.premoveCancelText}>Cancel</Text>
             </Pressable>
@@ -219,6 +232,7 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
 
         {view.gameOver && <FourPlayerResultCard gameOver={view.gameOver} seats={view.seats} variant={view.variant} />}
       </GameScreenBody>
+      {chaturaji && <ChaturajiRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
     </View>
   );
 }

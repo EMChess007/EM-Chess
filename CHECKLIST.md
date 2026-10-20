@@ -51,12 +51,38 @@ was called "done" — don't repeat that on anything else.
   traps from zero.
 
 ### Extra, specifically when the change is a new game variant/mode
-- Explicit mutual-exclusivity declaration with every other variant.
+- Explicit mutual-exclusivity declaration with every other variant. Every variant-wide statement or list
+  names ALL of them, the 4-seat games included (4 Player Chess, 4 Player Giveaway, Chaturaji): menu card,
+  setup, queue (the queue key is `timeControl|variant`), Spectate list section, rejoin, resume link, result.
 - Fits the existing pattern: VariantSelector entry, screen prop threading (fogOfWar/chess960/
   setupChess-style), gameResult.ts priority slot.
 - Board annotations (arrows/highlights) follow the app-wide invariant in
   `src/logic/annotationLifecycle.ts`: cleared when a MOVE is played, by anyone, and at no other
   time — never keyed to whose turn it is, a turn starting, or a seat being skipped/eliminated/
-  flagged without a move. Name the mode's position epoch (classic: the FEN; 4 Player: the ply),
+  flagged without a move. Name the mode's position epoch (classic: the FEN; the 4-seat games - 4 Player Chess, 4 Player Giveaway and Chaturaji -: the ply),
   clear through `useClearAnnotationsOnMove`, and add the mode's no-move turn-advance paths to
   `annotationLifecycle.test.ts`. This applies to Online boards too.
+- A mode with a different BOARD (Chaturaji's 8 x 8 square) reaches the screens through the game's geometry
+  (`geometryOf(state.rules)`): no UI or client file may name a square, parse one, size the board or map a
+  cell through the cross board's module-level helpers (`SIZE`, `squareName`, `parseSquare`, `fromDisplay`,
+  `getFourPlayerCellSize`, ...). `chaturajiWiring.test.ts` pins it for the 4-seat files; a new board adds
+  its files to that list.
+- Screens are tested RENDERED, not only by source scans: the `dom` vitest project (`*.dom.test.tsx`, jsdom +
+  react-native-web, `src/test/domSetup.ts` / `domKit.tsx`) renders the real screens against the real engine
+  or a server simulator. A new mode adds a menu / setup / game / result test there, with fake timers and
+  no wall-clock assertions. What a screen shows that comes from the engine (points, statuses, the result)
+  is compared with the engine, never recomputed in the test or the UI.
+- Mutation chunks are bounded: at most ~20 mutants per chunk with a hard per-mutant time limit, run one at
+  a time with the result written down as it finishes (a long unbounded background run can be lost to a
+  suspended laptop). A test that reads a constant from the module under mutation cannot kill a mutant of
+  that constant: pin constants as literals.
+
+## 7. Test-only switches (a knob that exists for tests must not exist in production)
+- A test-only environment variable or build-time setting is read in ONE small module, has an opt-in name that says
+  what it does, is ignored when `NODE_ENV=production` (one warning at startup that does not print the value), only
+  accepts a finite value inside a bound (it can raise a limit, never switch it off), is set only by the test
+  stack's own child process (never in a workflow `env`, `.env.example`, `render.yaml` or any deployment config),
+  and has tests for: the default unchanged, ignored in production, honoured outside it, no secret read or logged.
+- **Auth rate-limit override absent/ignored in production**: `AUTH_RATE_LIMIT_TEST_OVERRIDE` (backend
+  `src/lib/authRateLimit.ts`) - `npm run test:authRateLimit` in the backend pins all of the above. The same rule
+  for the app: `EXPO_PUBLIC_API_URL` is honoured by dev builds only (`src/api/apiBaseUrl.ts`, `apiBaseUrl.test.ts`).

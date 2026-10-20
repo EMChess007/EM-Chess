@@ -15,7 +15,7 @@
  * reopens the screen with `resume: true` and rejoins the seat (it used to forfeit the seat to a bot).
  */
 
-import { moveLabel, type Move } from './fourPlayer';
+import { geometryOf, moveLabelOn, type Move } from './fourPlayer';
 import {
   adoptSnapshot,
   applyFourState,
@@ -349,8 +349,8 @@ export class FourOnlineSession {
     if (begun.id === null) return;
     const id = begun.id;
     this.setView(begun.view);
-    this.effects.moveSound({ san: moveLabel(move), ...(move.captured ? { captured: 'p' as const } : {}) });
-    this.socket.timeout(FOUR_ACK_TIMEOUT_MS).emit('four_make_move', movePayloadFor(view.roomId, move), (err, ack) =>
+    this.effects.moveSound({ san: moveLabelOn(move, geometryOf(view.state.rules)), ...(move.captured ? { captured: 'p' as const } : {}) });
+    this.socket.timeout(FOUR_ACK_TIMEOUT_MS).emit('four_make_move', movePayloadFor(view.roomId, move, view.state.rules), (err, ack) =>
       this.guard('four_make_move ack', () => {
         const latest = this.current.view;
         if (!latest) return;

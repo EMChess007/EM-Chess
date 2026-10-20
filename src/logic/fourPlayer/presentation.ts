@@ -2,7 +2,7 @@
  * 4 Player Chess — pure helpers for the UI (kept out of the React Native components so they can be unit-tested without a renderer).
  */
 
-import { SEAT_NAMES, SIZE } from './board';
+import { CROSS14, SEAT_NAMES, SIZE, type BoardId, type Geometry } from './board';
 import type { GameEvent } from './elimination';
 import type { FourPlayerResult } from './state';
 import type { SeatController } from './setup';
@@ -12,6 +12,20 @@ export function getFourPlayerCellSize(viewportWidth: number, viewportHeight: num
   const byWidth = Math.floor((viewportWidth - 16) / SIZE);
   const byHeight = Math.floor((viewportHeight - 345) / SIZE);
   return Math.max(20, Math.min(byWidth, byHeight, 34));
+}
+
+/** Chaturaji's 8 x 8 board is drawn with its own sizing (about 1.75x the cross board's cell): the same screen chrome above and below, eight columns instead of fourteen. */
+export const CHATURAJI_MIN_CELL = 28;
+export const CHATURAJI_MAX_CELL = 52;
+export function getChaturajiCellSize(viewportWidth: number, viewportHeight: number): number {
+  const byWidth = Math.floor((viewportWidth - 16) / 8);
+  const byHeight = Math.floor((viewportHeight - 345) / 8);
+  return Math.max(CHATURAJI_MIN_CELL, Math.min(byWidth, byHeight, CHATURAJI_MAX_CELL));
+}
+
+/** The cell size for a game on `board`: the cross board's (unchanged, pinned at 21 for 360 x 640) or Chaturaji's. */
+export function getBoardCellSize(board: BoardId, viewportWidth: number, viewportHeight: number): number {
+  return board === 'square8' ? getChaturajiCellSize(viewportWidth, viewportHeight) : getFourPlayerCellSize(viewportWidth, viewportHeight);
 }
 
 /**
@@ -60,8 +74,11 @@ export function describeEvents(events: readonly GameEvent[]): string[] {
     if (event.kind === 'eliminated') {
       const name = SEAT_NAMES[event.seat];
       if (event.reason === 'checkmate') lines.push(`${name} was checkmated${event.credit !== null ? ` by ${SEAT_NAMES[event.credit]} (+20)` : ''}`);
-      else if (event.reason === 'stalemate') lines.push(`${name} was stalemated (+20 to ${name}, +10 to the others)`);
+      else if (event.reason === 'stalemate') lines.push(event.points.every((p) => p === 0) ? `${name} had no legal move and is out` : `${name} was stalemated (+20 to ${name}, +10 to the others)`);
+      else if (event.reason === 'kingCaptured') lines.push(`${name}'s king was captured${event.credit !== null ? ` by ${SEAT_NAMES[event.credit]}` : ''}`);
       else lines.push(`${name} ${event.reason === 'resign' ? 'resigned' : 'ran out of time'}`);
+    } else if (event.kind === 'fork') {
+      lines.push(`${SEAT_NAMES[event.seat]} attacks ${event.kings} kings at once (+${event.points})`);
     } else if (event.kind === 'frozen') {
       lines.push(`${SEAT_NAMES[event.seat]}'s king can no longer move`);
     }

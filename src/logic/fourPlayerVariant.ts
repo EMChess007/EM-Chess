@@ -8,10 +8,10 @@
  * `seatMetric` and `statusSuffix` need no extra argument. This file is client-only (not in the server mirror).
  */
 
-import { SEAT_NAMES, describeResultReason, isInCheck, legalMoves, piecesLeft, type FourPlayerState, type FourVariant, type Seat } from './fourPlayer';
+import { SEAT_NAMES, describeResultReason, isInCheck, legalMoves, piecesLeft, variantOfRules, type FourPlayerState, type FourVariant, type Seat } from './fourPlayer';
 import type { FourReason } from './fourPlayerWire';
 
-export const variantTitle = (variant: FourVariant): string => (variant === 'giveaway' ? '4 Player Giveaway' : '4 Player Chess');
+export const variantTitle = (variant: FourVariant): string => (variant === 'giveaway' ? '4 Player Giveaway' : variant === 'chaturaji' ? 'Chaturaji' : '4 Player Chess');
 
 /** The subtitle of the local setup / game headers. */
 export const variantModeLabel = (variant: FourVariant): string => (variant === 'giveaway' ? 'Antichess' : 'Free-for-All');
@@ -19,15 +19,19 @@ export const variantModeLabel = (variant: FourVariant): string => (variant === '
 /** The rule in one line, shown on the setup and queue screens. */
 export const GIVEAWAY_RULE_HINT = 'Captures are mandatory — lose all your pieces to win.';
 
+/** Chaturaji's rule in one line, shown on the setup and queue screens (CHATURAJI_SPEC.md section 9). */
+export const CHATURAJI_RULE_HINT = 'Capture kings and pieces — the most points wins. A king must be captured; a check need not be answered.';
+
 /** The intro paragraph of the local setup screen. */
 export function variantIntro(variant: FourVariant): string {
+  if (variant === 'chaturaji') return 'Four armies on an 8 × 8 board, each a quarter turn from the last. The highest score wins once three players are out.';
   return variant === 'giveaway'
     ? 'Four players, one board. Captures are mandatory and kings are ordinary pieces — lose all your pieces, or be left with no legal move, and you win.'
     : 'Four players, one board. Checkmate players to eliminate them and score points — the highest score wins once three are out.';
 }
 
 /** The variant a position is played under (its rules travel with it). */
-export const variantOfState = (state: Pick<FourPlayerState, 'rules'>): FourVariant => (state.rules.mode === 'giveaway' ? 'giveaway' : 'ffa');
+export const variantOfState = (state: Pick<FourPlayerState, 'rules'>): FourVariant => variantOfRules(state.rules);
 
 /** What the seat card and the result table count: points in 4 Player Chess, PIECES LEFT in Giveaway (which has no points). */
 export function seatMetric(state: Pick<FourPlayerState, 'rules' | 'score' | 'cells'>, seat: Seat): number {
@@ -57,6 +61,9 @@ export function describeResignWarning(variant: FourVariant, online: boolean): st
   if (variant === 'giveaway') {
     return `${online ? 'Your seat' : 'This seat'} is eliminated and cannot win; its pieces stay on the board as walls that nobody can capture.${online ? ' You can keep watching until the game ends.' : ''}`;
   }
+  if (variant === 'chaturaji') {
+    return `${online ? 'Your seat is' : 'This seat is'} out and its army turns grey: its pieces stay on the board, worth nothing to capture, but its king keeps walking at random until it is captured.${online ? ' You can keep watching until the game ends.' : ''}`;
+  }
   return online
     ? 'Your seat is eliminated and its pieces stay on the board as dead blockers. You can keep watching until the game ends.'
     : 'This seat is eliminated; its pieces stay on the board as dead blockers.';
@@ -65,6 +72,8 @@ export function describeResignWarning(variant: FourVariant, online: boolean): st
 /** The tail of the "X to move" line: "in check!" in 4 Player Chess; in Giveaway "must capture" when the seat has a capture (so every legal move is one). */
 export function statusSuffix(state: FourPlayerState, seat: Seat): string {
   if (state.rules.mode === 'giveaway') return legalMoves(state, seat).some((move) => move.captured !== 0) ? ' — must capture' : '';
+  // Capture the King: an attacked king is a threat, not a check that must be answered.
+  if (variantOfRules(state.rules) === 'chaturaji') return isInCheck(state, seat) ? ' — king attacked!' : '';
   return isInCheck(state, seat) ? ' — in check!' : '';
 }
 

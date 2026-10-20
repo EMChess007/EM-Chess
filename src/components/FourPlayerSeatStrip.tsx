@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
-import { SEAT_COLORS, SEAT_NAMES, formatSeatClock, type FourPlayerClock, type FourPlayerState, type Seat, type SeatConfig } from '../logic/fourPlayer';
+import { SEAT_COLORS, SEAT_NAMES, formatSeatClock, variantOfRules, type FourPlayerClock, type FourPlayerState, type Seat, type SeatConfig } from '../logic/fourPlayer';
 import { controllerName } from '../logic/fourPlayerBots';
+import { describeGain, formatGain, seatStatusOf, type ScoreGain } from '../logic/chaturajiUi';
 import { seatMetric, seatMetricText } from '../logic/fourPlayerVariant';
 import type { FourSeatLabel } from '../logic/fourPlayerOnlineUi';
 
@@ -15,6 +16,8 @@ interface FourPlayerSeatStripProps {
   clock: FourPlayerClock;
   /** Online games: the name under each clock ("Ana (you)", "Bot (Amateur)") and an optional badge ("bot playing", "offline · 32s"). Wins over `seats`. */
   labels?: readonly FourSeatLabel[];
+  /** Chaturaji: the points each seat just scored, shown as a "+N" on its card for a moment (from the engine's / server's score, see `useScoreGains`). */
+  gains?: readonly ScoreGain[];
 }
 
 /**
@@ -23,9 +26,10 @@ interface FourPlayerSeatStripProps {
  * name) — or "out" once the seat is eliminated, when its clock is frozen and greyed. The seat to move gets a border in its colour. An
  * online seat can also carry a small badge line (a bot that took over, a player inside the disconnect grace period).
  */
-export default function FourPlayerSeatStrip({ state, seats, clock, labels }: FourPlayerSeatStripProps) {
+export default function FourPlayerSeatStrip({ state, seats, clock, labels, gains }: FourPlayerSeatStripProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
+  const chaturaji = variantOfRules(state.rules) === 'chaturaji';
   return (
     <View style={styles.strip}>
       {([0, 1, 2, 3] as Seat[]).map((seat) => {
@@ -36,10 +40,16 @@ export default function FourPlayerSeatStrip({ state, seats, clock, labels }: Fou
         const label = labels?.[seat];
         const playerName = label ? label.name : seats ? controllerName(seats[seat]) : '';
         const badge = !out && label?.badge ? label.badge : null;
+        // Chaturaji tells the three kinds of "not playing" apart and flags an attacked king; the other games keep their single word.
+        const status = chaturaji ? seatStatusOf(state, seat) : null;
+        const outWord = status ? (status.kind === 'walking' ? status.text : 'out') : 'out';
+        const attacked = status?.kind === 'attacked';
+        const gain = gains?.find((g) => g.seat === seat);
         return (
           <View
             key={seat}
-            accessibilityLabel={`${SEAT_NAMES[seat]}, ${playerName}${badge ? `, ${badge}` : ''}, ${seatMetricText(state, seat)}${clock.enabled ? `, ${formatSeatClock(seconds)} left` : ''}${out ? ', out of the game' : ''}`}
+            testID={`seat-${seat}`}
+            accessibilityLabel={`${SEAT_NAMES[seat]}, ${playerName}${badge ? `, ${badge}` : ''}, ${seatMetricText(state, seat)}${clock.enabled ? `, ${formatSeatClock(seconds)} left` : ''}${out ? (status?.kind === 'walking' ? ', out of the game, its king keeps walking' : ', out of the game') : ''}${attacked ? ', king attacked' : ''}${gain ? `, ${describeGain(gain)}` : ''}`}
             style={[styles.card, current && { borderColor: SEAT_COLORS[seat], borderWidth: 2, backgroundColor: colors.background }, out && styles.out]}
           >
             <View style={styles.topRow}>
@@ -51,11 +61,21 @@ export default function FourPlayerSeatStrip({ state, seats, clock, labels }: Fou
             </View>
             {clock.enabled && <Text style={[styles.time, low && current && styles.timeLow, out && styles.timeOut]}>{formatSeatClock(seconds)}</Text>}
             <Text style={styles.player} numberOfLines={1}>
-              {out ? 'out' : playerName}
+              {out ? outWord : playerName}
             </Text>
+            {attacked && (
+              <Text testID={`seat-${seat}-attacked`} style={styles.attacked} numberOfLines={1}>
+                king attacked
+              </Text>
+            )}
             {badge && (
               <Text style={styles.badge} numberOfLines={1}>
                 {badge}
+              </Text>
+            )}
+            {gain && (
+              <Text testID={`gain-${seat}`} style={styles.gain} pointerEvents="none">
+                {formatGain(gain.points)}
               </Text>
             )}
           </View>
@@ -88,5 +108,19 @@ function createStyles(colors: AppColors) {
     timeOut: { color: colors.textSecondary },
     player: { fontSize: 10, color: colors.textSecondary },
     badge: { fontSize: 9, fontWeight: '700', color: colors.gold },
+    attacked: { fontSize: 9, fontWeight: '700', color: colors.mode === 'dark' ? '#ffb74d' : '#b26a00' },
+    gain: {
+      position: 'absolute',
+      top: -9,
+      right: 2,
+      paddingHorizontal: 5,
+      paddingVertical: 1,
+      borderRadius: 8,
+      overflow: 'hidden',
+      fontSize: 12,
+      fontWeight: '800',
+      color: '#1b1b1b',
+      backgroundColor: '#ffd54f',
+    },
   });
 }
