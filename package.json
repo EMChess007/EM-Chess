@@ -46,6 +46,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check:workflows": "node scripts/check-workflows.mjs",
+    "mutate": "node scripts/mutation/run.cjs",
     "prepare": "node scripts/install-hooks.mjs"
   },
   "private": true
