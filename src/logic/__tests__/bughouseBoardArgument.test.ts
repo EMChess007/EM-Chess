@@ -102,8 +102,10 @@ function exportedFunctions(): { file: string; name: string; params: { name: stri
 describe('the board is a required argument (scanned over src/logic/bughouse)', () => {
   const fns = exportedFunctions();
 
-  it('the scan finds the module\'s functions', () => {
-    expect(fns.map((f) => f.name).sort()).toEqual(['boardSquareKey', 'opponentOnBoard', 'otherBoard', 'parseBoardSquareKey', 'partnerOf', 'seatAt', 'seatPlace']);
+  it('the scan finds the module\'s functions (W0\'s seven and W1\'s engine)', () => {
+    const names = fns.map((f) => f.name);
+    for (const name of ['boardSquareKey', 'opponentOnBoard', 'otherBoard', 'parseBoardSquareKey', 'partnerOf', 'seatAt', 'seatPlace', 'createMatch', 'applyAction', 'settle', 'legalMovesOn', 'legalDropsOn', 'legalActions', 'pocketOfSeat', 'clockOfSeat', 'serializeMatch', 'deserializeMatch', 'resolvePremove', 'judgeBoard', 'conservationProblems']) expect(names, name).toContain(name);
+    expect(names.length).toBeGreaterThan(40);
   });
 
   it('no parameter of type BoardId is optional or has a default', () => {
@@ -113,10 +115,30 @@ describe('the board is a required argument (scanned over src/logic/bughouse)', (
   // The one exception is the INVERSE of a board-qualified key: it is handed the key ("A:e4"), which already names its board, and returns the board.
   const KEY_PARSERS = new Set(['parseBoardSquareKey']);
 
-  it('every function whose name mentions a square, cell, pocket, reserve or clock takes the board as its FIRST parameter', () => {
-    for (const fn of fns.filter((f) => /square|cell|pocket|reserve|clock/i.test(f.name) && !KEY_PARSERS.has(f.name))) {
-      expect(fn.params[0]?.type, `${fn.name} first parameter`).toBe('BoardId');
-      expect(fn.params[0]?.name, `${fn.name} first parameter name`).toBe('board');
+  // W1: the helpers that pick "a" board, pocket or clock out of a match take the board or the SEAT (a seat names its board) as a required parameter. The rest are listed, and each list is
+  // itself checked: LEAF helpers work on a value that carries its own identity (a clock, a pocket, a chess.js position) and know no board at all; MATCH_WIDE functions act on the whole
+  // match or return every clock / flag with its board attached.
+  const LEAF = new Set(['boardCrazyhouse', 'playDrop', 'dropNotation', 'isRunning', 'deadlineOf', 'remainingAt', 'afterMove', 'started', 'frozen']);
+  const MATCH_WIDE = new Set(['runningClocks', 'dueFlag', 'settle', 'applyAction', 'finishMatch', 'voidMatch', 'conservationProblems', 'serializeMatch', 'snapshotOf', 'createMatch']);
+  const namesBoardData = (f: { name: string }) => /square|cell|pocket|reserve|clock/i.test(f.name) && !KEY_PARSERS.has(f.name);
+
+  it('every function whose name mentions a square, cell, pocket, reserve or clock takes a REQUIRED board (BoardId) or seat (BughouseSeat) - or is one of the listed leaf / match-wide helpers', () => {
+    for (const fn of fns.filter(namesBoardData)) {
+      if (LEAF.has(fn.name) || MATCH_WIDE.has(fn.name)) continue;
+      const named = fn.params.some((p) => /^(BoardId|BughouseSeat)$/.test(p.type) && !p.optional && !p.hasDefault);
+      expect(named, `${fn.name}(${fn.params.map((p) => `${p.name}: ${p.type}`).join(', ')}) names a board, pocket or clock without a board or seat`).toBe(true);
+    }
+  });
+
+  it('the listed exceptions exist, and no leaf helper knows a board; no function takes a BughouseMatch first and then names no board or seat unless it is match-wide', () => {
+    const names = new Set(fns.map((f) => f.name));
+    for (const name of [...LEAF, ...MATCH_WIDE]) expect(names.has(name), `${name} is listed but does not exist`).toBe(true);
+    for (const fn of fns.filter((f) => LEAF.has(f.name))) expect(fn.params.some((p) => /\bBoardId\b/.test(p.type)), `${fn.name} is a leaf helper`).toBe(false);
+    const matchFirst = fns.filter((f) => f.params[0]?.type === 'BughouseMatch' && !MATCH_WIDE.has(f.name));
+    expect(matchFirst.length).toBeGreaterThan(5);
+    for (const fn of matchFirst) {
+      const named = fn.params.slice(1).some((p) => /^(BoardId|BughouseSeat)$/.test(p.type) && !p.optional && !p.hasDefault);
+      expect(named, `${fn.name} takes a match and names no board or seat`).toBe(true);
     }
   });
 
