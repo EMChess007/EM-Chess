@@ -66,7 +66,7 @@ describe('a square key always names its board', () => {
 
   it('round-trips, and refuses anything that is not a board-qualified square', () => {
     for (const board of BOARD_IDS) for (const square of ['a1', 'h8', 'e4']) expect(parseBoardSquareKey(boardSquareKey(board, square))).toEqual({ board, square });
-    for (const junk of ['e4', 'A:', 'A:i4', 'A:e9', 'C:e4', 'a:e4', 'A:e4 ', '', 'A:e44']) expect(parseBoardSquareKey(junk), junk).toBeNull();
+    for (const junk of ['e4', 'A:', 'A:i4', 'A:e9', 'C:e4', 'a:e4', 'A:e4 ', ' A:e4', 'xA:e4', 'AA:e4', '', 'A:e44']) expect(parseBoardSquareKey(junk), junk).toBeNull();
   });
 
   it('a typed call must name the board (compile-time: these lines must stay type errors)', () => {
