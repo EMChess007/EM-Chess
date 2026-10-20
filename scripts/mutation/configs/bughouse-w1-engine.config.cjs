@@ -7,7 +7,7 @@
 // equivalent: those carry "EQUIVALENT" and the reason in their name. The server copy (backend/src/game/bughouse) is generated from these files, so it is not mutated separately.
 const fs = require('fs');
 const T = 'src/logic/__tests__/';
-const FAST = ['bughouseRules', 'bughouseSettle', 'bughouseClock', 'bughouseSnapshot', 'bughousePremove', 'bughouseBoardArgument', 'bughouseGolden'].map((n) => T + n).join(' ');
+const FAST = ['bughouseEngineApi', 'bughouseRules', 'bughouseSettle', 'bughouseClock', 'bughouseSnapshot', 'bughousePremove', 'bughouseBoardArgument', 'bughouseGolden'].map((n) => T + n).join(' ');
 const SLOW = ['bughouseMatchModelA', 'bughouseMatchModelB', 'bughouseMatchModelC', 'bughouseMatchModelD', 'bughouseBoards', 'bughouseInvariant'].map((n) => T + n).join(' ');
 const B = 'src/logic/bughouse/';
 const m = (name, file, find, replace) => [name, B + file, find, replace];

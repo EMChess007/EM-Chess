@@ -127,3 +127,16 @@ PGN/FEN dialect that carries the pockets and the `~` promoted marks (the same di
 Crazyhouse uses it; Duck Chess (`displayDuck`) and Spell Chess (`displaySpellState`) still carry equivalent inline copies in each game screen and
 could migrate to it without any behaviour change.
 
+## Bughouse: what W0 and W1 built, and what is left (BUGHOUSE_SPEC.md sections 7 and 9)
+
+Built (branch `paired/bughouse`, both repos): the mutation harness, the Crazyhouse golden, the four Crazyhouse additions, the generated mirror `sync:bughouse`, and the pure engine in `src/logic/bughouse/`
+(match, `settle`, `stuck`, results without a draw, snapshot, premove resolution). **Nothing is reachable from a menu and no server code exists yet.** Left, in order: W2 the server room manager, W3a / W3b the
+screens and the multi-touch layer, W4 the online client, W5 bots, W6 friend rooms, W7 quick messages and team chat, W8 browser end-to-end, W9 close-out (this is also where `/health/client-ip` may go).
+Known limits of what exists:
+- **`legalMovesOn` / `legalActions` cost about 3 ms a position** (chess.js lists each move with its notation and two FENs). The funnel never calls them (`applyAction` validates one move directly, about 0.2 ms);
+  a bot that searches needs its own cheaper move generation (BUGHOUSE_SPEC.md HP4), and a UI that highlights squares should ask for one piece's moves, not the whole list.
+- **`disconnect` is a result reason the engine can record, but the spec's rule 23 has no disconnect loss** (a gone seat goes to a bot, B19): W2 decides whether the server ever issues it.
+- **The whole-match model test compares full legal lists on a sample** (one commit in 25 of the board that moved, and every commit of every 50th match): every list is also exercised by playing the model's moves
+  and by the per-board differential on thousands of positions. A future change that makes the engine list an EXTRA illegal move which no test plays would be caught by the differential, not by the model.
+- **`Bughouse` text snapshots are canonical-only on read** (the FEN must be exactly what the engine writes): a snapshot written by a future engine that changes the FEN writer must bump `SNAPSHOT_VERSION`.
+

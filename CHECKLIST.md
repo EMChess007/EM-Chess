@@ -86,3 +86,15 @@ was called "done" — don't repeat that on anything else.
 - **Auth rate-limit override absent/ignored in production**: `AUTH_RATE_LIMIT_TEST_OVERRIDE` (backend
   `src/lib/authRateLimit.ts`) - `npm run test:authRateLimit` in the backend pins all of the above. The same rule
   for the app: `EXPO_PUBLIC_API_URL` is honoured by dev builds only (`src/api/apiBaseUrl.ts`, `apiBaseUrl.test.ts`).
+- **A proxy hop count is a measurement, not an assumption** (`TRUSTED_PROXY_HOPS`, backend TESTING.md sections 35-38): any limit that is keyed by client address must be checked on the
+  deployed server (`GET /health/client-ip`: `clientIsPrivate` false, `chain` as expected, a spoofed `X-Forwarded-For` changes nothing) before it is trusted.
+
+## 8. Generated mirrors and the mutation harness (Bughouse W0 / W1)
+- A module that runs on the client AND the server is GENERATED into the backend, never copied by hand: list it in the directory's `MIRRORED_TO_BACKEND.json`, run `npm run sync:fourplayer` /
+  `npm run sync:bughouse` in the backend, commit the result, and keep `--check` in CI. The closure rule applies: a mirrored file imports only another mirrored file (or `../crazyhouse`, which
+  has its own verbatim mirror), and the one package allowed in the Bughouse mirror is `chess.js` (`ALLOWED_PACKAGES` in `backend/scripts/sync-bughouse.mjs`; a dependency of BOTH repos).
+- The server copy of an engine gets a LOCKSTEP test against the app's (`npm run test:bughouse` in the backend): the same seeded inputs, byte-identical match text after each.
+- Mutation runs go through the in-repo harness: `npm run mutate -- <config>` (`scripts/mutation/README.md`): chunks of at most 20 mutants / 20 minutes, one runner at a time, a copy of the source
+  with `node_modules` linked and never copied, results outside the repo. A config's mutants carry their reason in the name when they are equivalent; every survivor is killed or proven
+  equivalent by a test that pins the proof.
+- A rule that is easy to get wrong silently is pinned by a SCAN, not by memory: the board as a required argument is `bughouseBoardArgument.test.ts` (an AST scan of `src/logic/bughouse`).
