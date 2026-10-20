@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
@@ -23,7 +23,16 @@ const runner = load('./run.cjs') as { planChunks: (count: number, size: number) 
 const exampleConfigPath = path.join(__dirname, 'example', 'example.config.cjs');
 const example = load(exampleConfigPath) as { mutants: string[][] };
 
-const temp = (label: string) => fs.mkdtempSync(path.join(os.tmpdir(), `em-mut-test-${label}-`));
+const made: string[] = [];
+const temp = (label: string) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `em-mut-test-${label}-`));
+  made.push(dir);
+  return dir;
+};
+// the throw-away directories are removed with the harness's own link-safe removal
+afterAll(() => {
+  for (const dir of made) engine.removeTree(dir);
+});
 const write = (file: string, text: string) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, text);
