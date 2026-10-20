@@ -1,0 +1,6 @@
+{
+  "_comment": "The files copied (GENERATED, never hand-edited) into the backend repo by backend/scripts/sync-bughouse.mjs, paths relative to src/logic, all under bughouse/. Every relative import of a listed file must resolve to another listed file or to crazyhouse.ts (the rules block that has its own verbatim mirror, guarded by backend/scripts/test-crazyhouse.mjs), or the generator refuses to run - so client-only modules can never leak into the server. Entries are also re-exported, in this order, by the generated backend index.ts.",
+  "files": [
+    "bughouse/types.ts"
+  ]
+}
