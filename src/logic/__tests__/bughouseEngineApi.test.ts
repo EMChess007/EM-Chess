@@ -21,6 +21,7 @@ import {
   type BughouseSeat,
 } from '../bughouse';
 import { drop, move, play, scene, START } from './bughouseScenes';
+import { feed, mulberry32, newPair, nextStep } from './bughouseTestKit';
 
 /**
  * The match API on its own: what creating a match refuses, what the lookups hand out (copies), what a finished match offers, the refusals of `applyAction` called directly (the funnel
@@ -220,6 +221,40 @@ describe('playDrop', () => {
     expect(c.fen().split(' ')[3]).toBe('d6');
     expect(playDrop(c, 'n', 'a1')).toBe(true);
     expect(c.fen().split(' ')[3]).toBe('-');
+  });
+
+  // THE PROOFS THAT KEEP THREE MUTANTS EQUIVALENT (bughouse-w1-engine.config.cjs):
+  //  - "a drop keeps the en passant square": chess.js's own put() already clears the en passant square, so playDrop's explicit '-' is redundant. This test pins the fact the line relies on:
+  //    if a chess.js upgrade stopped clearing it, this fails and the explicit line starts to matter.
+  it('chess.js clears the en passant square when a piece is put on the board (the explicit "-" in playDrop is belt and braces)', () => {
+    for (const [fen, piece, square] of [['4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2', 'n', 'a1'], ['4k3/8/8/8/3pP3/8/8/4K3 b - e3 0 2', 'n', 'a8']] as const) {
+      const c = new Chess(fen);
+      expect(c.fen().split(' ')[3]).not.toBe('-');
+      expect(c.put({ type: piece, color: c.turn() }, square)).toBe(true);
+      expect(c.fen().split(' ')[3], fen).toBe('-');
+    }
+  });
+
+  //  - "a rejected FEN after a drop is treated as played": chess.js never refuses the position a LEGAL drop produces. Pinned over the legal drops of the positions of seeded matches.
+  it('playDrop accepts every legal drop of every position of 40 seeded matches (so its two refusals are unreachable for a legal drop)', () => {
+    let tried = 0;
+    for (let i = 0; i < 40; i++) {
+      const seed = 52000 + i * 29;
+      const pair = newPair(seed);
+      const rng = mulberry32(seed);
+      for (let step = 0; step < 60 && pair.engine.result === null; step++) {
+        feed(pair, nextStep(rng, pair.engine, pair.model));
+        if (step % 6 !== 0) continue;
+        for (const board of ['A', 'B'] as const) {
+          for (const d of legalDropsOn(pair.engine, board)) {
+            const c = new Chess(pair.engine.boards[board].fen);
+            expect(playDrop(c, d.piece, d.square), `${pair.engine.boards[board].fen} ${d.piece}@${d.square}`).toBe(true);
+            tried++;
+          }
+        }
+      }
+    }
+    expect(tried).toBeGreaterThan(2000);
   });
 
   it('refuses a placement chess.js refuses: a second king cannot be put (a piece type outside the pocket\'s five never reaches here)', () => {
