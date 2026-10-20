@@ -476,3 +476,34 @@ Each row is a vertical slice with a stop-and-review. **Gates on every workstream
 - **N5. A native deep link for invites** (Q5) needs the app's URL scheme / domain decided before it can be built; not blocking for the web link plus code entry.
 
 **Needed before W0:** nothing. Every B1-B23 and Q1-Q7 has an answer; the proposals marked *PROPOSED* in section 6 and N1-N5 have defaults and are asked again only at the workstream that uses them (N1 and N2 at W3b, N3 at W3b, N4 at W2, N5 at W6).
+
+---
+
+## 9. BUILD LOG (what was actually built; the spec above is not edited)
+
+### W0 - done (frontend `5c7ee16`, backend `c95bc30`)
+The mutation harness (`scripts/mutation/`, `npm run mutate`), the Crazyhouse golden (recorded before `crazyhouse.ts` was touched), four additions to the Crazyhouse shared block (`crazyhouseBankedPiece`, `creditCrazyhouseReserve`, `applyCrazyhouseMoveForPartner`, `crazyhouseDropCouldAnswerCheck`), `src/logic/bughouse/types.ts` and the generated mirror `sync:bughouse`. Details: TESTING.md section 34 (frontend) and 37 (backend).
+
+### W1 - done (branch `paired/bughouse`, both repos; frontend TESTING.md section 35, backend section 39)
+**Delivered, in `src/logic/bughouse/` (all generated into `backend/src/game/bughouse/`):**
+- `rules.ts` the vocabulary (time controls, `BoardStatus`, `MatchResult` with no draw, actions, events, refusals); `board.ts` one board on chess.js plus the Crazyhouse block (`judgeBoard`: playing / check / checkmate / **stuck**); `clock.ts` the four clocks and the tie-break; `match.ts` `BughouseMatch`, `createMatch`, `applyAction` (one atomic commit across both boards), `legalActions`, `voidMatch`; `settle.ts` the pure flag settlement; `invariants.ts` the conservation invariant; `snapshot.ts` the text for the wire and for a persisted rejoin; `premove.ts` premove resolution (HP3).
+- **The rules as built.** A capture is credited to the capturer's PARTNER on the other board in the same commit (a promoted piece as a pawn), droppable from the very `seq` of that commit; `stuck` = no move and no drop now but not a real mate (a single slider check with an empty square between, or nothing to do and no check), nothing ends and the clock decides; `settle(match, input, now)` settles due flags (`d <= now`) before any input, the earliest deadline loses, ties go to the lower start `seq` then to the room-creation-number parity (even: board A loses); integer ms, one instant per input, an earlier instant is refused; results are `{winnerTeam, reason: checkmate | flag | resign | disconnect, board, loserSeat}` or `{voided}`, and no draw exists anywhere (a scan pins it).
+
+**Deviations from the spec text (all deliberate):**
+1. **`disconnect` is a result reason** (the W1 brief lists it) although rule 23 has no disconnect loss; the engine only RECORDS it; W2 decides whether the server ever issues it.
+2. **The mating move still gets the increment** (cosmetic: the match is over); `voidMatch` and a flag or resignation count as one more commit (`seq + 1`), a mate does not (the mating move is the commit).
+3. **A flag freezes the OTHER running clock at the flagging instant**, not at the instant the settlement happened to run.
+4. **The whole-match model test is four parallel shard files** (2,000 matches, about 118,000 plies, 35 s wall-clock on this machine, about 114 s of CPU in total); full legal lists are compared on a sample (one commit in 25 of the board that moved, every commit of every 50th match) because chess.js's verbose move list costs about 3 ms; every list is also compared on 7,679 positions by the per-board differential. `BUGHOUSE_MODEL_MATCHES` raises the total (the nightly runs 20,000).
+5. **The mirror generator allows one package, `chess.js`** (an optional allow-list on `rewriteModule`; its default is empty, the 4 Player mirror and its 117 checks are unchanged).
+6. **The reference model uses chessops for ONE board's rules** (lichess's implementation, the existing dev-only oracle) and writes everything above one board itself; "independent of chess.js and of crazyhouse.ts" rather than "independent of every library".
+7. **W0's board-argument scan was refined** to what the larger module needs: a function that picks a board's data out of a match takes the board or the SEAT (a seat names its board) as a required parameter; the leaf and match-wide helpers are two explicit, checked lists.
+8. **A back-rank rook check is `stuck`, not mate** (rule 18 followed to the letter): several hand-built "mate in one" scenes of mine were wrong for this reason and were rebuilt with adjacent protected pieces, smothering and double checks.
+
+**What W2 needs to know:**
+- The funnel is `settle(match, input | null, nowMs)`: read ONE monotonic integer instant per input, in arrival order. After every commit re-arm one timer per board from `runningClocks(match)` (the smallest deadline of that board); a timer is `settle(match, null, now)` and is idempotent (`idle` when early). Only `applied` and `flag` change the match; a `rejected` returns the very same object.
+- `RejectReason` is the closed list `over | time | flagDue | malformed | wrongBoard | notYourTurn | illegalMove | dropNotInPocket | illegalDrop`; `flagDue` is unreachable through `settle`.
+- Events carry the post-commit `seq`: `move` / `drop` with the notation, `bank { seat, piece }` (the RECIPIENT, never the capturer) and `result`. A final snapshot after a flag, a resignation, a disconnect or a void has `seq` one higher than the plies played.
+- `serializeMatch` is the `bug_state` payload (about 830 bytes at the start; one line, fixed key order, byte-identical on client and server); `deserializeMatch` is safe for hostile text and for a persisted rejoin record, and accepts only the canonical FEN the engine writes (a future change of the FEN writer needs `SNAPSHOT_VERSION` bumped).
+- `legalActions` / `legalMovesOn` cost about 3 ms (chess.js builds each move's notation and two FENs); the funnel never calls them, `applyAction` validates one move directly (about 0.2 ms). A bot that searches needs its own move generation (HP4); a UI that highlights squares should not call the whole list per render.
+- The engine is chess.js-based on both sides (the backend already depends on it). `roomNumber` only matters by parity: pass a monotonic counter. `voidMatch` is the only way a match gets a non-winning result.
+- The generated server copy has its own lockstep test (`npm run test:bughouse`) and the mirror check (`sync:bughouse -- --check`) is in CI.
