@@ -25,15 +25,17 @@ import { opponentOnBoard, seatPlace, type BoardId, type BughouseColor, type Bugh
 export const BUGHOUSE_BOT_LOOKAHEAD = 5;
 /** The most drop candidates scored per decision (a pocket can offer hundreds of piece x square pairs). */
 export const BUGHOUSE_BOT_MAX_DROP_CANDIDATES = 12;
-/** The most squares beside the mover's own king probed for an opponent's mating drop, per look-ahead candidate. */
+/** The most squares near the mover's own king probed for an opponent's mating drop, per look-ahead candidate (every candidate is probed alike). */
 export const BUGHOUSE_BOT_DROP_PROBES = 3;
-/** How many look-ahead candidates are probed for a mating drop (the best ones). */
-export const BUGHOUSE_BOT_DROP_PROBED_CANDIDATES = 3;
+/** When every candidate of a batch loses to a mate in one, up to this many further batches of BUGHOUSE_BOT_LOOKAHEAD are tried (so at most 3 x 5 = 15 candidates are ever played out). */
+export const BUGHOUSE_BOT_RESCUE_BATCHES = 2;
 
 const VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 const WIN = 1000;
 /** What a captured piece is worth to the bot's TEAM beyond taking it off the board: the partner receives it. */
 const BANK_SHARE = 0.5;
+/** The pass-1 score that makes sure a notation mate is among the finalists (removed again before the final choice). */
+const SAN_MATE_BONUS = 100;
 
 const SAN_PATTERN = /^([NBRQK])?[a-h]?[1-8]?(x)?([a-h][1-8])(?:=([QRBN]))?[+#]?$/;
 const otherColor = (color: BughouseColor): BughouseColor => (color === 'w' ? 'b' : 'w');
@@ -162,6 +164,8 @@ export function chooseBughouseAction(match: BughouseMatch, seat: BughouseSeat, e
     }
     if (promotion !== null) score += VALUE[promotion] - 1;
     if (/[+#]/.test(san)) score += 0.5;
+    // a mate in chess.js's eyes (it knows nothing of pockets) must reach the exact look-ahead whatever the safety rule below thinks of its square: a mating queen stands next to the king it mates
+    if (san.includes('#')) score += SAN_MATE_BONUS;
     const moved = promotion ?? piece;
     if (moved !== 'k' && chess.isAttacked(dest as never, opponent)) score -= 0.4 * VALUE[moved];
     if (!parsed[2] && dest[0] >= 'c' && dest[0] <= 'f' && dest[1] >= '3' && dest[1] <= '6') score += 0.04;
@@ -190,21 +194,30 @@ export function chooseBughouseAction(match: BughouseMatch, seat: BughouseSeat, e
   if (candidates.length === 0) return firstLegalAction(match, seat);
   candidates.sort((a, b) => b.score - a.score);
 
-  // Pass 2: the best few are played through the engine and answered by one reply.
-  const finalists = candidates.slice(0, BUGHOUSE_BOT_LOOKAHEAD);
+  // Pass 2: the best few are played through the engine and answered by one reply. If every one of them walks into a mate, the next few get their turn (at most BUGHOUSE_BOT_RESCUE_BATCHES
+  // more batches), so the work stays bounded by counts and a position where the best-looking moves all lose still finds a safe one.
   const scored: { action: BughouseAction; score: number }[] = [];
-  for (const [index, candidate] of finalists.entries()) {
-    let action = candidate.action;
-    if (candidate.san !== null) {
-      const resolved = resolveSan(chess, board, candidate.san);
-      if (resolved === null) continue;
-      action = resolved;
+  let next = 0;
+  for (let batch = 0; batch <= BUGHOUSE_BOT_RESCUE_BATCHES && next < candidates.length; batch++) {
+    if (batch > 0 && Math.max(...scored.map((s) => s.score)) > -WIN / 2) break;
+    const finalists = candidates.slice(next, next + BUGHOUSE_BOT_LOOKAHEAD);
+    next += finalists.length;
+    for (const candidate of finalists) {
+      let action = candidate.action;
+      if (candidate.san !== null) {
+        const resolved = resolveSan(chess, board, candidate.san);
+        if (resolved === null) continue;
+        action = resolved;
+      }
+      const outcome = applyAction(match, seat, action, match.nowMs);
+      if (!outcome.ok) continue;
+      if (outcome.match.result !== null && 'winnerTeam' in outcome.match.result && outcome.match.result.reason === 'checkmate') return action; // mate in one, by move or by drop
+      // EVERY finalist is probed alike (a subset would make the unprobed ones look safe and bias the choice toward them)
+      const danger = replyDanger(outcome.match, board, seat, reserveTotal(outcome.match.pockets[opponentOnBoard(seat)]) > 0);
+      // (the pass-1 bonus for a notation mate is only a ticket to this look-ahead: a mate the engine does not confirm - the opponent has a drop - earns nothing for it)
+      const ticket = candidate.san !== null && candidate.san.includes('#') ? SAN_MATE_BONUS : 0;
+      scored.push({ action, score: candidate.score - ticket - danger.loss - (danger.mated ? WIN : 0) });
     }
-    const outcome = applyAction(match, seat, action, match.nowMs);
-    if (!outcome.ok) continue;
-    if (outcome.match.result !== null && 'winnerTeam' in outcome.match.result && outcome.match.result.reason === 'checkmate') return action; // mate in one, by move or by drop
-    const danger = replyDanger(outcome.match, board, seat, index < BUGHOUSE_BOT_DROP_PROBED_CANDIDATES && reserveTotal(outcome.match.pockets[opponentOnBoard(seat)]) > 0);
-    scored.push({ action, score: candidate.score - danger.loss - (danger.mated ? WIN : 0) });
   }
   if (scored.length === 0) return firstLegalAction(match, seat);
   const top = Math.max(...scored.map((s) => s.score));

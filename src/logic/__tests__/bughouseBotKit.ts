@@ -32,6 +32,8 @@ export interface ArenaOptions {
   timer?: () => number;
   /** How many times each decision is timed (the cost reported is the fastest); default 1. */
   repeat?: number;
+  /** Called with the match, the seat and the action the bot chose, BEFORE the action is applied (the legality tests check it against the engine's own lists). */
+  onDecision?: (match: BughouseMatch, seat: BughouseSeat, action: BughouseAction | null) => void;
 }
 
 export function runArena(options: ArenaOptions): ArenaResult {
@@ -58,6 +60,7 @@ export function runArena(options: ArenaOptions): ArenaResult {
       ms = Math.min(ms, clock() - started);
     }
     decisions.push({ seat, elo: elos[seat], kind: action === null ? 'none' : action.kind === 'drop' ? 'drop' : 'move', ms });
+    options.onDecision?.(match, seat, action);
     // a bot with nothing to do ("stuck") lets time pass; its clock keeps running and may flag
     const outcome = settle(match, action === null ? null : { seat, action }, now);
     if (outcome.kind === 'rejected') refused.push({ seat, action: action as BughouseAction, reason: outcome.reason });
