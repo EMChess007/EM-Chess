@@ -55,7 +55,6 @@
  "scene:droppedPawnEnPassant": "9bb8f64a16d08418034ba7d34d80084eec9122fffc2ad7f445a6fe0167076e53",
  "scene:droppedRookNoCastling": "c515de95819c89021a2b9df5d142e6f4526f6089f488b45f7958643d7b9b9e3d",
  "scene:resignOffTurn": "1236514b5137f13e2e842748b029e92eb3c5096952ff4409cbf3f6bcbdd928a7",
- "scene:disconnect": "f09577d9fac0ed380b384eb400f87d2a26c7a02b5f606695de7a333a0fd30394",
  "scene:voided": "b51bd58750833ecc6629f589b9de8a517e2c000b74e0bfdd596d1146d5067580",
  "scene:refusals": "0c2f1ad72070711c822cdd0956b1fd747a966c5b740b14b3b83f485de42e85e7",
  "scene:increment": "782587ebd3d1b7623c79d27fc44b5f04c9faffb16a47aa4b6cdb4e1732fdd20b"

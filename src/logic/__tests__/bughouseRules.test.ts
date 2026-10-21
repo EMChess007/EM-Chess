@@ -274,7 +274,12 @@ describe('R17 / R23: the WHOLE match ends as soon as ANY board ends', () => {
     const m0 = scene({ a: START, b: START });
     expect(play(m0, 1, { kind: 'resign' }, 1500).result).toEqual({ winnerTeam: 1, reason: 'resign', board: 'A', loserSeat: 1 });
     expect(play(m0, 2, { kind: 'resign' }, 1500).result).toEqual({ winnerTeam: 1, reason: 'resign', board: 'B', loserSeat: 2 });
-    expect(play(m0, 3, { kind: 'disconnect' }, 1500).result).toEqual({ winnerTeam: 2, reason: 'disconnect', board: 'B', loserSeat: 3 });
+    expect(play(m0, 3, { kind: 'resign' }, 1500).result).toEqual({ winnerTeam: 2, reason: 'resign', board: 'B', loserSeat: 3 });
+  });
+
+  it('B19: there is no disconnect action - a gone seat never loses the match; the engine refuses one as malformed and changes nothing', () => {
+    const m0 = scene({ a: START, b: START });
+    expect(refusal(m0, 3, { kind: 'disconnect' }, 1500)).toBe('malformed');
   });
 });
 

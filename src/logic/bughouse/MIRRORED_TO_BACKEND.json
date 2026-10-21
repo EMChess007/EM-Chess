@@ -9,6 +9,8 @@
     "bughouse/settle.ts",
     "bughouse/invariants.ts",
     "bughouse/snapshot.ts",
-    "bughouse/premove.ts"
+    "bughouse/premove.ts",
+    "bughouse/bot.ts",
+    "bughouse/wire.ts"
   ]
 }

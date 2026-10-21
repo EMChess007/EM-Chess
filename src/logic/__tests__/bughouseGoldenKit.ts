@@ -216,9 +216,8 @@ const SCENES: Record<string, SceneScript> = {
     options: { a: '4k3/8/8/8/8/8/8/R3K3 w Q - 0 1', pockets: { 0: { r: 1 } }, startMs: 0 },
     steps: [s(0, drop('A', 'r', 'h1'), 500), s(1, move('A', 'e8', 'd8'), 600), s(0, move('A', 'e1', 'g1'), 700), s(0, move('A', 'e1', 'c1'), 800)],
   },
-  // resignation off turn, and the server-issued disconnect
+  // resignation off turn (the W1 scene `disconnect` was removed in W2: there is no disconnect result, B19)
   resignOffTurn: { options: { startMs: 0 }, steps: [s(3, { kind: 'resign' }, 4000), s(0, move('A', 'e2', 'e4'), 4100)] },
-  disconnect: { options: { startMs: 0 }, steps: [s(2, { kind: 'disconnect' }, 4000)] },
   voided: { options: { startMs: 0 }, steps: [s(0, move('A', 'e2', 'e4'), 500), { void: true, now: 900 }, { void: true, now: 1000 }, s(1, move('A', 'e7', 'e5'), 1100)] },
   // every kind of refusal, in one scene, and the match never changes
   refusals: {
