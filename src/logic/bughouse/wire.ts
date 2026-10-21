@@ -212,8 +212,9 @@ export interface BugClientToServerEvents {
   bug_drop: (payload: BugDropPayload, ack: (res: BugAck<{ seq: number }>) => void) => void;
   bug_resign: (payload: BugRoomPayload, ack: (res: BugAck) => void) => void;
   bug_rejoin: (payload: BugRejoinPayload, ack: (res: BugRejoinAck) => void) => void;
-  bug_chat: (payload: BugChatPayload, ack: (res: BugAck) => void) => void;
-  bug_quick: (payload: BugQuickPayload, ack: (res: BugAck) => void) => void;
+  /** `delivered` is false when the partner is a human who is not connected right now (nothing is stored, so the line is gone); a BOT partner is a refusal (`partnerIsBot`) instead. */
+  bug_chat: (payload: BugChatPayload, ack: (res: BugAck<{ delivered: boolean }>) => void) => void;
+  bug_quick: (payload: BugQuickPayload, ack: (res: BugAck<{ delivered: boolean }>) => void) => void;
   bug_list_active_games: (payload: object, ack: (res: BugAck<{ games: BugActiveGameSummary[] }>) => void) => void;
   bug_spectate_game: (payload: BugRoomPayload, ack: (res: BugAck<{ state: BugSpectateState }>) => void) => void;
   bug_stop_spectating: (payload: object, ack: (res: BugAck) => void) => void;
