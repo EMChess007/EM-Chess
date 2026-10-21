@@ -4,7 +4,6 @@ import {
   BUGHOUSE_BOT_LOOKAHEAD,
   BUGHOUSE_BOT_MAX_DROP_CANDIDATES,
   BUGHOUSE_BOT_RESCUE_BATCHES,
-  BUGHOUSE_TIME_CONTROLS,
   applyAction,
   chooseBughouseAction,
   firstLegalAction,
@@ -18,13 +17,14 @@ import { mulberry32 } from './bughouseTestKit';
 import { move, play, scene, START } from './bughouseScenes';
 
 /**
- * The Bughouse bot (BUGHOUSE_SPEC.md HP4, W2): legal only, drops included; deterministic for a seed; finds a mate in one by a move and by a drop (also a drop fed by the partner's capture);
- * does not walk into a mate by a dropped piece; never under-promotes by choice; its cost is bounded by counts and measured at every ELO tier (p99 under the 25 ms budget).
- * The caps are literals here, not read from the module under test.
+ * The Bughouse bot (BUGHOUSE_SPEC.md HP4, W2) - the QUICK half (bughouseBotBudget.test.ts holds the thousands of decisions, the whole self-play matches and the latency per tier): legal
+ * only, drops included; deterministic for a seed; finds a mate in one by a move and by a drop (also a drop fed by the partner's capture); takes the free queen, does not hang its own, does
+ * not walk into a mate by a dropped piece; promotes to a queen; uses what is in its pocket; never under-promotes by choice. The caps are literals here, not read from the module under test.
  */
 const BEST = () => 0; // every random draw is 0: the "use the scored choice" branch, and ties go to the first
 const TIERS = [400, 800, 1200, 1700, 2000, 2400, 3000];
 const keyOf = (a: BughouseAction): string => (a.kind === 'move' ? `m:${a.board}:${a.from}${a.to}${a.promotion ?? ''}` : a.kind === 'drop' ? `d:${a.board}:${a.piece}@${a.square}` : a.kind);
+const isMate = (outcome: ReturnType<typeof applyAction>): boolean => outcome.ok && outcome.match.result !== null && 'winnerTeam' in outcome.match.result && outcome.match.result.reason === 'checkmate';
 
 describe('the caps are the ones the budget was measured with', () => {
   it('lookahead 5, 12 drop candidates, 3 drop probes per candidate, 2 rescue batches (at most 15 candidates played out)', () => {
@@ -36,25 +36,23 @@ describe('the caps are the ones the budget was measured with', () => {
 });
 
 describe('legal only', () => {
-  it('2,400 seeded decisions across every tier, drops included, are all in the engine\'s own legal lists (and the match never refuses one)', { timeout: 240_000 }, () => {
+  it('360 seeded decisions at three tiers, drops included, are all in the engine\'s own legal lists (and the match never refuses one)', { timeout: 120_000 }, () => {
     let decisions = 0;
     let drops = 0;
     let refused = 0;
-    let nothing = 0;
-    for (const [i, elo] of TIERS.entries()) {
-      for (let seed = 1; seed <= 7; seed++) {
+    for (const [i, elo] of [400, 1200, 3000].entries()) {
+      for (let seed = 1; seed <= 3; seed++) {
         const result = runArena({
           seed: 100 * (i + 1) + seed,
           elos: [elo, elo, elo, elo],
-          maxCommits: 70,
+          maxCommits: 45,
           onDecision: (match, seat, action) => {
             decisions++;
+            const legal = legalActions(match, seat);
             if (action === null) {
-              nothing++;
-              expect(legalActions(match, seat).moves.length + legalActions(match, seat).drops.length).toBe(0);
+              expect(legal.moves.length + legal.drops.length).toBe(0);
               return;
             }
-            const legal = legalActions(match, seat);
             const keys = new Set([...legal.moves.map((m) => `m:${action.kind === 'move' ? action.board : '?'}:${m.from}${m.to}${m.promotion ?? ''}`), ...legal.drops.map((d) => `d:${action.kind === 'drop' ? action.board : '?'}:${d.piece}@${d.square}`)]);
             expect(keys.has(keyOf(action)), `illegal bot action ${keyOf(action)} for seat ${seat} at seq ${match.seq}`).toBe(true);
             if (action.kind === 'drop') drops++;
@@ -65,9 +63,8 @@ describe('legal only', () => {
       }
     }
     expect(refused).toBe(0);
-    expect(decisions).toBeGreaterThanOrEqual(2000);
-    expect(drops).toBeGreaterThanOrEqual(100);
-    expect(nothing).toBeLessThan(decisions / 10); // the bot nearly always has a turn when the match asks it
+    expect(decisions).toBeGreaterThanOrEqual(300);
+    expect(drops).toBeGreaterThanOrEqual(10);
   });
 
   it('returns null when it is not the seat\'s turn, when the match is over, and when the seat is stuck', () => {
@@ -81,6 +78,7 @@ describe('legal only', () => {
     expect(chooseBughouseAction(stuck, 1, 3000, BEST)).toBeNull();
     expect(firstLegalAction(stuck, 1)).toBeNull();
     expect(firstLegalAction(over, 0)).toBeNull();
+    expect(firstLegalAction(m, 1)).toBeNull(); // not its turn
   });
 
   it('firstLegalAction is a legal move in chess.js\'s order, or the first drop when there is no move', () => {
@@ -97,8 +95,6 @@ describe('legal only', () => {
 
 describe('determinism', () => {
   it('the same match, seat, strength and seed give the same action, run after run', () => {
-    const result = runArena({ seed: 77, elos: [1200, 2400, 3000, 800], maxCommits: 60, onDecision: () => undefined });
-    expect(result.commits).toBeGreaterThan(20);
     const m = scene({ a: START, b: START });
     for (const elo of TIERS) {
       for (let seed = 1; seed <= 5; seed++) {
@@ -114,8 +110,22 @@ describe('determinism', () => {
     const b = runArena({ seed: 4242, elos: [1700, 1200, 2400, 3000], maxCommits: 120 });
     expect(a.match).toEqual(b.match);
     expect(a.commits).toBe(b.commits);
+    expect(a.commits).toBeGreaterThan(40);
     const c = runArena({ seed: 4243, elos: [1700, 1200, 2400, 3000], maxCommits: 120 });
     expect(c.match).not.toEqual(a.match);
+  });
+
+  it('the strength is the chance of using the scored choice: a bot at 3000 follows it more often than one at 400', () => {
+    // one position, 200 seeds: the free queen (Rxd7) is the scored choice; the strong bot plays it much more often than the weak one
+    const m = scene({ a: '4k3/3q4/7p/8/8/8/8/2BRK3 w - - 0 1', b: START });
+    const rate = (elo: number): number => {
+      let hits = 0;
+      for (let seed = 1; seed <= 200; seed++) if (keyOf(chooseBughouseAction(m, 0, elo, mulberry32(seed)) as BughouseAction) === 'm:A:d1d7') hits++;
+      return hits / 200;
+    };
+    expect(rate(3000)).toBeGreaterThan(0.8);
+    expect(rate(400)).toBeLessThan(0.45);
+    expect(rate(400)).toBeGreaterThan(0.1);
   });
 });
 
@@ -123,19 +133,39 @@ describe('what the bot finds', () => {
   it('a mate in one by a MOVE', () => {
     const m = scene({ a: START, b: '7k/5Q2/6K1/8/8/8/8/8 w - - 0 1' });
     const action = chooseBughouseAction(m, 2, 3000, BEST) as BughouseAction;
-    const outcome = applyAction(m, 2, action, m.nowMs);
-    expect(outcome.ok && outcome.match.result !== null && 'winnerTeam' in outcome.match.result && outcome.match.result.reason === 'checkmate').toBe(true);
+    expect(isMate(applyAction(m, 2, action, m.nowMs))).toBe(true);
   });
 
   it('a mate in one by a DROP: the queen the human partner just captured on the other board', () => {
-    // seat 3 (the bot\'s partner, board B Black) takes White\'s queen with the rook: the queen lands in seat 0\'s pocket - and seat 0 drops it for mate on board A
+    // seat 3 (the bot's partner, board B Black) takes White's queen with the rook: the queen lands in seat 0's pocket - and seat 0 drops it for mate on board A
     const m0 = scene({ a: '7k/8/6K1/8/8/8/8/8 w - - 0 1', b: 'r3k3/8/8/8/8/8/8/Q3K3 b - - 0 1' });
     const m1 = play(m0, 3, move('B', 'a8', 'a1'), 1500);
     expect(m1.pockets[0].q).toBe(1);
     const action = chooseBughouseAction(m1, 0, 3000, BEST) as BughouseAction;
     expect(action.kind).toBe('drop');
-    const outcome = applyAction(m1, 0, action, m1.nowMs);
-    expect(outcome.ok && outcome.match.result !== null && 'winnerTeam' in outcome.match.result && outcome.match.result.reason === 'checkmate').toBe(true);
+    expect(isMate(applyAction(m1, 0, action, m1.nowMs))).toBe(true);
+  });
+
+  it('a back-rank "mate" in chess.js\'s notation is not a Bughouse mate (a piece could be dropped to block it): it does not outrank winning a queen', () => {
+    // Qd8 is "Qd8#" to chess.js (Black's king is boxed in by f7 g7 h7), but a piece arriving in Black's pocket could block on e8 or f8, so the engine calls it check, not mate (rule 18).
+    // Rxa2 wins Black's undefended queen. The notation mate earns a place among the finalists - and nothing more once the engine has judged it.
+    const m = scene({ a: '6k1/5ppp/8/8/8/8/q7/R2QK3 w - - 0 1', b: START });
+    const mated = applyAction(m, 0, { kind: 'move', board: 'A', from: 'd1', to: 'd8' }, m.nowMs);
+    expect(isMate(mated)).toBe(false);
+    expect(mated.ok && mated.match.verdicts.A.status).toBe('stuck');
+    expect(keyOf(chooseBughouseAction(m, 0, 3000, BEST) as BughouseAction)).toBe('m:A:a1a2');
+  });
+
+  it('takes the free queen rather than the free pawn', () => {
+    // Rd1 takes the undefended queen on d7 (the king recaptures: 9 for 5); Bc1 takes the pawn on h6 for nothing
+    const m = scene({ a: '4k3/3q4/7p/8/8/8/8/2BRK3 w - - 0 1', b: START });
+    expect(keyOf(chooseBughouseAction(m, 0, 3000, BEST) as BughouseAction)).toBe('m:A:d1d7');
+  });
+
+  it('does not hang its queen for a pawn that is defended', () => {
+    // Qxd5 wins a pawn and loses the queen to exd5
+    const m = scene({ a: '6k1/8/4p3/3p4/8/8/8/3QK3 w - - 0 1', b: START });
+    for (const elo of [1200, 3000]) expect(keyOf(chooseBughouseAction(m, 0, elo, BEST) as BughouseAction)).not.toBe('m:A:d1d5');
   });
 
   it('back-rank / smothered safety: it does not take a free pawn that allows a MATING DROP, and it does when the opponent has nothing to drop', () => {
@@ -151,11 +181,12 @@ describe('what the bot finds', () => {
       expect(outcome.ok).toBe(true);
       if (outcome.ok) {
         // whatever it chose, Black has no mating drop afterwards
-        const replies = ['p', 'n', 'b', 'r', 'q'].flatMap((piece) => (outcome.match.pockets[1][piece as 'n'] > 0 ? ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].flatMap((f) => ['1', '2', '3', '4', '5', '6', '7', '8'].map((r) => `${f}${r}`)).map((square) => ({ piece: piece as 'n', square })) : []));
-        const mated = replies.some((d) => {
-          const reply = applyAction(outcome.match, 1, { kind: 'drop', board: 'A', ...d }, outcome.match.nowMs);
-          return reply.ok && reply.match.result !== null && 'winnerTeam' in reply.match.result;
-        });
+        const mated = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].some((f) =>
+          ['1', '2', '3', '4', '5', '6', '7', '8'].some((r) => {
+            const reply = applyAction(outcome.match, 1, { kind: 'drop', board: 'A', piece: 'n', square: `${f}${r}` }, outcome.match.nowMs);
+            return reply.ok && reply.match.result !== null && 'winnerTeam' in reply.match.result;
+          }),
+        );
         expect(mated).toBe(false);
       }
     }
@@ -182,64 +213,39 @@ describe('what the bot finds', () => {
     expect(mated, `the bot chose ${keyOf(action)}, which allows a mating drop`).toBe(false);
   });
 
-  it('never under-promotes by choice: the scored branch promotes to a queen or a knight, the random branch to a queen', () => {
+  it('promotes to a queen when it can; never under-promotes by choice (the random branch plays a queen too)', () => {
     const m = scene({ a: '8/P6k/8/8/8/8/8/K7 w - - 0 1', b: START });
-    const best = chooseBughouseAction(m, 0, 3000, BEST) as Extract<BughouseAction, { kind: 'move' }>;
-    expect(best.kind).toBe('move');
-    expect(['q', 'n', undefined]).toContain(best.promotion);
+    expect(keyOf(chooseBughouseAction(m, 0, 3000, BEST) as BughouseAction)).toBe('m:A:a7a8q');
     for (let seed = 1; seed <= 40; seed++) {
       const random = chooseBughouseAction(m, 0, 400, mulberry32(seed)) as Extract<BughouseAction, { kind: 'move' }>;
       if (random.from === 'a7') expect(random.promotion).toBe('q');
     }
   });
 
-  it('a seat with pieces in the pocket uses them: over a bot match the bots drop (so a human partner\'s captures are not hoarded)', { timeout: 120_000 }, () => {
-    let drops = 0;
-    let decisions = 0;
-    for (let seed = 1; seed <= 6; seed++) {
-      const r = runArena({ seed: 900 + seed, elos: [2400, 2400, 2400, 2400], maxCommits: 150 });
-      drops += r.decisions.filter((d) => d.kind === 'drop').length;
-      decisions += r.decisions.length;
-    }
-    expect(drops).toBeGreaterThan(20);
-    expect(decisions).toBeGreaterThan(250);
+  it('a piece in the pocket gets used: with a queen to drop and nothing to take, the scored choice is a drop', () => {
+    const m = scene({ a: '4k3/8/8/8/8/8/8/4K3 w - - 0 1', b: START, pockets: { 0: { q: 1 } } });
+    const action = chooseBughouseAction(m, 0, 3000, BEST) as BughouseAction;
+    expect(action.kind).toBe('drop');
+    expect(applyAction(m, 0, action, m.nowMs).ok).toBe(true);
   });
-});
 
-describe('self-play: whole matches end, and what is conserved stays conserved', () => {
-  it('40 matches with mixed strengths all terminate on their own, with the conservation invariant, no refusal, and every kind of end reachable', { timeout: 300_000 }, () => {
-    const ends: Record<string, number> = {};
-    let refused = 0;
-    let commits = 0;
-    for (let seed = 1; seed <= 40; seed++) {
-      const tier = [TIERS[seed % 7], TIERS[(seed + 2) % 7], TIERS[(seed + 4) % 7], TIERS[(seed + 6) % 7]] as [number, number, number, number];
-      const r = runArena({ seed: 5000 + seed, elos: tier, timeControl: BUGHOUSE_TIME_CONTROLS[seed % 6], maxCommits: 3000 });
-      expect(r.match.result, `match ${seed} did not end`).not.toBeNull();
-      expect(r.conservation).toEqual([]);
-      refused += r.refused.length;
-      commits += r.commits;
-      const result = r.match.result;
-      if (result && 'winnerTeam' in result) ends[result.reason] = (ends[result.reason] ?? 0) + 1;
+  it('drops go to safe squares: a queen is not dropped where it is simply taken', () => {
+    // Black's rook on a8 covers the whole a-file and rank 8; Black's king is on e8. Squares the queen could be taken on for nothing are not where it goes.
+    const m = scene({ a: 'r3k3/8/8/8/8/8/8/4K3 w - - 0 1', b: START, pockets: { 0: { q: 1 } } });
+    for (let seed = 1; seed <= 10; seed++) {
+      const action = chooseBughouseAction(m, 0, 3000, mulberry32(seed * 7919)) as Extract<BughouseAction, { kind: 'drop' }> | Extract<BughouseAction, { kind: 'move' }>;
+      if (action.kind === 'drop') {
+        const after = applyAction(m, 0, action, m.nowMs);
+        expect(after.ok).toBe(true);
+        if (after.ok) {
+          const taken = ['a8', 'e8'].some((from) => {
+            const reply = applyAction(after.match, 1, { kind: 'move', board: 'A', from, to: action.square }, after.match.nowMs);
+            return reply.ok && after.match.boards.A.fen.split(' ')[0] !== reply.match.boards.A.fen.split(' ')[0] && reply.match.pockets[2].q === 1;
+          });
+          expect(taken, `the queen was dropped on ${action.square}, where it is taken for nothing`).toBe(false);
+        }
+      }
     }
-    expect(refused).toBe(0);
-    expect(commits).toBeGreaterThan(1500);
-    expect(ends.flag ?? 0).toBeGreaterThan(0);
-  });
-});
-
-describe('the decision budget', () => {
-  it('p50 / p99 / max per decision at every tier (best of 3 per decision); p99 stays under the 25 ms budget', { timeout: 600_000 }, () => {
-    runArena({ seed: 999, elos: [3000, 3000, 3000, 3000], maxCommits: 200 }); // warm-up: the first decisions pay for the JIT
-    const rows: string[] = [];
-    for (const elo of TIERS) {
-      const samples: number[] = [];
-      for (let seed = 1; seed <= 12; seed++) samples.push(...runArena({ seed: 7000 + seed, elos: [elo, elo, elo, elo], maxCommits: 400, repeat: 3 }).decisions.map((d) => d.ms));
-      samples.sort((a, b) => a - b);
-      const p = (q: number) => samples[Math.floor(samples.length * q)];
-      rows.push(`elo ${elo}: n=${samples.length} p50 ${p(0.5).toFixed(2)} ms, p99 ${p(0.99).toFixed(2)} ms, max ${samples[samples.length - 1].toFixed(2)} ms`);
-      expect(p(0.99), `p99 at ELO ${elo}`).toBeLessThan(25);
-    }
-    console.info(`Bughouse bot decision cost (best of 3 per decision):\n${rows.join('\n')}`);
   });
 });
 
