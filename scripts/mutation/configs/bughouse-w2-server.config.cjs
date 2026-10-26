@@ -61,7 +61,9 @@ const mutants = [
   r('clock timers: the first running clock on either board', 'running.find((c) => c.board === board)', 'running[0]'),
   r('clock timers: the delay is the deadline itself', 'Math.max(0, clock.deadline - this.timers.now())', 'Math.max(0, clock.deadline)'),
   r('clock timers: the delay adds the clock', 'clock.deadline - this.timers.now()', 'clock.deadline + this.timers.now()'),
-  r('clock timers: (EQUIVALENT: a negative delay behaves as zero; the deadline is always after the instant the commit read - settle flags every due clock first - so the clamp never acts: test-bughouse-rooms section 17 pins every armed delay as non-negative) the delay is not clamped', 'Math.max(0, clock.deadline - this.timers.now())', 'clock.deadline - this.timers.now()'),
+  // W3a audit: this was labelled EQUIVALENT ("the clamp never acts") - wrong: the re-arm reads the clock AFTER the broadcast, so a slow broadcast leaves a deadline behind it and Node 24
+  // prints a TimeoutNegativeWarning for the negative delay. Killed by the "slow broadcast" block at the end of test-bughouse-rooms.mjs.
+  r('clock timers: the delay is not clamped (a broadcast slower than the remaining time)', 'Math.max(0, clock.deadline - this.timers.now())', 'clock.deadline - this.timers.now()'),
   r('clock timer: a fired timer does not settle', "    if (room.status !== 'active') return;\n    this.run(room, null);", "    if (room.status !== 'active') return;"),
   r('clock timer: a finished room still settles', "    room.clockTimers[board] = null;\n    if (room.status !== 'active') return;\n    this.run(room, null);", '    room.clockTimers[board] = null;\n    this.run(room, null);'),
   r('clock timer: (EQUIVALENT: the fired handle is replaced or cleared by the very next line of the same synchronous call - run() re-arms or finishes - and clearing a fired timer is a no-op) the fired handle is kept', '  private onClockTimer(room: BugRoom, board: BoardId): void {\n    room.clockTimers[board] = null;\n', '  private onClockTimer(room: BugRoom, board: BoardId): void {\n'),
@@ -93,7 +95,7 @@ const mutants = [
   r('playBotTurn: a flag is reported as a fault', "if (outcome.kind === 'applied' || outcome.kind === 'flag') return;", "if (outcome.kind === 'applied') return;"),
   r('playBotTurn: the fallback is not played', '    if (fallback) this.run(room, { seat, action: fallback });\n', ''),
   r('playBotTurn: the fault is not logged', 'console.error(`[bughouseRooms] the bot of seat', 'console.debug(`[bughouseRooms] the bot of seat'),
-  r('playBotTurn: (EQUIVALENT: a seat whose verdict is not stuck always has an action - judgeBoard and firstLegalAction enumerate the same moves and drops; pinned by the property in bughouseBot.test.ts) a seat with no legal action is not reported', 'else console.error(`[bughouseRooms] seat', 'else console.debug(`[bughouseRooms] seat'),
+  r('playBotTurn: a seat with no legal action is only debug-logged (W3a audit: NOT equivalent - killed by the white-box "reported twice, as errors" check; the engine never produces the state, the report is the net for it)', 'else console.error(`[bughouseRooms] seat', 'else console.debug(`[bughouseRooms] seat'),
   r('grace: a connected human is taken over', "if (runtime.controller !== 'human' || runtime.connected) return;", "if (runtime.controller !== 'human') return;"),
   r('grace: a bot seat is taken over again', "if (runtime.controller !== 'human' || runtime.connected) return;", 'if (runtime.connected) return;'),
   r('grace: an empty room gets a bot', '    if (this.connectedHumans(room) === 0) return;\n', ''),
@@ -289,7 +291,7 @@ const mutants = [
   k('matchmaker: the countdown is not cancelled below two', '    } else if (lobby.timer !== null) {\n      this.timers.clearTimer(lobby.timer);\n      lobby.timer = null;\n    }', '    }'),
   k('matchmaker: the cancelled countdown stays set', '      this.timers.clearTimer(lobby.timer);\n      lobby.timer = null;\n    }\n  }', '      this.timers.clearTimer(lobby.timer);\n    }\n  }'),
   k('matchmaker: the fill wait is one millisecond longer', 'this.onFillTimer(lobby), this.fillWaitMs);', 'this.onFillTimer(lobby), this.fillWaitMs + 1);'),
-  k('matchmaker: (EQUIVALENT: rearmTimer clears the countdown whenever the lobby changes or empties, so a callback only ever sees its own qualifying lobby; test-bughouse-matchmaking section 7 calls onFillTimer on stale lobbies and pins the result) the stale-lobby guard', 'if (this.lobbies.get(lobby.key) !== lobby || sizeOf(lobby) < BUG_MIN_HUMANS) return;', 'if (false) return;'),
+  k('matchmaker: the stale-lobby guard is gone (W3a audit: NOT equivalent - the white-box calls of onFillTimer on a copy of the lobby and on a lobby that dropped below two kill it)', 'if (this.lobbies.get(lobby.key) !== lobby || sizeOf(lobby) < BUG_MIN_HUMANS) return;', 'if (false) return;'),
   k('matchmaker: a stale lobby with too few humans starts', 'if (this.lobbies.get(lobby.key) !== lobby || sizeOf(lobby) < BUG_MIN_HUMANS) return;', 'if (this.lobbies.get(lobby.key) !== lobby) return;'),
   k('matchmaker: a replaced lobby starts', 'if (this.lobbies.get(lobby.key) !== lobby || sizeOf(lobby) < BUG_MIN_HUMANS) return;', 'if (sizeOf(lobby) < BUG_MIN_HUMANS) return;'),
   k('matchmaker: no countdown is announced', 'return lobby.timer !== null ? Math.max(0, this.fillWaitMs - (this.timers.now() - lobby.timerStartedAt)) : null;', 'return null;'),

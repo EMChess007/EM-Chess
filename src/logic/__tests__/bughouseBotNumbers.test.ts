@@ -490,6 +490,24 @@ describe('the guards that no reachable position can trigger (each pinned as a pr
     expect(firstLegalAction(scene({ a: START, b: START }), 0)).not.toBeNull();
   });
 
+  it('a seat that cannot act draws NOTHING from the random stream (W3a audit: the stream is shared by every later bot decision of a seeded match, so one stray draw changes them all)', () => {
+    let draws = 0;
+    const counting = () => {
+      draws++;
+      return 0.5;
+    };
+    const stuck = scene({ a: 'R6k/6pp/8/8/8/8/8/K7 b - - 0 1', b: START });
+    const stalemate = scene({ a: START, b: '7k/5Q2/6K1/8/8/8/8/8 b - - 0 1' });
+    for (const elo of [400, 3000]) {
+      expect(chooseBughouseAction(stuck, 1, elo, counting)).toBeNull();
+      expect(chooseBughouseAction(stalemate, 3, elo, counting)).toBeNull();
+    }
+    expect(draws).toBe(0);
+    // ...and a seat that can act draws at least the dial's one
+    expect(chooseBughouseAction(scene({ a: START, b: START }), 0, 3000, counting)).not.toBeNull();
+    expect(draws).toBeGreaterThan(0);
+  });
+
   it('a seat that is not on move, or in a finished match, chooses nothing - in the random branch too, which does not go through the engine', () => {
     const m = scene({ a: START, b: START });
     for (const elo of [400, 3000]) {

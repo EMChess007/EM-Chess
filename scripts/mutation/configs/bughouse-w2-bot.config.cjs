@@ -18,7 +18,8 @@
 //   pass 2: a notation that does not resolve ... / resolve: a thrown error escapes - every notation chess.js lists resolves, and chess.move never throws for one (proved over real positions)
 //   pass 2: any result is a mate / reply: any result is a mate - a move or drop ends the match only by checkmate (proved over real positions)
 //   pass 2: the pocket is read before the move   - no move or drop changes the OPPONENT's pocket (proved over real positions)
-//   choose: a seat with nothing to do chooses    - with no move and no drop every path returns null (pinned: a stalemated seat with an empty pocket)
+// NOT EQUIVALENT after all (W3a audit): "choose: a seat with nothing to do chooses" returns null on every path, but it draws one number from the random stream first, and the stream
+// is shared by every later decision of a seeded match - killed by "a seat that cannot act draws NOTHING from the random stream" in bughouseBotNumbers.test.ts.
 const fs = require('fs');
 const T = 'src/logic/__tests__/';
 const FAST = T + 'bughouseBot.test.ts ' + T + 'bughouseBotNumbers.test.ts'; // (a bare "bughouseBot" would also match bughouseBotBudget.test.ts)
