@@ -149,3 +149,14 @@ Known limits of what exists:
   and by the per-board differential on thousands of positions. A future change that makes the engine list an EXTRA illegal move which no test plays would be caught by the differential, not by the model.
 - **`Bughouse` text snapshots are canonical-only on read** (the FEN must be exactly what the engine writes): a snapshot written by a future engine that changes the FEN writer must bump `SNAPSHOT_VERSION`.
 
+## Bughouse Local (W3a): what it still leaves out
+
+Built on `paired/bughouse` (TESTING.md section 37, BUGHOUSE_SPEC.md section 9). Open:
+
+- **Humans on both boards cannot play yet** (W3b: the raw-touch input layer, per-board selection reducers, the dual layouts, the rotate-below-minimum overlay). The setup refuses them with the spec's size sentence below 28 px cells and "coming next" above it.
+- **No premoves** in Local, also with one human (W5).
+- **Not checked in the browser:** pass-and-play (dom-tested only), dark theme, a human mate or promotion, a rotation mid-game. Not checked on a device (Expo Go): taps on the board and the 36 px landscape bar are web-verified only.
+- **The partner thumbnail shows its pockets as text** ("Q1 R2 N2 P8") and its status as a sentence; a long pocket does not wrap on a 360 px phone beside the 96 px board (it fits in the tests and the browser pass, but a pocket of 20 pieces was not tried).
+- **Bots on the unwatched board play fast** (200 ms bullet / 450 ms): in a 1-minute game the partner board can finish dozens of moves while a human thinks; there is no "slow bots" setting (the spec does not ask for one).
+- **A game left on the game-over card keeps its two boards mounted** until Rematch or Back; nothing is saved (no history, rating or PGN for Bughouse, B18).
+
