@@ -80,6 +80,12 @@ vi.mock('../components/useBoardGestures', () => ({
   MOVE_THRESHOLD_PX: 8,
   useBoardGestures: (options: unknown) => {
     (globalThis as unknown as { __boardGestures: unknown }).__boardGestures = options;
+    // A screen with several boards (Bughouse) names each: `tapBoardSquare` finds the one it means by that key.
+    const key = (options as { seamKey?: string }).seamKey;
+    if (key) {
+      const registry = ((globalThis as unknown as { __boardGesturesByKey?: Record<string, unknown> }).__boardGesturesByKey ??= {});
+      registry[key] = options;
+    }
     return { containerRef: { current: null }, onLayout: () => {}, panHandlers: {}, liveArrow: null, clearLiveArrow: () => {} };
   },
 }));

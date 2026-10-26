@@ -48,3 +48,30 @@ export function offeredSquares(): string[] {
 
 /** The text of a seat card (the strip's `seat-N` view): name, score, clock, who plays it, status. */
 export const seatCard = (seat: number): HTMLElement => screen.getByTestId(`seat-${seat}`);
+
+// --- Bughouse: several boards on one screen --------------------------------------------------------------------------------------------------
+
+/** Taps `square` on Bughouse board `board`, drawn with `orientation` at the bottom (a finger on that square's cell). The board must be named: the screen has two. */
+export function tapBoardSquare(board: 'A' | 'B', square: string, orientation: 'w' | 'b'): void {
+  const registry = (globalThis as unknown as { __boardGesturesByKey?: Record<string, CapturedGestures> }).__boardGesturesByKey;
+  const options = registry?.[board];
+  if (!options) throw new Error(`no board ${board} has been rendered`);
+  const file = square.charCodeAt(0) - 97;
+  const rank = Number(square[1]);
+  const cell = orientation === 'w' ? { row: 8 - rank, col: file } : { row: rank - 1, col: 7 - file };
+  act(() => options.onTap(cell));
+}
+
+/**
+ * Resizes the jsdom window the screens read their size from. react-native-web's Dimensions reads `document.documentElement.clientWidth / clientHeight` (jsdom reports 0 for both, so
+ * every dom test that does not call this runs in a 0 x 0 window) and follows the `resize` event.
+ */
+export function setWindowSize(width: number, height: number): void {
+  act(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: height });
+    Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: width });
+    Object.defineProperty(document.documentElement, 'clientHeight', { configurable: true, value: height });
+    window.dispatchEvent(new Event('resize'));
+  });
+}

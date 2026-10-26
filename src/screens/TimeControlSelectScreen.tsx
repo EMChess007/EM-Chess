@@ -21,6 +21,8 @@ interface TimeControlSelectScreenProps {
   showColorPicker?: boolean;
   /** Categories to leave out (4 Player Chess leaves out Daily: its games are local and never persisted). */
   excludeCategories?: TimeControlCategory[];
+  /** Offer only these presets (by id) - Bughouse has six controls of its own. A category left with none of them must be listed in `excludeCategories` too (its title would be empty). */
+  onlyIds?: readonly string[];
 }
 
 export default function TimeControlSelectScreen({
@@ -29,6 +31,7 @@ export default function TimeControlSelectScreen({
   subtitle,
   showColorPicker = false,
   excludeCategories = [],
+  onlyIds,
 }: TimeControlSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
@@ -60,7 +63,7 @@ export default function TimeControlSelectScreen({
           <View key={category} style={styles.section}>
             <Text style={styles.sectionTitle}>{label}</Text>
             <View style={styles.presetGrid}>
-              {getTimeControlsByCategory(category).map((tc) => (
+              {getTimeControlsByCategory(category).filter((tc) => !onlyIds || onlyIds.includes(tc.id)).map((tc) => (
                 <Pressable
                   key={tc.id}
                   style={styles.presetButton}

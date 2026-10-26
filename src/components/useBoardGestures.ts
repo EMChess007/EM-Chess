@@ -19,6 +19,8 @@ export interface BoardGestureOptions {
   onArrow: (from: GridPoint, to: GridPoint) => void;
   /** An armed long-press released on the cell it started on. */
   onHighlight: (cell: GridPoint) => void;
+  /** Names the board for the rendered tests, which render several boards at once (the Bughouse screens): the test seam files these options under it. Ignored here. */
+  seamKey?: string;
 }
 
 export interface BoardGestures {

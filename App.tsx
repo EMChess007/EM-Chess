@@ -41,6 +41,8 @@ import RegisterScreen from './src/screens/RegisterScreen';
 import SetupChessOnlineScreen from './src/screens/SetupChessOnlineScreen';
 import TournamentScreen from './src/screens/TournamentScreen';
 import TournamentStandingsScreen from './src/screens/TournamentStandingsScreen';
+import BughouseGameScreen from './src/screens/BughouseGameScreen';
+import BughouseSetupScreen from './src/screens/BughouseSetupScreen';
 import FourPlayerGameScreen from './src/screens/FourPlayerGameScreen';
 import FourPlayerMatchmakingScreen from './src/screens/FourPlayerMatchmakingScreen';
 import FourPlayerOnlineGameScreen from './src/screens/FourPlayerOnlineGameScreen';
@@ -66,6 +68,8 @@ import type { BotPersonality } from './src/types/bot';
 import type { ColorChoice, PieceColor } from './src/types/chess';
 import { SEAT_NAMES, defaultSeatConfig, withController, type Seat, type SeatConfig } from './src/logic/fourPlayer';
 import { controllerForBot } from './src/logic/fourPlayerBots';
+import type { BughouseTimeControl } from './src/logic/bughouse/rules';
+import { BUGHOUSE_TIME_CONTROL_IDS, bughouseTimeControlOf, presetSeatConfig } from './src/logic/bughouseLayout';
 import type { AnalyzeParams } from './src/types/history';
 import { variantModeLabel, variantTitle } from './src/logic/fourPlayerVariant';
 import { fourVariantOf, type FourMatchFoundPayload, type FourVariant } from './src/logic/fourPlayerWire';
@@ -151,6 +155,11 @@ type Screen =
   | { name: 'fourPlayerMatchmaking'; variant: FourVariant; token: string; timeControl: TimeControl }
   | { name: 'fourPlayerOnlineGame'; token: string; match: FourMatchFoundPayload; timeControl: TimeControl; resume: boolean }
   | { name: 'fourPlayerSpectate'; token: string | null; roomId: string }
+  // Bughouse (Local): the seat map of src/logic/bughouse/types.ts on the 4-seat SeatConfig.
+  | { name: 'bughouseSetup'; seats: SeatConfig }
+  | { name: 'bughouseBotSelect'; seats: SeatConfig; seat: Seat }
+  | { name: 'bughouseTimeControl'; seats: SeatConfig }
+  | { name: 'bughouseGame'; seats: SeatConfig; timeControl: BughouseTimeControl }
   | { name: 'themeSelect' }
   | { name: 'streak' }
   | { name: 'puzzleRush'; themeFilter?: string[] }
@@ -382,6 +391,7 @@ export default function App() {
         onFourPlayerGiveawayOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'giveaway', token: authSession.token })}
         onChaturaji={() => setScreen({ name: 'fourPlayerSetup', variant: 'chaturaji', seats: defaultSeatConfig() })}
         onChaturajiOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'chaturaji', token: authSession.token })}
+        onBughouse={() => setScreen({ name: 'bughouseSetup', seats: presetSeatConfig('solo') })}
         fourPlayerResumeVariant={fourResume ? fourVariantOf(fourResume.match) : undefined}
         onFourPlayerResume={
           fourResume && authSession?.token === fourResume.token
@@ -852,6 +862,40 @@ export default function App() {
     );
   } else if (screen.name === 'fourPlayerGame') {
     content = <FourPlayerGameScreen variant={screen.variant} seats={screen.seats} timeControl={screen.timeControl} onExit={() => setScreen({ name: 'playModeSelect' })} />;
+  } else if (screen.name === 'bughouseSetup') {
+    const { seats } = screen;
+    content = (
+      <BughouseSetupScreen
+        seats={seats}
+        onChange={(next) => setScreen({ name: 'bughouseSetup', seats: next })}
+        onPickBot={(seat) => setScreen({ name: 'bughouseBotSelect', seats, seat })}
+        onContinue={() => setScreen({ name: 'bughouseTimeControl', seats })}
+        onBack={() => setScreen({ name: 'playModeSelect' })}
+      />
+    );
+  } else if (screen.name === 'bughouseBotSelect') {
+    const { seats, seat } = screen;
+    content = (
+      <BotSelectScreen
+        subtitle={`Bughouse · seat ${seat + 1}`}
+        engineLabel="Bughouse bot"
+        onSelect={(bot) => setScreen({ name: 'bughouseSetup', seats: withController(seats, seat, controllerForBot(bot)) })}
+        onBack={() => setScreen({ name: 'bughouseSetup', seats })}
+      />
+    );
+  } else if (screen.name === 'bughouseTimeControl') {
+    const { seats } = screen;
+    content = (
+      <TimeControlSelectScreen
+        subtitle="Bughouse · Local"
+        excludeCategories={['rapid', 'daily', 'unlimited']}
+        onlyIds={BUGHOUSE_TIME_CONTROL_IDS}
+        onSelect={(timeControl) => setScreen({ name: 'bughouseGame', seats, timeControl: bughouseTimeControlOf(timeControl) })}
+        onBack={() => setScreen({ name: 'bughouseSetup', seats })}
+      />
+    );
+  } else if (screen.name === 'bughouseGame') {
+    content = <BughouseGameScreen seats={screen.seats} timeControl={screen.timeControl} onExit={() => setScreen({ name: 'playModeSelect' })} />;
   } else if (screen.name === 'fourPlayerOnlineTimeControl') {
     const { variant, token } = screen;
     content = (

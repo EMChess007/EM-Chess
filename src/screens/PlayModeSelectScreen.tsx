@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { appAlert } from '../components/AppAlert';
+import BughouseRulesSheet from '../components/BughouseRulesSheet';
 import ChaturajiRulesSheet from '../components/ChaturajiRulesSheet';
 import ModeButtonLabel from '../components/ModeButtonLabel';
 import ScreenHeader from '../components/ScreenHeader';
@@ -44,6 +45,8 @@ interface PlayModeSelectScreenProps {
   /** Chaturaji (4 players on an 8 x 8 board): Local (seat setup, bots allowed) and Online (behind the login gate). */
   onChaturaji: () => void;
   onChaturajiOnline: () => void;
+  /** Bughouse (two teams of two, two boards): Local only so far (seat setup, bots allowed). */
+  onBughouse: () => void;
   /** Set while the player has left an online 4 Player game that is still going: offers "Return to your game". */
   onFourPlayerResume?: () => void;
   /** Which game that left online game is, so the link sits under its card (4 Player Chess when omitted, as before Chaturaji). */
@@ -94,6 +97,7 @@ export default function PlayModeSelectScreen({
   onFourPlayerGiveawayOnline,
   onChaturaji,
   onChaturajiOnline,
+  onBughouse,
   onFourPlayerResume,
   fourPlayerResumeVariant = 'ffa',
   onLocalSpellChess,
@@ -131,6 +135,7 @@ export default function PlayModeSelectScreen({
   const handleFourPlayerGiveawayOnline = requireLogin(onFourPlayerGiveawayOnline);
   const handleChaturajiOnline = requireLogin(onChaturajiOnline);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [bughouseRulesOpen, setBughouseRulesOpen] = useState(false);
   const resumeLink = (variant: FourVariant) =>
     onFourPlayerResume && fourPlayerResumeVariant === variant ? (
       <Pressable style={styles.spectateLink} onPress={onFourPlayerResume}>
@@ -309,6 +314,20 @@ export default function PlayModeSelectScreen({
           {resumeLink('chaturaji')}
         </View>
         <ChaturajiRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />
+
+        <View style={styles.categoryCard} testID="bughouse-card">
+          <Text style={styles.categoryTitle}>Bughouse</Text>
+          <Text style={styles.categorySubtitle}>Two teams of two on two boards — a piece you capture goes to your partner&apos;s pocket. Play against bots or pass the device</Text>
+          <View style={styles.subButtonRow}>
+            <Pressable accessibilityLabel="Bughouse local" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onBughouse}>
+              <ModeButtonLabel label="Local" style={styles.subButtonText} />
+            </Pressable>
+          </View>
+          <Pressable accessibilityLabel="Bughouse rules" testID="bughouse-rules-link" style={styles.spectateLink} onPress={() => setBughouseRulesOpen(true)}>
+            <Text style={styles.spectateLinkText}>How to play ›</Text>
+          </Pressable>
+        </View>
+        <BughouseRulesSheet visible={bughouseRulesOpen} onClose={() => setBughouseRulesOpen(false)} />
 
         <View style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>Engine vs Engine</Text>
