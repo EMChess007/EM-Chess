@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import { BUGHOUSE_GOLDEN_SEEDS, BUGHOUSE_SCENE_NAMES, recordAllBughouseGames, recordBughouseGame, recordBughouseScene, sha256 } from './bughouseGoldenKit';
 
 /**
- * Bughouse - THE BUGHOUSE GOLDEN TRANSCRIPTS (BUGHOUSE_SPEC.md W1 test 2f): 40 seeded full matches and 20 scripted scenes (the opening with captures crossing to the partner's pocket; a
+ * Bughouse - THE BUGHOUSE GOLDEN TRANSCRIPTS (BUGHOUSE_SPEC.md W1 test 2f): 40 seeded full matches and 19 scripted scenes (the opening with captures crossing to the partner's pocket; a
  * stuck player rescued by the partner's capture; a stalemate decided by the clock; a smothered mate; a drop mate; a flag against a mate one millisecond before, at, and after its deadline;
  * the exact-millisecond tie at both levels of the tie-break; two flags one millisecond apart; a promoted queen returning as a pawn; a dropped pawn double-stepping and taken en passant; a
- * rook dropped back not restoring castling; a resignation off turn; the server's disconnect; a voided match; every kind of refusal; the increment) replay byte for byte as recorded when
+ * rook dropped back not restoring castling; a resignation off turn; a voided match; every kind of refusal; the increment) replay byte for byte as recorded when
  * the W1 rules were final (fixtures/bughouseGolden.json), every transcript carrying the COMPLETE match text after every input. See bughouseGoldenKit.ts.
  */
 const golden: Record<string, string> = JSON.parse(readFileSync(`${__dirname}/fixtures/bughouseGolden.json`, 'utf8'));
@@ -14,7 +14,7 @@ const golden: Record<string, string> = JSON.parse(readFileSync(`${__dirname}/fix
 describe('Bughouse golden transcripts', () => {
   it('the fixture covers exactly the seeds and scenes the kit replays', () => {
     expect(Object.keys(golden).sort()).toEqual([...BUGHOUSE_GOLDEN_SEEDS.map((s) => `game:${s}`), ...BUGHOUSE_SCENE_NAMES.map((n) => `scene:${n}`)].sort());
-    expect(BUGHOUSE_SCENE_NAMES).toHaveLength(20);
+    expect(BUGHOUSE_SCENE_NAMES).toHaveLength(19);
   });
 
   it.each(BUGHOUSE_SCENE_NAMES)('scene %s replays identically', (name) => {
@@ -65,7 +65,6 @@ describe('Bughouse golden transcripts', () => {
     expect(recordBughouseScene('resignOffTurn')).toContain('rejected over');
     expect(recordBughouseScene('voided')).toContain('final {"voided":true,"reason":"abandoned"}');
     expect(recordBughouseScene('refusals')).toMatch(/rejected illegalMove[\s\S]*rejected wrongBoard[\s\S]*rejected notYourTurn[\s\S]*rejected dropNotInPocket[\s\S]*rejected malformed[\s\S]*rejected time/);
-    expect(recordBughouseScene('disconnect')).toContain('"reason":"disconnect"');
     expect(recordBughouseScene('increment')).toContain('"remainingMs":118500');
   });
 

@@ -68,7 +68,10 @@ describe('the text', () => {
     const voided = voidMatch(m, 5000) as BughouseMatch;
     expect(roundTrip(voided).match.result).toEqual({ voided: true, reason: 'abandoned' });
     expect(roundTrip(play(m, 1, { kind: 'resign' }, 5000)).match.result).toMatchObject({ reason: 'resign' });
-    expect(roundTrip(play(m, 2, { kind: 'disconnect' }, 5000)).match.result).toMatchObject({ reason: 'disconnect' });
+    // a result with a reason this engine does not issue (the removed 'disconnect') is not a snapshot it could have written
+    const forged = serializeMatch(play(m, 2, { kind: 'resign' }, 5000)).replace('"reason":"resign"', '"reason":"disconnect"');
+    expect(forged).toContain('"reason":"disconnect"');
+    expect(deserializeMatch(forged).ok).toBe(false);
     const flagged = scene({ timeControl: { initialMs: 1000, incrementMs: 0 }, startMs: 0 });
     void flagged;
   });

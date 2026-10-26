@@ -9,3 +9,5 @@ export * from './settle';
 export * from './invariants';
 export * from './snapshot';
 export * from './premove';
+export * from './bot';
+export * from './wire';

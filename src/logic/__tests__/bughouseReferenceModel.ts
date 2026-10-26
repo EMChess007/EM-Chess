@@ -196,17 +196,17 @@ export class RefMatch {
   }
 
   private apply(seat: any, action: any, now: number): RefOutcome {
-    const kinds = ['move', 'drop', 'resign', 'disconnect'];
+    const kinds = ['move', 'drop', 'resign'];
     if (!Number.isInteger(seat) || seat < 0 || seat > 3 || typeof action !== 'object' || action === null || !kinds.includes(action.kind)) return { kind: 'rejected', reason: 'malformed' };
     const square = /^[a-h][1-8]$/;
     if (action.kind === 'move' && !(BOARD_NAME.includes(action.board) && typeof action.from === 'string' && square.test(action.from) && typeof action.to === 'string' && square.test(action.to) && (action.promotion === undefined || (typeof action.promotion === 'string' && action.promotion.length === 1 && 'qrbn'.includes(action.promotion))))) return { kind: 'rejected', reason: 'malformed' };
     if (action.kind === 'drop' && !(BOARD_NAME.includes(action.board) && typeof action.piece === 'string' && LETTERS.includes(action.piece as Letter) && typeof action.square === 'string' && square.test(action.square))) return { kind: 'rejected', reason: 'malformed' };
 
-    if (action.kind === 'resign' || action.kind === 'disconnect') {
+    if (action.kind === 'resign') {
       this.seq += 1;
       this.now = now;
       this.freeze(now);
-      this.result = { winnerTeam: 3 - teamOf(seat), reason: action.kind, board: BOARD_NAME[boardOfSeat(seat)], loserSeat: seat };
+      this.result = { winnerTeam: 3 - teamOf(seat), reason: 'resign', board: BOARD_NAME[boardOfSeat(seat)], loserSeat: seat };
       return { kind: 'applied', banked: null };
     }
 
