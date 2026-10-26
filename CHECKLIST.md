@@ -98,3 +98,18 @@ was called "done" — don't repeat that on anything else.
   with `node_modules` linked and never copied, results outside the repo. A config's mutants carry their reason in the name when they are equivalent; every survivor is killed or proven
   equivalent by a test that pins the proof.
 - A rule that is easy to get wrong silently is pinned by a SCAN, not by memory: the board as a required argument is `bughouseBoardArgument.test.ts` (an AST scan of `src/logic/bughouse`).
+
+## 9. A server loop and a bot (Bughouse W2): what the work taught
+- A room manager has ONE funnel: every input and every timer goes through the engine's `settle(match, input | null, nowMs)` with one injected monotonic integer clock; a late or stale timer is then `idle`
+  and cannot change the outcome. Timers are re-armed from the engine's `runningClocks`, never from a second copy of the deadlines. Tests inject the clock and the timers (`manualTimers`); nothing waits.
+- A bot that runs in-process on the one event loop has a WORK budget made of COUNTS (candidates, probes, batches), never a clock; it is measured per ELO tier (p50 / p99 / max printed, only a ceiling
+  asserted, best of 3 per decision) and its caps are pinned as literals. A bot is never trusted: every action goes through the funnel, and a faulty answer falls back to the first legal action.
+- A message feature is proved by RECORDING every socket's events and inspecting ALL of them (the recipients are computed by the server from the seat map; a payload that names recipients is ignored);
+  matchmaking is proved isolated by running the new queue next to every existing one on the same `io` at the same time control.
+- A test that reads a number from the module it tests cannot kill a mutant of that number. When a mutation run leaves dozens of survivors, export the pure parts (scoring, probing, ordering) and pin them
+  with literals; for the hardest survivors run a DIFFERENTIAL SEARCH (the original and the mutated copy on seeded positions) and pin the first position where they differ.
+- Before labelling a mutant EQUIVALENT, write the property that proves it over real positions (and run it); an equivalence argued from the code's shape alone was wrong once (a guard the random branch
+  reaches without the engine) and a test killed it.
+- A real-socket test must not read "the last" event of a stream that a later, legitimate event can follow (a restarted app's socket ends after its hand-back): read the first event after the cause.
+- A test that scans the repo for a switch's name (CHECKLIST 7) must be taught about every new test that names the switch; run the older scans when a new switch test is added.
+- The 4-seat real-socket e2e prints 427 only with the second server for the real 30 s fill guard (`FOUR_E2E_REAL_FILL_URL`); without it the guard is skipped and the total is 422. Compare like with like.

@@ -127,15 +127,24 @@ PGN/FEN dialect that carries the pockets and the `~` promoted marks (the same di
 Crazyhouse uses it; Duck Chess (`displayDuck`) and Spell Chess (`displaySpellState`) still carry equivalent inline copies in each game screen and
 could migrate to it without any behaviour change.
 
-## Bughouse: what W0 and W1 built, and what is left (BUGHOUSE_SPEC.md sections 7 and 9)
+## Bughouse: what W0, W1 and W2 built, and what is left (BUGHOUSE_SPEC.md sections 7 and 9)
 
-Built (branch `paired/bughouse`, both repos): the mutation harness, the Crazyhouse golden, the four Crazyhouse additions, the generated mirror `sync:bughouse`, and the pure engine in `src/logic/bughouse/`
-(match, `settle`, `stuck`, results without a draw, snapshot, premove resolution). **Nothing is reachable from a menu and no server code exists yet.** Left, in order: W2 the server room manager, W3a / W3b the
-screens and the multi-touch layer, W4 the online client, W5 bots, W6 friend rooms, W7 quick messages and team chat, W8 browser end-to-end, W9 close-out (this is also where `/health/client-ip` may go).
+Built (branch `paired/bughouse`, both repos): the mutation harness, the Crazyhouse golden, the four Crazyhouse additions, the generated mirror `sync:bughouse`, the pure engine in `src/logic/bughouse/`
+(match, `settle`, `stuck`, results without a draw, snapshot, premove resolution), and (W2) the SERVER: `BughouseRoomManager`, the matchmaker, the `bug_*` handlers, the wire contract (`wire.ts`, mirrored), the bot
+(`bot.ts`, mirrored), team chat and quick messages. **Nothing is reachable from a menu yet** (the server side is wired in `backend/src/index.ts`, but no client speaks `bug_*`). Left, in order: W3a / W3b the
+screens and the multi-touch layer, W4 the online client, W5 premoves, W6 friend rooms, W7 real-socket scenarios beyond W2's, W8 browser end-to-end, W9 close-out (this is also where `/health/client-ip` may go).
 Known limits of what exists:
 - **`legalMovesOn` / `legalActions` cost about 3 ms a position** (chess.js lists each move with its notation and two FENs). The funnel never calls them (`applyAction` validates one move directly, about 0.2 ms);
-  a bot that searches needs its own cheaper move generation (BUGHOUSE_SPEC.md HP4), and a UI that highlights squares should ask for one piece's moves, not the whole list.
-- **`disconnect` is a result reason the engine can record, but the spec's rule 23 has no disconnect loss** (a gone seat goes to a bot, B19): W2 decides whether the server ever issues it.
+  the bot uses chess.js's string list (~0.25 ms) instead, and a UI that highlights squares should ask for one piece's moves, not the whole list.
+- **The Bughouse bot is NOT partner-aware (v1).** It drops what is in its pocket on its own merits (safe squares, checks, mates, material) and never plans around what its partner could capture, never uses premoves and never
+  sends quick messages. Partner awareness (hold a piece for the partner's coming mate, ask for a piece) is the optional 3-4 day step of BUGHOUSE_SPEC.md section 7. The ELO dial is the chance of using the scored choice;
+  the cost does not grow with it (p99 about 10-16 ms at every tier), so the server does not clamp the strength.
+- **The 8-messages-per-10-s quick-message limit can never refuse anyone while the 1.5 s interval holds** (messages 1.5 s apart: at most 7 fit in 10 s). It is kept as a second line of defence and pinned white-box;
+  if the interval is ever relaxed it becomes the binding rule.
+- **One game at a time is not enforced ACROSS the managers**: a socket seated in a 4-seat game can still queue for Bughouse (and the same already holds between the 2-player and 4-seat servers). The W4 client must keep
+  one active game; if it ever needs a server rule, the three handlers need one shared "seated anywhere" check.
+- **Friend rooms (W6) plug in at two places only**: `BughouseMatchmaker.joinGroup` (a pair is one group that is never split) and `placeGroups` (the one function that assigns seats; today a uniform shuffle).
+- **State is in memory**: a server restart ends every match (the result is not even recorded: nothing is persisted for Bughouse).
 - **The whole-match model test compares full legal lists on a sample** (one commit in 25 of the board that moved, and every commit of every 50th match): every list is also exercised by playing the model's moves
   and by the per-board differential on thousands of positions. A future change that makes the engine list an EXTRA illegal move which no test plays would be caught by the differential, not by the model.
 - **`Bughouse` text snapshots are canonical-only on read** (the FEN must be exactly what the engine writes): a snapshot written by a future engine that changes the FEN writer must bump `SNAPSHOT_VERSION`.
