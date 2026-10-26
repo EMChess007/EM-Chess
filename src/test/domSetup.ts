@@ -8,13 +8,27 @@
  * Everything else - the real board, seat strip, result card, sheets and screens, the real engine - is the code the app ships.
  */
 import { cleanup } from '@testing-library/react';
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
 
 declare global {
   // eslint-disable-next-line no-var
   var IS_REACT_ACT_ENVIRONMENT: boolean;
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+/**
+ * THE DEFAULT WINDOW IS A PHONE (412 x 915). react-native-web's Dimensions reads `document.documentElement.clientWidth / clientHeight`, which jsdom reports as 0 - so, without
+ * this, every rendered test that does not resize the window runs in a 0 x 0 one, where every size- and layout-dependent branch of a screen takes its degenerate path. Each test
+ * starts at this size (a test that needs another calls `setWindowSize` in domKit.tsx).
+ */
+export const DOM_DEFAULT_WINDOW = { width: 412, height: 915 } as const;
+beforeEach(() => {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: DOM_DEFAULT_WINDOW.width });
+  Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: DOM_DEFAULT_WINDOW.height });
+  Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: DOM_DEFAULT_WINDOW.width });
+  Object.defineProperty(document.documentElement, 'clientHeight', { configurable: true, value: DOM_DEFAULT_WINDOW.height });
+  window.dispatchEvent(new Event('resize')); // Dimensions keeps the size it read last: tell it
+});
 
 afterEach(() => {
   cleanup();

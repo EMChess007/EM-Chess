@@ -27,8 +27,7 @@ const TC1 = { initialMs: 60000, incrementMs: 0 };
 const CLOCK = () => Date.now();
 
 beforeEach(() => {
-  vi.useFakeTimers({ now: 1_000_000 });
-  setWindowSize(412, 915);
+  vi.useFakeTimers({ now: 1_000_000 }); // the window is the default phone (412 x 915, domSetup.ts); a test that needs another calls setWindowSize
 });
 afterEach(() => {
   vi.restoreAllMocks();
