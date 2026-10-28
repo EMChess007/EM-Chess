@@ -1,12 +1,14 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { remainingAt, type BughouseMatch } from '../logic/bughouse';
+import { remainingAt, type BughouseMatch, type PromotionPiece } from '../logic/bughouse';
+import { PROMOTION_LABELS } from '../logic/promotion';
 import type { ReservePieceType } from '../logic/crazyhouse';
 import { seatPlace, type BoardId, type BughouseColor, type BughouseSeat } from '../logic/bughouse/types';
 import { bughouseTeamShape } from '../logic/bughouseLayout';
 import type { BankFlash, LastMove } from '../logic/bughouseLocal';
-import { boardSeatsTopFirst, boardStatusLine, checkedKingSquare, formatBughouseClock, pocketChips, type KingBadge } from '../logic/bughouseView';
+import { boardCellToSquare, boardSeatsTopFirst, boardStatusLine, checkedKingSquare, formatBughouseClock, pocketChips, type KingBadge } from '../logic/bughouseView';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import BughouseBoard from './BughouseBoard';
+import { useBoardTouches, type BoardTouches } from './useBoardTouches';
 
 const GLYPHS: Record<ReservePieceType, string> = { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛' };
 const PIECE_NAMES: Record<ReservePieceType, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen' };
@@ -36,7 +38,16 @@ export interface BughouseBoardBlockProps {
   outlined?: boolean;
   /** Tighter bars and chips, for two boards side by side with no height to spare. */
   compact?: boolean;
+  /** W3b, humans on both boards: the grid and the chips take their input from this board's own raw touches (useBoardTouches), not from the responder system. */
+  rawTouch?: boolean;
+  /** The promotion choices waiting on THIS board (the dual layout draws them over the board), or none. */
+  promotionChoices?: readonly PromotionPiece[];
+  /** Both colours of this board are human (pass-and-play rules): the status line doubles as the "<Colour> to move" banner. */
+  shared?: boolean;
+  onPromotionChoice?: (board: BoardId, choice: PromotionPiece | 'cancel') => void;
 }
+
+const PROMOTION_GLYPHS: Record<PromotionPiece, string> = { q: '♛', r: '♜', b: '♝', n: '♞' };
 
 /**
  * One board with everything that belongs to it: the two players' bars (colour, name, clock, running marker), their pockets with counts, the board and its status line. Every test id
@@ -49,10 +60,23 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
   const [top, bottom] = boardSeatsTopFirst(board, orientation);
   const checked = checkedKingSquare(match, board);
   const status = boardStatusLine(match, board, props.statusYou);
+  // This board's own raw touches (W3b). The hook is always called; only the dual layout wires it to the grid and the chips.
+  const touches = useBoardTouches({
+    board,
+    cell,
+    onTapCell: (tappedBoard, displayCell) => {
+      const tapped = boardCellToSquare(tappedBoard, orientation, displayCell.row, displayCell.col);
+      onTapSquare(tapped.board, tapped.square);
+    },
+    onTapChip: props.onPickPocket,
+    onTapPromotion: (promotingBoard, choice) => props.onPromotionChoice?.(promotingBoard, choice),
+  });
+  const choices = props.rawTouch ? props.promotionChoices ?? [] : [];
   return (
     <View style={styles.block} testID={`block-${board}`}>
-      <SeatBar {...props} seat={top} />
-      <BughouseBoard
+      <SeatBar {...props} seat={top} touches={props.rawTouch ? touches : null} />
+      <View>
+        <BughouseBoard
         board={board}
         fen={match.boards[board].fen}
         promoted={match.boards[board].promoted}
@@ -67,16 +91,37 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
         interactive={actor !== null}
         onTapSquare={onTapSquare}
         outlined={outlined}
-      />
-      <SeatBar {...props} seat={bottom} />
-      <Text style={[styles.status, status.kind === 'stuck' && styles.statusStuck, status.kind === 'check' && styles.statusCheck]} testID={`status-${board}`} accessibilityLiveRegion="polite">
-        {status.text}
-      </Text>
+        touches={props.rawTouch ? touches : undefined}
+        />
+        {choices.length > 0 && (
+          // The promotion choice of THIS board, drawn over it: the shared Modal of the other layouts would cover the other board too, and the other board must stay playable.
+          <View style={styles.promotion} testID={`promotion-${board}`} accessibilityLabel={`Board ${board}: promote to`}>
+            <Text style={styles.promotionTitle}>Promote to</Text>
+            <View style={styles.promotionRow}>
+              {choices.map((choice) => (
+                <View key={choice} accessible accessibilityRole="button" testID={`promote-${board}-${choice}`} accessibilityLabel={`Board ${board}: promote to ${PROMOTION_LABELS[choice]}`} style={styles.promotionButton} {...touches.promotionProps(choice)}>
+                  <Text style={styles.promotionGlyph}>{PROMOTION_GLYPHS[choice]}</Text>
+                </View>
+              ))}
+              <View accessible accessibilityRole="button" testID={`promote-${board}-cancel`} accessibilityLabel={`Board ${board}: cancel promotion`} style={styles.promotionButton} {...touches.promotionProps('cancel')}>
+                <Text style={styles.promotionCancel}>✕</Text>
+              </View>
+            </View>
+          </View>
+        )}
+      </View>
+      <SeatBar {...props} seat={bottom} touches={props.rawTouch ? touches : null} />
+      {/* A board whose two colours are both human is pass-and-play: its status line is also the banner that says whose turn it is. */}
+      <View testID={props.shared ? `turn-banner-${board}` : undefined}>
+        <Text style={[styles.status, props.shared && styles.banner, status.kind === 'stuck' && styles.statusStuck, status.kind === 'check' && styles.statusCheck]} testID={`status-${board}`} accessibilityLiveRegion="polite">
+          {status.text}
+        </Text>
+      </View>
     </View>
   );
 }
 
-function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPickPocket, compact }: BughouseBoardBlockProps & { seat: BughouseSeat }) {
+function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPickPocket, compact, touches }: BughouseBoardBlockProps & { seat: BughouseSeat; touches: BoardTouches | null }) {
   const colors = useAppColors();
   const styles = createStyles(colors, Boolean(compact));
   const place = seatPlace(seat);
@@ -95,20 +140,33 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
       </Text>
       <View style={[styles.pocket, flashed && styles.pocketFlash]} testID={`pocket-${place.board}-${word}`} accessibilityLabel={flashed ? `Board ${place.board} ${word} pocket, just received a piece` : `Board ${place.board} ${word} pocket`}>
         {chips.length === 0 && <Text style={styles.empty}>-</Text>}
-        {chips.map((chip) => (
-          <Pressable
-            key={chip.piece}
-            disabled={!chip.usable}
-            onPress={() => onPickPocket(place.board, chip.piece)}
-            testID={`pocket-${place.board}-${word}-${chip.piece}`}
-            accessibilityRole="button"
-            accessibilityLabel={`Board ${place.board} ${word} pocket: ${chip.count} ${PIECE_NAMES[chip.piece]}${chip.count === 1 ? '' : 's'}${chip.usable ? ', tap to drop' : ''}`}
-            style={[styles.chip, pickedPiece === chip.piece && actor === seat && styles.chipSelected, !chip.usable && actor === seat && styles.chipUnavailable]}
-          >
-            <Text style={[styles.glyph, place.color === 'w' ? styles.glyphWhite : styles.glyphBlack]}>{GLYPHS[chip.piece]}</Text>
-            <Text style={styles.count}>{chip.count}</Text>
-          </Pressable>
-        ))}
+        {chips.map((chip) => {
+          const common = {
+            testID: `pocket-${place.board}-${word}-${chip.piece}`,
+            accessibilityRole: 'button' as const,
+            accessibilityLabel: `Board ${place.board} ${word} pocket: ${chip.count} ${PIECE_NAMES[chip.piece]}${chip.count === 1 ? '' : 's'}${chip.usable ? ', tap to drop' : ''}`,
+            style: [styles.chip, pickedPiece === chip.piece && actor === seat && styles.chipSelected, !chip.usable && actor === seat && styles.chipUnavailable],
+          };
+          const face = (
+            <>
+              <Text style={[styles.glyph, place.color === 'w' ? styles.glyphWhite : styles.glyphBlack]}>{GLYPHS[chip.piece]}</Text>
+              <Text style={styles.count}>{chip.count}</Text>
+            </>
+          );
+          // The dual layout: a chip is a plain View with this board's own touch handlers (a Pressable would join the responder system the two boards must stay out of).
+          if (touches) {
+            return (
+              <View key={chip.piece} accessible {...common} {...touches.chipProps(chip.piece)}>
+                {face}
+              </View>
+            );
+          }
+          return (
+            <Pressable key={chip.piece} disabled={!chip.usable} onPress={() => onPickPocket(place.board, chip.piece)} {...common}>
+              {face}
+            </Pressable>
+          );
+        })}
       </View>
       <Text style={[styles.clock, running && styles.clockRunning, remaining < 10000 && styles.clockLow]} testID={`clock-${place.board}-${word}`} accessibilityLabel={`Board ${place.board} ${word} clock`}>
         {formatBughouseClock(remaining)}
@@ -140,6 +198,13 @@ function createStyles(colors: AppColors, compact: boolean) {
     clock: { minWidth: 58, textAlign: 'right', fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'], color: colors.textSecondary },
     clockRunning: { color: colors.text },
     clockLow: { color: colors.danger },
+    banner: { fontSize: 15, fontWeight: '800', color: colors.text },
+    promotion: { position: 'absolute', left: 0, right: 0, top: '30%', alignItems: 'center', gap: 4, paddingVertical: 6, backgroundColor: 'rgba(244,236,216,0.96)', borderRadius: 8 },
+    promotionTitle: { fontSize: 12, fontWeight: '700', color: '#3a2d1a' },
+    promotionRow: { flexDirection: 'row', gap: 8 },
+    promotionButton: { width: 40, height: 40, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#b58863', borderWidth: 1, borderColor: '#8a6d3b' },
+    promotionGlyph: { fontSize: 26, color: '#1b130c' },
+    promotionCancel: { fontSize: 18, color: '#3a2d1a' },
     status: { fontSize: compact ? 12 : 13, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
     statusStuck: { color: '#b26a00' },
     statusCheck: { color: colors.danger },

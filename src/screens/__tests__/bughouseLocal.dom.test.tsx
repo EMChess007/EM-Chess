@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AppAlertHost from '../../components/AppAlert';
 import { applyAction, legalDropsOn, legalMovesOn, type BughouseMatch, type BughouseSeat } from '../../logic/bughouse';
 import type { BoardId } from '../../logic/bughouse/types';
-import { BUGHOUSE_SIZE_GATE_MESSAGE, BUGHOUSE_COMING_NEXT_MESSAGE, presetSeatConfig } from '../../logic/bughouseLayout';
+import { BUGHOUSE_SIZE_GATE_MESSAGE, presetSeatConfig } from '../../logic/bughouseLayout';
 import { gameOverSummary, STUCK_CHECK_TEXT } from '../../logic/bughouseView';
 import type { SeatConfig, SeatController } from '../../logic/fourPlayer/setup';
 import { mulberry32 } from '../../logic/__tests__/bughouseTestKit';
@@ -116,31 +116,31 @@ describe('the setup screen', () => {
     expect(text('setup-gate-message')).toBe('At least one seat must be a human.');
   });
 
-  it('humans on both boards: the spec\'s size message below the minimum, "coming next" above it, Start disabled both ways', () => {
+  it('humans on both boards: the spec\'s size message and Start disabled below the minimum, no message and Start enabled above it (W3b plays them)', () => {
     render(<Harness initial={presetSeatConfig('teammates')} />);
     setWindowSize(360, 640);
     expect(text('setup-gate-message')).toBe(BUGHOUSE_SIZE_GATE_MESSAGE);
     expect(BUGHOUSE_SIZE_GATE_MESSAGE).toBe('This seat setup needs a larger screen. Turn the device to landscape, or put every human on one board.');
     expect(disabled()).toBe(true);
     setWindowSize(412, 915); // rotating / resizing updates it at once
-    expect(text('setup-gate-message')).toBe(BUGHOUSE_COMING_NEXT_MESSAGE);
-    expect(disabled()).toBe(true);
+    expect(screen.queryByTestId('setup-gate-message')).toBeNull();
+    expect(disabled()).toBe(false);
   });
 
   it('...at the exact boundaries of the spec: 240 x 736 and 472 x 352 are big enough, one pixel less is not', () => {
     render(<Harness initial={presetSeatConfig('teammates')} />);
     const messageAt = (w: number, h: number) => {
       setWindowSize(w, h);
-      return text('setup-gate-message');
+      return screen.queryByTestId('setup-gate-message') === null ? null : text('setup-gate-message');
     };
-    expect(messageAt(240, 736)).toBe(BUGHOUSE_COMING_NEXT_MESSAGE);
+    expect(messageAt(240, 736)).toBeNull();
     expect(messageAt(239, 736)).toBe(BUGHOUSE_SIZE_GATE_MESSAGE);
     expect(messageAt(240, 735)).toBe(BUGHOUSE_SIZE_GATE_MESSAGE);
-    expect(messageAt(472, 352)).toBe(BUGHOUSE_COMING_NEXT_MESSAGE);
+    expect(messageAt(472, 352)).toBeNull();
     expect(messageAt(471, 352)).toBe(BUGHOUSE_SIZE_GATE_MESSAGE);
     expect(messageAt(472, 351)).toBe(BUGHOUSE_SIZE_GATE_MESSAGE);
     expect(messageAt(360, 640)).toBe(BUGHOUSE_SIZE_GATE_MESSAGE);
-    expect(messageAt(800, 360)).toBe(BUGHOUSE_COMING_NEXT_MESSAGE);
+    expect(messageAt(800, 360)).toBeNull();
   });
 
   it('humans on one board, or one human, start in any window and go on', () => {
@@ -205,10 +205,12 @@ describe('the layout follows from where the humans sit', () => {
     for (const key of ['A-white', 'A-black', 'B-white', 'B-black']) expect(screen.getByTestId(`clock-${key}`)).toBeTruthy();
   });
 
-  it('humans on both boards are not playable yet: the screen says so instead of a broken layout', () => {
+  it('humans on both boards get the dual layout of W3b (its own suite: bughouseDual.dom.test.tsx), not the thumbnail and not a refusal', () => {
     renderGame({ seats: cfg('HBBH') });
-    expect(screen.getByText('This seat setup is not available yet.')).toBeTruthy();
-    expect(screen.queryByTestId('block-A')).toBeNull();
+    expect(screen.queryByText('This seat setup is not available yet.')).toBeNull();
+    expect(screen.getByTestId('block-A')).toBeTruthy();
+    expect(screen.getByTestId('block-B')).toBeTruthy();
+    expect(screen.queryByTestId('thumb-B')).toBeNull();
   });
 });
 

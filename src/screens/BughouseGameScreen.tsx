@@ -7,9 +7,25 @@ import PromotionPicker from '../components/PromotionPicker';
 import ScreenHeader from '../components/ScreenHeader';
 import { firstLegalAction, legalMovesOn, remainingAt, type BughouseMatch, type BughouseTimeControl, type PromotionPiece } from '../logic/bughouse';
 import { BOARD_IDS, otherBoard, seatAt, seatPlace, type BoardId, type BughouseSeat } from '../logic/bughouse/types';
-import { BUGHOUSE_THUMB_CELL, deriveBughouseLayout, getBughouseMainCellSize, getBughouseSideCellSize, humanBughouseSeats, seatRowLabel, standardArrangement } from '../logic/bughouseLayout';
+import {
+  BUGHOUSE_DUAL_GUTTER,
+  BUGHOUSE_ROTATE_OVERLAY_DETAIL,
+  BUGHOUSE_ROTATE_OVERLAY_TITLE,
+  BUGHOUSE_THUMB_CELL,
+  dualBoardPlan,
+  deriveBughouseLayout,
+  getBughouseDualCellSize,
+  getBughouseMainCellSize,
+  getBughouseSideCellSize,
+  humanBughouseSeats,
+  needsRotateOverlay,
+  seatRowLabel,
+  standardArrangement,
+} from '../logic/bughouseLayout';
 import { bughouseBotThinkMs, dueBotSeats, localBotAction, localStep, nextDeadline, startLocalGame, type LocalGameState } from '../logic/bughouseLocal';
-import { boardOrientation, boardStatusLine, dropSquares, formatBughouseClock, gameOverSummary, kingBadge, mainBoardOf, pocketChips, touchSeat } from '../logic/bughouseView';
+import { liveSelection, type BoardPosition, type SelectionInput } from '../logic/bughouseSelection';
+import { boardOrientation, boardStatusLine, dropSquares, dualBoardOrientation, formatBughouseClock, gameOverSummary, kingBadge, mainBoardOf, pocketChips, touchSeat } from '../logic/bughouseView';
+import { useBoardSelection } from '../components/useBoardSelection';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { ReservePieceType } from '../logic/crazyhouse';
 import type { SeatConfig } from '../logic/fourPlayer/setup';
@@ -70,6 +86,9 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   const selected = stillHere(rawSelected);
   const picked = stillHere(rawPicked);
   const promotion = stillHere(rawPromotion);
+  // Humans on both boards (W3b): the half-made action of each board lives in a reducer instance of its own (two hooks, one per board; a board's handlers only ever see theirs).
+  const selectionA = useBoardSelection('A');
+  const selectionB = useBoardSelection('B');
 
   /** The one place the state changes: the engine's funnel at the current instant. */
   const commit = useCallback(
@@ -185,6 +204,29 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
     if (pending && actor !== null) commit({ seat: actor, action: { kind: 'move', board: pending.board, from: pending.from, to: pending.to, promotion: piece } });
   };
 
+  // --- Humans on both boards (W3b): each board's taps go to ITS reducer only ------------------------------------------------------------------
+  const positionOf = (current: BughouseMatch, board: BoardId): BoardPosition => {
+    let moves: ReturnType<typeof legalMovesOn> | null = null;
+    const all = () => (moves ??= legalMovesOn(current, board));
+    return {
+      fen: current.boards[board].fen,
+      active: touchSeat(seats, current, board) !== null,
+      movesFrom: (square) => all().filter((m) => m.from === square),
+      dropSquares: (piece) => dropSquares(current, board, piece),
+    };
+  };
+  const selectionOf = (board: BoardId) => (board === 'A' ? selectionA : selectionB);
+  /** One input of one board: through that board's reducer, and a completed selection to the engine's funnel. Reads the LATEST match, so a tap that lands before a re-render is still right. */
+  const dualInput = (board: BoardId, input: SelectionInput) => {
+    const current = stateRef.current.match;
+    const actor = touchSeat(seats, current, board);
+    if (actor === null) return;
+    const done = selectionOf(board).apply(input, positionOf(current, board));
+    if (done === null) return;
+    if (done.kind === 'move') commit({ seat: actor, action: { kind: 'move', board: done.board, from: done.from, to: done.to, promotion: done.promotion } });
+    else commit({ seat: actor, action: { kind: 'drop', board: done.board, piece: done.piece, square: done.square } });
+  };
+
   const rematch = () => {
     const fresh = startLocalGame(timeControl, elapsed(), Math.floor(random() * 1000000));
     stateRef.current = fresh;
@@ -210,30 +252,52 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   const mainBoard: BoardId = swapped ? otherBoard(mainBoardOf(layout)) : mainBoardOf(layout);
   const arrangement = standardArrangement(width, height);
 
-  const blockOf = (board: BoardId, cell: number) => (
-    <BughouseBoardBlock
-      key={board}
-      board={board}
-      match={match}
-      nowMs={nowMs}
-      orientation={boardOrientation(layout, board, match, autoFlip)}
-      cell={cell}
-      lastMove={state.lastMove[board]}
-      seatName={seatName}
-      badgeOf={(color) => kingBadge(layout, board, color)}
-      actor={actors[board]}
-      selected={selected && selected.board === board ? selected.square : null}
-      moveTargets={selected && selected.board === board ? selectedTargets : []}
-      dropTargets={picked && picked.board === board ? dropTargetsOfPick : []}
-      pickedPiece={picked && picked.board === board ? picked.piece : null}
-      bank={state.bank}
-      statusYou={layout.kind === 'standard' ? seatAt(board, match.verdicts[board].turn) === layout.seat : actors[board] !== null}
-      onTapSquare={onTapSquare}
-      onPickPocket={onPickPocket}
-      outlined={summary !== null && summary.decidingBoard === board}
-      compact={arrangement === 'sideBySide'}
-    />
-  );
+  const dual = layout.kind === 'dual';
+  const dualFit = getBughouseDualCellSize(width, height);
+  /** What board `board` shows of its OWN reducer instance (dual layout): the picked piece, its targets, the picked chip, a promotion waiting. */
+  const dualViewOf = (board: BoardId) => {
+    const position = positionOf(match, board);
+    const live = liveSelection(selectionOf(board).selection, position);
+    return {
+      selected: live.selected ? live.selected.square : null,
+      moveTargets: live.selected ? Array.from(new Set(position.movesFrom(live.selected.square).map((m) => m.to))) : [],
+      dropTargets: live.picked ? position.dropSquares(live.picked.piece) : [],
+      picked: live.picked ? live.picked.piece : null,
+      promotionChoices: live.promotion ? live.promotion.choices : undefined,
+    };
+  };
+
+  const blockOf = (board: BoardId, cell: number) => {
+    const own = dual ? dualViewOf(board) : null;
+    return (
+      <BughouseBoardBlock
+        key={board}
+        board={board}
+        match={match}
+        nowMs={nowMs}
+        orientation={dual ? dualBoardOrientation(seats, board, match, autoFlip) : boardOrientation(layout, board, match, autoFlip)}
+        cell={cell}
+        lastMove={state.lastMove[board]}
+        seatName={seatName}
+        badgeOf={(color) => kingBadge(layout, board, color)}
+        actor={actors[board]}
+        selected={own ? own.selected : selected && selected.board === board ? selected.square : null}
+        moveTargets={own ? own.moveTargets : selected && selected.board === board ? selectedTargets : []}
+        dropTargets={own ? own.dropTargets : picked && picked.board === board ? dropTargetsOfPick : []}
+        pickedPiece={own ? own.picked : picked && picked.board === board ? picked.piece : null}
+        bank={state.bank}
+        statusYou={layout.kind === 'standard' ? seatAt(board, match.verdicts[board].turn) === layout.seat : actors[board] !== null}
+        onTapSquare={dual ? (tapped, square) => dualInput(tapped, { kind: 'tapSquare', square }) : onTapSquare}
+        onPickPocket={dual ? (tapped, piece) => dualInput(tapped, { kind: 'pickPocket', piece }) : onPickPocket}
+        outlined={summary !== null && summary.decidingBoard === board}
+        compact={dual ? dualFit.arrangement === 'sideBySide' : arrangement === 'sideBySide'}
+        rawTouch={dual}
+        shared={dual && match.result === null && dualBoardPlan(seats, board).shared}
+        promotionChoices={own ? own.promotionChoices : undefined}
+        onPromotionChoice={(chosen, choice) => dualInput(chosen, choice === 'cancel' ? { kind: 'cancelPromotion' } : { kind: 'choosePromotion', piece: choice })}
+      />
+    );
+  };
 
   const thumbOf = (board: BoardId) => {
     const place = boardOrientation(layout, board, match, autoFlip);
@@ -287,25 +351,42 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
       </Text>
     ) : null;
 
-  const blockedLayout = layout.kind === 'dual' || layout.kind === 'none';
+  const blockedLayout = layout.kind === 'none';
 
   // Two equal boards side by side leave no height to spare (BUGHOUSE_SPEC.md 5.6: a compact header), so there the menu link, the title and the controls share ONE slim bar.
-  const compact = arrangement === 'sideBySide' && !blockedLayout;
+  const compact = (dual ? dualFit.arrangement === 'sideBySide' : arrangement === 'sideBySide') && !blockedLayout;
+  const hasSharedBoard = dual && BOARD_IDS.some((board) => dualBoardPlan(seats, board).shared);
+  // Humans on both boards: who resigns is a TEAM matter (any seat's resignation ends the match against its team); one button per team that has a human at the device.
+  const resignTeams = ([1, 2] as const).filter((team) => humans.some((seat) => seatPlace(seat).team === team));
+  const resignTeam = (team: 1 | 2) => {
+    const seat = humans.find((s) => seatPlace(s).team === team);
+    if (seat !== undefined && match.result === null) commit({ seat, action: { kind: 'resign' } });
+  };
   const controls = (
     <>
       <Pressable accessibilityRole="button" accessibilityLabel="Rules" testID="bughouse-rules" style={styles.control} onPress={() => setRulesOpen(true)}>
         <Text style={styles.controlText}>Rules</Text>
       </Pressable>
-      {layout.kind === 'passAndPlay' && (
+      {(layout.kind === 'passAndPlay' || hasSharedBoard) && (
         <Pressable accessibilityRole="button" accessibilityLabel={autoFlip ? 'Auto-turn is on' : 'Auto-turn is off'} testID="bughouse-autoflip" style={styles.control} onPress={() => setAutoFlip((a) => !a)}>
           <Text style={styles.controlText}>{autoFlip ? 'Auto-turn: on' : 'Auto-turn: off'}</Text>
         </Pressable>
       )}
-      <Pressable accessibilityRole="button" accessibilityLabel="Resign" testID="bughouse-resign" style={styles.control} onPress={resign} disabled={over}>
-        <Text style={styles.controlText}>Resign</Text>
-      </Pressable>
+      {dual ? (
+        resignTeams.map((team) => (
+          <Pressable key={team} accessibilityRole="button" accessibilityLabel={`Team ${team} resigns`} testID={`bughouse-resign-team-${team}`} style={styles.control} onPress={() => resignTeam(team)} disabled={over}>
+            <Text style={styles.controlText}>{`Resign ${team === 1 ? '◆' : '●'}`}</Text>
+          </Pressable>
+        ))
+      ) : (
+        <Pressable accessibilityRole="button" accessibilityLabel="Resign" testID="bughouse-resign" style={styles.control} onPress={resign} disabled={over}>
+          <Text style={styles.controlText}>Resign</Text>
+        </Pressable>
+      )}
     </>
   );
+  // Local has no pause: below the minimum the boards are covered, and the clocks keep running (5.6).
+  const rotateOverlay = !over && needsRotateOverlay(seats, width, height);
 
   return (
     <View style={styles.container} testID="bughouse-game">
@@ -320,11 +401,15 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
       ) : (
         <ScreenHeader title="Bughouse" subtitle={layout.kind === 'passAndPlay' ? 'Local · pass and play' : 'Local'} onBack={onExit} backLabel="‹ Menu" />
       )}
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} scrollEnabled={!dual || over}>
         {!compact && <View style={styles.controls}>{controls}</View>}
 
         {blockedLayout ? (
           <Text style={styles.banner}>This seat setup is not available yet.</Text>
+        ) : dual ? (
+          <View style={dualFit.arrangement === 'sideBySide' ? styles.dualRow : styles.dualColumn} testID={dualFit.arrangement === 'sideBySide' ? 'layout-dual-side-by-side' : 'layout-dual-stacked'}>
+            {BOARD_IDS.map((board) => blockOf(board, Math.max(dualFit.cell, 1)))}
+          </View>
         ) : (
           <>
             {turnBanner}
@@ -371,6 +456,13 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         onCancel={() => setPromotion(null)}
       />
       <BughouseRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />
+      {rotateOverlay && (
+        // Over everything, touches included: the boards under it cannot be touched while it shows.
+        <View style={styles.overlay} testID="rotate-overlay" accessibilityViewIsModal accessibilityLabel={BUGHOUSE_ROTATE_OVERLAY_TITLE}>
+          <Text style={styles.overlayTitle}>{BUGHOUSE_ROTATE_OVERLAY_TITLE}</Text>
+          <Text style={styles.overlayDetail}>{BUGHOUSE_ROTATE_OVERLAY_DETAIL}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -389,6 +481,12 @@ function createStyles(colors: AppColors) {
     banner: { fontSize: 16, fontWeight: '800', color: colors.text, textAlign: 'center' },
     portrait: { alignItems: 'center', gap: 8, alignSelf: 'stretch' },
     sideBySide: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', justifyContent: 'center' },
+    // humans on both boards: the gap between the boards is a dead zone for touches (BUGHOUSE_DUAL_GUTTER)
+    dualColumn: { alignItems: 'center', gap: BUGHOUSE_DUAL_GUTTER, alignSelf: 'stretch' },
+    dualRow: { flexDirection: 'row', gap: BUGHOUSE_DUAL_GUTTER, alignItems: 'flex-start', justifyContent: 'center' },
+    overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, gap: 8, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.88)' },
+    overlayTitle: { fontSize: 22, fontWeight: '800', color: '#fff', textAlign: 'center' },
+    overlayDetail: { fontSize: 15, color: '#ddd', textAlign: 'center' },
     thumb: { flexDirection: 'row', gap: 10, alignItems: 'center', padding: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignSelf: 'stretch' },
     thumbInfo: { flex: 1, gap: 2 },
     thumbTitle: { fontSize: 13, fontWeight: '800', color: colors.text },

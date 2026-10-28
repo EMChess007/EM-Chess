@@ -7,7 +7,7 @@
 import { RESERVE_PIECE_TYPES, type ReservePieceType } from './crazyhouse';
 import { legalDropsOn, openBoard, pocketOfSeat, type BughouseMatch, type BoardVerdict } from './bughouse';
 import { seatAt, seatPlace, type BoardId, type BughouseColor, type BughouseSeat, type BughouseTeam } from './bughouse/types';
-import { bughouseTeamShape, deriveBughouseLayout, humanBughouseSeats, type BughouseLayout } from './bughouseLayout';
+import { bughouseTeamShape, deriveBughouseLayout, dualBoardPlan, humanBughouseSeats, type BughouseLayout } from './bughouseLayout';
 import type { SeatConfig } from './fourPlayer/setup';
 
 const otherColor = (color: BughouseColor): BughouseColor => (color === 'w' ? 'b' : 'w');
@@ -31,6 +31,16 @@ export function boardOrientation(layout: BughouseLayout, board: BoardId, match: 
     return board === layout.board ? shownTurn : otherColor(shownTurn);
   }
   return 'w';
+}
+
+/**
+ * The colour at the BOTTOM of `board` when humans play both boards (W3b): the colour of the human who plays it; a board whose two colours are both human follows the pass-and-play
+ * rule (it turns to the side to move; `autoFlip` off keeps White at the bottom).
+ */
+export function dualBoardOrientation(config: SeatConfig, board: BoardId, match: BughouseMatch, autoFlip: boolean): BughouseColor {
+  const plan = dualBoardPlan(config, board);
+  if (plan.shared) return autoFlip ? match.verdicts[board].turn : 'w';
+  return plan.humanColors[0];
 }
 
 /** The square on display cell (row, col) of `board` when `orientation` is at the bottom (row 0 is the top row as drawn). Board-qualified, like every cell of this game. */

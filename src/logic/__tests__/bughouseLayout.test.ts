@@ -153,14 +153,14 @@ describe('the setup gate', () => {
     }
     // rotating the phone changes the answer at once: a small phone in landscape (568 x 320) is refused too, a larger one (800 x 360) fits
     expect(bughouseSetupGate(cfg('HBBH'), 568, 320)).toMatchObject({ reason: 'tooSmall' });
-    expect(bughouseSetupGate(cfg('HBBH'), 800, 360)).toMatchObject({ reason: 'comingNext' });
+    expect(bughouseSetupGate(cfg('HBBH'), 800, 360)).toEqual({ startable: true }); // W3b: humans on both boards play when two boards of 28 px fit
   });
 
-  it('...and at the exact boundaries: 240 x 736 and 472 x 352 are big enough (the setup then waits for W3b), one pixel less is "too small"', () => {
-    expect(bughouseSetupGate(cfg('HBBH'), 240, 736)).toMatchObject({ startable: false, reason: 'comingNext' });
+  it('...and at the exact boundaries: 240 x 736 and 472 x 352 are big enough (the setup starts), one pixel less is "too small"', () => {
+    expect(bughouseSetupGate(cfg('HBBH'), 240, 736)).toEqual({ startable: true });
     expect(bughouseSetupGate(cfg('HBBH'), 240, 735)).toMatchObject({ reason: 'tooSmall' });
     expect(bughouseSetupGate(cfg('HBBH'), 239, 736)).toMatchObject({ reason: 'tooSmall' });
-    expect(bughouseSetupGate(cfg('HBBH'), 472, 352)).toMatchObject({ reason: 'comingNext' });
+    expect(bughouseSetupGate(cfg('HBBH'), 472, 352)).toEqual({ startable: true });
     expect(bughouseSetupGate(cfg('HBBH'), 472, 351)).toMatchObject({ reason: 'tooSmall' });
     expect(bughouseSetupGate(cfg('HBBH'), 471, 352)).toMatchObject({ reason: 'tooSmall' });
   });

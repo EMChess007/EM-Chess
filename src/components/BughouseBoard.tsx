@@ -6,6 +6,7 @@ import { boardCellToSquare, type KingBadge } from '../logic/bughouseView';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import Piece from './Piece';
 import { useBoardGestures } from './useBoardGestures';
+import type { BoardTouches } from './useBoardTouches';
 
 const PIECE_NAMES: Record<string, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 
@@ -32,13 +33,18 @@ export interface BughouseBoardProps {
   onTapSquare?: (board: BoardId, square: string) => void;
   /** The deciding board of a finished match is outlined. */
   outlined?: boolean;
+  /**
+   * W3b, the dual-board layout: this board takes its input from raw touches of its own (components/useBoardTouches.ts) instead of the PanResponder, so that a finger on the other board
+   * cannot cancel or steal a gesture on this one. Given, the grid is wired to it at all times (the screen decides what a tap means for a side that may not move).
+   */
+  touches?: BoardTouches;
 }
 
 /**
  * One Bughouse board. Pieces and squares come from the engine's FEN; this component only DRAWS and reports a tap as (board, square) - the screen decides what a tap means. The board is the
  * unit the spec's HP9 is about: every cell is board-qualified ("e4, board A, White knight"), and a tap carries its board.
  */
-function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, checkedSquare, selected, moveTargets, dropTargets, badgeOf, interactive, onTapSquare, outlined }: BughouseBoardProps) {
+function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, checkedSquare, selected, moveTargets, dropTargets, badgeOf, interactive, onTapSquare, outlined, touches }: BughouseBoardProps) {
   const theme = useActiveBoardTheme();
   const pieceTheme = useActivePieceTheme();
   const grid = useMemo(() => openBoard(fen)?.board() ?? [], [fen]);
@@ -64,10 +70,10 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
   const size = cell * 8;
   return (
     <View
-      ref={interactive ? gestures.containerRef : undefined}
-      onLayout={interactive ? gestures.onLayout : undefined}
-      {...(interactive ? gestures.panHandlers : {})}
-      style={[styles.board, { width: size, height: size }, outlined && styles.outlined]}
+      ref={touches ? touches.gridRef : interactive ? gestures.containerRef : undefined}
+      onLayout={touches ? undefined : interactive ? gestures.onLayout : undefined}
+      {...(touches ? touches.gridProps : interactive ? gestures.panHandlers : {})}
+      style={[styles.board, { width: size, height: size }, touches && styles.rawTouch, outlined && styles.outlined]}
       testID={`board-${board}`}
       accessibilityLabel={outlined ? `Board ${board}, deciding board` : `Board ${board}`}
     >
@@ -139,6 +145,8 @@ function BadgeMark({ badge, cell, board, square }: { badge: KingBadge; cell: num
 
 const styles = StyleSheet.create({
   board: { flexDirection: 'column', borderWidth: 0 },
+  // web: the browser must not scroll, zoom or select on a board that two fingers play at once (touch events would then end in a cancel)
+  rawTouch: { touchAction: 'none', userSelect: 'none' } as object,
   outlined: { borderWidth: 3, borderColor: '#e53935' },
   row: { flexDirection: 'row' },
   cell: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },

@@ -7,12 +7,13 @@
  */
 import { DEFAULT_BOT_ELO, type SeatConfig, type SeatController } from './fourPlayer/setup';
 import type { BughouseTimeControl } from './bughouse/rules';
-import { seatPlace, type BoardId, type BughouseSeat, type BughouseTeam } from './bughouse/types';
+import { seatAt, seatPlace, type BoardId, type BughouseColor, type BughouseSeat, type BughouseTeam } from './bughouse/types';
 
 /** Shown on the setup screen (and as an overlay mid-game) when a seat setup with humans on both boards does not fit the window. The spec's wording, word for word. */
 export const BUGHOUSE_SIZE_GATE_MESSAGE = 'This seat setup needs a larger screen. Turn the device to landscape, or put every human on one board.';
-/** Shown in W3a for a setup that fits the window but needs the simultaneous-play input of W3b. */
-export const BUGHOUSE_COMING_NEXT_MESSAGE = 'Playing on both boards at the same time on one device is coming next. For now put every human on one board, or play with one human.';
+/** Shown over a dual-board game (instead of the boards) when the window falls below the minimum mid-game; Local has no pause, so the clocks keep running (BUGHOUSE_SPEC.md 5.6). */
+export const BUGHOUSE_ROTATE_OVERLAY_TITLE = 'Rotate the device to keep playing';
+export const BUGHOUSE_ROTATE_OVERLAY_DETAIL = 'The clocks keep running.';
 export const BUGHOUSE_NO_HUMAN_MESSAGE = 'At least one seat must be a human.';
 
 /** The smallest cell (px) at which two boards played at the same time are tappable at speed (the Chaturaji minimum). */
@@ -138,19 +139,48 @@ export function getBughouseDualCellSize(width: number, height: number): DualFit 
 
 export type SetupGate =
   | { startable: true }
-  | { startable: false; reason: 'noHuman' | 'tooSmall' | 'comingNext'; message: string };
+  | { startable: false; reason: 'noHuman' | 'tooSmall'; message: string };
 
 /**
- * Whether the setup may start in this window. W3a plays one human and "all humans on one board"; humans on both boards need the simultaneous-play input of W3b, so that setup is
- * refused with the size message when the window is below the minimum (evaluated against the CURRENT window: rotating updates it) and with "coming next" when it would fit.
+ * Whether the setup may start in this window. One human and "all humans on one board" start anywhere; humans on both boards (W3b) start when two boards of the minimum cell fit, and are
+ * refused with the size message below it (evaluated against the CURRENT window: rotating updates it).
  */
 export function bughouseSetupGate(config: SeatConfig, width: number, height: number): SetupGate {
   const layout = deriveBughouseLayout(config);
   if (layout.kind === 'none') return { startable: false, reason: 'noHuman', message: BUGHOUSE_NO_HUMAN_MESSAGE };
   if (layout.kind !== 'dual') return { startable: true };
   if (!getBughouseDualCellSize(width, height).fits) return { startable: false, reason: 'tooSmall', message: BUGHOUSE_SIZE_GATE_MESSAGE };
-  return { startable: false, reason: 'comingNext', message: BUGHOUSE_COMING_NEXT_MESSAGE };
+  return { startable: true };
 }
+
+/** Whether a game in progress must be covered by the "rotate the device" overlay: a dual-board layout whose window no longer fits two boards of the minimum cell. */
+export function needsRotateOverlay(config: SeatConfig, width: number, height: number): boolean {
+  return deriveBughouseLayout(config).kind === 'dual' && !getBughouseDualCellSize(width, height).fits;
+}
+
+/** Premoves (W5) are on only while exactly one human plays the device: with two or more humans sharing it a queued move would be entered by the wrong hand (BUGHOUSE_SPEC.md 5.5, B23). */
+export function premovesAllowed(config: SeatConfig): boolean {
+  return humanBughouseSeats(config).length === 1;
+}
+
+// --- Humans on both boards: what each board is (W3b) ------------------------------------------------------------------------------------------
+
+export interface DualBoardPlan {
+  board: BoardId;
+  /** The colours a human plays on this board, White first. One or two (never none: a dual layout has a human on each board). */
+  humanColors: readonly BughouseColor[];
+  /** Both colours are human: the board follows the pass-and-play rules (it turns to the side to move, a banner, only the side to move may touch). */
+  shared: boolean;
+}
+
+/** What `board` is in a layout with humans on both boards. The board is required: the two boards of one match are planned separately. */
+export function dualBoardPlan(config: SeatConfig, board: BoardId): DualBoardPlan {
+  const humanColors = (['w', 'b'] as const).filter((color) => config[seatAt(board, color)].kind === 'human');
+  return { board, humanColors, shared: humanColors.length === 2 };
+}
+
+/** The gap in px between the two boards (stacked or side by side): a dead zone for touches, and part of the sizes of the spec's table. */
+export const BUGHOUSE_DUAL_GUTTER = 12;
 
 /** Chrome around the large board of the standard portrait layout: header, controls, four clock rows, a pocket row and the partner strip (calibrated: 36 at 360 x 640, 49 at 412 x 915). */
 export const BUGHOUSE_MAIN_CHROME = 352;
