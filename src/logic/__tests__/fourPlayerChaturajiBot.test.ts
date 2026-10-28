@@ -207,6 +207,32 @@ describe('the weights, pinned by outcome', () => {
     expect(label(chooseChaturajiBotMove(behind, CAREFUL, pure))).toBe('e3xg1');
   });
 
+  describe('KING_LOSS: how dear a king is, from both sides (a raised value survived the mutation set until these)', () => {
+    // Red's knight on d3 is the only thing between Blue's boat on d8 and the Red king on d1. It can jump to e5 and take Yellow's free boat, which lets Blue take the KING (the reply term).
+    // On e5 the knight attacks c6, f7 and g4: with all three rival kings there the capture also scores a triple fork (5 points). All numbers below are written as literals.
+    const kings = ['rK@d1', 'bK@c6', 'yK@f7'];
+    const forking = cp([...kings, 'gK@g4', 'rN@d3', 'bR@d8', 'yR@e5'], { turn: RED });
+    const single = cp([...kings, 'gK@g2', 'rN@d3', 'bR@d8', 'yR@e5'], { turn: RED }); // the Green king out of reach: a double fork only
+    const scoreOf = (state: FourPlayerState, text: string, careful: boolean): number => {
+      const moves = legalMoves(state, RED);
+      const move = moves.find((m) => label(m) === text)!;
+      return scoreMoves(state, moves, careful, 0, pure).find((s) => s.move === move)!.score;
+    };
+
+    it('the price of the king in the reply term is exactly 0.85 x 14, whatever else the move is worth', () => {
+      // the careful score is the greedy one plus the king threat (3 kings x 0.3) less the reply term (the worst reply is Blue's boat taking the king)
+      expect(worstReplyLoss(applyMoveRaw(forking, legalMoves(forking, RED).find((m) => label(m) === 'd3xe5')!), RED, BLUE)).toBe(14);
+      expect(scoreOf(forking, 'd3xe5', false)).toBeCloseTo(16.3333, 3); // 5 x 1.5 (the boat) + 5 x 1.5 (the triple fork) + 4/3 (material)
+      expect(scoreOf(forking, 'd3xe5', true)).toBeCloseTo(5.3333, 3); // 16.3333 + 0.9 - 11.9
+    });
+
+    it('a capture worth about 17 points is taken even though it hands over the king; one worth about 10 is not', () => {
+      expect(label(chooseChaturajiBotMove(forking, TOP, pure))).toBe('d3xe5'); // 5.33 against -0.33 for the best quiet move: a king is NOT dearer than 20 points
+      expect(scoreOf(single, 'd3xe5', true)).toBeCloseTo(-0.9667, 3);
+      expect(label(chooseChaturajiBotMove(single, TOP, pure))).not.toBe('d3xe5'); // -0.97 against -0.33: the king is dearer than a boat and a double fork
+    });
+  });
+
   it('points count for more than material: a free knight (3) is taken before promoting a pawn (+4 material)', () => {
     // (the kings stand off the far rank so that the promoted boat forks nobody and the comparison is points against material alone)
     const state = cp(['rK@a1', 'bK@a5', 'yK@h5', 'gK@h1', 'rP@c7', 'rR@e3', 'bN@e6'], { turn: RED });
