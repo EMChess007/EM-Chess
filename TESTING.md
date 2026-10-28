@@ -5,6 +5,48 @@ backend test scripts import this repo's `src/logic/ChessEngine.ts` directly, sin
 actual shared chess logic, not a reimplementation. See the backend's own `TESTING.md` for that
 half; this document covers what's local to this repo.
 
+## Cloud sessions (a Linux VM) — how to start, what the setup does, what differs from Windows
+
+All work runs in Claude Code cloud sessions (Ubuntu 24.04 VM), not on the Windows laptop; the laptop only runs Expo and the backend for manual phone checks. Every gate in this file and in the backend's TESTING.md runs there with the same numbers.
+
+**How to start a session.** The cloud environment's setup script (below) prepares the machine once and is cached; a session then starts with `bash scripts/cloud-setup.sh` (idempotent: about 3 s when nothing changed, 22-27 s with no `node_modules` and an empty database; the cache limit is about 5 minutes). It is needed every session because it starts the local PostgreSQL (the environment cache keeps files, not processes). Layout afterwards: the app at the repo root, the backend INSIDE it as `./backend` (the app's `.gitignore` lists `/backend`; the backend's test scripts import `../../src/...` of the app, so the nested layout of the laptop, `chess-app\backend`, is reproduced; a symlink `../chess-app-backend` points at it for tools that expect the sibling path). Gates are run one at a time; in the cloud any free port will do (the CI ports 3000 / 3002 are used as CI does), and the laptop-only rules (never :3000 / :8081 / :8082) still apply when a session runs on the laptop.
+
+**What `scripts/cloud-setup.sh` does** (each step skips what is already in place; it never prints or asks for a secret):
+1. **Node 20** from `/opt/node20` (the version `.github/workflows/ci.yml` runs; the VM's default is 22, the laptop used 24), first on `PATH` for every login shell via `/etc/profile.d/zz-em-chess.sh`, which also sets two non-secret variables: `E2E_BROWSER_PATH=/opt/pw-browsers/chromium` (the browser end-to-end has no system Chrome there) and `EXPO_NO_TELEMETRY=1`.
+2. **The backend** at `./backend`: an existing checkout is left alone; a checkout the environment attached next to the app (`../chess-app-backend`, from "Repositories" in the environment settings) is moved inside and a symlink left behind; otherwise `chess-app-backend` is cloned (the branch of the app when it is `paired/<x>` and the backend has it, else `main`; `CLOUD_BACKEND_REF` overrides).
+3. **`npm ci` in both repos**, in parallel, skipped when `package-lock.json` and the Node version are unchanged (a stamp in `node_modules`).
+4. **PostgreSQL 16**, the major of `backend/docker-compose.yml`, from the VM's own package (installed if missing), started as a local cluster; role `chess` / password `chess` / database `chess_app` as in `docker-compose.yml` and `.env.example`. **Docker is not used**: the daemon starts, but Docker Hub answers HTTP 429 from the cloud, so `postgres:16-alpine` cannot be pulled.
+5. **`backend/.env`** with TEST-ONLY values: the local `DATABASE_URL` and a random `JWT_SECRET` (mode 600, git-ignored; the script refuses to continue if it is not ignored, and refuses an existing `.env` whose `DATABASE_URL` is not `localhost` / `127.0.0.1`, without printing it). Never commit it; a real `.env`, Neon or Render value is never used here.
+6. **Prisma**: `generate` and `migrate deploy` against the local database; prints the local account count (0 on a new VM; the e2e suites delete every account they register).
+
+**The environment's Setup script** (paste this; it uses the script from the checkout, and until this change is merged to `master` fetches it from the `chore/cloud-setup` branch; it always exits 0 so a failed setup never blocks a session):
+
+```bash
+#!/bin/bash
+APP=/home/user/EM-Chess
+SCRIPT="$APP/scripts/cloud-setup.sh"
+if [ ! -f "$SCRIPT" ]; then
+  git -C "$APP" fetch --depth=1 origin chore/cloud-setup \
+    && git -C "$APP" show FETCH_HEAD:scripts/cloud-setup.sh > /root/cloud-setup.sh \
+    && SCRIPT=/root/cloud-setup.sh
+fi
+CLOUD_APP_DIR="$APP" bash "$SCRIPT" || echo "cloud-setup failed (exit $?): run 'bash scripts/cloud-setup.sh' in the session"
+exit 0
+```
+
+Environment settings: add `chess-app-backend` under **Repositories** (the setup script cannot clone a private repository on its own); no variables are required (the script sets the two non-secret ones in the shell profile). Network access: the default **Trusted** level is enough (npm, GitHub, nodejs.org only if Node 20 is ever missing from the image).
+
+**Gates on the VM** (2026-10-28, app `paired/bughouse` a21dbdd + backend `paired/bughouse` 01a34f1, Node 20.20.0, PostgreSQL 16.15, Chromium 1243; every number equals the documented one): `tsc` clean in both repos; vitest **1913 / 1913, 110 files** (all goldens inside: FFA, Giveaway, Chaturaji, geometry, Crazyhouse, Bughouse; no tracked file changed); `sync:fourplayer --check` 11 files and `sync:bughouse --check` 12 files in sync; backend suites: Fog of War castling 61 / notation 35 (the other four print `PASS: 0 failure(s)`), repetition 86, giveaway 34, atomic 34, duck 41, spell 27, horde 38, crazyhouse 85, unlimited 24, rejoin-finished 42, fourplayerSync 117, bughouseSync 70, bughouse lockstep 9, rooms 259, messages 81, matchmaking 82, handlers 64, test switches 41, bot 7, 4-seat parity 70 / rooms 237 / bots 160 / matchmaking 74 / handlers 61 / giveaway 89 / Chaturaji 121, userCleanup 38, authRateLimit 43, fourTestSwitches 73, attemptLimiter 87, joinChallengeLimit 14, trustProxy 79, `check:productionInstall` OK; real sockets against the CI-style servers (3000 with `FOUR_GRACE_MS=1500` and `FOUR_FILL_MS=8000`, 3002 with the real fill wait): 2-player e2e **350**, tournaments **40**, 4-seat e2e **427** (conditional 4; 422 without the second server), Bughouse **80** (conditional 3), rejoin-persist **73**; online fuzz, Chaturaji and Bughouse sections of 40 games each: 40 / 40 and 40 / 40, 0 unexpected issues (408 s); browser end-to-end **11 / 11**, 0 retries (346 s); mutation harness: `mutationHarness.test.ts` 23 / 23, the example config 5 killed + 1 equivalent (as documented), `chaturaji-bot-constants.config.cjs` **9 / 9 killed** (18 s). The local database ends with the 0 accounts it started with.
+
+**Known differences from Windows, and what was done**
+- **No system Chrome**: the browser end-to-end launched `channel: 'chrome'` only. `E2E_BROWSER_PATH` (backend `scripts/e2e-browser/app.mjs`, `browserLaunchOptions`, pinned by `npm run test:e2eBrowserOptions`) names an executable instead; unset, nothing changed. A failed browser launch also used to leave the harness's backend running on :3191 (the launch was outside the `try`): fixed.
+- **Node 20, not 24**: CI and the VM image use 20, the laptop ran 24. Every count above is the documented one on 20; nothing in the suites depends on the major.
+- **`test:rejoinPersist` passes with `FOUR_GRACE_MS=1500` on Linux** (73 / 73); the "known limit" of section 28 (the restarted `tsx` child starts slower than the grace on Windows) does not occur here. Nothing to fix.
+- **A machine path in a mutation config**: `bughouse-w2-server.config.cjs` named `C:/Users/...`; its `root` is now computed from `__dirname`, and `mutationHarness.test.ts` pins that no config names a drive letter or a home directory. (Branch `chore/cloud-setup-mutation`, on top of `paired/bughouse`, where the harness lives.)
+- **Junctions vs symlinks**: the harness already links `node_modules` with a directory symlink outside Windows (`removeTree` unlinks it, tested); nothing else uses junctions. **Line endings**: `.gitattributes` forces LF everywhere, so shell scripts survive a Windows checkout. **Shell**: `npm run` scripts that use `shell: true` (the web export in the browser suite) work under `sh`; `taskkill` is only used on win32.
+- **Processes do not survive**: PostgreSQL and any dev server stop with the session; the cached environment keeps files only, hence `bash scripts/cloud-setup.sh` at the start of each session.
+- **Pushing to the backend**: the session tool that attaches a repository reported that Claude has no push access to `chess-app-backend` for this organization; the Claude GitHub App must be installed on it for a cloud session to push there.
+
 ## 4 Player Giveaway — roll-up (read this first for the whole feature)
 
 **What it is.** The Antichess version of the 4-seat board: **Local, Bots and Online built together**, on the SAME engine as 4 Player Chess (`src/logic/fourPlayer/`), which dispatches on `state.rules.mode` (`'ffa'` | `'giveaway'`) at a fixed list of

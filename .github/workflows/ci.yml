@@ -32,3 +32,7 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+      # scripts/cloud-setup.sh builds a cloud session's VM (TESTING.md, "Cloud sessions"); a syntax error would only show when the next session starts.
+      - name: Syntax-check the cloud setup script
+        run: bash -n scripts/cloud-setup.sh
