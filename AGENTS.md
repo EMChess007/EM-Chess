@@ -18,3 +18,10 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
 - A test asserts nothing about wall-clock time: waits end on a condition (their bounds only turn a hang into a failure), no 5-second timeouts, seeded randomness, fake timers in rendered tests. A check whose NUMBER depends on what an unseeded server did is counted apart as "conditional", so the printed total is the same on every run.
 - The browser end-to-end runs only against its OWN private backend and web build (never :3000, :8081, :8082 or the deployed backend), registers throw-away accounts and deletes them, and kills only the processes it started, proven by PID and command line first.
 - A screen is tested rendered (the `dom` project) as well as by source scans, and what it shows that comes from the engine is compared with the engine, never recomputed in the test.
+
+# Cloud sessions (a Linux VM; TESTING.md, "Cloud sessions")
+
+- Work runs in Claude Code cloud sessions, not on the laptop: start every session with `bash scripts/cloud-setup.sh` (idempotent, seconds when cached; it also starts the local PostgreSQL, which does not survive a session) and find the backend at `./backend`.
+- The laptop-only rules above (never touch :3000 / :8081 / :8082) still apply whenever a session runs locally on the laptop.
+- In the cloud use any free port (CI itself uses 3000 and 3002); the rules that never change: no deployed backend, no Neon, no Render, no real secret.
+- Never commit the VM's `backend/.env` (test-only values, git-ignored): a real `.env` is never asked for, read or printed.
