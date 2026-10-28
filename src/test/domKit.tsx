@@ -62,6 +62,47 @@ export function tapBoardSquare(board: 'A' | 'B', square: string, orientation: 'w
   act(() => options.onTap(cell));
 }
 
+// --- Bughouse, humans on both boards: raw touches with identifiers (W3b) -------------------------------------------------------------------------
+
+export interface FakeTouch {
+  /** The touch identifier (what separates one finger from the other). */
+  id: number;
+  /** Page coordinates. */
+  x: number;
+  y: number;
+}
+
+/**
+ * Delivers a DOM touch event to `element` carrying `touches` in `changedTouches`. jsdom has no `Touch`, so the list is attached to the event itself; react-native-web hands the DOM event
+ * to the view's `onTouchStart` / `Move` / `End` / `Cancel`, which read `changedTouches[i].identifier / pageX / pageY` exactly as they do on a phone.
+ */
+export function fireTouch(type: 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel', element: Element, touches: FakeTouch[]): void {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  const list = touches.map((t) => ({ identifier: t.id, pageX: t.x, pageY: t.y, clientX: t.x, clientY: t.y, screenX: t.x, screenY: t.y, target: element }));
+  Object.defineProperty(event, 'changedTouches', { value: list });
+  Object.defineProperty(event, 'touches', { value: type === 'touchend' || type === 'touchcancel' ? [] : list });
+  act(() => {
+    element.dispatchEvent(event);
+  });
+}
+
+/** A mouse press or release (a pointer event of type "mouse") at page coordinates. */
+export function fireMouse(type: 'pointerdown' | 'pointerup' | 'pointercancel', element: Element, point: { x: number; y: number }, button = 0): void {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  for (const [key, value] of Object.entries({ pointerType: 'mouse', pageX: point.x, pageY: point.y, clientX: point.x, clientY: point.y, button, pointerId: 1 })) Object.defineProperty(event, key, { value });
+  act(() => {
+    element.dispatchEvent(event);
+  });
+}
+
+/** jsdom has no layout: this gives `element` the on-screen rectangle a browser would (its top-left corner at (left, top), `size` px square). */
+export function placeElement(element: Element, left: number, top: number, size: number): void {
+  Object.defineProperty(element, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ left, top, right: left + size, bottom: top + size, x: left, y: top, width: size, height: size, toJSON: () => ({}) }),
+  });
+}
+
 /**
  * Resizes the jsdom window the screens read their size from. react-native-web's Dimensions reads `document.documentElement.clientWidth / clientHeight` (jsdom reports 0 for both, so
  * every dom test that does not call this runs in a 0 x 0 window) and follows the `resize` event.

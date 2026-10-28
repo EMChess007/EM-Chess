@@ -198,7 +198,7 @@ function createStyles(colors: AppColors, compact: boolean) {
     clock: { minWidth: 58, textAlign: 'right', fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'], color: colors.textSecondary },
     clockRunning: { color: colors.text },
     clockLow: { color: colors.danger },
-    banner: { fontSize: 15, fontWeight: '800', color: colors.text },
+    banner: { fontSize: compact ? 13 : 15, fontWeight: '800', color: colors.text },
     promotion: { position: 'absolute', left: 0, right: 0, top: '30%', alignItems: 'center', gap: 4, paddingVertical: 6, backgroundColor: 'rgba(244,236,216,0.96)', borderRadius: 8 },
     promotionTitle: { fontSize: 12, fontWeight: '700', color: '#3a2d1a' },
     promotionRow: { flexDirection: 'row', gap: 8 },

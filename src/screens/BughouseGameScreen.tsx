@@ -290,7 +290,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         onTapSquare={dual ? (tapped, square) => dualInput(tapped, { kind: 'tapSquare', square }) : onTapSquare}
         onPickPocket={dual ? (tapped, piece) => dualInput(tapped, { kind: 'pickPocket', piece }) : onPickPocket}
         outlined={summary !== null && summary.decidingBoard === board}
-        compact={dual ? dualFit.arrangement === 'sideBySide' : arrangement === 'sideBySide'}
+        compact={dual || arrangement === 'sideBySide'}
         rawTouch={dual}
         shared={dual && match.result === null && dualBoardPlan(seats, board).shared}
         promotionChoices={own ? own.promotionChoices : undefined}
@@ -354,7 +354,13 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   const blockedLayout = layout.kind === 'none';
 
   // Two equal boards side by side leave no height to spare (BUGHOUSE_SPEC.md 5.6: a compact header), so there the menu link, the title and the controls share ONE slim bar.
-  const compact = (dual ? dualFit.arrangement === 'sideBySide' : arrangement === 'sideBySide') && !blockedLayout;
+  // The dual layouts (both boards stacked, or side by side) are tight in BOTH arrangements: one slim bar, slim controls, compact blocks.
+  const compact = (dual || arrangement === 'sideBySide') && !blockedLayout;
+  // Side by side there is no height for a second row, so the controls share the bar; stacked (portrait) the bar holds only the menu link and the title - four controls (Rules, turn, two Resign)
+  // do not fit beside them at 360 px - and the controls sit in a slim row of their own, which the stacked boards have the height for (checked in the browser at 360 x 740).
+  const controlsInBar = compact && (dual ? dualFit.arrangement === 'sideBySide' : true);
+  const ctl = dual ? styles.controlSlim : styles.control;
+  const ctlText = dual ? styles.controlTextSlim : styles.controlText;
   const hasSharedBoard = dual && BOARD_IDS.some((board) => dualBoardPlan(seats, board).shared);
   // Humans on both boards: who resigns is a TEAM matter (any seat's resignation ends the match against its team); one button per team that has a human at the device.
   const resignTeams = ([1, 2] as const).filter((team) => humans.some((seat) => seatPlace(seat).team === team));
@@ -364,23 +370,23 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   };
   const controls = (
     <>
-      <Pressable accessibilityRole="button" accessibilityLabel="Rules" testID="bughouse-rules" style={styles.control} onPress={() => setRulesOpen(true)}>
-        <Text style={styles.controlText}>Rules</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Rules" testID="bughouse-rules" style={ctl} onPress={() => setRulesOpen(true)}>
+        <Text style={ctlText}>Rules</Text>
       </Pressable>
       {(layout.kind === 'passAndPlay' || hasSharedBoard) && (
-        <Pressable accessibilityRole="button" accessibilityLabel={autoFlip ? 'Auto-turn is on' : 'Auto-turn is off'} testID="bughouse-autoflip" style={styles.control} onPress={() => setAutoFlip((a) => !a)}>
-          <Text style={styles.controlText}>{autoFlip ? 'Auto-turn: on' : 'Auto-turn: off'}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={autoFlip ? 'Auto-turn is on' : 'Auto-turn is off'} testID="bughouse-autoflip" style={ctl} onPress={() => setAutoFlip((a) => !a)}>
+          <Text style={ctlText}>{dual ? (autoFlip ? 'Turn: auto' : 'Turn: fixed') : autoFlip ? 'Auto-turn: on' : 'Auto-turn: off'}</Text>
         </Pressable>
       )}
       {dual ? (
         resignTeams.map((team) => (
-          <Pressable key={team} accessibilityRole="button" accessibilityLabel={`Team ${team} resigns`} testID={`bughouse-resign-team-${team}`} style={styles.control} onPress={() => resignTeam(team)} disabled={over}>
-            <Text style={styles.controlText}>{`Resign ${team === 1 ? '◆' : '●'}`}</Text>
+          <Pressable key={team} accessibilityRole="button" accessibilityLabel={`Team ${team} resigns`} testID={`bughouse-resign-team-${team}`} style={ctl} onPress={() => resignTeam(team)} disabled={over}>
+            <Text style={ctlText}>{`Resign ${team === 1 ? '◆' : '●'}`}</Text>
           </Pressable>
         ))
       ) : (
-        <Pressable accessibilityRole="button" accessibilityLabel="Resign" testID="bughouse-resign" style={styles.control} onPress={resign} disabled={over}>
-          <Text style={styles.controlText}>Resign</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Resign" testID="bughouse-resign" style={ctl} onPress={resign} disabled={over}>
+          <Text style={ctlText}>Resign</Text>
         </Pressable>
       )}
     </>
@@ -395,14 +401,16 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
           <Pressable accessibilityRole="button" accessibilityLabel="Back to the menu" onPress={onExit} style={styles.compactBack}>
             <Text style={styles.controlText}>‹ Menu</Text>
           </Pressable>
-          <Text style={styles.compactTitle}>{layout.kind === 'passAndPlay' ? 'Bughouse · pass and play' : 'Bughouse'}</Text>
-          <View style={styles.compactControls}>{controls}</View>
+          <Text style={styles.compactTitle} numberOfLines={1}>
+            {layout.kind === 'passAndPlay' ? 'Bughouse · pass and play' : 'Bughouse'}
+          </Text>
+          {controlsInBar && <View style={styles.compactControls}>{controls}</View>}
         </View>
       ) : (
         <ScreenHeader title="Bughouse" subtitle={layout.kind === 'passAndPlay' ? 'Local · pass and play' : 'Local'} onBack={onExit} backLabel="‹ Menu" />
       )}
       <ScrollView contentContainerStyle={styles.content} scrollEnabled={!dual || over}>
-        {!compact && <View style={styles.controls}>{controls}</View>}
+        {!controlsInBar && <View style={styles.controls}>{controls}</View>}
 
         {blockedLayout ? (
           <Text style={styles.banner}>This seat setup is not available yet.</Text>
@@ -474,10 +482,12 @@ function createStyles(colors: AppColors) {
     controls: { flexDirection: 'row', gap: 8, alignSelf: 'stretch', justifyContent: 'center' },
     control: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
     controlText: { fontSize: 14, fontWeight: '700', color: colors.text },
+    controlSlim: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+    controlTextSlim: { fontSize: 13, fontWeight: '700', color: colors.text },
     compactBar: { height: 36, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 8 },
     compactBack: { paddingVertical: 4, paddingHorizontal: 6 },
-    compactTitle: { flex: 1, fontSize: 16, fontWeight: '800', color: colors.text },
-    compactControls: { flexDirection: 'row', gap: 8 },
+    compactTitle: { flex: 1, minWidth: 0, fontSize: 16, fontWeight: '800', color: colors.text },
+    compactControls: { flexDirection: 'row', gap: 6 },
     banner: { fontSize: 16, fontWeight: '800', color: colors.text, textAlign: 'center' },
     portrait: { alignItems: 'center', gap: 8, alignSelf: 'stretch' },
     sideBySide: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', justifyContent: 'center' },
