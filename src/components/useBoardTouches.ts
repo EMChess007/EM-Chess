@@ -16,8 +16,8 @@ import type { BoardId } from '../logic/bughouse/types';
  * the chips (the gutter, a clock bar) reaches nobody. A mouse (web, desktop) is a touch with the identifier "mouse" (pointer events of type "mouse"; a finger's pointer events are ignored here
  * because its touch events already arrived).
  *
- * Positions are page coordinates minus this board's own origin: measured at the start and at the end of a grid touch where the platform lets it be read at once (web), and measured at the
- * start and awaited at the end where it cannot (native `measure`), as `useBoardGestures` does.
+ * Positions are page coordinates minus this board's own origin, read when a grid touch LIFTS (the board may have moved under a held finger): at once where the platform allows it (web: the
+ * rectangle plus the scroll offset), awaited where it does not (native `measure`, whose answer the tap waits for). Chip and promotion taps never read it.
  */
 
 /** The identifier a mouse gets: a touch identifier is a number written as text, so it can never be this. */
@@ -117,7 +117,7 @@ export function useBoardTouches(options: BoardTouchOptions): BoardTouches {
   };
 
   const feed = (event: TouchEventIn, onGrid: boolean): void => {
-    if (onGrid && (event.kind === 'start' || event.kind === 'end')) refreshOrigin();
+    if (onGrid && event.kind === 'end') refreshOrigin(); // read when the finger LIFTS: the position that counts is the board's now (a start-time read would be overwritten by this one)
     const step = stepTouches(bookRef.current, event);
     bookRef.current = step.book;
     finish(step.tap);

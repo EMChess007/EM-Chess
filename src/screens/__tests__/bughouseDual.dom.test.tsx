@@ -269,6 +269,75 @@ describe('property: interleaved touches on two boards', () => {
   }, 120_000);
 });
 
+describe('what a board shows of its own half-made action', () => {
+  const bg = (board: BoardId, square: string): string => (screen.getByTestId(`${board}-${square}`) as HTMLElement).style.backgroundColor;
+  const GREEN = 'rgb(162, 209, 73)';
+
+  it('the picked-up piece is highlighted on ITS board only, and the highlight goes when the piece is put down', () => {
+    renderGame({ seats: cfg('HBHB') });
+    twoFingers(['A', 'e2'], ['B', 'd2']);
+    expect(bg('A', 'e2')).toBe(GREEN);
+    expect(bg('B', 'd2')).toBe(GREEN);
+    expect(bg('B', 'e2')).not.toBe(GREEN); // not the same square of the other board
+    expect(bg('A', 'd2')).not.toBe(GREEN);
+    tap('A', 'h5');
+    expect(bg('A', 'e2')).not.toBe(GREEN);
+    expect(bg('B', 'd2')).toBe(GREEN);
+  });
+
+  it('a half-made action that is no longer valid is not drawn: when the match ends the highlight, the dots and the picked chip go with it', () => {
+    const pocketed = scene({ startMs: 0, pockets: { 0: { n: 1 }, 2: { n: 1 } } });
+    renderGame({ seats: cfg('HBHB'), startFrom: pocketed });
+    tap('A', 'e2');
+    const chip = screen.getByTestId('pocket-B-white-n');
+    fireTouch('touchstart', chip, [{ id: 2, x: 30, y: 30 }]);
+    fireTouch('touchend', chip, [{ id: 2, x: 30, y: 30 }]);
+    expect(offered('A')).toEqual(['e3', 'e4']);
+    expect(offered('B').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByTestId('bughouse-resign-team-1'));
+    expect(offered('A')).toEqual([]);
+    expect(offered('B')).toEqual([]);
+    expect(bg('A', 'e2')).not.toBe(GREEN);
+    expect(screen.getByTestId('pocket-B-white-n').getAttribute('aria-label')).not.toContain('picked up');
+  });
+
+  it('the picked-up pocket piece is marked on its chip (for the eye and for a screen reader), and only that chip', () => {
+    const pocketed = scene({ startMs: 0, pockets: { 0: { n: 1, p: 2 }, 2: { n: 1 } } });
+    renderGame({ seats: cfg('HBHB'), startFrom: pocketed });
+    const label = (id: string) => screen.getByTestId(id).getAttribute('aria-label') ?? '';
+    const lift = (id: string) => {
+      const chip = screen.getByTestId(id);
+      fireTouch('touchstart', chip, [{ id: 2, x: 30, y: 30 }]);
+      fireTouch('touchend', chip, [{ id: 2, x: 30, y: 30 }]);
+    };
+    expect(label('pocket-A-white-n')).not.toContain('picked up');
+    lift('pocket-A-white-n');
+    expect(label('pocket-A-white-n')).toContain('picked up');
+    expect(label('pocket-A-white-p')).not.toContain('picked up');
+    expect(label('pocket-B-white-n')).not.toContain('picked up'); // the other board's chip of the same piece
+    lift('pocket-A-white-n'); // a second tap puts it back
+    expect(label('pocket-A-white-n')).not.toContain('picked up');
+  });
+});
+
+describe('the other layouts keep the responder-based input', () => {
+  it.each([
+    ['HBBB', 'A'],
+    ['HHBB', 'A'],
+    ['BBHH', 'B'],
+  ] as const)('%s: a raw touch on the board a human plays (%s) is not a tap there - only the PanResponder path of W3a takes input; the dual layout\'s raw touches are not wired', (pattern, board) => {
+    renderGame({ seats: cfg(pattern) });
+    const element = screen.getByTestId(`board-${board}`);
+    const cell = Number.parseFloat(getComputedStyle(element).width) / 8; // this layout's own cell, not the dual one
+    placeElement(element, AT[board].left, AT[board].top, cell * 8);
+    const white = bottom(board) === 'w';
+    const f: FakeTouch = { id: 1, x: AT[board].left + ((white ? 4 : 3) + 0.5) * cell, y: AT[board].top + ((white ? 6 : 1) + 0.5) * cell }; // e2 as drawn
+    fireTouch('touchstart', element, [f]);
+    fireTouch('touchend', element, [f]);
+    expect(offered(board)).toEqual([]);
+  });
+});
+
 describe('the turn locks', () => {
   it('only the side to move can touch a board whose two colours are both human; the other board is independent', () => {
     renderGame({ seats: cfg('HHHH') });
@@ -363,9 +432,38 @@ describe('a touch belongs to the board it began on', () => {
     fireMouse('pointerdown', grid('A'), at);
     fireMouse('pointerup', grid('A'), at);
     expect(offered('A')).toEqual(['e3', 'e4']);
-    fireMouse('pointerdown', grid('A'), at, 2); // a right button is not a tap
-    fireMouse('pointerup', grid('A'), at, 2);
+    const elsewhere = spot('A', 'd2');
+    fireMouse('pointerdown', grid('A'), elsewhere, 2); // a right button is not a tap: d2 is not picked up
+    fireMouse('pointerup', grid('A'), elsewhere, 2);
     expect(offered('A')).toEqual(['e3', 'e4']);
+    fireMouse('pointerdown', grid('A'), elsewhere, 1); // nor is the middle one
+    fireMouse('pointerup', grid('A'), elsewhere, 1);
+    expect(offered('A')).toEqual(['e3', 'e4']);
+  });
+
+  it('a mouse press is completed by a mouse release only: the release of a finger\'s pointer does not end it', () => {
+    renderGame({ seats: cfg('HBHB') });
+    const at = spot('A', 'e2');
+    fireMouse('pointerdown', grid('A'), at);
+    fireMouse('pointerup', grid('A'), at, 0, 'touch');
+    expect(offered('A')).toEqual([]);
+    fireMouse('pointerup', grid('A'), at); // the real release
+    expect(offered('A')).toEqual(['e3', 'e4']);
+  });
+
+  it('a chip tap never needs the grid\'s position: it works where the grid cannot be read at all', () => {
+    const pocketed = scene({ startMs: 0, pockets: { 0: { n: 1 } } });
+    renderGame({ seats: cfg('HBHB'), startFrom: pocketed });
+    Object.defineProperty(screen.getByTestId('board-A'), 'getBoundingClientRect', {
+      configurable: true,
+      value: () => {
+        throw new Error('the grid was read for a chip tap');
+      },
+    });
+    const chip = screen.getByTestId('pocket-A-white-n');
+    fireTouch('touchstart', chip, [{ id: 9, x: 30, y: 30 }]);
+    fireTouch('touchend', chip, [{ id: 9, x: 30, y: 30 }]);
+    expect(offered('A').length).toBeGreaterThan(0);
   });
 
   it('the pointer events of a finger (type "touch") or a pen are not mouse taps: the touch events already counted that finger', () => {
@@ -408,7 +506,7 @@ describe('a touch belongs to the board it began on', () => {
     expect(offered('A')).toEqual(['d3', 'd4']); // e2 was picked up, then d2 replaced it: both taps were processed, in order
   });
 
-  it('where the platform has no synchronous rectangle (a phone), the grid is measured when a touch starts and the tap resolves once that measurement has landed', async () => {
+  it('where the platform has no synchronous rectangle (a phone), the grid is measured when the touch lifts and the tap resolves once that measurement has landed', async () => {
     renderGame({ seats: cfg('HBHB') });
     const element = screen.getByTestId('board-A');
     const left = AT.A.left;
@@ -507,6 +605,20 @@ describe('drops and promotions, one board at a time', () => {
     expect(offered('A')).toEqual([]);
     tap('B', legal[0]);
     expect(labelOf('B', legal[0])).toContain('White knight');
+  });
+
+  it('with auto-turn off the side to move may sit at the TOP of its board: its chip, in the top bar, still listens', () => {
+    const blackToMove = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
+    const pocketed = scene({ startMs: 0, a: blackToMove, pockets: { 1: { n: 1 } } });
+    renderGame({ seats: cfg('HHHB'), startFrom: pocketed });
+    fireEvent.click(screen.getByTestId('bughouse-autoflip')); // fixed: White stays at the bottom, so Black's pocket is in the top bar
+    expect(bottom('A')).toBe('w');
+    const chip = screen.getByTestId('pocket-A-black-n');
+    fireTouch('touchstart', chip, [{ id: 3, x: 30, y: 30 }]);
+    fireTouch('touchend', chip, [{ id: 3, x: 30, y: 30 }]);
+    const legal = Array.from(new Set(legalDropsOn(pocketed, 'A').filter((d) => d.piece === 'n').map((d) => d.square))).sort();
+    expect(legal.length).toBeGreaterThan(0);
+    expect(offered('A')).toEqual(legal);
   });
 
   it('a chip that is not on move, or a chip dragged away from, does nothing', () => {

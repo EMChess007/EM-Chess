@@ -162,6 +162,18 @@ Built on `paired/bughouse` (TESTING.md section 37, BUGHOUSE_SPEC.md section 9). 
 - **A game left on the game-over card keeps its two boards mounted** until Rematch or Back; nothing is saved (no history, rating or PGN for Bughouse, B18).
 
 
+## Bughouse Local (W3b): humans on both boards - what it still leaves out
+
+Built on `paired/bughouse` (TESTING.md section 38, BUGHOUSE_SPEC.md section 9). Open:
+
+- **Not verified on a real phone.** Two real fingers on Android (Expo Go) and on an iPhone were never tried; only web (Chromium, CDP touches) is checked. The hand-check list is in the command #25 report. If native `onTouch*` events do not arrive together, the fallback is `react-native-gesture-handler` (a new native dependency: ask first) with the same reducers and tests.
+- **The app is locked to portrait** (`app.json` `"orientation": "portrait"`): on a phone the landscape side-by-side layout and the rotate overlay never show; they matter on tablets and on web. Unlocking is a separate decision.
+- **Accessibility of the dual chips and buttons**: they are plain Views with raw touch handlers (the responder system is not allowed on these boards), so a screen reader's "activate" gesture may not reach them (a Pressable's `onPress` does). Not tried with TalkBack / VoiceOver.
+- **react-native-web logs "Cannot find single active touch"** from its own responder store on some multi-touch sequences in development (seen once in the spike's server log, not in the final browser run); not ours, no effect on play.
+- **Resign has no confirmation** (as in W3a) and, with two teams at the device, sits one tap from the other team's button.
+- **The thumbnail swap, premoves and quick messages do not exist in this layout** (by design: both boards are always visible; premoves are off with 2+ humans; Local has no messages).
+- **One shared device, two people**: no seat-side orientation (a tablet flat on a table, each person facing a board, would want one board rotated 180 degrees); the spec orients to the colour, not to the person.
+
 ## Chaturaji bot: a raised `KING_LOSS` is not pinned by any test - FIXED on `fix/chaturaji-premove-seed` (PR 25, not yet merged into this branch: delete this section when it is)
 
 Pinned there by a hand-built position (a knight takes a boat with a triple fork and hands over its king: taken at 14, declined from about 21 up) with the exact score as literals; the mutants 28 / 100 / 1000 / 15 / 20 / 13 / 7 / 0 are all killed. The original note follows.

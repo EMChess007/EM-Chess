@@ -23,10 +23,9 @@ const mutants = [
   h('hook: a mouse release of a finger counts', "if (isMouse(event)) feed({ kind: 'end', id: MOUSE_ID, at: pointAt(event) }, onGrid);", "feed({ kind: 'end', id: MOUSE_ID, at: pointAt(event) }, onGrid);"),
   h('hook: a mouse that is cancelled still taps', "        if (isMouse(event)) feed({ kind: 'cancel', id: MOUSE_ID }, onGrid);\n", ''),
   h('hook: only the first finger of an event is counted', 'for (let i = 0; i < touches.length; i++) feed', 'for (let i = 0; i < 1; i++) feed'),
-  h('hook: the grid is not re-read when a touch starts or ends', "if (onGrid && (event.kind === 'start' || event.kind === 'end')) refreshOrigin();", ''),
-  h('hook: the grid is not re-read when a touch ends', "if (onGrid && (event.kind === 'start' || event.kind === 'end')) refreshOrigin();", "if (onGrid && event.kind === 'start') refreshOrigin();"),
-  h('hook: the grid is not read when a touch starts', "if (onGrid && (event.kind === 'start' || event.kind === 'end')) refreshOrigin();", "if (onGrid && event.kind === 'end') refreshOrigin();"),
-  h('hook: the grid is re-read for chips too (EQUIVALENT: a chip tap never uses the grid origin, and reading it again is harmless; pinned by the chip tests passing either way)', "if (onGrid && (event.kind === 'start' || event.kind === 'end')) refreshOrigin();", "if (event.kind === 'start' || event.kind === 'end') refreshOrigin();"),
+  h('hook: the grid is never re-read', "if (onGrid && event.kind === 'end') refreshOrigin();", ''),
+  h('hook: the grid is read when a touch starts, not when it lifts', "if (onGrid && event.kind === 'end') refreshOrigin();", "if (onGrid && event.kind === 'start') refreshOrigin();"),
+  h('hook: the grid is read for chips too', "if (onGrid && event.kind === 'end') refreshOrigin();", "if (event.kind === 'end') refreshOrigin();"),
   h('hook: the scroll offset is not added', 'originRef.current = { x: rect.left + scrollX, y: rect.top + scrollY };', 'originRef.current = { x: rect.left, y: rect.top };'),
   h('hook: only the horizontal scroll is added', 'y: rect.top + scrollY };', 'y: rect.top };'),
   h('hook: the measured origin has its axes swapped', 'originRef.current = { x: pageX, y: pageY };', 'originRef.current = { x: pageY, y: pageX };'),
@@ -45,6 +44,8 @@ const mutants = [
   b('block: a cell is read as white-at-the-bottom', 'boardCellToSquare(tappedBoard, orientation, displayCell.row, displayCell.col)', "boardCellToSquare(tappedBoard, 'w', displayCell.row, displayCell.col)"),
   b('block: a cell is read with rows and columns swapped', 'displayCell.row, displayCell.col)', 'displayCell.col, displayCell.row)'),
   b('block: every board takes raw touches', 'touches={props.rawTouch ? touches : undefined}', 'touches={touches}'),
+  b('block: a chip that cannot be used listens too', '{...(chip.usable ? touches.chipProps(chip.piece) : {})}', '{...touches.chipProps(chip.piece)}'),
+  b('block: no chip listens', '{...(chip.usable ? touches.chipProps(chip.piece) : {})}', ''),
   b('block: the top bar has no raw chips', '<SeatBar {...props} seat={top} touches={props.rawTouch ? touches : null} />', '<SeatBar {...props} seat={top} touches={null} />'),
   b('block: the bottom bar has no raw chips', '<SeatBar {...props} seat={bottom} touches={props.rawTouch ? touches : null} />', '<SeatBar {...props} seat={bottom} touches={null} />'),
   b('block: the promotion bar shows the pieces of nobody', 'const choices = props.rawTouch ? props.promotionChoices ?? [] : [];', 'const choices: readonly PromotionPiece[] = [];'),
@@ -79,7 +80,7 @@ const mutants = [
   s('screen: the turn control is always offered', 'const hasSharedBoard = dual && BOARD_IDS.some((board) => dualBoardPlan(seats, board).shared);', 'const hasSharedBoard = dual;'),
   s('screen: both teams always have a Resign button', 'humans.some((seat) => seatPlace(seat).team === team)', 'true'),
   s('screen: a team resigns with the first human, whoever it is', 'const seat = humans.find((s) => seatPlace(s).team === team);', 'const seat = humans[0];'),
-  s('screen: a team that has no human can resign', '    if (seat !== undefined && match.result === null) commit({ seat, action: { kind: \'resign\' } });\n  };\n  const controls', '    if (match.result === null) commit({ seat: seat ?? 0, action: { kind: \'resign\' } });\n  };\n  const controls'),
+  s('screen (EQUIVALENT: a Resign button exists only for a team with a human, so the guard is unreachable; pinned by the test that board B of a Team-1-only table has no Team 2 button): a team that has no human can resign', '    if (seat !== undefined && match.result === null) commit({ seat, action: { kind: \'resign\' } });\n  };\n  const controls', '    if (match.result === null) commit({ seat: seat ?? 0, action: { kind: \'resign\' } });\n  };\n  const controls'),
 ];
 
 const T = 'src/screens/__tests__/';

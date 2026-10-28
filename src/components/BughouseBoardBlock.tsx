@@ -144,7 +144,7 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
           const common = {
             testID: `pocket-${place.board}-${word}-${chip.piece}`,
             accessibilityRole: 'button' as const,
-            accessibilityLabel: `Board ${place.board} ${word} pocket: ${chip.count} ${PIECE_NAMES[chip.piece]}${chip.count === 1 ? '' : 's'}${chip.usable ? ', tap to drop' : ''}`,
+            accessibilityLabel: `Board ${place.board} ${word} pocket: ${chip.count} ${PIECE_NAMES[chip.piece]}${chip.count === 1 ? '' : 's'}${chip.usable ? ', tap to drop' : ''}${pickedPiece === chip.piece && actor === seat ? ', picked up' : ''}`,
             style: [styles.chip, pickedPiece === chip.piece && actor === seat && styles.chipSelected, !chip.usable && actor === seat && styles.chipUnavailable],
           };
           const face = (
