@@ -161,3 +161,7 @@ Built on `paired/bughouse` (TESTING.md section 37, BUGHOUSE_SPEC.md section 9). 
 - **A rendered test of Chaturaji is not deterministic in its OUTPUT**: "a premove queued while the bots move is played when the turn comes back ..." (`chaturajiLocal.dom.test.tsx`) leaves a different page on two identical runs (hash of the markup and its text differ), although it always passes. Found by the window-size audit (command #24b); the likely cause is a bot move from an unseeded stream. Not investigated; the AGENTS rule is seeded randomness.
 - **A game left on the game-over card keeps its two boards mounted** until Rematch or Back; nothing is saved (no history, rating or PGN for Bughouse, B18).
 
+
+## Chaturaji bot: a raised `KING_LOSS` is not pinned by any test
+
+Found on the cloud VM (command #25-cloud) when the constants mutation set was rebuilt in the repo (`scripts/mutation/configs/chaturaji-bot-constants.config.cjs`, 9 of 9 killed). `KING_LOSS` in `chaturajiBot.ts` LOWERED (14 -> 0, 14 -> 7) is killed by `fourPlayerChaturajiBot.test.ts`; RAISED (14 -> 28, 100, 1000) survives it. Not proven equivalent: a larger loss may change a choice between a big capture and a king at risk, and no hand-built position there pins an upper bound. Start with a position where a capture worth more than 14 points leaves a king attackable, and decide which move the bot must pick.

@@ -427,7 +427,7 @@ if (process.env.MUT_ONLY) {
 }
 
 module.exports = {
-  root: 'C:/Users/emman/Projects/chess-app/backend',
+  root: require('path').resolve(__dirname, '..', '..', '..', 'backend'), // the backend checkout inside the app checkout (the layout every cross-repo script needs); works on Windows and Linux
   copy: ['src', 'scripts', 'package.json', 'tsconfig.json', '.env', '.env.example', '.github', 'TESTING.md', 'CHECKLIST.md', 'AGENTS.md'],
   junction: ['node_modules'],
   cmd: 'npx tsx scripts/test-bughouse-rooms.mjs && npx tsx scripts/test-bughouse-messages.mjs && npx tsx scripts/test-bughouse-matchmaking.mjs && npx tsx scripts/test-bughouse-handlers.mjs',

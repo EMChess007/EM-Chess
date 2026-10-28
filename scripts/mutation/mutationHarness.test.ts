@@ -290,3 +290,25 @@ describe('the runner', () => {
     expect(filtered.status).toBe(0);
   });
 });
+
+describe('the committed configs work on every machine', () => {
+  const configDir = path.join(__dirname, 'configs');
+  const files = fs.readdirSync(configDir).filter((f) => f.endsWith('.config.cjs'));
+
+  it('there are configs to check', () => {
+    expect(files.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it('no config names a drive letter or a home directory of one machine', () => {
+    for (const f of files) {
+      const text = fs.readFileSync(path.join(configDir, f), 'utf8');
+      expect(text, f).not.toMatch(/[A-Za-z]:[\\/]/);
+      expect(text, f).not.toMatch(/\/Users\/|\/home\/|\\Users\\/);
+    }
+  });
+
+  it('the server config mutates the backend checkout inside this one, wherever this one is', () => {
+    const cfg = load('./configs/bughouse-w2-server.config.cjs') as { root: string };
+    expect(cfg.root).toBe(path.join(engine.REPO_ROOT, 'backend'));
+  });
+});
