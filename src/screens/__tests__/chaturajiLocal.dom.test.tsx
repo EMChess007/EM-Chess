@@ -20,6 +20,15 @@ const NO_CLOCK: TimeControl = { id: 'none', label: 'No time limit', initialSecon
 const HUMANS: SeatConfig = [{ kind: 'human' }, { kind: 'human' }, { kind: 'human' }, { kind: 'human' }];
 const KINGS = ['rK@a1', 'bK@a8', 'yK@h8', 'gK@h1'];
 
+/** A seeded replacement for Math.random (the bots draw from it): the same seed gives the same stream, so a rendered game is the same on every run. */
+const seededRandom = (start: number) => {
+  let seed = start;
+  return () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x80000000;
+  };
+};
+
 beforeEach(() => {
   vi.useFakeTimers();
 });
@@ -270,7 +279,10 @@ describe('the local game', () => {
     expect(rows.indexOf('Green')).toBeLessThan(rows.indexOf('Red'));
   });
 
-  it('a premove queued while the bots move is played when the turn comes back, and its pawn promotes to a boat without asking', () => {
+  // The bots below are 400-ELO ones, which pick RANDOM moves from Math.random (the app's own default stream, `rng = Math.random`): the stream is seeded here, so the bots' moves - and
+  // therefore the page this test leaves behind - are the same on every run (before this the page differed between two identical runs, although the test always passed).
+  const premoveGame = () => {
+    vi.spyOn(Math, 'random').mockImplementation(seededRandom(11));
     const start = cp([...KINGS, 'rP@c7', 'bP@b5'], { turn: 1 });
     renderGame({ startFrom: start, seats: [{ kind: 'human' }, { kind: 'bot', elo: 400 }, { kind: 'bot', elo: 400 }, { kind: 'bot', elo: 400 }] });
     tapMove('c7', 'c8'); // not Red's turn: a premove, with no piece chosen
@@ -282,20 +294,36 @@ describe('the local game', () => {
     }
     expect(cellOf('c8').getAttribute('aria-label')).toContain('Red boat');
     expect(screen.queryByText(/Premove queued/)).toBeNull();
+  };
+
+  it('a premove queued while the bots move is played when the turn comes back, and its pawn promotes to a boat without asking', () => {
+    premoveGame();
+  });
+
+  it('the screen adds no randomness of its own to what the bots decide: one seed leaves one page behind, and the page does depend on the seed', () => {
+    const start = cp([...KINGS, 'rP@c7', 'bP@b5'], { turn: 1 });
+    const seats: SeatConfig = [{ kind: 'human' }, { kind: 'bot', elo: 400 }, { kind: 'bot', elo: 400 }, { kind: 'bot', elo: 400 }];
+    const pageAfterBots = (seed: number) => {
+      vi.spyOn(Math, 'random').mockImplementation(seededRandom(seed));
+      const view = renderGame({ startFrom: start, seats });
+      act(() => {
+        vi.advanceTimersByTime(1800); // three bot turns
+      });
+      const page = `${view.container.innerHTML}\n${view.container.textContent}`;
+      view.unmount();
+      vi.restoreAllMocks();
+      return page;
+    };
+    const first = pageAfterBots(11);
+    expect(pageAfterBots(11)).toBe(first);
+    expect(pageAfterBots(12)).not.toBe(first); // a check that cannot fail proves nothing
   });
 
   it('a mixed human / bot table plays to the end with a seeded rng: the human resigns, three bots finish, and the table is the engine\'s own result of the same game', () => {
     const seats: SeatConfig = [{ kind: 'human' }, { kind: 'bot', elo: 1500 }, { kind: 'bot', elo: 1200 }, { kind: 'bot', elo: 1500 }];
     // a sparse middle game (so it ends in a few dozen plies): every rival's king is within reach of somebody's piece
     const start = cp(['rK@a1', 'rP@a2', 'bK@a8', 'bR@d4', 'yK@h8', 'yN@e5', 'gK@h1', 'gB@c6'], { turn: RED });
-    const seeded = () => {
-      let seed = 7;
-      return () => {
-        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-        return seed / 0x80000000;
-      };
-    };
-    vi.spyOn(Math, 'random').mockImplementation(seeded());
+    vi.spyOn(Math, 'random').mockImplementation(seededRandom(7));
     renderGame({ seats, startFrom: start });
     fireEvent.click(screen.getByText('Resign'));
     fireEvent.click(screen.getAllByText('Resign').at(-1)!); // the dialog's button (the control bar's is the first)
@@ -307,7 +335,7 @@ describe('the local game', () => {
     expect(screen.getByTestId('result-card')).toBeTruthy();
     expect(screen.getByText(/Game over —/)).toBeTruthy();
     // the reference: the same game on the bare engine with the same random stream, in the same order the screen draws from it
-    vi.spyOn(Math, 'random').mockImplementation(seeded());
+    vi.spyOn(Math, 'random').mockImplementation(seededRandom(7));
     let ref = resign(start, RED).state;
     while (!ref.result) {
       const seat = ref.turn;
