@@ -11,7 +11,8 @@ npm run mutate -- <config.cjs> [--chunk-size 20] [--chunk N] [--match text] [--c
 | `mutate-generic.cjs` | the engine: copy, link, baseline, one mutant at a time, restore. Also runnable alone (`node scripts/mutation/mutate-generic.cjs <config> [--from N --to M]`). |
 | `run.cjs` | the runner behind `npm run mutate`: slices a config into chunks, runs them **one at a time** in child processes with a hard limit each, writes results outside the repo. |
 | `example/` | a tiny module, its check and a config with five killable mutants and one equivalent one: `npm run mutate -- scripts/mutation/example/example.config.cjs` (a survivor exits 1; that is the point of the example). |
-| `mutationHarness.test.ts` | the harness's own tests (vitest, project `logic`). |
+| `mutationHarness.test.ts` | the harness's own tests (vitest, project `logic`). It also pins that no committed config names a drive letter or a home directory (the server config's `root` is `<app>/backend`, computed from `__dirname`). |
+| `configs/chaturaji-bot-constants.config.cjs` | the quick real set (9 mutants, about 20 s, all killed): every weight of the Chaturaji bot set to 0 or an extreme. The smoke test of a new machine (cloud VM, TESTING.md "Cloud sessions"): `npm run mutate -- scripts/mutation/configs/chaturaji-bot-constants.config.cjs` must print `ALL KILLED`. |
 
 ## A config
 
