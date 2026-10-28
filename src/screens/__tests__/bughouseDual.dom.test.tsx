@@ -368,6 +368,98 @@ describe('a touch belongs to the board it began on', () => {
     expect(offered('A')).toEqual(['e3', 'e4']);
   });
 
+  it('the pointer events of a finger (type "touch") or a pen are not mouse taps: the touch events already counted that finger', () => {
+    renderGame({ seats: cfg('HBHB') });
+    const at = spot('A', 'e2');
+    fireMouse('pointerdown', grid('A'), at, 0, 'touch');
+    fireMouse('pointerup', grid('A'), at, 0, 'touch');
+    expect(offered('A')).toEqual([]);
+    fireMouse('pointerdown', grid('A'), at, 0, 'pen');
+    fireMouse('pointerup', grid('A'), at, 0, 'pen');
+    expect(offered('A')).toEqual([]);
+  });
+
+  it('a mouse and a finger are two different touches: a click in the middle of a finger\'s touch does not end the finger\'s', () => {
+    renderGame({ seats: cfg('HBHB') });
+    const finger1 = finger(1, 'A', 'e2');
+    down(finger1, 'A');
+    const other = spot('A', 'h5');
+    fireMouse('pointerdown', grid('A'), other); // an empty square: the mouse tap clears nothing, and must not take the finger's identifier
+    fireMouse('pointerup', grid('A'), other);
+    up(finger1, 'A');
+    expect(offered('A')).toEqual(['e3', 'e4']);
+  });
+
+  it('a mouse that is cancelled (it leaves the window) taps nothing', () => {
+    renderGame({ seats: cfg('HBHB') });
+    const at = spot('A', 'e2');
+    fireMouse('pointerdown', grid('A'), at);
+    fireMouse('pointercancel', grid('A'), at);
+    fireMouse('pointerup', grid('A'), at);
+    expect(offered('A')).toEqual([]);
+  });
+
+  it('two fingers that land in the SAME event are both counted: the last one down is the one the board ends with', () => {
+    renderGame({ seats: cfg('HBHB') });
+    const f1 = finger(1, 'A', 'e2');
+    const f2 = finger(2, 'A', 'd2');
+    fireTouch('touchstart', grid('A'), [f1, f2]);
+    fireTouch('touchend', grid('A'), [f1, f2]);
+    expect(offered('A')).toEqual(['d3', 'd4']); // e2 was picked up, then d2 replaced it: both taps were processed, in order
+  });
+
+  it('where the platform has no synchronous rectangle (a phone), the grid is measured when a touch starts and the tap resolves once that measurement has landed', async () => {
+    renderGame({ seats: cfg('HBHB') });
+    const element = screen.getByTestId('board-A');
+    const left = AT.A.left;
+    const top = AT.A.top;
+    let measured = 0;
+    Object.defineProperty(element, 'getBoundingClientRect', { configurable: true, value: undefined }); // no rectangle to read at once
+    Object.defineProperty(element, 'measure', {
+      configurable: true,
+      value: (callback: (x: number, y: number, w: number, h: number, pageX: number, pageY: number) => void) => {
+        measured++;
+        setTimeout(() => callback(0, 0, cellPx() * 8, cellPx() * 8, left, top), 50); // the bridge answers later
+      },
+    });
+    const f = finger(1, 'A', 'e2');
+    fireTouch('touchstart', element, [f]);
+    fireTouch('touchend', element, [f]); // the answer has not come yet: nothing can have been resolved
+    expect(offered('A')).toEqual([]);
+    await act(async () => {
+      vi.advanceTimersByTime(50); // the bridge answers ...
+      await Promise.resolve(); // ... and the tap that was waiting for it resolves
+      await Promise.resolve();
+    });
+    expect(measured).toBeGreaterThanOrEqual(1);
+    expect(offered('A')).toEqual(['e3', 'e4']); // resolved against the measured position, by the same touch
+  });
+
+  it('the page may be scrolled: the grid\'s origin is its rectangle plus the scroll offset, because a touch reports PAGE coordinates', () => {
+    renderGame({ seats: cfg('HBHB') });
+    Object.defineProperty(window, 'pageXOffset', { configurable: true, value: 30 });
+    Object.defineProperty(window, 'pageYOffset', { configurable: true, value: 50 });
+    try {
+      const f = finger(1, 'A', 'e2');
+      const shifted = { ...f, x: f.x + 30, y: f.y + 50 }; // the same finger in page coordinates of a page scrolled by (30, 50)
+      fireTouch('touchstart', grid('A'), [shifted]);
+      fireTouch('touchend', grid('A'), [shifted]);
+      expect(offered('A')).toEqual(['e3', 'e4']);
+    } finally {
+      Object.defineProperty(window, 'pageXOffset', { configurable: true, value: 0 });
+      Object.defineProperty(window, 'pageYOffset', { configurable: true, value: 0 });
+    }
+  });
+
+  it('the grid\'s position is read again when the finger lifts: a board that shifts under a held finger resolves the tap where the board is now', () => {
+    renderGame({ seats: cfg('HBHB') });
+    const f = finger(1, 'A', 'e2');
+    down(f, 'A');
+    placeElement(screen.getByTestId('board-A'), AT.A.left, AT.A.top + cellPx(), cellPx() * 8); // the board slides one cell down while the finger is held
+    fireTouch('touchend', screen.getByTestId('board-A'), [f]);
+    expect(offered('A')).toEqual([]); // the finger is now over e3, an empty square (a stale position would have picked up e2)
+  });
+
   it('twenty taps in quick alternation between the boards all land, each on its own board', () => {
     renderGame({ seats: cfg('HBHB') });
     // 8 rounds of two overlapping touches (16 taps): each round picks up the pawn of the next file on both boards, and each board offers ITS pawn's two squares ...
@@ -402,6 +494,33 @@ describe('drops and promotions, one board at a time', () => {
     tap('A', target);
     expect(labelOf('A', target)).toContain('White knight');
     expect(offered('B')).toEqual(['f3', 'h3']);
+  });
+
+  it('the chip of board B is tapped on board B: a drop on B, and board A has nothing picked up', () => {
+    const pocketed = scene({ startMs: 0, pockets: { 2: { n: 1 } } });
+    renderGame({ seats: cfg('HBHB'), startFrom: pocketed });
+    const chip = screen.getByTestId('pocket-B-white-n');
+    fireTouch('touchstart', chip, [{ id: 9, x: 30, y: 30 }]);
+    fireTouch('touchend', chip, [{ id: 9, x: 30, y: 30 }]);
+    const legal = Array.from(new Set(legalDropsOn(pocketed, 'B').filter((d) => d.piece === 'n').map((d) => d.square))).sort();
+    expect(offered('B')).toEqual(legal);
+    expect(offered('A')).toEqual([]);
+    tap('B', legal[0]);
+    expect(labelOf('B', legal[0])).toContain('White knight');
+  });
+
+  it('a chip that is not on move, or a chip dragged away from, does nothing', () => {
+    const pocketed = scene({ startMs: 0, pockets: { 0: { n: 1 }, 1: { n: 1 } } }); // Black (a bot) holds a knight too
+    renderGame({ seats: cfg('HBHB'), startFrom: pocketed });
+    const blackChip = screen.getByTestId('pocket-A-black-n');
+    fireTouch('touchstart', blackChip, [{ id: 8, x: 30, y: 30 }]);
+    fireTouch('touchend', blackChip, [{ id: 8, x: 30, y: 30 }]);
+    expect(offered('A')).toEqual([]); // a bot's pocket on a bot's turn is nobody's to lift
+    const whiteChip = screen.getByTestId('pocket-A-white-n');
+    fireTouch('touchstart', whiteChip, [{ id: 7, x: 30, y: 30 }]);
+    fireTouch('touchmove', whiteChip, [{ id: 7, x: 60, y: 30 }]);
+    fireTouch('touchend', whiteChip, [{ id: 7, x: 30, y: 30 }]);
+    expect(offered('A')).toEqual([]);
   });
 
   it('a promotion waits for its choice on ITS board; the other board stays playable, and can have its own promotion waiting at the same time', () => {
@@ -491,5 +610,19 @@ describe('the controls', () => {
     expect(screen.getByTestId('bughouse-resign-team-1')).toBeTruthy();
     fireEvent.click(screen.getByTestId('bughouse-resign-team-2'));
     expect(text('game-over-headline')).toBe('Team 1 wins');
+    expect(screen.queryByTestId('turn-banner-A')).toBeNull(); // a finished match has no "who is to move" banner
+    expect(screen.queryByTestId('turn-banner-B')).toBeNull();
+  });
+
+  it('with a shared board the turn control is there, and says what it does; without one it is not', () => {
+    renderGame({ seats: cfg('HHBH') });
+    expect(text('bughouse-autoflip')).toBe('Turn: auto');
+    fireEvent.click(screen.getByTestId('bughouse-autoflip'));
+    expect(text('bughouse-autoflip')).toBe('Turn: fixed');
+  });
+
+  it('humans with one human per board: no turn control (nothing turns)', () => {
+    renderGame({ seats: cfg('HBBH') });
+    expect(screen.queryByTestId('bughouse-autoflip')).toBeNull();
   });
 });

@@ -153,15 +153,17 @@ Known limits of what exists:
 
 Built on `paired/bughouse` (TESTING.md section 37, BUGHOUSE_SPEC.md section 9). Open:
 
-- **Humans on both boards cannot play yet** (W3b: the raw-touch input layer, per-board selection reducers, the dual layouts, the rotate-below-minimum overlay). The setup refuses them with the spec's size sentence below 28 px cells and "coming next" above it.
+- **Humans on both boards: built in W3b** (TESTING.md section 38; the leftovers are in "Bughouse Local (W3b)" below).
 - **No premoves** in Local, also with one human (W5).
-- **Not checked in the browser:** pass-and-play (dom-tested only), dark theme, a human mate or promotion, a rotation mid-game. Not checked on a device (Expo Go): taps on the board and the 36 px landscape bar are web-verified only.
+- **Not checked in the browser:** pass-and-play (dom-tested only), dark theme, a human mate or promotion. Not checked on a device (Expo Go): taps on the board and the 36 px landscape bar are web-verified only.
 - **The partner thumbnail shows its pockets as text** ("Q1 R2 N2 P8") and its status as a sentence; a long pocket does not wrap on a 360 px phone beside the 96 px board (it fits in the tests and the browser pass, but a pocket of 20 pieces was not tried).
 - **Bots on the unwatched board play fast** (200 ms bullet / 450 ms): in a 1-minute game the partner board can finish dozens of moves while a human thinks; there is no "slow bots" setting (the spec does not ask for one).
-- **A rendered test of Chaturaji is not deterministic in its OUTPUT**: "a premove queued while the bots move is played when the turn comes back ..." (`chaturajiLocal.dom.test.tsx`) leaves a different page on two identical runs (hash of the markup and its text differ), although it always passes. Found by the window-size audit (command #24b); the likely cause is a bot move from an unseeded stream. Not investigated; the AGENTS rule is seeded randomness.
+- **FIXED on `fix/chaturaji-premove-seed` ([EM-Chess PR 25](https://github.com/EMChess007/EM-Chess/pull/25), command #25, not yet merged into this branch - delete this entry when it is):** the Chaturaji premove dom test ("a premove queued while the bots move ...") left a different page on every run because its 400-ELO bots draw from the unseeded `Math.random`; seeded now, with a regression test and a 20-run identical-hash proof.
 - **A game left on the game-over card keeps its two boards mounted** until Rematch or Back; nothing is saved (no history, rating or PGN for Bughouse, B18).
 
 
-## Chaturaji bot: a raised `KING_LOSS` is not pinned by any test
+## Chaturaji bot: a raised `KING_LOSS` is not pinned by any test - FIXED on `fix/chaturaji-premove-seed` (PR 25, not yet merged into this branch: delete this section when it is)
+
+Pinned there by a hand-built position (a knight takes a boat with a triple fork and hands over its king: taken at 14, declined from about 21 up) with the exact score as literals; the mutants 28 / 100 / 1000 / 15 / 20 / 13 / 7 / 0 are all killed. The original note follows.
 
 Found on the cloud VM (command #25-cloud) when the constants mutation set was rebuilt in the repo (`scripts/mutation/configs/chaturaji-bot-constants.config.cjs`, 9 of 9 killed). `KING_LOSS` in `chaturajiBot.ts` LOWERED (14 -> 0, 14 -> 7) is killed by `fourPlayerChaturajiBot.test.ts`; RAISED (14 -> 28, 100, 1000) survives it. Not proven equivalent: a larger loss may change a choice between a big capture and a king at risk, and no hand-built position there pins an upper bound. Start with a position where a capture worth more than 14 points leaves a king attackable, and decide which move the bot must pick.

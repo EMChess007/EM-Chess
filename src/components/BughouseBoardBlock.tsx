@@ -156,7 +156,9 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
           // The dual layout: a chip is a plain View with this board's own touch handlers (a Pressable would join the responder system the two boards must stay out of).
           if (touches) {
             return (
-              <View key={chip.piece} accessible {...common} {...touches.chipProps(chip.piece)}>
+              // only the chip of the side to move that has a legal square listens (the Pressable of the other layouts is `disabled` for every other chip): the reducer would otherwise lift the
+              // piece of the SIDE TO MOVE when the pocket of its opponent is touched
+              <View key={chip.piece} accessible {...common} {...(chip.usable ? touches.chipProps(chip.piece) : {})}>
                 {face}
               </View>
             );

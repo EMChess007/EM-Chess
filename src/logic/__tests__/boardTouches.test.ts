@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { mulberry32 } from './bughouseTestKit';
 import { EMPTY_TOUCH_BOOK, gridTapCell, insideGrid, stepTouches, type Tap, type TouchBook, type TouchEventIn, type TouchTarget } from '../boardTouches';
 
 /**
@@ -46,6 +47,44 @@ describe('a tap is a touch that ends where it began', () => {
     expect(run([start('1', 0, 0), move('1', 11, 0), end('1', 0, 0)]).taps).toHaveLength(0);
     expect(run([start('1', 0, 0), move('1', 10, 0), end('1', 0, 0)]).taps).toHaveLength(1); // 10 is not "more than 10"
     expect(run([start('1', 0, 0), move('1', 0, 11), move('1', 0, 0), end('1', 0, 0)]).taps).toHaveLength(0); // and the later move back does not undo it
+  });
+
+  it('a lift that is no tap still forgets the touch (a book never grows by the touches that were not taps)', () => {
+    expect(run([start('1', 0, 0), move('1', 11, 0), end('1', 0, 0)]).book).toEqual({});
+    expect(run([start('1', 0, 0), end('1', 30, 0)]).book).toEqual({});
+    expect(run([start('1', 0, 0), start('2', 5, 5), end('1', 30, 0)]).book).toEqual({ '2': { target: GRID, start: { x: 5, y: 5 }, drifted: false } });
+  });
+
+  it('agrees with a plain model on 2000 seeded random event streams over three fingers (the proof that re-examining a touch that has already drifted changes nothing)', () => {
+    const rng = mulberry32(31);
+    for (let round = 0; round < 2000; round++) {
+      // the model keeps, per identifier, every point of the touch; it is a tap iff the touch began, never went further than 10 px from its start, and lifts within 10 px
+      const live = new Map<string, { start: { x: number; y: number }; far: boolean }>();
+      const modelTaps: [number, number][] = [];
+      let book: TouchBook = EMPTY_TOUCH_BOOK;
+      const actualTaps: [number, number][] = [];
+      for (let i = 0; i < 12; i++) {
+        const id = 'abc'[Math.floor(rng() * 3)];
+        const x = Math.round(rng() * 40) - 20;
+        const y = Math.round(rng() * 40) - 20;
+        const roll = rng();
+        const event: TouchEventIn = roll < 0.3 ? start(id, x, y) : roll < 0.6 ? move(id, x, y) : roll < 0.9 ? end(id, x, y) : cancel(id);
+        const known = live.get(id);
+        if (event.kind === 'start') live.set(id, { start: { x, y }, far: false });
+        else if (known) {
+          if (event.kind === 'move') known.far = known.far || Math.hypot(x - known.start.x, y - known.start.y) > 10;
+          else {
+            live.delete(id);
+            if (event.kind === 'end' && !known.far && Math.hypot(x - known.start.x, y - known.start.y) <= 10) modelTaps.push([known.start.x, x]);
+          }
+        }
+        const step = stepTouches(book, event);
+        book = step.book;
+        if (step.tap) actualTaps.push([step.tap.start.x, step.tap.end.x]);
+      }
+      expect(actualTaps, `round ${round}`).toEqual(modelTaps);
+      expect(Object.keys(book).sort(), `round ${round}`).toEqual([...live.keys()].sort());
+    }
   });
 
   it('a cancelled touch is forgotten without an effect, and a lift that follows finds nothing', () => {
@@ -125,6 +164,12 @@ describe('the dead zone: only a touch that starts AND ends inside the grid is a 
     expect(gridTapCell(tapOf([128, 228], [128, 228]), origin, 28, 8, 8)).toEqual({ row: 1, col: 1 });
     expect(gridTapCell(tapOf([100 + 28 * 5 + 3, 200 + 28 * 2 + 3], [100 + 28 * 5 + 3, 200 + 28 * 2 + 3]), origin, 28, 8, 8)).toEqual({ row: 2, col: 5 });
     expect(gridTapCell(tapOf([323, 423], [323, 423]), origin, 28, 8, 8)).toEqual({ row: 7, col: 7 });
+  });
+
+  it('the cell is the one under where the finger LIFTED when the tap crossed a cell edge on the way (a tap may drift up to 10 px)', () => {
+    expect(gridTapCell(tapOf([127, 227], [128, 228]), origin, 28, 8, 8)).toEqual({ row: 1, col: 1 }); // began in cell (0, 0), lifted in (1, 1)
+    expect(gridTapCell(tapOf([128, 228], [127, 227]), origin, 28, 8, 8)).toEqual({ row: 0, col: 0 });
+    expect(gridTapCell(tapOf([150, 210], [150, 232]), origin, 28, 8, 8)).toEqual({ row: 1, col: 1 }); // 22 px down: still a tap's reach, another row
   });
 
   it('a tap that began outside the grid is nothing, and so is one that ended outside it (the margin and the gutter are dead)', () => {

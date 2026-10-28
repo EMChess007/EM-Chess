@@ -78,6 +78,13 @@ describe('a promotion waits for its choice', () => {
     expect(run('A', [tapSquare('a7'), tapSquare('b8')]).state.promotion?.choices).toEqual(['q', 'n']); // a position that allows only two
   });
 
+  it('a square reached by several moves, of which ANY promotes, asks for the piece (the engine never mixes the two, the reducer does not rely on that)', () => {
+    const mixed = position({ moves: { e2: [{ to: 'e4' }, { to: 'e4', promotion: 'q' }] } });
+    const r = run('A', [tapSquare('e2'), tapSquare('e4')], mixed);
+    expect(r.commits).toEqual([]);
+    expect(r.state.promotion?.choices).toEqual(['q']);
+  });
+
   it('choosing a piece plays the move with it and clears everything; choosing with nothing waiting does nothing', () => {
     const done = run('B', [tapSquare('a7'), tapSquare('a8'), { kind: 'choosePromotion', piece: 'n' }]);
     expect(done.commits).toEqual([{ board: 'B', kind: 'move', from: 'a7', to: 'a8', promotion: 'n' }]);
