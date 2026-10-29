@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../components/AppText';
 import { api } from '../api/client';
 import ChessBoard from '../components/ChessBoard';
 import GameScreenBody from '../components/GameScreenBody';

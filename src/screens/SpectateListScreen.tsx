@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../components/AppText';
+import LoadFailed from '../components/LoadFailed';
 import ScreenHeader from '../components/ScreenHeader';
+import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { buildSpectateRows, describeFourGame, type SpectateRow } from '../logic/fourPlayerOnlineUi';
@@ -16,6 +19,8 @@ interface SpectateListScreenProps {
 
 /** A server without 4 Player support never answers `four_list_active_games`; the 4 Player section then simply stays out of the list. */
 const FOUR_LIST_TIMEOUT_MS = 5000;
+/** The 2-player list has no "older server" excuse: if it does not answer in this time the server cannot be reached, and the screen says so with a Retry. */
+const LIST_TIMEOUT_MS = 12000;
 
 export default function SpectateListScreen({ authToken, onWatch, onWatchFour, onBack }: SpectateListScreenProps) {
   const colors = useAppColors();
@@ -42,8 +47,10 @@ export default function SpectateListScreen({ authToken, onWatch, onWatchFour, on
       else setRows(buildSpectateRows(twoGames ?? [], fourGames));
       setLoading(false);
     };
-    socket.emit('list_active_games', {}, (ack: Ack<{ games: ActiveGameSummary[] }>) => {
-      if (ack.ok) twoGames = ack.games;
+    // With a timeout: an emit on a socket that never connects waits for ever, and the spinner with it.
+    socket.timeout(LIST_TIMEOUT_MS).emit('list_active_games', {}, (err: unknown, ack?: Ack<{ games: ActiveGameSummary[] }>) => {
+      if (err || !ack) twoError = SERVER_UNREACHABLE_MESSAGE;
+      else if (ack.ok) twoGames = ack.games;
       else twoError = ack.error;
       finish();
     });
@@ -76,7 +83,7 @@ export default function SpectateListScreen({ authToken, onWatch, onWatchFour, on
 
       {!loading && error && (
         <View style={styles.centerRow}>
-          <Text style={styles.error}>{error}</Text>
+          <LoadFailed message={error} onRetry={loadGames} />
         </View>
       )}
 

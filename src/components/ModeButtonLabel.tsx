@@ -1,4 +1,5 @@
-import { Text, type StyleProp, type TextStyle } from 'react-native';
+import { type StyleProp, type TextStyle } from 'react-native';
+import { Text } from './AppText';
 
 interface ModeButtonLabelProps {
   label: string;

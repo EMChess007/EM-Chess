@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';

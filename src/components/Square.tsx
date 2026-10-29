@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from './AppText';
 import type { BoardSquare } from '../types/chess';
 import { CAPTURER_OUTLINE_COLOR, CAPTURER_RING_COLOR } from '../logic/giveawayHints';
 import type { PieceImageMap } from '../types/theme';

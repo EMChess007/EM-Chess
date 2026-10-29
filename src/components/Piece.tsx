@@ -1,4 +1,5 @@
-import { Image, StyleSheet, Text } from 'react-native';
+import { Image, StyleSheet } from 'react-native';
+import { Text } from './AppText';
 import type { Piece as PieceModel } from '../types/chess';
 import type { PieceImageMap } from '../types/theme';
 

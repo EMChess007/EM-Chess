@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Text } from './AppText';
 import { ChessEngine } from '../logic/ChessEngine';
 import { getLegalDuckPlacementSquares } from '../logic/duckChess';
 import { getGiveawayMoves } from '../logic/giveaway';

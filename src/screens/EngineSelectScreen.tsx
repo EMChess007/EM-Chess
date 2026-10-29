@@ -1,14 +1,7 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text, TextInput } from '../components/AppText';
 import { appAlert } from '../components/AppAlert';
 import ScreenHeader from '../components/ScreenHeader';
 import { buildCustomEngineHtml } from '../engine/customEngineHtml';

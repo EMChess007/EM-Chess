@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
-import { api, ApiError, type LeaderboardResponse } from '../api/client';
+import LoadFailed from '../components/LoadFailed';
+import { api, type LeaderboardResponse } from '../api/client';
+import { loadErrorMessage } from '../logic/loadError';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { RATING_CATEGORIES, type RatingCategory } from '../logic/rating';
 
@@ -19,6 +22,8 @@ export default function LeaderboardScreen({ authToken, onBack }: LeaderboardScre
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Bumped by the Retry button of the failed-load state.
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,7 +35,7 @@ export default function LeaderboardScreen({ authToken, onBack }: LeaderboardScre
         if (!cancelled) setData(res);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Failed to load leaderboard.');
+        if (!cancelled) setError(loadErrorMessage(err, 'Failed to load leaderboard.'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -38,7 +43,7 @@ export default function LeaderboardScreen({ authToken, onBack }: LeaderboardScre
     return () => {
       cancelled = true;
     };
-  }, [authToken, category]);
+  }, [authToken, category, reloadTick]);
 
   return (
     <View style={styles.container}>
@@ -60,7 +65,7 @@ export default function LeaderboardScreen({ authToken, onBack }: LeaderboardScre
 
       {!loading && error && (
         <View style={styles.centerRow}>
-          <Text style={styles.error}>{error}</Text>
+          <LoadFailed message={error} onRetry={() => setReloadTick((tick) => tick + 1)} />
         </View>
       )}
 

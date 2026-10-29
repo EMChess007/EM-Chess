@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../components/AppText';
 import { useSaveGameOnEnd } from '../api/useSaveGameOnEnd';
 import { appAlert } from '../components/AppAlert';
 import CapturedPieces from '../components/CapturedPieces';

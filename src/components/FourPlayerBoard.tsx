@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Image, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Text } from './AppText';
 import { CAPTURER_OUTLINE_COLOR, CAPTURER_RING_COLOR, fourPlayerCapturingSquares } from '../logic/giveawayHints';
 import { checkedKingSquares } from '../logic/fourPlayerVariant';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';

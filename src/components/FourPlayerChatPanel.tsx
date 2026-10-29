@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text, TextInput } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { SEAT_COLORS } from '../logic/fourPlayer';
 import type { FourChatEntry } from '../logic/fourPlayerOnlineUi';

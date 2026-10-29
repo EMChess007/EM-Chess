@@ -1,6 +1,7 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text, TextInput } from '../components/AppText';
 import { appAlert } from '../components/AppAlert';
 import ColorSwatchPicker from '../components/ColorSwatchPicker';
 import ScreenHeader from '../components/ScreenHeader';

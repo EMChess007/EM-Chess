@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { SEAT_COLORS, SEAT_NAMES, formatSeatClock, variantOfRules, type FourPlayerClock, type FourPlayerState, type Seat, type SeatConfig } from '../logic/fourPlayer';
 import { controllerName } from '../logic/fourPlayerBots';

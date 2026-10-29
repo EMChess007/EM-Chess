@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../components/AppText';
 import { appAlert } from '../components/AppAlert';
 import ChaturajiRulesSheet from '../components/ChaturajiRulesSheet';
 import ModeButtonLabel from '../components/ModeButtonLabel';

@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { SEAT_COLORS, SEAT_NAMES } from '../logic/fourPlayer';
 import { chaturajiOnlineRows, describeFourResultNote, resultRows } from '../logic/fourPlayerOnlineUi';

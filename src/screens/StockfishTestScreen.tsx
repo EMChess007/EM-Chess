@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../components/AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { stockfishEngine } from '../engine/StockfishEngineAdapter';

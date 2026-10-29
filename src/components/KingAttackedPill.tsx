@@ -1,4 +1,5 @@
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
 interface KingAttackedPillProps {

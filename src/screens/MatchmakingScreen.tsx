@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet } from 'react-native';
+import { Text } from '../components/AppText';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import type { GameVariant } from '../components/VariantSelector';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';

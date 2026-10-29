@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
 import { useAppColors } from '../logic/colorSchemeHooks';
 import { getActiveDates, useStreak } from '../logic/streakStorage';

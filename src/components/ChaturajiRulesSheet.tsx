@@ -1,4 +1,5 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { chaturajiRulesSheet } from '../logic/chaturajiUi';
 

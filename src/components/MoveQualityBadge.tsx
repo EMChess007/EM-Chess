@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from './AppText';
 import { MOVE_QUALITY_COLORS, MOVE_QUALITY_SYMBOLS, type MoveQuality } from '../logic/analysis';
 
 interface MoveQualityBadgeProps {
