@@ -10,6 +10,8 @@ import { clearActiveGame, loadResumableGame, saveActiveGame, touchActiveGame } f
 import { clearAuthSession, loadAuthSession, type AuthSession } from './src/api/authStorage';
 import AppAlertHost, { appAlert } from './src/components/AppAlert';
 import BottomTabBar, { type MainTab } from './src/components/BottomTabBar';
+import SideInsetsFrame from './src/components/SideInsetsFrame';
+import { useAppFonts } from './src/components/useAppFonts';
 import AchievementsScreen from './src/screens/AchievementsScreen';
 import AnalysisScreen from './src/screens/AnalysisScreen';
 import BoardSetupScreen from './src/screens/BoardSetupScreen';
@@ -224,6 +226,8 @@ export default function App() {
   const [themeReady, setThemeReady] = useState(false);
 
   const colors = useAppColors();
+  // Nothing renders until the bundled font is settled (loaded, failed or too slow): see logic/typography.ts.
+  const fontsSettled = useAppFonts();
 
   useEffect(() => {
     // Started first (though not awaited before the others below — logDiagnostic is safe to call
@@ -324,7 +328,7 @@ export default function App() {
     setAuthSession(null);
   };
 
-  if (!themeReady) {
+  if (!themeReady || !fontsSettled) {
     return (
       <SafeAreaProvider>
         <View style={{ flex: 1, backgroundColor: colors.background }} />
@@ -1121,7 +1125,8 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <View
+      <SideInsetsFrame
+        bottom={screen.name !== 'main'}
         style={{ flex: 1, backgroundColor: colors.background }}
         // Observes every touch start without claiming it (returns false), so Resign/Hint/Undo, scroll
         // views etc. behave exactly as before — see src/logic/screenTouches.ts.
@@ -1131,7 +1136,7 @@ export default function App() {
         }}
       >
         {content}
-      </View>
+      </SideInsetsFrame>
       <AppAlertHost />
       <StatusBar style={colors.mode === 'dark' ? 'light' : 'dark'} />
     </SafeAreaProvider>

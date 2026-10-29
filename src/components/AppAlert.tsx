@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable } from './AppPressable';
+import { Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
 export interface AppAlertButton {
@@ -44,6 +47,7 @@ export function appAlert(title: string, message?: string, buttons?: AppAlertButt
 export default function AppAlertHost() {
   const [state, setLocalState] = useState<AlertState | null>(null);
   const colors = useAppColors();
+  const insets = useSafeAreaInsets();
   const styles = createStyles(colors);
 
   useEffect(() => {
@@ -69,8 +73,9 @@ export default function AppAlertHost() {
   };
 
   return (
-    <View style={styles.overlay}>
-      <Pressable style={styles.backdrop} onPress={handleBackdropPress} />
+    // The card keeps clear of the system bars and the display cutout; the dimmed backdrop still covers the whole window.
+    <View style={[styles.overlay, { paddingTop: 24 + insets.top, paddingBottom: 24 + insets.bottom, paddingLeft: 24 + insets.left, paddingRight: 24 + insets.right }]}>
+      <Pressable style={styles.backdrop} onPress={handleBackdropPress} accessibilityLabel="Dismiss" />
       <View style={styles.card}>
         <Text style={styles.title}>{state.title}</Text>
         {state.message ? <Text style={styles.message}>{state.message}</Text> : null}
@@ -142,8 +147,10 @@ function createStyles(colors: AppColors) {
       color: colors.textSecondary,
       lineHeight: 19,
     },
+    // Buttons wrap onto a second line when the words or the text size leave no room for them side by side (they used to run off the card's edge).
     buttonRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       justifyContent: 'flex-end',
       gap: 10,
       marginTop: 12,
@@ -153,6 +160,9 @@ function createStyles(colors: AppColors) {
       paddingHorizontal: 16,
       borderRadius: 8,
       backgroundColor: colors.buttonBackground,
+      flexShrink: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     buttonCancel: {
       backgroundColor: colors.mode === 'dark' ? '#3a3a3a' : '#ddd',

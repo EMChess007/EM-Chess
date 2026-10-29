@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Pressable } from './AppPressable';
+import { Text } from './AppText';
 import { RESERVE_PIECE_TYPES, reserveTotal, type CrazyhouseState, type ReservePieceType } from '../logic/crazyhouse';
 import type { PieceColor } from '../types/chess';
 

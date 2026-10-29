@@ -27,13 +27,17 @@ describe('the board is the same size in Spell Chess as in Classic', () => {
 describe('the room for the Freeze/Jump row comes from tighter spacing, not from the board', () => {
   const read = (rel: string) => readFileSync(join(__dirname, '../../', rel), 'utf8').replace(/\r\n/g, '\n');
 
-  it('GameScreenBody has a compact mode with tighter gaps, and its content area stays non-scrolling', () => {
+  it('GameScreenBody has a compact mode with tighter gaps, and its area only SCROLLS when the content does not fit (Android device matrix)', () => {
     const body = read('components/GameScreenBody.tsx');
     expect(body).toContain('compact?: boolean;');
     expect(body).toContain('compact && styles.contentCompact');
     expect(body).toMatch(/contentCompact: \{\s*gap: 3,\s*paddingVertical: 3,/);
-    expect(body).toContain("overflow: 'hidden'"); // still clipped, never a ScrollView (it would fight the board's drag gestures)
-    expect(body).not.toMatch(/<ScrollView|import[^;]*ScrollView/);
+    // It used to be a clipped, never-scrolling View (a ScrollView would fight the board's drag gestures): on a landscape phone or with large text the board and the buttons were
+    // cut off. Now the scroll view is always there but `scrollEnabled` only while the content is taller than the window, so with everything fitting no native scroll view
+    // can take a touch from the board; when it does not fit, the board hands a scroll swipe over (useBoardGestures onPanResponderTerminationRequest).
+    expect(body).toContain('scrollEnabled={overflowing}');
+    expect(body).toContain('const overflowing = viewportHeight > 0 && contentHeight > viewportHeight + 1;');
+    expect(body).not.toContain("overflow: 'hidden'");
   });
 
   it('every screen that can show a Spell Chess board passes compact for it', () => {

@@ -1,5 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable } from './AppPressable';
+import { Text } from './AppText';
 import { ChessEngine } from '../logic/ChessEngine';
 import { getLegalDuckPlacementSquares } from '../logic/duckChess';
 import { getGiveawayMoves } from '../logic/giveaway';
@@ -769,7 +771,7 @@ function ChessBoard({
                 ]}
               />
               <Animated.View style={[styles.explosionGhost, { opacity: ghostOpacity }]}>
-                <Piece piece={piece} images={pieceTheme.images} />
+                <Piece piece={piece} images={pieceTheme.images} size={squareSize} />
               </Animated.View>
             </Animated.View>
           );
@@ -787,7 +789,7 @@ function ChessBoard({
               },
             ]}
           >
-            <Piece piece={slidingMove.piece} images={pieceTheme.images} />
+            <Piece piece={slidingMove.piece} images={pieceTheme.images} size={squareSize} />
           </Animated.View>
         )}
       </View>
@@ -866,7 +868,7 @@ function ChessBoard({
         choices={getPromotionChoices(giveaway)}
         buttonSize={squareSize * 1.15}
         labelFor={(choice) => PROMOTION_LABELS[choice]}
-        renderChoice={(choice) => <Piece piece={{ type: choice, color: pendingPromotion?.color ?? 'w' }} images={pieceTheme.images} />}
+        renderChoice={(choice) => <Piece piece={{ type: choice, color: pendingPromotion?.color ?? 'w' }} images={pieceTheme.images} size={squareSize * 1.15} />}
         onChoose={completePromotion}
         onCancel={cancelPromotion}
       />

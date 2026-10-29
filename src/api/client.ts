@@ -131,11 +131,32 @@ function isRenderBackend(): boolean {
   return API_BASE_URL === RENDER_BACKEND_URL;
 }
 
-async function fetchOnce(url: string, init: RequestInit): Promise<Response> {
+/**
+ * One attempt, INCLUDING reading the body: the timer keeps running until the JSON is read. It used to stop at the response headers, so a server that sent the headers and
+ * then stalled left `response.json()` pending for ever - the caller's spinner (Home's stats, the Analysis list) never ended and its error state never showed.
+ */
+async function fetchOnce(url: string, init: RequestInit): Promise<{ response: Response; data: unknown }> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  // Racing the timer as well as aborting: not every fetch implementation rejects a pending body read when the signal fires.
+  const timedOut = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort();
+      const error = new Error('Request timed out');
+      error.name = 'AbortError';
+      reject(error);
+    }, REQUEST_TIMEOUT_MS);
+  });
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await Promise.race([
+      (async () => {
+        const response = await fetch(url, { ...init, signal: controller.signal });
+        const isJson = response.headers.get('content-type')?.includes('application/json');
+        const data: unknown = isJson ? await response.json().catch(() => null) : null;
+        return { response, data };
+      })(),
+      timedOut,
+    ]);
   } finally {
     clearTimeout(timeoutId);
   }
@@ -154,11 +175,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   };
 
   let response: Response | undefined;
+  let data: unknown;
   let lastError: unknown;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     console.log(`[api/client] ${method} ${url}${attempt > 0 ? ` (retry ${attempt})` : ''}`);
     try {
-      response = await fetchOnce(url, init);
+      ({ response, data } = await fetchOnce(url, init));
       lastError = null;
       break;
     } catch (err) {
@@ -180,9 +202,6 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
         : 'Could not connect to the server. Make sure the backend is running and your phone is on the same network as your computer.'
     );
   }
-
-  const isJson = response.headers.get('content-type')?.includes('application/json');
-  const data: unknown = isJson ? await response.json().catch(() => null) : null;
 
   if (!response.ok) {
     const message =

@@ -1,6 +1,8 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
+import { Text, TextInput } from '../components/AppText';
 import { appAlert } from '../components/AppAlert';
 import ColorSwatchPicker from '../components/ColorSwatchPicker';
 import ScreenHeader from '../components/ScreenHeader';
@@ -263,7 +265,7 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
               {theme.images ? (
                 <Image source={{ uri: theme.images.wn }} style={styles.pieceThumb} resizeMode="contain" />
               ) : (
-                <Text style={styles.pieceThumbGlyph}>♘</Text>
+                <Text style={styles.pieceThumbGlyph} maxFontSizeMultiplier={1}>♘</Text>
               )}
               <View style={styles.rowInfo}>
                 <Text style={styles.rowName}>{theme.name}</Text>
@@ -294,7 +296,9 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
                   {pieceImages[slot.key] ? (
                     <Image source={{ uri: pieceImages[slot.key] }} style={styles.pieceSlotImage} resizeMode="contain" />
                   ) : (
-                    <Text style={styles.pieceSlotPlus}>+</Text>
+                    <Text style={styles.pieceSlotPlus} maxFontSizeMultiplier={1}>
+                      +
+                    </Text>
                   )}
                   <Text style={styles.pieceSlotLabel}>{slot.label}</Text>
                 </Pressable>
@@ -380,7 +384,7 @@ function createStyles(colors: AppColors) {
     pieceThumbGlyph: {
       width: 32,
       height: 32,
-      fontSize: 28,
+      fontSize: 24,
       textAlign: 'center',
       lineHeight: 32,
       color: colors.text,

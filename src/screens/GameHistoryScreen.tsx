@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
+import { Text } from '../components/AppText';
 import { appAlert } from '../components/AppAlert';
 import ScreenHeader from '../components/ScreenHeader';
-import { api, ApiError, type StoredGame } from '../api/client';
+import LoadFailed from '../components/LoadFailed';
+import { api, type StoredGame } from '../api/client';
+import { loadErrorMessage } from '../logic/loadError';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { listLocalGames } from '../logic/localGameHistory';
 import { replayPgn } from '../logic/pgnReplay';
@@ -54,6 +58,8 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
   const [games, setGames] = useState<StoredGame[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Bumped by the Retry button of the failed-load state.
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +87,7 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
         if (!cancelled) setGames(data);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Failed to load history.');
+        if (!cancelled) setError(loadErrorMessage(err, 'Failed to load history.'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -89,7 +95,7 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
     return () => {
       cancelled = true;
     };
-  }, [authToken]);
+  }, [authToken, reloadTick]);
 
   const handleSharePgn = async (game: StoredGame) => {
     const outcome = await sharePgn(game.pgn);
@@ -128,7 +134,7 @@ export default function GameHistoryScreen({ authToken, onAnalyze, onAuthPress }:
 
       {!loading && error && (
         <View style={styles.centerRow}>
-          <Text style={styles.error}>{error}</Text>
+          <LoadFailed message={error} onRetry={() => setReloadTick((tick) => tick + 1)} />
         </View>
       )}
 
@@ -204,11 +210,6 @@ function createStyles(colors: AppColors) {
       fontSize: 12,
       color: colors.accent,
       fontWeight: '600',
-    },
-    error: {
-      color: colors.danger,
-      fontSize: 14,
-      textAlign: 'center',
     },
     empty: {
       color: colors.textSecondary,

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
+import { Text } from '../components/AppText';
 import { api } from '../api/client';
 import ChessBoard from '../components/ChessBoard';
 import GameScreenBody from '../components/GameScreenBody';
@@ -266,8 +268,10 @@ function createStyles(colors: AppColors) {
       fontSize: 13,
       color: colors.textSecondary,
     },
+    // Wraps: the rating and the two links no longer fit one line on a narrow window or with large text.
     topRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       justifyContent: 'space-between',
       alignItems: 'center',
       width: '100%',
@@ -275,6 +279,7 @@ function createStyles(colors: AppColors) {
     },
     rushLinkRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
     },
     rushLink: {
       paddingVertical: 4,

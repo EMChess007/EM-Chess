@@ -1,4 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+// The strip is dense (four cards side by side): its text may grow only 1.2 x with the system font scale (DenseText), and it wraps rather than being cut.
+import { DenseText as Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { SEAT_COLORS, SEAT_NAMES, formatSeatClock, variantOfRules, type FourPlayerClock, type FourPlayerState, type Seat, type SeatConfig } from '../logic/fourPlayer';
 import { controllerName } from '../logic/fourPlayerBots';
@@ -54,22 +56,22 @@ export default function FourPlayerSeatStrip({ state, seats, clock, labels, gains
           >
             <View style={styles.topRow}>
               <View style={[styles.dot, { backgroundColor: SEAT_COLORS[seat] }]} />
-              <Text style={styles.name} numberOfLines={1}>
+              <Text style={styles.name}>
                 {SEAT_NAMES[seat]}
               </Text>
               <Text style={styles.score}>{seatMetric(state, seat)}</Text>
             </View>
             {clock.enabled && <Text style={[styles.time, low && current && styles.timeLow, out && styles.timeOut]}>{formatSeatClock(seconds)}</Text>}
-            <Text style={styles.player} numberOfLines={1}>
+            <Text style={styles.player}>
               {out ? outWord : playerName}
             </Text>
             {attacked && (
-              <Text testID={`seat-${seat}-attacked`} style={styles.attacked} numberOfLines={1}>
+              <Text testID={`seat-${seat}-attacked`} style={styles.attacked}>
                 king attacked
               </Text>
             )}
             {badge && (
-              <Text style={styles.badge} numberOfLines={1}>
+              <Text style={styles.badge}>
                 {badge}
               </Text>
             )}
@@ -99,9 +101,10 @@ function createStyles(colors: AppColors) {
       backgroundColor: colors.surface,
     },
     out: { opacity: 0.5 },
-    topRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    // Wraps: when the name and the score no longer fit side by side (a wide font, large text) the score drops to its own line instead of squeezing the name.
+    topRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 4 },
     dot: { width: 9, height: 9, borderRadius: 5 },
-    name: { flex: 1, fontSize: 12, fontWeight: '700', color: colors.text },
+    name: { flexGrow: 1, flexShrink: 1, fontSize: 12, fontWeight: '700', color: colors.text },
     score: { fontSize: 13, fontWeight: '800', color: colors.text },
     time: { fontSize: 17, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
     timeLow: { color: colors.danger },

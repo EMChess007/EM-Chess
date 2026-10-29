@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Image, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Text } from './AppText';
 import { CAPTURER_OUTLINE_COLOR, CAPTURER_RING_COLOR, fourPlayerCapturingSquares } from '../logic/giveawayHints';
 import { checkedKingSquares } from '../logic/fourPlayerVariant';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
@@ -131,6 +132,8 @@ const PieceArt = memo(function PieceArt({ seat, type, size, dead, images, boat =
         dead && styles.dead,
         promoted && styles.promoted,
       ]}
+      // Board art, sized from its cell: it never follows the system font scale (see Piece.tsx).
+      maxFontSizeMultiplier={1}
     >
       {GLYPHS[type]}
     </Text>

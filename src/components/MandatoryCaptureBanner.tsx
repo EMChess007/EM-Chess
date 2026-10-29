@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from './AppText';
 import { useAppColors } from '../logic/colorSchemeHooks';
 import { CAPTURE_BLOCKED_TEXT, CAPTURE_MANDATORY_TEXT } from '../logic/giveawayHints';
 

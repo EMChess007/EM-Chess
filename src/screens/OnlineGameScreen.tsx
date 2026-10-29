@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
+import { Text, TextInput } from '../components/AppText';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { classifyRejoinAck } from '../logic/onlineRejoin';
 import { appAlert } from '../components/AppAlert';

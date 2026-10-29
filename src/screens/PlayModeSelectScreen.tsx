@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
+import { Text } from '../components/AppText';
 import { appAlert } from '../components/AppAlert';
 import BughouseRulesSheet from '../components/BughouseRulesSheet';
 import ChaturajiRulesSheet from '../components/ChaturajiRulesSheet';
@@ -63,6 +65,9 @@ interface PlayModeSelectScreenProps {
   authUser: AuthUser | null;
   onAuthPress: () => void;
 }
+
+/** The narrowest a mode button gets (dp): wide enough for "Tournaments" at the normal text size; a narrower row wraps. */
+const MIN_MODE_BUTTON_WIDTH = 96;
 
 export default function PlayModeSelectScreen({
   onBack,
@@ -399,14 +404,21 @@ function createStyles(colors: AppColors) {
       color: colors.textSecondary,
       marginBottom: 8,
     },
+    // Rows wrap (Android text-fit work): a button is never narrower than MIN_MODE_BUTTON_WIDTH, so on a narrow window or with large text the row breaks into two lines of
+    // buttons instead of squeezing three labels into a width that holds none of them.
     subButtonRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: 10,
       marginTop: 4,
     },
     subButton: {
-      flex: 1,
+      flexGrow: 1,
+      flexShrink: 1,
+      flexBasis: MIN_MODE_BUTTON_WIDTH,
+      minWidth: MIN_MODE_BUTTON_WIDTH,
       paddingVertical: 14,
+      paddingHorizontal: 6,
       borderRadius: 8,
       alignItems: 'center',
       justifyContent: 'center',

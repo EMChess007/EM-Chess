@@ -36,3 +36,41 @@ jobs:
       # scripts/cloud-setup.sh builds a cloud session's VM (TESTING.md, "Cloud sessions"); a syntax error would only show when the next session starts.
       - name: Syntax-check the cloud setup script
         run: bash -n scripts/cloud-setup.sh
+
+  # The Android device matrix, quick profile (TESTING.md "Android device matrix", CHECKLIST.md: every new or changed screen must pass it): every screen in a real Chrome at the
+  # extremes of window size, text scale, font, display zoom, theme and system-bar insets, checked for clipped text, sideways scroll, cut-off or overlapping controls, touch targets
+  # under 44 dp and content under the system bars. Its own job so a failure names itself; the full 720-combination run is the nightly (android-matrix-nightly.yml).
+  device-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      # playwright-core drives the runner's own Chrome; it is not an app dependency (the cloud sessions get it from the sibling backend checkout).
+      - name: Install the browser driver
+        run: npm install --no-save playwright-core@1.64.1
+
+      - name: The matrix's own checks catch what they claim to
+        run: node scripts/browser/android-matrix.mjs --self-test
+        env:
+          E2E_BROWSER_PATH: /usr/bin/google-chrome
+
+      - name: Device matrix (quick profile)
+        run: node scripts/browser/android-matrix.mjs --profile quick --sheets --out matrix-out
+        env:
+          E2E_BROWSER_PATH: /usr/bin/google-chrome
+
+      - name: Keep the contact sheets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-matrix-sheets
+          path: matrix-out
+          if-no-files-found: ignore
