@@ -60,7 +60,7 @@ mkdirSync(OUT_DIR, { recursive: true });
 
 const NAV_VIEWPORT = { width: 412, height: 915 };
 // data-matrix-exempt: a control that is small on purpose (AppPressable `compact`). A native Switch is a platform control: its row is the touch target, the 40 x 20 track is not.
-const exempt = ['[data-matrix-exempt]', 'input[type="checkbox"]'];
+const exempt = ['[data-matrix-exempt]', 'input[type="checkbox"]', '[data-testid^="thumb-"]'];
 
 // --- servers --------------------------------------------------------------------------------------------------------------------------------------
 async function freePort() {
@@ -388,6 +388,8 @@ async function selfTest() {
     expect('text under the top inset is reported', kinds(await run('<div style="padding-top:10px">under the notch</div>', {}, { top: 48, bottom: 0, left: 0, right: 0 })).has('inset'));
     expect('text below the top inset is fine', !kinds(await run('<div style="padding-top:60px">below the notch</div>', {}, { top: 48, bottom: 0, left: 0, right: 0 })).has('inset'));
     expect('a control inside the bottom inset is reported', kinds(await run('<div role="button" tabindex="0" style="position:fixed;bottom:0;width:100px;height:48px">a</div>', {}, { top: 0, bottom: 24, left: 0, right: 0 })).has('inset'));
+    expect('a board cell under a layer (the rotate overlay) is not judged', !kinds(await run('<div aria-label="a1" style="position:absolute;left:10px;top:10px;width:12px;height:12px">.</div><div style="position:fixed;inset:0;background:#000a"></div>', { boardKind: 'twoPlayer' })).has('board-cell'));
+    expect('a board cell inside an exempt thumbnail is not judged', !kinds(await run('<div data-testid="thumb-B"><div aria-label="a1" style="width:12px;height:12px">.</div></div>', { boardKind: 'twoPlayer' })).has('board-cell'));
     expect('a board cell under its minimum is reported', kinds(await run('<div aria-label="a1" style="width:12px;height:12px">.</div>', { boardKind: 'twoPlayer' })).has('board-cell'));
     expect('a board cell at its minimum is fine', !kinds(await run('<div aria-label="a1" style="width:24px;height:24px">.</div>', { boardKind: 'twoPlayer' })).has('board-cell'));
   } finally {

@@ -218,10 +218,13 @@ export function pageChecks(opts) {
   // ---- the board's cells -----------------------------------------------------------------------------------------------------------------------------
   if (boardKind) {
     const min = minBoardCell[boardKind];
-    const cells = Array.from(document.querySelectorAll('[aria-label]')).filter((el) => squareLabel.test(el.getAttribute('aria-label') || '') && !isHidden(el));
+    // A cell inside an exempt container (a read-only thumbnail of the other board) or under a layer (the rotate overlay the size gate puts over the boards) is not a cell a finger can use.
+    const cells = Array.from(document.querySelectorAll('[aria-label]')).filter(
+      (el) => squareLabel.test(el.getAttribute('aria-label') || '') && !isHidden(el) && !exempt.some((selector) => el.closest(selector)),
+    );
     for (const cell of cells.slice(0, 400)) {
       const r = cell.getBoundingClientRect();
-      if (r.width > 0 && Math.min(r.width, r.height) < min - 0.5) add('board-cell', cell, Math.round(r.width) + 'x' + Math.round(r.height) + ' px < ' + min);
+      if (r.width > 0 && !covered(cell, r) && Math.min(r.width, r.height) < min - 0.5) add('board-cell', cell, Math.round(r.width) + 'x' + Math.round(r.height) + ' px < ' + min);
     }
   }
   return issues;
