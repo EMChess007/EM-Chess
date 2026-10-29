@@ -1,4 +1,5 @@
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { bughouseRulesSheet } from '../logic/bughouseRulesSheet';
 
@@ -13,10 +14,12 @@ interface BughouseRulesSheetProps {
  */
 export default function BughouseRulesSheet({ visible, onClose }: BughouseRulesSheetProps) {
   const colors = useAppColors();
+  const insets = useSafeAreaInsets();
   const styles = createStyles(colors);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      {/* A Modal is its own window: the sheet keeps clear of the system bars and the cutout by padding the backdrop with the insets. */}
+      <View style={[styles.backdrop, { paddingTop: 16 + insets.top, paddingBottom: 16 + insets.bottom, paddingLeft: 16 + insets.left, paddingRight: 16 + insets.right }]}>
         {/* Rendered only while open, so closing takes the text off the page at once. */}
         {visible && (
           <View style={styles.sheet} accessibilityViewIsModal accessibilityLabel="Bughouse rules" testID="bughouse-rules-sheet">
@@ -45,7 +48,7 @@ export default function BughouseRulesSheet({ visible, onClose }: BughouseRulesSh
 
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
-    backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', padding: 16 },
+    backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center' },
     sheet: { maxHeight: '90%', borderRadius: 14, padding: 16, gap: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
     title: { fontSize: 19, fontWeight: '800', color: colors.text },
     scroll: { flexGrow: 0 },

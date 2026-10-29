@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import Text from '../components/BughouseText';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BughouseBoard from '../components/BughouseBoard';
 import BughouseBoardBlock from '../components/BughouseBoardBlock';
 import BughouseRulesSheet from '../components/BughouseRulesSheet';
@@ -51,10 +53,18 @@ const PROMOTION_ORDER: readonly PromotionPiece[] = ['q', 'r', 'b', 'n'];
  * Bughouse, Local (W3a): one human (its board large and the partner's a thumbnail, or two equal boards side by side in landscape) or several humans all on ONE board (pass-and-play: that
  * board turns to the side to move, only the side to move can touch). The match is the engine's; every action goes through its `settle` with ONE integer clock. Bots are the W2 bot.
  */
+/** The hit slop of a slim control (28 dp tall): 8 dp above and below, 4 dp to the sides - a 44 dp touch area without the height. */
+const SLIM_HIT_SLOP = { top: 8, bottom: 8, left: 4, right: 4 };
+
 export default function BughouseGameScreen({ seats, timeControl, onExit, rng, clock, startFrom }: BughouseGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const { width, height } = useWindowDimensions();
+  const win = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  // The layouts are sized to the room the app really has: the window without the system bars and the display cutout (the status bar above, the gesture / navigation strip below, a cutout or the
+  // navigation bar at the sides). Sized to the whole window, a phone with a status bar had boards and bars cut off at the bottom.
+  const width = win.width - insets.left - insets.right;
+  const height = win.height - insets.top - insets.bottom;
   const layout = useMemo(() => deriveBughouseLayout(seats), [seats]);
   const random = useRef(rng ?? Math.random).current;
   const readClock = useRef(clock ?? (() => Date.now())).current;
@@ -79,6 +89,9 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   // DEV ONLY (a development build): the touch-debug overlay, switched on from the controls. A release build has neither the switch nor the overlay's code (BughouseBoard).
   const devTouchDebug = typeof __DEV__ !== 'undefined' && __DEV__ && getTouchDebugOverlay() !== null;
   const [touchDebug, setTouchDebug] = useState(false);
+  const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
+  const [scrollContentHeight, setScrollContentHeight] = useState(0);
+  const contentOverflows = scrollViewportHeight > 0 && scrollContentHeight > scrollViewportHeight + 1;
   // What the human has half-way through on a board (a picked-up piece, a picked pocket piece, a promotion choice). Each remembers the position of ITS board it was made in and is
   // dropped the moment that board changes - not when the match as a whole commits: with bots on the other board a commit lands every few hundred milliseconds, and a selection that
   // any commit cleared could never be followed by its second tap.
@@ -365,6 +378,9 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   // do not fit beside them at 360 px - and the controls sit in a slim row of their own, which the stacked boards have the height for (checked in the browser at 360 x 740).
   const controlsInBar = compact && (dual ? dualFit.arrangement === 'sideBySide' : true);
   const ctl = dual ? styles.controlSlim : styles.control;
+  // The dual layouts are as tall as the window allows (the spec's cell table): their controls stay slim and reach the 44 dp touch target with hit slop (8 dp above and below a 28 dp control).
+  // `compact` opts out of AppPressable's 44 dp floor (components/AppPressable.tsx); react-native's own Pressable (until master's text-fit change is merged here) ignores it.
+  const slim: object = dual ? { compact: true, hitSlop: SLIM_HIT_SLOP } : {};
   const ctlText = dual ? styles.controlTextSlim : styles.controlText;
   const hasSharedBoard = dual && BOARD_IDS.some((board) => dualBoardPlan(seats, board).shared);
   // Humans on both boards: who resigns is a TEAM matter (any seat's resignation ends the match against its team); one button per team that has a human at the device.
@@ -375,27 +391,27 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   };
   const controls = (
     <>
-      <Pressable accessibilityRole="button" accessibilityLabel="Rules" testID="bughouse-rules" style={ctl} onPress={() => setRulesOpen(true)}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Rules" testID="bughouse-rules" style={ctl} onPress={() => setRulesOpen(true)} {...slim}>
         <Text style={ctlText}>Rules</Text>
       </Pressable>
       {(layout.kind === 'passAndPlay' || hasSharedBoard) && (
-        <Pressable accessibilityRole="button" accessibilityLabel={autoFlip ? 'Auto-turn is on' : 'Auto-turn is off'} testID="bughouse-autoflip" style={ctl} onPress={() => setAutoFlip((a) => !a)}>
+        <Pressable accessibilityRole="button" accessibilityLabel={autoFlip ? 'Auto-turn is on' : 'Auto-turn is off'} testID="bughouse-autoflip" style={ctl} onPress={() => setAutoFlip((a) => !a)} {...slim}>
           <Text style={ctlText}>{dual ? (autoFlip ? 'Turn: auto' : 'Turn: fixed') : autoFlip ? 'Auto-turn: on' : 'Auto-turn: off'}</Text>
         </Pressable>
       )}
       {devTouchDebug && dual && (
-        <Pressable accessibilityRole="button" accessibilityLabel={touchDebug ? 'Touch debug is on' : 'Touch debug is off'} testID="bughouse-touch-debug" style={ctl} onPress={() => setTouchDebug((on) => !on)}>
+        <Pressable accessibilityRole="button" accessibilityLabel={touchDebug ? 'Touch debug is on' : 'Touch debug is off'} testID="bughouse-touch-debug" style={ctl} onPress={() => setTouchDebug((on) => !on)} {...slim}>
           <Text style={ctlText}>{touchDebug ? 'Touch debug: on' : 'Touch debug: off'}</Text>
         </Pressable>
       )}
       {dual ? (
         resignTeams.map((team) => (
-          <Pressable key={team} accessibilityRole="button" accessibilityLabel={`Team ${team} resigns`} testID={`bughouse-resign-team-${team}`} style={ctl} onPress={() => resignTeam(team)} disabled={over}>
-            <Text style={ctlText}>{`Resign ${team === 1 ? '◆' : '●'}`}</Text>
+          <Pressable key={team} accessibilityRole="button" accessibilityLabel={`Team ${team} resigns`} testID={`bughouse-resign-team-${team}`} style={ctl} onPress={() => resignTeam(team)} disabled={over} {...slim}>
+            <Text style={ctlText}>{`Resign ${team === 1 ? '◆' : '●'} Team ${team}`}</Text>
           </Pressable>
         ))
       ) : (
-        <Pressable accessibilityRole="button" accessibilityLabel="Resign" testID="bughouse-resign" style={ctl} onPress={resign} disabled={over}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Resign" testID="bughouse-resign" style={ctl} onPress={resign} disabled={over} {...slim}>
           <Text style={ctlText}>Resign</Text>
         </Pressable>
       )}
@@ -407,11 +423,11 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   return (
     <View style={styles.container} testID="bughouse-game">
       {compact ? (
-        <View style={styles.compactBar} testID="bughouse-compact-bar">
+        <View style={[styles.compactBar, { paddingTop: insets.top }]} testID="bughouse-compact-bar">
           <Pressable accessibilityRole="button" accessibilityLabel="Back to the menu" onPress={onExit} style={styles.compactBack}>
             <Text style={styles.controlText}>‹ Menu</Text>
           </Pressable>
-          <Text style={styles.compactTitle} numberOfLines={1}>
+          <Text style={styles.compactTitle}>
             {layout.kind === 'passAndPlay' ? 'Bughouse · pass and play' : 'Bughouse'}
           </Text>
           {controlsInBar && <View style={styles.compactControls}>{controls}</View>}
@@ -419,7 +435,14 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
       ) : (
         <ScreenHeader title="Bughouse" subtitle={layout.kind === 'passAndPlay' ? 'Local · pass and play' : 'Local'} onBack={onExit} backLabel="‹ Menu" />
       )}
-      <ScrollView contentContainerStyle={styles.content} scrollEnabled={!dual || over}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        // The two-board layouts do not scroll while everything fits (a scroll view could take a touch from a board); they DO when the content is taller than the window - large text or a
+        // wide font wraps a control row onto a second line - so nothing is ever cut off (Android device matrix).
+        scrollEnabled={!dual || over || contentOverflows}
+        onLayout={(e) => setScrollViewportHeight(e.nativeEvent.layout.height)}
+        onContentSizeChange={(_w, h) => setScrollContentHeight(h)}
+      >
         {!controlsInBar && <View style={styles.controls}>{controls}</View>}
 
         {blockedLayout ? (
@@ -489,15 +512,15 @@ function createStyles(colors: AppColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     content: { padding: 8, gap: 8, alignItems: 'center' },
-    controls: { flexDirection: 'row', gap: 8, alignSelf: 'stretch', justifyContent: 'center' },
+    controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignSelf: 'stretch', justifyContent: 'center' },
     control: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
     controlText: { fontSize: 14, fontWeight: '700', color: colors.text },
     controlSlim: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
     controlTextSlim: { fontSize: 13, fontWeight: '700', color: colors.text },
-    compactBar: { height: 36, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 8 },
+    compactBar: { minHeight: 36, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 10, paddingHorizontal: 8 },
     compactBack: { paddingVertical: 4, paddingHorizontal: 6 },
-    compactTitle: { flex: 1, minWidth: 0, fontSize: 16, fontWeight: '800', color: colors.text },
-    compactControls: { flexDirection: 'row', gap: 6 },
+    compactTitle: { flexGrow: 1, flexShrink: 1, minWidth: 0, fontSize: 16, fontWeight: '800', color: colors.text },
+    compactControls: { flexDirection: 'row', flexWrap: 'wrap', flexShrink: 1, justifyContent: 'flex-end', gap: 6 },
     banner: { fontSize: 16, fontWeight: '800', color: colors.text, textAlign: 'center' },
     portrait: { alignItems: 'center', gap: 8, alignSelf: 'stretch' },
     sideBySide: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', justifyContent: 'center' },

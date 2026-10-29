@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import Text from './BughouseText';
 import { remainingAt, type BughouseMatch, type PromotionPiece } from '../logic/bughouse';
 import { PROMOTION_LABELS } from '../logic/promotion';
 import type { ReservePieceType } from '../logic/crazyhouse';
@@ -128,6 +129,13 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
   );
 }
 
+/** A chip is 22-26 dp tall in a bar that is as slim as the two-board layouts need: 9 dp above and below (and 8 to the sides of a 28 dp minimum width) make its touch area 44 dp. */
+const CHIP_HIT_SLOP = { top: 9, bottom: 9, left: 8, right: 8 };
+/** On web the device matrix reads this attribute: the small size is intended (react-native-web renders `dataSet` as data-* attributes; a phone ignores it). */
+const MATRIX_EXEMPT = { dataSet: { matrixExempt: '1' } } as object;
+/** `compact` opts out of AppPressable's 44 dp floor; react-native's own Pressable (until master's text-fit change is merged here) ignores it. */
+const COMPACT = { compact: true } as object;
+
 function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPickPocket, compact, touches }: BughouseBoardBlockProps & { seat: BughouseSeat; touches: BoardTouches | null }) {
   const colors = useAppColors();
   const styles = createStyles(colors, Boolean(compact));
@@ -142,7 +150,7 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
     <View style={[styles.bar, running && styles.barRunning]} testID={`bar-${place.board}-${word}`}>
       <View style={[styles.colourDot, place.color === 'w' ? styles.dotWhite : styles.dotBlack]} />
       <Text style={styles.shape}>{bughouseTeamShape(place.team)}</Text>
-      <Text style={styles.name} numberOfLines={1}>
+      <Text style={styles.name}>
         {seatName(seat)}
       </Text>
       <View style={[styles.pocket, flashed && styles.pocketFlash]} testID={`pocket-${place.board}-${word}`} accessibilityLabel={flashed ? `Board ${place.board} ${word} pocket, just received a piece` : `Board ${place.board} ${word} pocket`}>
@@ -165,13 +173,13 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
             return (
               // only the chip of the side to move that has a legal square listens (the Pressable of the other layouts is `disabled` for every other chip): the reducer would otherwise lift the
               // piece of the SIDE TO MOVE when the pocket of its opponent is touched
-              <View key={chip.piece} accessible {...common} {...(chip.usable ? touches.chipProps(chip.piece) : {})}>
+              <View key={chip.piece} accessible hitSlop={CHIP_HIT_SLOP} {...MATRIX_EXEMPT} {...common} {...(chip.usable ? touches.chipProps(chip.piece) : {})}>
                 {face}
               </View>
             );
           }
           return (
-            <Pressable key={chip.piece} disabled={!chip.usable} onPress={() => onPickPocket(place.board, chip.piece)} {...common}>
+            <Pressable key={chip.piece} {...COMPACT} hitSlop={CHIP_HIT_SLOP} disabled={!chip.usable} onPress={() => onPickPocket(place.board, chip.piece)} {...common}>
               {face}
             </Pressable>
           );

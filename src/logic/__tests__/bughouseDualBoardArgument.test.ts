@@ -58,7 +58,7 @@ describe('the board is a required argument of every helper W3b added that names 
 
   it('every other exported function of the new files that names a square, cell, pocket, reserve, clock, board or selection takes a board - or is one of the listed helpers that work on ONE board\'s own pixels or on no board at all', () => {
     // pure pixel geometry of one grid / one book of touches / window-size or whole-match questions: they are handed one board's numbers, they never name a board
-    const NO_BOARD = new Set(['gridTapCell', 'insideGrid', 'stepTouches', 'liveSelection', 'needsRotateOverlay', 'premovesAllowed']);
+    const NO_BOARD = new Set(['gridTapCell', 'insideGrid', 'stepTouches', 'liveSelection', 'needsRotateOverlay', 'premovesAllowed', 'localOfTouch', 'fingerCell']);
     const NAMES_BOARD_DATA = /square|cell|pocket|reserve|clock|board|selection|touch/i;
     for (const fn of fns) {
       if (!NAMES_BOARD_DATA.test(fn.name)) continue;
@@ -69,7 +69,7 @@ describe('the board is a required argument of every helper W3b added that names 
   });
 
   it('the listed exceptions exist and really take no board (so the list cannot hide a helper that should have one)', () => {
-    for (const name of ['gridTapCell', 'insideGrid', 'stepTouches', 'liveSelection', 'needsRotateOverlay', 'premovesAllowed']) {
+    for (const name of ['gridTapCell', 'insideGrid', 'stepTouches', 'liveSelection', 'needsRotateOverlay', 'premovesAllowed', 'localOfTouch', 'fingerCell']) {
       expect(byName.has(name), `${name} is listed but does not exist`).toBe(true);
       expect(byName.get(name)!.params.some((p) => /\bBoardId\b/.test(p.type)), name).toBe(false);
     }
@@ -150,7 +150,9 @@ describe('no screen-level touch handling (HP12 rules 1 and 5)', () => {
 
   it('a board that takes raw touches wires them INSTEAD of the PanResponder handlers, never next to them', () => {
     const board = readFileSync(`${ROOT}/components/BughouseBoard.tsx`, 'utf8');
-    expect(board).toMatch(/\{\.\.\.\(touches \? touches\.gridProps : interactive \? gestures\.panHandlers : \{\}\)\}/);
+    // the grid listens itself in the browser; on a phone its transparent overlay carries the same touch props (so the touches arrive in the grid's own frame) and the grid none
+    expect(board).toMatch(/\{\.\.\.\(touches \? \(surface \? \{\} : touches\.gridProps\) : interactive \? gestures\.panHandlers : \{\}\)\}/);
+    expect(board).toContain('{...touches.surfaceProps}');
   });
 
   it('the dual chips and the promotion buttons are plain Views with a board\'s touch props, not Pressables', () => {
