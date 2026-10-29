@@ -12,6 +12,19 @@ import { describe, expect, it } from 'vitest';
 const root = path.resolve(__dirname, '..', '..', '..');
 const read = (relative: string) => readFileSync(path.join(root, relative), 'utf8');
 
+describe('the stacked boards are sized from what was measured', () => {
+  const screen = read('src/screens/BughouseGameScreen.tsx');
+  it('the screen asks fitStackedCell with the cell the measurement was taken at, the width limit and a floor that is never above the table cell', () => {
+    expect(screen).toContain('fitStackedCell(dualCell, scrollViewportHeight, measured.content, Math.floor((width - 16) / 8), Math.min(dualFit.cell, BUGHOUSE_DUAL_MIN_CELL))');
+    expect(screen).toContain('measured.cell !== dualCell'); // a stale measurement is never used
+    expect(screen).toContain('setMeasured({ cell: renderedCell.current, content: h })');
+  });
+  it('the result card does not shrink the boards, and a new window starts again from the table', () => {
+    expect(screen).toMatch(/if \(!stacked \|\| over \|\| measured === null/);
+    expect(screen).toMatch(/setCellAdjust\(0\);\n\s+setMeasured\(null\);\n\s+\}, \[width, height, stacked\]\);/);
+  });
+});
+
 describe('Bughouse board art and pocket bars', () => {
   const block = read('src/components/BughouseBoardBlock.tsx');
   const board = read('src/components/BughouseBoard.tsx');
