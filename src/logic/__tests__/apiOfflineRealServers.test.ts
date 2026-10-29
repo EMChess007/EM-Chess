@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FAILURE_KINDS, GAMES_BODY, startFailing, type FailureKind, type TestServer } from '../../test/offlineServers';
+import { FAILURE_KINDS, GAMES_BODY, startFailing, type FailureKind, type TestServer } from '../../../scripts/browser/offline-servers.mjs';
 
 // The client reads the platform and the Expo config to pick the server address; neither exists in node. A DEV build (so the explicit test address is honoured, see apiBaseUrl.ts).
 vi.hoisted(() => {
