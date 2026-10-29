@@ -441,7 +441,7 @@ async function selfTest() {
     const wrapped = stripFixture({ pocketStyle: 'flex-wrap:wrap;width:50px;flex:none;align-content:flex-start', chips: chip('p') + chip('n') + chip('b') });
     expect('chips that wrap onto a second row are reported', await pocketIssues(wrapped).then((k) => k.has('pocket')));
     expect('a chip that runs out of its strip over the board is reported', (await run(stripFixture({ pocketStyle: 'flex-wrap:wrap;width:50px;flex:none;align-content:flex-start', chips: chip('p') + chip('n') + chip('b') + chip('r') }), { pockets: true })).some((i) => i.kind === 'pocket' && /leaves its strip|covers/.test(i.detail)));
-    expect('a chip drawn over the clock is reported', (await run(stripFixture({ chips: chip('p', 'margin-left:200px') }), { pockets: true })).some((i) => i.kind === 'pocket' && /clock|leaves/.test(i.detail)));
+    expect('a chip drawn over the clock is reported', (await run(stripFixture({ chips: chip('p', 'margin-left:240px') }), { pockets: true })).some((i) => i.kind === 'pocket' && /clock|leaves/.test(i.detail)));
     expect('a pocket that reaches the status line is reported', (await run(stripFixture({ barStyle: 'height:20px', pocketStyle: 'height:60px' }), { pockets: true })).some((i) => i.kind === 'pocket'));
     expect('two chips on top of each other are reported', (await run(stripFixture({ chips: chip('p') + chip('n', 'margin-left:-12px') }), { pockets: true })).some((i) => i.kind === 'pocket' && /another chip/.test(i.detail)));
     expect('a screen that declares pockets and shows none is reported', (await run('<div>no pockets</div>', { pockets: true })).some((i) => i.kind === 'pocket'));

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isNarrowStrip,
+  NARROW_STRIP_FIXED_WIDTH,
+  NARROW_STRIP_WIDTH,
+  NARROWEST_STRIP_WIDTH,
+  POCKET_CHIP_MIN_WIDTH_NARROW,
+  showStripMarks,
+  stripChipMin,
+  stripClockMin,
+  STRIP_CLOCK_MIN_WIDTH_NARROW,
   NAME_MIN_STRIP_WIDTH,
   pocketChipHeight,
   pocketChipWidth,
@@ -101,6 +110,56 @@ describe('pocketChipWidth: as wide as the room allows, between 24 and 40', () =>
         const width = pocketChipWidth(row, chips);
         expect(2 * 2 + chips * width + (chips - 1) * 2, `${row} dp, ${chips} chips`).toBeLessThanOrEqual(row);
       }
+    }
+  });
+});
+
+describe('the NARROW strip (a 20 dp cell side by side: 166 dp)', () => {
+  it('the numbers: 20 dp chips, a 40 dp clock, 52 fixed, narrow below 224, 164 the narrowest', () => {
+    expect(POCKET_CHIP_MIN_WIDTH_NARROW).toBe(20);
+    expect(STRIP_CLOCK_MIN_WIDTH_NARROW).toBe(40);
+    expect(NARROW_STRIP_FIXED_WIDTH).toBe(52);
+    expect(NARROW_STRIP_WIDTH).toBe(224);
+    expect(NARROWEST_STRIP_WIDTH).toBe(164);
+    expect(pocketMinWidth(5, 20)).toBe(112);
+    expect(pocketMinWidth(1, 20)).toBe(24);
+    expect(pocketMinWidth(0, 20)).toBe(0);
+  });
+
+  it('narrow below 224 dp only; before the first measurement it is not narrow', () => {
+    expect(isNarrowStrip(null)).toBe(false);
+    expect(isNarrowStrip(223)).toBe(true);
+    expect(isNarrowStrip(224)).toBe(false);
+    expect(isNarrowStrip(166)).toBe(true);
+  });
+
+  it('a narrow strip drops the dot and the shape, takes 20 dp chips and a 40 dp clock; a wide one keeps them and takes 24 and 46', () => {
+    expect([showStripMarks(null), showStripMarks(224), showStripMarks(223)]).toEqual([true, true, false]);
+    expect([stripChipMin(null), stripChipMin(224), stripChipMin(223)]).toEqual([24, 24, 20]);
+    expect([stripClockMin(null), stripClockMin(224), stripClockMin(223)]).toEqual([46, 46, 40]);
+  });
+
+  it('chips of a narrow row: 20 dp at 112 dp, never below, 37 dp at 200 as before', () => {
+    expect(pocketChipWidth(112, 5, 20)).toBe(20);
+    expect(pocketChipWidth(100, 5, 20)).toBe(20);
+    expect(pocketChipWidth(null, 5, 20)).toBe(20);
+    expect(pocketChipWidth(0, 3, 20)).toBe(20);
+    expect(pocketChipWidth(200, 5, 20)).toBe(37);
+  });
+
+  it('the piece never outgrows its chip: 16 dp in a 20 dp chip, 20 dp in a wide one, 18 dp compact', () => {
+    expect(pocketPieceSize(false, 20)).toBe(16);
+    expect(pocketPieceSize(false, 24)).toBe(20);
+    expect(pocketPieceSize(false, 40)).toBe(20);
+    expect(pocketPieceSize(true, 40)).toBe(18);
+    expect(pocketPieceSize(true, 20)).toBe(16);
+  });
+
+  it('every strip from 164 dp up has room for a FULL pocket beside what it must show', () => {
+    for (let strip = 164; strip <= 900; strip++) {
+      const fixed = isNarrowStrip(strip) ? 52 : 92 + (showSeatName(strip) ? 56 : 0);
+      const chipMin = isNarrowStrip(strip) ? 20 : 24;
+      expect(strip - fixed, `${strip} dp`).toBeGreaterThanOrEqual(pocketMinWidth(5, chipMin));
     }
   });
 });

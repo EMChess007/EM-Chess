@@ -84,11 +84,15 @@ export function judgeCell(marker, png) {
 export async function checkPieceColours(page, PNG, { mode, bothSquares = false, allKinds = false }) {
   const attribute = mode === 'seat' ? 'data-seat-piece' : 'data-piece';
   const issues = [];
+  // The "rotate the device" layer covers the boards (the window is below the minimum): the person sees no piece, so there is none to judge (the rectangle checks treat it the same way).
+  if ((await page.locator('[data-testid="rotate-overlay"]').count()) > 0) return issues;
   const found = await page.$$eval(
     `[${attribute}]`,
     (els, attr) =>
       els.map((el, index) => {
-        const cell = el.closest('[aria-label]');
+        // the cell is the nearest ancestor labelled with a square name ("e8, board A, ..."); the piece's own label ("black king") is not it
+        let cell = el;
+        while (cell && !/^[a-n]\d+(,|$)/.test(cell.getAttribute('aria-label') || '')) cell = cell.parentElement;
         const label = (cell && cell.getAttribute('aria-label')) || '';
         const square = /^([a-n])(\d+)/.exec(label);
         const parity = square ? (square[1].charCodeAt(0) - 97 + Number(square[2])) % 2 : 0;
@@ -112,21 +116,35 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
   }
   const handles = await page.$$(`[${attribute}]`);
   const backgrounds = new Map();
+  const photographed = new Map();
   for (const f of picked.values()) {
     const handle = handles[f.index];
-    const cell = (await handle.evaluateHandle((el) => el.closest('[aria-label]') || el)).asElement();
+    const cell = (
+      await handle.evaluateHandle((el) => {
+        let node = el;
+        while (node && !/^[a-n]\d+(,|$)/.test(node.getAttribute('aria-label') || '')) node = node.parentElement;
+        return node || el;
+      })
+    ).asElement();
     if (cell === null) continue;
-    await cell.scrollIntoViewIfNeeded().catch(() => {});
-    const png = PNG.sync.read(await cell.screenshot());
+    await cell.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+    // a clip of the page, not `element.screenshot()`: that waits for the element to be "stable", which a board that bots are playing on never is
+    const box = await cell.boundingBox();
+    if (box === null) continue;
+    const shot = await page.screenshot({ clip: box, timeout: 8000 }).catch(() => null);
+    if (shot === null) continue;
+    const png = PNG.sync.read(shot);
     const problem = judgeCell(f.marker, png);
     if (problem !== null) issues.push({ kind: 'piece-colour', el: `${f.marker} on board ${f.board}`, detail: problem });
     const bg = analyseCell(png).background.join(',');
+    if (!photographed.has(f.marker)) photographed.set(f.marker, []);
+    photographed.get(f.marker).push(`${f.board}:${f.parity}:${png.width}x${png.height}`);
     if (!backgrounds.has(f.marker)) backgrounds.set(f.marker, new Set());
     backgrounds.get(f.marker).add(bg);
   }
   if (bothSquares) {
     for (const [marker, set] of backgrounds) {
-      if (set.size < 2) issues.push({ kind: 'piece-colour', el: marker, detail: `${marker} was only photographed on one square colour` });
+      if (set.size < 2) issues.push({ kind: 'piece-colour', el: marker, detail: `${marker} was only photographed on one square colour (${[...set].join(' | ')}; photographed: ${photographed.get(marker)?.join(', ')})` });
     }
   }
   return issues;

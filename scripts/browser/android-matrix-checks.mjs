@@ -264,7 +264,10 @@ export function pageChecks(opts) {
     const forbidden = Array.from(document.querySelectorAll('[data-testid^="board-"],[data-testid^="clock-"],[data-testid^="status-"]')).filter(
       (el) => !/-surface$/.test(el.getAttribute('data-testid') || '') && !isHidden(el),
     );
-    const pockets = Array.from(document.querySelectorAll('[data-testid^="pocket-"]')).filter((el) => /^pocket-[AB]-(white|black)$/.test(el.getAttribute('data-testid') || '') && !isHidden(el));
+    // (a pocket under the "rotate the device" layer is not on screen for the person: it is not judged, like every other element under a layer)
+    const pockets = Array.from(document.querySelectorAll('[data-testid^="pocket-"]')).filter(
+      (el) => /^pocket-[AB]-(white|black)$/.test(el.getAttribute('data-testid') || '') && !isHidden(el) && !covered(el, el.getBoundingClientRect()),
+    );
     for (const pocket of pockets) {
       const bar = pocket.closest('[data-testid^="bar-"]');
       const pocketRect = rectOf(pocket);
@@ -284,7 +287,7 @@ export function pageChecks(opts) {
         if (bar && bar.contains(t.el) && !pocket.contains(t.el) && overlapArea(t.box, pocketRect) > 0.5) add('pocket', pocket, 'the pocket overlaps the text ' + describe(t.el));
       }
     }
-    if (pockets.length === 0) add('pocket', document.body, 'no pocket on a screen that declares pockets');
+    if (pockets.length === 0 && !blockingLayer) add('pocket', document.body, 'no pocket on a screen that declares pockets');
   }
   return issues;
 }

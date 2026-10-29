@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixtureMatch } from '../../logic/bughouseFixture';
 import { legalDropsOn, pocketOfSeat } from '../../logic/bughouse';
@@ -111,6 +111,103 @@ describe('full pockets', () => {
     fireEvent.click(screen.getByTestId('pocket-A-black-q'));
     expect(screen.getByTestId('pocket-A-white-q').getAttribute('aria-label')).not.toContain('picked up');
     expect(screen.getByTestId('pocket-A-black-q').getAttribute('aria-label')).not.toContain('picked up');
+  });
+});
+
+/**
+ * The strip and the pocket row are MEASURED on a phone (onLayout). jsdom has no layout, but react-native-web keeps each view's layout handler on its DOM node, so a test can hand it the
+ * width a phone would have measured - the same call the browser's ResizeObserver makes.
+ */
+const layoutHandler = (element: HTMLElement) => (element as unknown as { __reactLayoutHandler?: (event: unknown) => void }).__reactLayoutHandler;
+const measured = (element: HTMLElement, width: number) =>
+  act(() => {
+    layoutHandler(element)?.({ nativeEvent: { layout: { x: 0, y: 0, width, height: 36 } } });
+  });
+const NAME = 'Board A · White';
+
+describe('the strip is measured: the name gives up its place before the pocket does, and the chips take the room they are given', () => {
+  const match = fixtureMatch('fullPockets', TC3);
+
+  it('both the strip and the pocket row listen for their layout', () => {
+    renderGame(cfg('HHHH'), match);
+    for (const [board, word] of PLACES) {
+      expect(layoutHandler(screen.getByTestId(`bar-${board}-${word}`)), `${board} ${word} strip`).toBeTypeOf('function');
+      expect(layoutHandler(screen.getByTestId(`pocket-${board}-${word}`)), `${board} ${word} pocket`).toBeTypeOf('function');
+    }
+  });
+
+  it('the name is shown from a strip of 280 dp (92 fixed + 132 for five chips + 56 for the name) and left out below it, then comes back', () => {
+    renderGame(cfg('HHHH'), match);
+    const bar = screen.getByTestId('bar-A-white');
+    expect(bar.textContent).toContain(NAME); // not measured yet: shown
+    measured(bar, 279);
+    expect(bar.textContent).not.toContain(NAME);
+    measured(bar, 280);
+    expect(bar.textContent).toContain(NAME);
+    measured(bar, 224); // the narrowest strip of the layouts (a stacked board at the 28 dp cell)
+    expect(bar.textContent).not.toContain(NAME);
+    expect(screen.getByTestId('pocket-A-white-q')).toBeTruthy(); // the pocket is still all there
+    // the other strips are unaffected
+    expect(screen.getByTestId('bar-B-black').textContent).toContain('Board B · Black');
+  });
+
+  it('the pocket reserves the room of a FULL pocket (132 dp, 112 in a narrow strip), so the name gives way first', () => {
+    renderGame(cfg('HHHH'), match);
+    const bar = screen.getByTestId('bar-A-white');
+    const pocket = screen.getByTestId('pocket-A-white');
+    expect(declaredStyle(pocket)['flex-basis']).toBe('132px');
+    expect(declaredStyle(pocket)['flex-shrink']).toBe('0');
+    measured(bar, 223);
+    expect(declaredStyle(pocket)['flex-basis']).toBe('112px');
+    measured(bar, 224);
+    expect(declaredStyle(pocket)['flex-basis']).toBe('132px');
+  });
+
+  it('a NARROW strip (below 224 dp) drops the colour dot and the team shape, takes a 40 dp clock and 20 dp chips; at 224 dp they are back (46 dp, 24 dp)', () => {
+    renderGame(cfg('HHHH'), match);
+    const bar = screen.getByTestId('bar-A-white');
+    const pocket = screen.getByTestId('pocket-A-white');
+    const clock = () => declaredStyle(screen.getByTestId('clock-A-white'))['min-width'];
+    const chip = () => declaredStyle(screen.getByTestId('pocket-A-white-q'))['width'];
+    expect(bar.textContent).toContain('◆'); // not measured yet: the full strip
+    expect(clock()).toBe('46px');
+    measured(bar, 223);
+    measured(pocket, 112);
+    expect(bar.textContent).not.toContain('◆');
+    expect(bar.textContent).not.toContain('●');
+    expect(clock()).toBe('40px');
+    expect(chip()).toBe('20px');
+    measured(bar, 224);
+    measured(pocket, 132);
+    expect(bar.textContent).toContain('◆');
+    expect(clock()).toBe('46px');
+    expect(chip()).toBe('24px');
+  });
+
+  it('the chips are as wide as the measured row allows: 24 dp at 132 dp, 37 at 200, 40 from 232 dp', () => {
+    renderGame(cfg('HHHH'), match);
+    const pocket = screen.getByTestId('pocket-A-white');
+    const widths = () => PIECES.map((piece) => declaredStyle(screen.getByTestId(`pocket-A-white-${piece}`))['width']);
+    measured(pocket, 132);
+    expect(widths()).toEqual(['24px', '24px', '24px', '24px', '24px']);
+    measured(pocket, 200);
+    expect(widths()).toEqual(['37px', '37px', '37px', '37px', '37px']);
+    measured(pocket, 300);
+    expect(widths()).toEqual(['40px', '40px', '40px', '40px', '40px']);
+    measured(pocket, 100); // less than a full pocket needs: still the floor, never a wrap
+    expect(widths()).toEqual(['24px', '24px', '24px', '24px', '24px']);
+    // the pocket next to it keeps its own width
+    expect(declaredStyle(screen.getByTestId('pocket-B-white-q'))['width']).toBe('24px');
+  });
+
+  it('a pocket of two chips in a 100 dp row has 40 dp chips (it does not stretch them)', () => {
+    const two = fixtureMatch('fullPockets', TC3);
+    const sparse = { ...two, pockets: two.pockets.map((reserve, seat) => (seat === 0 ? { p: 0, n: 3, b: 0, r: 0, q: 2 } : reserve)) } as typeof two;
+    renderGame(cfg('HHHH'), sparse);
+    measured(screen.getByTestId('pocket-A-white'), 100);
+    expect(declaredStyle(screen.getByTestId('pocket-A-white-n'))['width']).toBe('40px');
+    expect(declaredStyle(screen.getByTestId('pocket-A-white-q'))['width']).toBe('40px');
+    expect(screen.queryByTestId('pocket-A-white-p')).toBeNull();
   });
 });
 

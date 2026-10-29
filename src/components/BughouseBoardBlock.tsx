@@ -13,11 +13,15 @@ import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import {
   pocketChipHeight,
   pocketChipWidth,
+  pocketMinWidth,
   pocketPieceSize,
   POCKET_GAP,
+  POCKET_MAX_CHIPS,
   POCKET_PADDING,
   showSeatName,
-  STRIP_CLOCK_MIN_WIDTH,
+  showStripMarks,
+  stripChipMin,
+  stripClockMin,
   STRIP_DOT,
   STRIP_GAP,
   STRIP_PADDING,
@@ -172,7 +176,7 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
   // test without layout): the name is shown and the chips are the smallest, which always fit.
   const [stripWidth, setStripWidth] = useState<number | null>(null);
   const [rowWidth, setRowWidth] = useState<number | null>(null);
-  const chipWidth = pocketChipWidth(rowWidth, chips.length);
+  const chipWidth = pocketChipWidth(rowWidth, chips.length, stripChipMin(stripWidth));
   return (
     <View
       style={[styles.bar, running && styles.barRunning]}
@@ -180,12 +184,19 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
       accessibilityLabel={`${seatName(seat)}, board ${place.board} ${word}`}
       onLayout={(e) => setStripWidth(Math.round(e.nativeEvent.layout.width))}
     >
-      <View style={[styles.colourDot, place.color === 'w' ? styles.dotWhite : styles.dotBlack]} />
-      <Text style={styles.shape}>{bughouseTeamShape(place.team)}</Text>
+      {/* a NARROW strip (a 20 dp cell, side by side) drops the colour dot and the team shape to keep room for a full pocket */}
+      {showStripMarks(stripWidth) && <View style={[styles.colourDot, place.color === 'w' ? styles.dotWhite : styles.dotBlack]} />}
+      {showStripMarks(stripWidth) && (
+        <Text maxFontSizeMultiplier={1} style={styles.shape}>
+          {bughouseTeamShape(place.team)}
+        </Text>
+      )}
       {showSeatName(stripWidth) && <Text style={styles.name}>{seatName(seat)}</Text>}
       {/* ONE row that never wraps: an empty pocket shows nothing, a full one shrinks its chips. */}
       <View
-        style={[styles.pocket, flashed && styles.pocketFlash]}
+        // The room of a FULL pocket is reserved (flexBasis, no shrink): the seat's name, the only part whose width is not fixed, gives way first. Reserved for five chips whatever the pocket holds now,
+        // so nothing moves while a game is played.
+        style={[styles.pocket, { flexBasis: pocketMinWidth(POCKET_MAX_CHIPS, stripChipMin(stripWidth)) }, flashed && styles.pocketFlash]}
         testID={`pocket-${place.board}-${word}`}
         accessibilityLabel={flashed ? `Board ${place.board} ${word} pocket, just received a piece` : `Board ${place.board} ${word} pocket`}
         onLayout={(e) => setRowWidth(Math.round(e.nativeEvent.layout.width))}
@@ -200,7 +211,7 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
           const face = (
             <>
               {/* The chip is board art: the piece is a vector in its colour (pieceArt.ts) and the count a small pill on it; neither grows with the system font (maxFontSizeMultiplier 1, CHECKLIST 6b). */}
-              <PieceIcon type={chip.piece} ink={pieceInk(place.color)} size={pocketPieceSize(Boolean(compact))} />
+              <PieceIcon type={chip.piece} ink={pieceInk(place.color)} size={pocketPieceSize(Boolean(compact), chipWidth)} />
               <View style={styles.countPill} pointerEvents="none">
                 <Text maxFontSizeMultiplier={1} style={styles.count}>{chip.count}</Text>
               </View>
@@ -223,7 +234,7 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
           );
         })}
       </View>
-      <Text style={[styles.clock, running && styles.clockRunning, remaining < 10000 && styles.clockLow]} testID={`clock-${place.board}-${word}`} accessibilityLabel={`Board ${place.board} ${word} clock`}>
+      <Text maxFontSizeMultiplier={1} style={[styles.clock, { minWidth: stripClockMin(stripWidth) }, running && styles.clockRunning, remaining < 10000 && styles.clockLow]} testID={`clock-${place.board}-${word}`} accessibilityLabel={`Board ${place.board} ${word} clock`}>
         {formatBughouseClock(remaining)}
       </Text>
     </View>
@@ -240,11 +251,11 @@ function createStyles(colors: AppColors, compact: boolean) {
     colourDot: { width: STRIP_DOT, height: STRIP_DOT, borderRadius: STRIP_DOT / 2, borderWidth: 1, borderColor: '#555' },
     dotWhite: { backgroundColor: '#fff' },
     dotBlack: { backgroundColor: '#111' },
-    shape: { width: STRIP_SHAPE, textAlign: 'center', fontSize: 12, color: colors.textSecondary },
+    shape: { minWidth: STRIP_SHAPE, flexShrink: 0, textAlign: 'center', fontSize: 12, color: colors.textSecondary },
     name: { flexShrink: 1, minWidth: 0, fontSize: compact ? 12 : 13, fontWeight: '700', color: colors.text },
     // The pocket: a row that NEVER wraps (the old flex-wrap row stacked its chips vertically on the phone and let them run out of the bar), exactly as tall as a chip. It takes what the other
     // parts leave (flex 1, minWidth 0); the chips' own widths are computed to fit it (pocketChipWidth).
-    pocket: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'flex-start', gap: POCKET_GAP, height: pocketChipHeight(compact) + 2, paddingHorizontal: POCKET_PADDING, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
+    pocket: { flexGrow: 1, flexShrink: 0, minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'flex-start', gap: POCKET_GAP, height: pocketChipHeight(compact) + 2, paddingHorizontal: POCKET_PADDING, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
     pocketFlash: { borderColor: '#2e7d32', backgroundColor: 'rgba(46,125,50,0.18)' },
     chip: { height: pocketChipHeight(compact), flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: 7, backgroundColor: '#b58863', borderWidth: 1, borderColor: '#8a6d3b' },
     chipSelected: { backgroundColor: '#a2d149', borderColor: '#5a7a1a' },
@@ -252,7 +263,7 @@ function createStyles(colors: AppColors, compact: boolean) {
     // the count: a small pill on the chip's lower right corner, readable on the piece in either colour
     countPill: { position: 'absolute', right: -1, bottom: -1, minWidth: 13, height: 13, paddingHorizontal: 2, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.92)' },
     count: { fontSize: 10, lineHeight: 12, fontWeight: '700', color: '#2a1d10' },
-    clock: { minWidth: STRIP_CLOCK_MIN_WIDTH, textAlign: 'right', fontSize: compact ? 14 : 16, fontWeight: '700', fontVariant: ['tabular-nums'], color: colors.textSecondary },
+    clock: { textAlign: 'right', fontSize: compact ? 14 : 15, fontWeight: '700', fontVariant: ['tabular-nums'], color: colors.textSecondary },
     clockRunning: { color: colors.text },
     clockLow: { color: colors.danger },
     banner: { fontSize: compact ? 13 : 15, fontWeight: '800', color: colors.text },

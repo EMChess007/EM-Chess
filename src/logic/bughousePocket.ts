@@ -23,20 +23,23 @@ export const POCKET_PADDING = 2;
 
 export const pocketChipHeight = (compact: boolean): number => (compact ? POCKET_CHIP_HEIGHT_COMPACT : POCKET_CHIP_HEIGHT);
 
-/** The width a pocket of `chips` chips needs at the smallest chip: the least the row may be given. */
-export function pocketMinWidth(chips: number): number {
+/** The smallest chip of a NARROW strip (below NARROW_STRIP_WIDTH): the standard layout's side-by-side boards go down to a 20 dp cell, a 166 dp strip. */
+export const POCKET_CHIP_MIN_WIDTH_NARROW = 20;
+
+/** The width a pocket of `chips` chips needs at the smallest chip (24 dp, or `chipMin`): the least the row may be given. */
+export function pocketMinWidth(chips: number, chipMin: number = POCKET_CHIP_MIN_WIDTH): number {
   if (chips <= 0) return 0;
-  return 2 * POCKET_PADDING + chips * POCKET_CHIP_MIN_WIDTH + (chips - 1) * POCKET_GAP;
+  return 2 * POCKET_PADDING + chips * chipMin + (chips - 1) * POCKET_GAP;
 }
 
 /**
  * The width of each chip when `chips` chips share `rowWidth` (the measured width of the pocket row): as wide as the room allows, never below the minimum (the strip's layout guarantees
  * the room, see `showSeatName`) and never above the maximum (two chips in a wide row do not stretch). `null` = not measured yet: the smallest, which always fits.
  */
-export function pocketChipWidth(rowWidth: number | null, chips: number): number {
-  if (rowWidth === null || chips <= 0) return POCKET_CHIP_MIN_WIDTH;
+export function pocketChipWidth(rowWidth: number | null, chips: number, chipMin: number = POCKET_CHIP_MIN_WIDTH): number {
+  if (rowWidth === null || chips <= 0) return chipMin;
   const room = rowWidth - 2 * POCKET_PADDING - (chips - 1) * POCKET_GAP;
-  return Math.max(POCKET_CHIP_MIN_WIDTH, Math.min(POCKET_CHIP_MAX_WIDTH, Math.floor(room / chips)));
+  return Math.max(chipMin, Math.min(POCKET_CHIP_MAX_WIDTH, Math.floor(room / chips)));
 }
 
 // The strip's other parts, in dp (the styles of BughouseBoardBlock use these same numbers).
@@ -62,5 +65,21 @@ export function showSeatName(stripWidth: number | null): boolean {
   return stripWidth === null || stripWidth >= NAME_MIN_STRIP_WIDTH;
 }
 
-/** The size of the piece inside a chip. */
-export const pocketPieceSize = (compact: boolean): number => pocketChipHeight(compact) - 6;
+/** The size of the piece inside a chip: the chip's height less 6, and never wider than the chip less its border and a pixel each side. */
+export const pocketPieceSize = (compact: boolean, chipWidth: number = POCKET_CHIP_MAX_WIDTH): number => Math.min(pocketChipHeight(compact) - 6, chipWidth - 4);
+
+// --- The NARROW strip: below 224 dp (= 92 fixed + 132 for five chips) -----------------------------------------------------------------------------
+// The standard layout shows two boards side by side with cells down to 20 dp (a 166 dp strip). There even the colour dot and the team shape go (the status line and the strip's accessibility label
+// still say whose it is), the clock takes 40 dp and the chips go down to 20 dp: 8 padding + 40 clock + 4 gap + 112 for five chips = 164 dp.
+export const STRIP_CLOCK_MIN_WIDTH_NARROW = 40;
+export const NARROW_STRIP_FIXED_WIDTH = 2 * STRIP_PADDING + STRIP_CLOCK_MIN_WIDTH_NARROW + STRIP_GAP;
+/** The width below which a strip is narrow: the width a full pocket needs at 24 dp chips beside the dot, the shape and the clock. */
+export const NARROW_STRIP_WIDTH = STRIP_FIXED_WIDTH + pocketMinWidth(POCKET_MAX_CHIPS);
+/** The narrowest strip the layouts make (a 20 dp cell is 160 + 6): a full pocket of 20 dp chips still fits beside the clock. */
+export const NARROWEST_STRIP_WIDTH = NARROW_STRIP_FIXED_WIDTH + pocketMinWidth(POCKET_MAX_CHIPS, POCKET_CHIP_MIN_WIDTH_NARROW);
+
+export const isNarrowStrip = (stripWidth: number | null): boolean => stripWidth !== null && stripWidth < NARROW_STRIP_WIDTH;
+/** The colour dot and the team shape are drawn unless the strip is narrow. */
+export const showStripMarks = (stripWidth: number | null): boolean => !isNarrowStrip(stripWidth);
+export const stripChipMin = (stripWidth: number | null): number => (isNarrowStrip(stripWidth) ? POCKET_CHIP_MIN_WIDTH_NARROW : POCKET_CHIP_MIN_WIDTH);
+export const stripClockMin = (stripWidth: number | null): number => (isNarrowStrip(stripWidth) ? STRIP_CLOCK_MIN_WIDTH_NARROW : STRIP_CLOCK_MIN_WIDTH);
