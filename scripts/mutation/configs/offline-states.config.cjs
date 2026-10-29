@@ -41,7 +41,7 @@ module.exports = {
     ['client: the budget check lets a spent budget try again', C, 'if (remaining <= 0) break;', 'if (remaining < 0) break;'],
     ['client: a retry gets the full try time, not what is left', C, 'Math.min(policy.attemptMs, remaining)', 'policy.attemptMs'],
     ['client: a retry waits its full delay, not what is left', C, 'Math.min(policy.retryDelaysMs[attempt], policy.totalMs - (Date.now() - startedAt))', 'policy.retryDelaysMs[attempt]'],
-    ['client: EQUIVALENT (a delay of 0 ms ends the loop at once either way; pinned by "a body that never arrives ... one try only")', C, 'if (wait > 0) await', 'if (wait >= 0) await'],
+    ['client: a delay of 0 ms is waited for', C, 'if (wait > 0) await', 'if (wait >= 0) await'],
     ['client: EQUIVALENT (past the last retry the delay is NaN and NaN > 0 is false; pinned by the patient policy test: 3 tries, over at 45000 ms)', C, 'if (attempt < policy.retryDelaysMs.length) {', 'if (attempt <= policy.retryDelaysMs.length) {'],
     ['client: the tries are not counted', C, 'tally.tries++;', ''],
     ['client: the last error is forgotten', C, '      lastError = err;\n', ''],
@@ -63,7 +63,7 @@ module.exports = {
     // --- the socket deadline ---
     ['socket: the deadline is 60 s', S, 'export const SOCKET_ACK_DEADLINE_MS = 6000;', 'export const SOCKET_ACK_DEADLINE_MS = 60000;'],
     ['socket: the default deadline is 12 s', S, 'ms: number = SOCKET_ACK_DEADLINE_MS', 'ms: number = 12000'],
-    ['socket: a given deadline is ignored', S, 'socket.timeout(ms)', 'socket.timeout(SOCKET_ACK_DEADLINE_MS)'],
+    ['socket: a given deadline is ignored', S, 'socket.timeout(ms).emit(event, payload, (err', 'socket.timeout(SOCKET_ACK_DEADLINE_MS).emit(event, payload, (err'],
     ['socket: a missing answer is not unreachable when there is no error', S, 'if (err || ack === undefined) done', 'if (err && ack === undefined) done'],
     ['socket: a falsy answer is unreachable', S, '|| ack === undefined)', '|| !ack)'],
     ['socket: no answer is handed on as an answer', S, 'done({ unreachable: true });', 'done({ unreachable: false, ack: ack as T });'],

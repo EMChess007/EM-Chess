@@ -46,8 +46,9 @@ async function settledAfter(ms: number, start: () => Promise<unknown>): Promise<
   );
   await vi.advanceTimersByTimeAsync(ms);
   const result = { settled, error };
+  // Let whatever is still pending run out, without waiting for it: a call that never settles must fail the assertion that follows, not hang this helper.
   await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
-  await outcome;
+  void outcome;
   return result;
 }
 
@@ -247,6 +248,7 @@ describe('a background write keeps the patient policy (a cold Render backend sti
     expect(at.settled).toBe(true);
     expect((at.error as ApiError).status).toBe(0);
     expect(calls).toBe(3);
+    expect(vi.getTimerCount()).toBe(0); // no delay timer is left behind the last try (pins the proof that the loop's `attempt < retries` guard is equivalent: past the last retry no wait is ever scheduled)
   });
 
   it('updateRating and markPuzzleSolved are background writes too', async () => {

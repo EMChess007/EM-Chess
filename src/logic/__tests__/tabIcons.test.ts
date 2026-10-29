@@ -50,8 +50,7 @@ describe('BottomTabBar source', () => {
   const source = read('src/components/BottomTabBar.tsx');
   it('draws every icon with TabIcon in a theme colour and keeps no text glyph icon', () => {
     expect(source).toContain('<TabIcon name={tab.id}');
-    expect(source).toContain('colors.text');
-    expect(source).toContain('colors.textSecondary');
+    expect(source).toContain('color={isActive ? colors.text : colors.textSecondary}'); // active: the text colour, inactive: the secondary one - exactly
     expect(source).not.toMatch(/icon:\s*'/); // no `icon: '♟'` style entries
     expect(source).not.toMatch(/[☀-➿\u{1F300}-\u{1FAFF}⋯]/u); // no pictograph or ellipsis glyph in the file
     expect(source).not.toContain('opacity'); // opacity would lower the contrast the tokens were chosen for
