@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable } from '../components/AppPressable';
+import { Text } from '../components/AppText';
 import BughouseRulesSheet from '../components/BughouseRulesSheet';
 import ScreenHeader from '../components/ScreenHeader';
 import { BUGHOUSE_SETUP_PRESETS, bughouseSetupGate, presetOfConfig, presetSeatConfig, seatRowLabel } from '../logic/bughouseLayout';

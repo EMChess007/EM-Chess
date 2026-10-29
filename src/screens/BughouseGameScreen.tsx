@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable } from '../components/AppPressable';
 import Text from '../components/BughouseText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BughouseBoard from '../components/BughouseBoard';
@@ -379,7 +380,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   const controlsInBar = compact && (dual ? dualFit.arrangement === 'sideBySide' : true);
   const ctl = dual ? styles.controlSlim : styles.control;
   // The dual layouts are as tall as the window allows (the spec's cell table): their controls stay slim and reach the 44 dp touch target with hit slop (8 dp above and below a 28 dp control).
-  // `compact` opts out of AppPressable's 44 dp floor (components/AppPressable.tsx); react-native's own Pressable (until master's text-fit change is merged here) ignores it.
+  // `compact` opts out of AppPressable's 44 dp floor (components/AppPressable.tsx; bughouseCompact.dom.test.tsx pins that it takes effect).
   const slim: object = dual ? { compact: true, hitSlop: SLIM_HIT_SLOP } : {};
   const ctlText = dual ? styles.controlTextSlim : styles.controlText;
   const hasSharedBoard = dual && BOARD_IDS.some((board) => dualBoardPlan(seats, board).shared);

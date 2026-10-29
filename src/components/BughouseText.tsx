@@ -1,4 +1,5 @@
-import { Text, type TextProps } from 'react-native';
+import { type TextProps } from 'react-native';
+import { Text } from './AppText';
 
 /**
  * How far text in the Bughouse bars, clocks, pockets and controls may grow with the system font scale (Android allows 2.0): the two-board layouts are sized to the pixel (BUGHOUSE_SPEC.md 5.6),

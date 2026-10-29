@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from './AppText';
 import type { Cell } from '../logic/boardGestures';
 import type { BoardId, BughouseColor } from '../logic/bughouse/types';
 import { boardCellToSquare } from '../logic/bughouseView';

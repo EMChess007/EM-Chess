@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
+import { Text } from './AppText';
 import { openBoard } from '../logic/bughouse';
 import type { BoardId, BughouseColor } from '../logic/bughouse/types';
 import { boardCellToSquare, type KingBadge } from '../logic/bughouseView';

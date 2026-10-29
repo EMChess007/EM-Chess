@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Pressable } from './AppPressable';
 import Text from './BughouseText';
 import { remainingAt, type BughouseMatch, type PromotionPiece } from '../logic/bughouse';
 import { PROMOTION_LABELS } from '../logic/promotion';
