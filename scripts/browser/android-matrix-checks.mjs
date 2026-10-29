@@ -74,7 +74,7 @@ export function pageChecks(opts) {
       const cs = getComputedStyle(m);
       if (cs.position !== 'fixed' && cs.position !== 'absolute') return false;
       const mr = m.getBoundingClientRect();
-      if (mr.width * mr.height < vw * vh * 0.95) return false;
+      if (mr.width * mr.height < vw * vh * 0.85) return false; // a layer inside the root frame stops above the bottom / side insets
       return m.getAttribute('aria-modal') === 'true' || alphaOf(cs.backgroundColor) >= 0.4;
     })
     .pop();

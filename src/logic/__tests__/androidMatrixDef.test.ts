@@ -46,7 +46,7 @@ describe('the matrix axes', () => {
 describe('the pass criteria', () => {
   it('are the requirement\'s numbers', () => {
     expect(def.CRITERIA.minTouchTarget).toBe(44);
-    expect(def.CRITERIA.minBoardCell).toEqual({ twoPlayer: 24, fourPlayer: 20, chaturaji: 28, bughouse: 28 });
+    expect(def.CRITERIA.minBoardCell).toEqual({ twoPlayer: 24, fourPlayer: 20, chaturaji: 28, bughouse: 28, bughouseStandard: 20 }); // bughouse: the dual layout (BUGHOUSE_SPEC 5.6); bughouseStandard: the one-human layout has no spec minimum, so the app's smallest board cell (4 Player Chess) is its floor
     expect(def.MIN_SMALLEST_WIDTH_DP).toBe(320);
   });
 });

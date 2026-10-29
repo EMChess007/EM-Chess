@@ -60,7 +60,7 @@ export const CRITERIA = {
   /** Sub-pixel tolerance for "text is outside its box". */
   clipTolerance: 1.5,
   /** Cell sizes (px) the board gates allow, by game kind (boardSize.ts, fourPlayer/presentation.ts, BUGHOUSE_SPEC.md): a smaller cell means the size gate / scrolling must apply. */
-  minBoardCell: { twoPlayer: 24, fourPlayer: 20, chaturaji: 28, bughouse: 28 },
+  minBoardCell: { twoPlayer: 24, fourPlayer: 20, chaturaji: 28, bughouse: 28, bughouseStandard: 20 },
 };
 
 export function orientationOf(size) {
