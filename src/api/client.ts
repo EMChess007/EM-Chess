@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { logDiagnostic } from '../logic/diagnosticLog';
 import type { AuthResponse, AuthUser } from '../types/auth';
 import { parseApiUrlOverride, resolveApiBaseUrl } from './apiBaseUrl';
+import { setOnlineBackend } from './onlineBackend';
 
 const LOCAL_API_PORT = 3000;
 
@@ -76,6 +77,8 @@ function resolveBaseUrl(): string {
 }
 
 export const API_BASE_URL = resolveBaseUrl();
+// The read screens wait for a sleeping server only when it is the deployed one (api/onlineBackend.ts, logic/serverStartup.ts).
+setOnlineBackend(API_BASE_URL === RENDER_BACKEND_URL);
 // Always visible at startup (not just per-request) so a wrong address is obvious immediately,
 // before the first screen that happens to call the API is even opened.
 console.log(
@@ -84,10 +87,24 @@ console.log(
 
 export class ApiError extends Error {
   status: number;
+  /** The server's answer came after an EARLIER try of the same request had failed without an answer (the try may have reached the app): see `registerOnce`. */
+  earlierTryFailed = false;
   constructor(status: number, message: string) {
     super(message);
     this.status = status;
   }
+}
+
+/** The person pressed Cancel on a sign-in that was waiting for a sleeping server. Status 0 like every request that got no answer; screens test it with `isCancelled`, not by its words. */
+export class CancelledError extends ApiError {
+  constructor() {
+    super(0, 'Cancelled.');
+    this.name = 'CancelledError';
+  }
+}
+
+export function isCancelled(err: unknown): boolean {
+  return err instanceof CancelledError;
 }
 
 /**
@@ -109,9 +126,15 @@ interface RequestOptions {
   token?: string;
   /**
    * A write nobody is waiting for on screen (the game save at the end of a game, the rating sync, the puzzle-solved mark): it keeps the patient policy below, so a cold Render
-   * backend still gets the result. Everything a person waits for - every load, log in, register - uses the short policy.
+   * backend still gets the result. Every load a person waits for uses the short policy; log in, register and the session check use the sign-in policy (AUTH_POLICY, 60 s).
    */
   background?: boolean;
+  /** Log in, register, session check: the sign-in policy (AUTH_POLICY below), one at a time. Set only by `authRequest`. */
+  auth?: boolean;
+  /** Auth only: Cancel. The request in flight is aborted and the call rejects with a CancelledError. */
+  signal?: AbortSignal;
+  /** Auth only: called once when the request has been waiting AUTH_WAKING_NOTICE_MS - the screen then says the server is waking up. */
+  onWaking?: () => void;
 }
 
 /**
@@ -130,6 +153,10 @@ interface RequestPolicy {
   totalMs: number;
   attemptMs: number;
   retryDelaysMs: readonly number[];
+  /** HTTP statuses that come from the gateway in front of a sleeping service (Render answers 502/503/504 while it boots), not from the app: another try, like a failed connection. */
+  retryStatuses?: readonly number[];
+  /** One Diagnostic Log line for EVERY failed try, not one for the whole request (the sign-in waits for a minute: the person screenshots what happened in it). */
+  logEachAttempt?: boolean;
 }
 
 /** Whole requests must be over in this time: with the screen drawing its error this is far under the 8 s the app promises. */
@@ -141,6 +168,22 @@ const INTERACTIVE_POLICY: RequestPolicy = { totalMs: REQUEST_DEADLINE_MS, attemp
 // long enough that a request made right after can fail outright. A background write (see RequestOptions.background) rides that window out across several attempts: 12 s each,
 // retried after 3 s and 6 s - the behaviour every request used to have.
 const BACKGROUND_POLICY: RequestPolicy = { totalMs: 45000, attemptMs: 12000, retryDelaysMs: [3000, 6000] };
+
+/**
+ * Sign-in (log in, register, the session check): the PATIENT policy, on every backend (command #27b). The Render free tier is asleep after a quiet period and the first request takes
+ * "50 seconds or more" to be answered: with the 6 s budget of a load, a person who logged in after a quiet period always saw an error. One try may wait the whole minute (Render holds
+ * the connection until the service is up); a try that FAILED (reset, refused, a 502/503/504 from the gateway) is retried after 1, 2, 4, 8, 8 ... s while budget is left. Nothing
+ * outlives AUTH_DEADLINE_MS, and the screen shows "Waking up the server" after AUTH_WAKING_NOTICE_MS with a Cancel.
+ */
+export const AUTH_DEADLINE_MS = 60000;
+export const AUTH_WAKING_NOTICE_MS = 5000;
+const AUTH_POLICY: RequestPolicy = {
+  totalMs: AUTH_DEADLINE_MS,
+  attemptMs: AUTH_DEADLINE_MS,
+  retryDelaysMs: [1000, 2000, 4000, 8000, 8000, 8000, 8000, 8000, 8000, 8000, 8000],
+  retryStatuses: [502, 503, 504],
+  logEachAttempt: true,
+};
 
 function isRenderBackend(): boolean {
   return API_BASE_URL === RENDER_BACKEND_URL;
@@ -160,10 +203,21 @@ class AttemptTimeout extends Error {
  * One attempt, INCLUDING reading the body: the timer keeps running until the JSON is read. It used to stop at the response headers, so a server that sent the headers and
  * then stalled left `response.json()` pending for ever - the caller's spinner (Home's stats, the Analysis list) never ended and its error state never showed.
  */
-async function fetchOnce(url: string, init: RequestInit, attemptMs: number): Promise<{ response: Response; data: unknown }> {
+async function fetchOnce(url: string, init: RequestInit, attemptMs: number, cancel?: AbortSignal): Promise<{ response: Response; data: unknown }> {
   const controller = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   let gotHeaders = false;
+  // Cancel (sign-in only): aborts THIS try at once and ends the race, so nothing of it is left in flight.
+  let onCancel: (() => void) | undefined;
+  const cancelled = new Promise<never>((_, reject) => {
+    if (!cancel) return;
+    onCancel = () => {
+      controller.abort();
+      reject(new CancelledError());
+    };
+    if (cancel.aborted) onCancel();
+    else cancel.addEventListener('abort', onCancel, { once: true });
+  });
   // Racing the timer as well as aborting: not every fetch implementation rejects a pending connect or body read when the signal fires (React Native's does not reliably).
   const timedOut = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -181,27 +235,74 @@ async function fetchOnce(url: string, init: RequestInit, attemptMs: number): Pro
         return { response, data };
       })(),
       timedOut,
+      cancelled,
     ]);
   } finally {
     clearTimeout(timeoutId);
+    if (cancel && onCancel) cancel.removeEventListener('abort', onCancel);
   }
 }
 
+/** The gateway in front of a sleeping service answered (502/503/504) instead of the app: a failed try, not an answer. */
+class GatewayStatus extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`HTTP ${status}`);
+    this.status = status;
+  }
+}
+
+/** Waits `ms`, or throws a CancelledError the moment Cancel is pressed. */
+function pause(ms: number, cancel?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (cancel?.aborted) return reject(new CancelledError());
+    const onCancel = () => {
+      clearTimeout(id);
+      reject(new CancelledError());
+    };
+    const id = setTimeout(() => {
+      cancel?.removeEventListener('abort', onCancel);
+      resolve();
+    }, ms);
+    cancel?.addEventListener('abort', onCancel, { once: true });
+  });
+}
+
+/** What a failed try looked like, for its Diagnostic Log line. */
+function describeFailure(err: unknown): string {
+  if (err instanceof AttemptTimeout) return err.phase === 'headers' ? 'no response' : 'the body stalled';
+  if (err instanceof GatewayStatus) return `HTTP ${err.status}`;
+  return `network error "${err instanceof Error ? err.message.slice(0, 60) : 'unknown'}"`;
+}
+
 /** The tries of one request inside its policy. Throws the last try's error when every one failed (an AttemptTimeout, or whatever fetch rejected with). */
-async function fetchWithPolicy(url: string, init: RequestInit, policy: RequestPolicy, startedAt: number, tally: { tries: number }): Promise<{ response: Response; data: unknown }> {
+async function fetchWithPolicy(
+  url: string,
+  init: RequestInit,
+  policy: RequestPolicy,
+  startedAt: number,
+  tally: { tries: number },
+  cancel?: AbortSignal,
+  logAttempt?: (failure: string) => void,
+): Promise<{ response: Response; data: unknown }> {
   let lastError: unknown = new AttemptTimeout('headers');
   for (let attempt = 0; attempt <= policy.retryDelaysMs.length; attempt++) {
     const remaining = policy.totalMs - (Date.now() - startedAt);
     if (remaining <= 0) break;
+    if (cancel?.aborted) throw new CancelledError();
     console.log(`[api/client] ${init.method} ${url}${attempt > 0 ? ` (retry ${attempt})` : ''}`);
     tally.tries++;
     try {
-      return await fetchOnce(url, init, Math.min(policy.attemptMs, remaining));
+      const result = await fetchOnce(url, init, Math.min(policy.attemptMs, remaining), cancel);
+      if (policy.retryStatuses?.includes(result.response.status)) throw new GatewayStatus(result.response.status);
+      return result;
     } catch (err) {
+      if (err instanceof CancelledError) throw err;
       lastError = err;
+      logAttempt?.(describeFailure(err));
       if (attempt < policy.retryDelaysMs.length) {
         const wait = Math.min(policy.retryDelaysMs[attempt], policy.totalMs - (Date.now() - startedAt));
-        if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+        if (wait > 0) await pause(wait, cancel);
       }
     }
   }
@@ -238,20 +339,35 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const tally = { tries: 0 };
   let response: Response;
   let data: unknown;
+  const policy = options.auth ? AUTH_POLICY : options.background ? BACKGROUND_POLICY : INTERACTIVE_POLICY;
+  // The sign-in waits long enough to need a word on screen: once, after AUTH_WAKING_NOTICE_MS, if it is still waiting.
+  const wakingTimer = options.auth && options.onWaking ? setTimeout(options.onWaking, AUTH_WAKING_NOTICE_MS) : undefined;
   try {
-    ({ response, data } = await fetchWithPolicy(url, init, options.background ? BACKGROUND_POLICY : INTERACTIVE_POLICY, startedAt, tally));
+    ({ response, data } = await fetchWithPolicy(url, init, policy, startedAt, tally, options.auth ? options.signal : undefined, policy.logEachAttempt ? (failure) => logFailure(method, path, failure, startedAt, tally.tries) : undefined));
   } catch (err) {
-    if (err instanceof AttemptTimeout) {
-      logFailure(method, path, err.phase === 'headers' ? 'no response' : 'the body stalled', startedAt, tally.tries);
-      throw new ApiError(0, 'Request timed out. The server took too long to respond.');
+    if (err instanceof CancelledError) {
+      logDiagnostic(`[api] ${method} ${hostOf(API_BASE_URL)}${path.split('?')[0]} cancelled by the person, ${Date.now() - startedAt} ms, ${tally.tries} ${tally.tries === 1 ? 'try' : 'tries'}`);
+      throw err;
     }
-    logFailure(method, path, `network error "${err instanceof Error ? err.message.slice(0, 60) : 'unknown'}"`, startedAt, tally.tries);
+    if (err instanceof GatewayStatus) {
+      throw new ApiError(err.status, 'The server is still starting up. Please try again in a moment.');
+    }
+    if (err instanceof AttemptTimeout) {
+      if (!policy.logEachAttempt) logFailure(method, path, describeFailure(err), startedAt, tally.tries);
+      throw new ApiError(
+        0,
+        options.auth ? 'The server did not answer in a minute. It may still be starting up - please try again.' : 'Request timed out. The server took too long to respond.',
+      );
+    }
+    if (!policy.logEachAttempt) logFailure(method, path, describeFailure(err), startedAt, tally.tries);
     throw new ApiError(
       0,
       isRenderBackend()
         ? "Could not connect to the server. It may still be waking up after being idle — please try again in a moment."
         : 'Could not connect to the server. Make sure the backend is running and your phone is on the same network as your computer.'
     );
+  } finally {
+    clearTimeout(wakingTimer);
   }
 
   if (!response.ok) {
@@ -261,7 +377,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
         : `Request failed (${response.status})`;
     logFailure(method, path, `HTTP ${response.status}`, startedAt, tally.tries);
     if (response.status === 401 && options.token) sessionExpiredHandler?.();
-    throw new ApiError(response.status, message);
+    const failed = new ApiError(response.status, message);
+    failed.earlierTryFailed = tally.tries > 1;
+    throw failed;
   }
 
   return data as T;
@@ -307,14 +425,80 @@ export interface PuzzleProgress {
   completedAt: string | null;
 }
 
+/** What a sign-in screen passes: Cancel, and the one-time "the server is waking up" word. */
+export interface AuthCallOptions {
+  signal?: AbortSignal;
+  onWaking?: () => void;
+}
+
+/**
+ * The slot of the ONE sign-in request that may be in flight (log in, register, session check). A second call while it is running is refused at once with a plain message rather
+ * than queued or sent: two sign-ins racing each other against a server that is still booting could create two accounts (register) or leave the screen with the wrong answer.
+ * Cancel frees the slot in the same instant it aborts the request, so "Cancel, then try again" is never refused.
+ */
+let authSlot: object | null = null;
+
+async function authRequest<T>(method: 'GET' | 'POST', path: string, body: unknown, token: string | undefined, call: AuthCallOptions | undefined): Promise<T> {
+  if (authSlot !== null) throw new ApiError(0, 'A sign-in is already in progress. Please wait for it, or cancel it first.');
+  const slot = {};
+  authSlot = slot;
+  const release = () => {
+    if (authSlot === slot) authSlot = null;
+  };
+  call?.signal?.addEventListener('abort', release, { once: true });
+  try {
+    return await request<T>(path, { method, body, token, auth: true, signal: call?.signal, onWaking: call?.onWaking });
+  } finally {
+    call?.signal?.removeEventListener('abort', release);
+    release();
+  }
+}
+
+/**
+ * A register that may have created the account although the person never saw the answer (the minute ran out, Cancel, the gateway answered 504 after the app had already inserted
+ * the row). The server is NOT idempotent: a second register for the same email/username is a plain 409 "already in use". So the next register for the same pair that gets that 409
+ * tries a log in with the SAME password first - it succeeds only for the account this person just made - and only otherwise reports the 409. Keys are email|username, lower case; no
+ * password is kept. In memory only: an app restart forgets it, and then the person simply logs in.
+ */
+const registerMayHaveCreated = new Set<string>();
+
+function registerKey(email: string, username: string): string {
+  return `${email.trim().toLowerCase()}|${username.trim().toLowerCase()}`;
+}
+
+async function registerOnce(email: string, username: string, password: string, call?: AuthCallOptions): Promise<AuthResponse> {
+  const key = registerKey(email, username);
+  try {
+    const response = await authRequest<AuthResponse>('POST', '/auth/register', { email, username, password }, undefined, call);
+    registerMayHaveCreated.delete(key);
+    return response;
+  } catch (err) {
+    // A real answer from the app (a 4xx: invalid input, already in use) means this try created nothing; anything else may have.
+    const answered = err instanceof ApiError && err.status >= 400 && err.status < 500;
+    if (err instanceof ApiError && err.status === 409 && (registerMayHaveCreated.has(key) || err.earlierTryFailed)) {
+      try {
+        const existing = await authRequest<AuthResponse>('POST', '/auth/login', { email, password }, undefined, call);
+        registerMayHaveCreated.delete(key);
+        logDiagnostic('[api] register: the account from the earlier try already exists, signed in with it instead');
+        return existing;
+      } catch (loginErr) {
+        if (isCancelled(loginErr)) throw loginErr;
+        registerMayHaveCreated.delete(key);
+        throw err; // not the account this person made: the plain "already in use" stands
+      }
+    }
+    if (!answered) registerMayHaveCreated.add(key);
+    else registerMayHaveCreated.delete(key);
+    throw err;
+  }
+}
+
 export const api = {
-  register: (email: string, username: string, password: string) =>
-    request<AuthResponse>('/auth/register', { method: 'POST', body: { email, username, password } }),
+  register: registerOnce,
 
-  login: (email: string, password: string) =>
-    request<AuthResponse>('/auth/login', { method: 'POST', body: { email, password } }),
+  login: (email: string, password: string, call?: AuthCallOptions) => authRequest<AuthResponse>('POST', '/auth/login', { email, password }, undefined, call),
 
-  getMe: (token: string) => request<AuthUser>('/users/me', { token }),
+  getMe: (token: string, call?: AuthCallOptions) => authRequest<AuthUser>('GET', '/users/me', undefined, token, call),
 
   updateRating: (token: string, category: 'bullet' | 'blitz' | 'rapid', rating: number) =>
     request<{ ok: true }>('/users/me/rating', { method: 'POST', token, body: { category, rating }, background: true }),
