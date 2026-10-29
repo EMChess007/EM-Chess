@@ -41,6 +41,8 @@ export interface BughouseBoardBlockProps {
   outlined?: boolean;
   /** Tighter bars and chips, for two boards side by side with no height to spare. */
   compact?: boolean;
+  /** Two boards side by side: each block is as wide as its board, so the second cannot be pushed past the window by a bar's one-line content. (Stacked, the bars use the whole column.) */
+  sideBySide?: boolean;
   /** W3b, humans on both boards: the grid and the chips take their input from this board's own raw touches (useBoardTouches), not from the responder system. */
   rawTouch?: boolean;
   /** DEV ONLY: draw the square the app computes under each finger over the board (the in-game dev switch; never given in a release build). */
@@ -81,9 +83,9 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
   });
   const choices = props.rawTouch ? props.promotionChoices ?? [] : [];
   return (
-    // As wide as its board (+ the 3 dp outline on each side): the bars take that width and wrap their pocket inside it. Without it the block was as wide as its bar's one-line content and two boards
-    // side by side pushed the second one past the window (landscape phone, a full pocket).
-    <View style={[styles.block, { width: cell * 8 + 6 }]} testID={`block-${board}`}>
+    // Side by side: as wide as its board (+ the 3 dp outline on each side), so the bars take that width and wrap their pocket inside it. Without it the block was as wide as its bar's one-line
+    // content and the second board was pushed past the window (landscape phone, a full pocket). Stacked there is room, and a narrower bar would wrap the seat names for nothing.
+    <View style={[styles.block, props.sideBySide && { width: cell * 8 + 6 }]} testID={`block-${board}`}>
       <SeatBar {...props} seat={top} touches={props.rawTouch ? touches : null} />
       <View>
         <BughouseBoard

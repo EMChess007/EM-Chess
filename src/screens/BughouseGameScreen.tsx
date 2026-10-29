@@ -330,6 +330,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         onPickPocket={dual ? (tapped, piece) => dualInput(tapped, { kind: 'pickPocket', piece }) : onPickPocket}
         outlined={summary !== null && summary.decidingBoard === board}
         compact={dual || arrangement === 'sideBySide'}
+        sideBySide={dual ? dualFit.arrangement === 'sideBySide' : arrangement === 'sideBySide'}
         rawTouch={dual}
         touchDebug={devTouchDebug && touchDebug}
         shared={dual && match.result === null && dualBoardPlan(seats, board).shared}

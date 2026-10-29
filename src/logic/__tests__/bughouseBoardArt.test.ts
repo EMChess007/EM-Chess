@@ -29,7 +29,9 @@ describe('Bughouse board art and pocket bars', () => {
     expect(block).toMatch(/pocket: \{ flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap',/);
   });
 
-  it('a block is as wide as its board plus the 3 dp outline on each side', () => {
-    expect(block).toContain('style={[styles.block, { width: cell * 8 + 6 }]}');
+  it('side by side, a block is as wide as its board plus the 3 dp outline on each side; stacked it is not constrained', () => {
+    expect(block).toContain('style={[styles.block, props.sideBySide && { width: cell * 8 + 6 }]}');
+    const screen = read('src/screens/BughouseGameScreen.tsx');
+    expect(screen).toContain("sideBySide={dual ? dualFit.arrangement === 'sideBySide' : arrangement === 'sideBySide'}");
   });
 });
