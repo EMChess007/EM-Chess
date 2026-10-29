@@ -264,14 +264,14 @@ describe('a background write keeps the patient policy (a cold Render backend sti
     expect(calls).toBe(3);
   });
 
-  it('log in is NOT patient: it ends at 6000 ms like a load', async () => {
+  it('log in is NOT a load any more (command #27b): it is still waiting at 6000 ms and ends at 60000 ms (apiAuthPolicy.test.ts has the whole sign-in policy)', async () => {
     let calls = 0;
     globalThis.fetch = (() => {
       calls++;
       return new Promise(() => {});
     }) as typeof fetch;
     const at = await settledAfter(6000, () => api.login('a@b.c', 'pw'));
-    expect(at.settled).toBe(true);
+    expect(at.settled).toBe(false);
     expect(calls).toBe(1);
   });
 });
