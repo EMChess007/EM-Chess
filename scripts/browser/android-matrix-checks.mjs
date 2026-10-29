@@ -60,7 +60,14 @@ export function pageChecks(opts) {
   // A board square answers to the board's own minimum cell (below), not to the 44 dp target rule.
   const squareLabel = /^[a-n](1[0-4]|[1-9])(,|$)/;
   /** Under a modal or another layer: its centre point belongs to an unrelated element. Such an element is not on screen for the person, so it is not judged here. */
+  // A window-sized modal layer (aria-modal: the Bughouse size gate's "rotate the device" overlay) hides everything outside it, including what lies beyond the window's edge.
+  const blockingLayer = Array.from(document.querySelectorAll('[aria-modal="true"]')).find((m) => {
+    const mr = m.getBoundingClientRect();
+    const position = getComputedStyle(m).position;
+    return (position === 'fixed' || position === 'absolute') && mr.width * mr.height >= vw * vh * 0.9;
+  });
   const covered = (el, r) => {
+    if (blockingLayer && !blockingLayer.contains(el) && !el.contains(blockingLayer)) return true;
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
     if (cx < 0 || cy < 0 || cx >= vw || cy >= vh) return false;
