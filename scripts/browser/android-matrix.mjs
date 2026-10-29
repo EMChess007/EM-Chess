@@ -257,8 +257,9 @@ async function runGroup(browser, baseUrl, group, screens, record, sheets) {
       for (const combo of group.combos) {
         const { insets } = await applyCombo(page, cdp, combo);
         const issues = await runChecks(page, screen, insets);
-        // The pixels of the pieces, on both square colours (android-matrix-pieces.mjs): only for the screens that declare `pieces`.
-        if (screen.pieces) issues.push(...(await checkPieceColours(page, PNG, screen.pieces)));
+        // The pixels of the pieces, on both square colours (android-matrix-pieces.mjs): only for the screens that declare `pieces`, and only at the app's own font and at zoom 1: a piece's colour does
+        // not depend on the system font or the display zoom, and photographing 24 cells in every one of 720 combinations made the full profile take hours (a run of 2.5 h did not finish).
+        if (screen.pieces && combo.font.id === 'app' && combo.zoom === 1.0) issues.push(...(await checkPieceColours(page, PNG, screen.pieces)));
         record({ screen: screen.id, combo: comboId(combo), issues });
         if (sheets) {
           const wanted = SHEET.find((s) => s.size.id === combo.size.id && s.scale === combo.scale && s.font.id === combo.font.id && s.zoom === combo.zoom && s.theme === combo.theme && s.insetProfile === combo.insetProfile);
