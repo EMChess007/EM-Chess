@@ -1,4 +1,6 @@
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable } from './AppPressable';
 import { Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { chaturajiRulesSheet } from '../logic/chaturajiUi';
@@ -14,10 +16,12 @@ interface ChaturajiRulesSheetProps {
  */
 export default function ChaturajiRulesSheet({ visible, onClose }: ChaturajiRulesSheetProps) {
   const colors = useAppColors();
+  const insets = useSafeAreaInsets();
   const styles = createStyles(colors);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      {/* A Modal is its own window: the sheet keeps clear of the system bars and the cutout by padding the backdrop with the insets. */}
+      <View style={[styles.backdrop, { paddingTop: 16 + insets.top, paddingBottom: 16 + insets.bottom, paddingLeft: 16 + insets.left, paddingRight: 16 + insets.right }]}>
         {/* The sheet itself is only rendered while it is open, so closing it takes the text off the page at once (the modal's own fade only dims the backdrop). */}
         {visible && (
           <View style={styles.sheet} accessibilityViewIsModal accessibilityLabel="Chaturaji rules">
@@ -46,7 +50,7 @@ export default function ChaturajiRulesSheet({ visible, onClose }: ChaturajiRules
 
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
-    backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', padding: 16 },
+    backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center' },
     sheet: { maxHeight: '90%', borderRadius: 14, padding: 16, gap: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
     title: { fontSize: 19, fontWeight: '800', color: colors.text },
     scroll: { flexGrow: 0 },

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
 import { Text, TextInput } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';

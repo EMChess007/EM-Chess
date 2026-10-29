@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
 import { connectSocket, disconnectSocket } from '../api/socket';

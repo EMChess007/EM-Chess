@@ -85,9 +85,23 @@ export function pageChecks(opts) {
     if (!node.nodeValue || !node.nodeValue.trim()) continue;
     const el = node.parentElement;
     if (!el || isHidden(el) || el.closest('script,style,noscript')) continue;
+    // Only the glyphs: the spaces that hang past the end of a wrapped line (white-space: pre-wrap) are not text anyone can lose.
     const range = document.createRange();
-    range.selectNodeContents(node);
-    const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0);
+    range.setStart(node, node.nodeValue.length - node.nodeValue.trimStart().length);
+    range.setEnd(node, node.nodeValue.trimEnd().length);
+    let rects = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0);
+    if (rects.length > 1) {
+      // A wrapped text: measure word by word, because every wrapped line carries a hanging space whose rectangle reaches past the glyphs.
+      const wordRects = [];
+      const words = /\S+/g;
+      for (let m = words.exec(node.nodeValue); m; m = words.exec(node.nodeValue)) {
+        const wordRange = document.createRange();
+        wordRange.setStart(node, m.index);
+        wordRange.setEnd(node, m.index + m[0].length);
+        for (const r of wordRange.getClientRects()) if (r.width > 0 && r.height > 0) wordRects.push(r);
+      }
+      if (wordRects.length > 0) rects = wordRects;
+    }
     if (rects.length === 0) continue;
     const box = {
       left: Math.min(...rects.map((r) => r.left)),
@@ -95,7 +109,7 @@ export function pageChecks(opts) {
       right: Math.max(...rects.map((r) => r.right)),
       bottom: Math.max(...rects.map((r) => r.bottom)),
     };
-    if (covered(el, { left: box.left, top: box.top, width: box.right - box.left, height: box.bottom - box.top })) continue;
+    if (covered(el, { left: box.left, top: box.top, right: box.right, bottom: box.bottom, width: box.right - box.left, height: box.bottom - box.top })) continue;
     textBoxes.push({ el, box });
 
     // 1. its own box
@@ -142,8 +156,11 @@ export function pageChecks(opts) {
   const controlSelector = '[tabindex="0"],[role="button"],[role="link"],[role="tab"],[role="switch"],[role="checkbox"],[role="radio"],a[href],button,input,textarea,select';
   const controls = Array.from(document.querySelectorAll(controlSelector)).filter((el) => !isHidden(el) && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0 && !covered(el, el.getBoundingClientRect()));
   const boxes = controls.map((el) => ({ el, r: el.getBoundingClientRect() }));
+  // A window-sized control is a layer under the other controls (a dismiss backdrop), not a button they overlap.
+  const isLayer = (r) => r.width >= vw * 0.9 && r.height >= vh * 0.9;
   for (const { el, r } of boxes) {
-    const exemptEl = isExempt(el);
+    // A control that spans the window (a modal's dimming backdrop that dismisses on tap) is a layer, not a button: no target size, and it is meant to reach under the system bars.
+    const exemptEl = isExempt(el) || (r.width >= vw * 0.9 && r.height >= vh * 0.9);
     if (!exemptEl && (r.width < minTarget - 0.5 || r.height < minTarget - 0.5)) add('target', el, Math.round(r.width) + 'x' + Math.round(r.height) + ' dp');
     const hs = hScroller(el);
     if (!hs && (r.left < -clipTolerance || r.right > vw + clipTolerance)) add('offscreen', el, 'sideways ' + Math.round(r.left) + '..' + Math.round(r.right) + ' of ' + vw);
@@ -156,26 +173,43 @@ export function pageChecks(opts) {
     }
   }
   const overlapArea = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
-  for (let i = 0; i < boxes.length; i++) {
-    for (let j = i + 1; j < boxes.length; j++) {
-      const a = boxes[i];
-      const b = boxes[j];
+  /** The part of a box that can be seen: cut by every ancestor that clips or scrolls, and by the window. Null when none of it is on screen. */
+  const visibleBox = (el, r) => {
+    let box = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    box = { left: Math.max(box.left, 0), top: Math.max(box.top, 0), right: Math.min(box.right, vw), bottom: Math.min(box.bottom, vh) };
+    for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      const cutX = clips(cs, 'x') || scrolls(cs, 'x');
+      const cutY = clips(cs, 'y') || scrolls(cs, 'y');
+      if (!cutX && !cutY) continue;
+      const ar = a.getBoundingClientRect();
+      if (cutX) box = { ...box, left: Math.max(box.left, ar.left), right: Math.min(box.right, ar.right) };
+      if (cutY) box = { ...box, top: Math.max(box.top, ar.top), bottom: Math.min(box.bottom, ar.bottom) };
+    }
+    return box.right > box.left && box.bottom > box.top ? box : null;
+  };
+  const area = (b) => (b.right - b.left) * (b.bottom - b.top);
+  const seenBoxes = boxes.map((b) => ({ ...b, v: visibleBox(b.el, b.r) })).filter((b) => b.v);
+  for (let i = 0; i < seenBoxes.length; i++) {
+    for (let j = i + 1; j < seenBoxes.length; j++) {
+      const a = seenBoxes[i];
+      const b = seenBoxes[j];
       if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+      if (isLayer(a.r) || isLayer(b.r)) continue;
       if (isExempt(a.el) && isExempt(b.el)) continue;
-      const area = overlapArea(a.r, b.r);
-      const smaller = Math.min(a.r.width * a.r.height, b.r.width * b.r.height);
-      if (area > 6 && area > smaller * 0.1) add('overlap', a.el, 'overlaps ' + describe(b.el));
+      const shared = overlapArea(a.v, b.v);
+      if (shared > 6 && shared > Math.min(area(a.v), area(b.v)) * 0.1) add('overlap', a.el, 'overlaps ' + describe(b.el));
     }
   }
   // text over text (two different elements; a text node inside the other's box is nesting, not an overlap)
-  for (let i = 0; i < textBoxes.length; i++) {
-    for (let j = i + 1; j < textBoxes.length; j++) {
-      const a = textBoxes[i];
-      const b = textBoxes[j];
+  const seenTexts = textBoxes.map((t) => ({ ...t, v: visibleBox(t.el, t.box) })).filter((t) => t.v);
+  for (let i = 0; i < seenTexts.length; i++) {
+    for (let j = i + 1; j < seenTexts.length; j++) {
+      const a = seenTexts[i];
+      const b = seenTexts[j];
       if (a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
-      const area = overlapArea(a.box, b.box);
-      const smaller = Math.min((a.box.right - a.box.left) * (a.box.bottom - a.box.top), (b.box.right - b.box.left) * (b.box.bottom - b.box.top));
-      if (area > 8 && area > smaller * 0.15) add('overlap', a.el, 'text overlaps the text of ' + describe(b.el));
+      const shared = overlapArea(a.v, b.v);
+      if (shared > 8 && shared > Math.min(area(a.v), area(b.v)) * 0.15) add('overlap', a.el, 'text overlaps the text of ' + describe(b.el));
     }
   }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
 import { useSaveGameOnEnd } from '../api/useSaveGameOnEnd';
 import { appAlert } from '../components/AppAlert';

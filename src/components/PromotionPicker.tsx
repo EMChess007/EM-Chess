@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, StyleSheet, View } from 'react-native';
+import { Pressable } from './AppPressable';
 import { Text } from './AppText';
 
 interface PromotionPickerProps<T extends string | number> {

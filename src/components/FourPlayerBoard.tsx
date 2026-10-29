@@ -132,6 +132,8 @@ const PieceArt = memo(function PieceArt({ seat, type, size, dead, images, boat =
         dead && styles.dead,
         promoted && styles.promoted,
       ]}
+      // Board art, sized from its cell: it never follows the system font scale (see Piece.tsx).
+      maxFontSizeMultiplier={1}
     >
       {GLYPHS[type]}
     </Text>

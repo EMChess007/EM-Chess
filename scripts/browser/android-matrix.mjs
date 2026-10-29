@@ -49,7 +49,8 @@ const ONLY = option('screens', '') ? option('screens', '').split(',') : null;
 mkdirSync(OUT_DIR, { recursive: true });
 
 const NAV_VIEWPORT = { width: 412, height: 915 };
-const exempt = ['[data-matrix-exempt]'];
+// data-matrix-exempt: a control that is small on purpose (AppPressable `compact`). A native Switch is a platform control: its row is the touch target, the 40 x 20 track is not.
+const exempt = ['[data-matrix-exempt]', 'input[type="checkbox"]'];
 
 // --- servers --------------------------------------------------------------------------------------------------------------------------------------
 async function freePort() {
@@ -358,10 +359,12 @@ async function selfTest() {
     expect('text in a sideways scroller is NOT a clip', !kinds(await run('<div style="width:200px;overflow-x:auto"><div style="width:600px;white-space:nowrap">a long strip of chips</div></div>')).has('clip'));
     expect('text below the window with nothing to scroll is a clip', kinds(await run('<div style="position:absolute;top:700px">cut off at the bottom</div>')).has('clip'));
     expect('text far down inside a vertical scroller is NOT a clip', !kinds(await run('<div style="height:640px;overflow-y:auto"><div style="height:2000px"><div style="margin-top:1500px">reached by scrolling</div></div></div>')).has('clip'));
+    expect('text scrolled out of view under a fixed bar is not an overlap', !kinds(await run('<div style="height:600px;overflow-y:auto"><div style="height:1200px"><div style="margin-top:620px">hidden below the scroller</div></div></div><div style="position:fixed;bottom:0;height:40px;width:100%">Tab bar label</div>')).has('overlap'));
     expect('the page scrolling sideways is reported', kinds(await run('<div style="width:500px;height:10px;background:#ccc"></div>')).has('page-scroll'));
     expect('a 30 x 30 control is a small target', kinds(await run('<div role="button" tabindex="0" style="width:30px;height:30px">x</div>')).has('target'));
     expect('a 44 x 44 control is fine', !kinds(await run('<div role="button" tabindex="0" style="width:44px;height:44px">x</div>')).has('target'));
     expect('a control under a modal layer is not judged', !kinds(await run('<div role="button" tabindex="0" style="position:absolute;left:10px;top:10px;width:30px;height:30px">x</div><div style="position:fixed;inset:0;background:#0006"></div>')).has('target'));
+    expect('a window-sized dismiss layer under a button is not an overlap', !kinds(await run('<div role="button" tabindex="0" style="position:fixed;inset:0"></div><div role="button" tabindex="0" style="position:absolute;left:80px;top:200px;width:120px;height:48px">OK</div>')).has('overlap'));
     expect('a square cell is exempt from the target rule', !kinds(await run('<div role="button" tabindex="0" aria-label="e4, White pawn" style="width:30px;height:30px">x</div>')).has('target'));
     expect('two overlapping controls are reported', kinds(await run('<div role="button" tabindex="0" style="position:absolute;left:10px;top:10px;width:100px;height:50px">a</div><div role="button" tabindex="0" style="position:absolute;left:60px;top:20px;width:100px;height:50px">b</div>')).has('overlap'));
     expect('two overlapping pieces of text are reported', kinds(await run('<div style="position:absolute;left:10px;top:10px">Overlapping words here</div><div style="position:absolute;left:10px;top:12px">Other words here</div>')).has('overlap'));

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
 import ChessBoard from '../components/ChessBoard';
 import { getBoardSize } from '../components/boardSize';

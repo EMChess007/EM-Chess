@@ -22,6 +22,12 @@ import {
 
 const InsideText = createContext(false);
 
+/**
+ * Web only: a word wider than its box breaks inside the word instead of overflowing it (and, unlike `overflow-wrap: break-word`, counts as breakable when a flex item's minimum
+ * width is worked out, so a label can shrink to its column). The native text engines (Android's StaticLayout) already break a word that does not fit its line.
+ */
+const WEB_BREAK_LONG_WORDS = (Platform.OS === 'web' ? { overflowWrap: 'anywhere' } : null) as TextStyle | null;
+
 function emulatedScale(): number {
   const dev = typeof __DEV__ !== 'undefined' && __DEV__;
   return readEmulatedFontScale(dev, Platform.OS, (globalThis as Record<string, unknown>)[EMULATED_TEXT_SCALE_GLOBAL]);
@@ -42,7 +48,7 @@ export const Text = forwardRef<RNText, TextProps>(function Text({ style, maxFont
     if (flat.fontSize === undefined) delete fit.fontSize;
   }
   return (
-    <RNText ref={ref} {...rest} maxFontSizeMultiplier={cap} style={[style, fit as TextStyle]}>
+    <RNText ref={ref} {...rest} maxFontSizeMultiplier={cap} style={[WEB_BREAK_LONG_WORDS, style, fit as TextStyle]}>
       <InsideText.Provider value>{children}</InsideText.Provider>
     </RNText>
   );

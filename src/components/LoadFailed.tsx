@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Pressable } from './AppPressable';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { Text } from './AppText';
 

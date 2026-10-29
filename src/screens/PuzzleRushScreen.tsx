@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
 import ChessBoard from '../components/ChessBoard';
 import GameScreenBody from '../components/GameScreenBody';
@@ -298,8 +299,11 @@ function createStyles(colors: AppColors) {
       color: colors.textSecondary,
       textAlign: 'center',
     },
+    // Wraps: three duration buttons side by side stop fitting on a narrow window or with large text.
     durationRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
       gap: 12,
       marginTop: 12,
     },

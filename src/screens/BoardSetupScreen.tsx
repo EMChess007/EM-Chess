@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable } from '../components/AppPressable';
 import { Text, TextInput } from '../components/AppText';
 import { appAlert } from '../components/AppAlert';
 import ScreenHeader from '../components/ScreenHeader';

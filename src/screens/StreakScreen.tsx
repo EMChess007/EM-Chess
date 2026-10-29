@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
 import { useAppColors } from '../logic/colorSchemeHooks';
@@ -43,8 +43,10 @@ export default function StreakScreen({ onBack }: StreakScreenProps) {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScreenHeader title="Streak" onBack={onBack} />
 
-      <View style={styles.body}>
-        <Text style={styles.flame}>🔥</Text>
+      <ScrollView contentContainerStyle={styles.body}>
+        <Text style={styles.flame} maxFontSizeMultiplier={1}>
+          🔥
+        </Text>
         <Text style={[styles.streakCount, { color: colors.text }]}>{streak}</Text>
         <Text style={[styles.streakLabel, { color: colors.textSecondary }]}>
           {streak === 1 ? 'Day Streak' : 'Day Streak'}
@@ -78,7 +80,7 @@ export default function StreakScreen({ onBack }: StreakScreenProps) {
         <Text style={[styles.hint, { color: colors.textMuted }]}>
           Open the app every day to keep your streak going.
         </Text>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -87,10 +89,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  // A scrolling body (flexGrow, not flex): a landscape phone or large text is taller than the window, and the hint must stay reachable.
   body: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     paddingTop: 32,
+    paddingBottom: 24,
     paddingHorizontal: 24,
     gap: 8,
   },

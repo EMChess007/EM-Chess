@@ -108,7 +108,7 @@ export default function Square({
           {isLegalTarget && <View style={styles.legalDot} />}
           {isCapturer && <View pointerEvents="none" style={[styles.capturerOutline, { width: size - 1, height: size - 1, borderRadius: (size - 1) / 2 }]} />}
           {isCapturer && <View pointerEvents="none" style={[styles.capturerRing, { width: size - 5, height: size - 5, borderRadius: (size - 5) / 2 }]} />}
-          {data.piece && !hidePiece && <Piece piece={data.piece} images={pieceImages} />}
+          {data.piece && !hidePiece && <Piece piece={data.piece} images={pieceImages} size={size} />}
           {isPromoted && data.piece && !hidePiece && <Text style={[styles.promotedMark, { fontSize: Math.max(10, size * 0.3) }]}>~</Text>}
           {isDuck && (
             <View style={[styles.duck, { width: size * 0.78, height: size * 0.78, borderRadius: size * 0.39 }]}>
