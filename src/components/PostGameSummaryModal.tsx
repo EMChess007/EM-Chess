@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable } from './AppPressable';
+import { Text } from './AppText';
 import { StockfishEngineAdapter } from '../engine/StockfishEngineAdapter';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { buildStockfishHtml } from '../engine/stockfishHtml';

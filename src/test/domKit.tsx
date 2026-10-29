@@ -46,5 +46,31 @@ export function offeredSquares(): string[] {
     .sort();
 }
 
+/**
+ * The style a rendered element ends up with. react-native-web turns a StyleSheet into atomic classes in an injected stylesheet, and jsdom's `getComputedStyle` does not apply
+ * those: this reads the declarations of every class the element carries (and its inline style) from the document's stylesheets, later rules winning.
+ */
+export function declaredStyle(el: HTMLElement): Record<string, string> {
+  const classes = new Set((el.getAttribute('class') ?? '').split(/\s+/).filter(Boolean));
+  const out: Record<string, string> = {};
+  for (const sheet of Array.from(document.styleSheets)) {
+    for (const rule of Array.from(sheet.cssRules)) {
+      const styleRule = rule as CSSStyleRule;
+      if (!styleRule.selectorText || !styleRule.style) continue;
+      const matches = styleRule.selectorText.split(',').some((selector) => {
+        const m = /^\.([A-Za-z0-9_-]+)$/.exec(selector.trim());
+        return !!m && classes.has(m[1]);
+      });
+      if (!matches) continue;
+      for (let i = 0; i < styleRule.style.length; i++) {
+        const prop = styleRule.style[i];
+        out[prop] = styleRule.style.getPropertyValue(prop);
+      }
+    }
+  }
+  for (let i = 0; i < el.style.length; i++) out[el.style[i]] = el.style.getPropertyValue(el.style[i]);
+  return out;
+}
+
 /** The text of a seat card (the strip's `seat-N` view): name, score, clock, who plays it, status. */
 export const seatCard = (seat: number): HTMLElement => screen.getByTestId(`seat-${seat}`);

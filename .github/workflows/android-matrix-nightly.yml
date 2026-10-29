@@ -1,0 +1,46 @@
+name: Android device matrix (nightly)
+
+# The FULL Android device matrix (TESTING.md "Android device matrix"): every screen under all 720 combinations of window size x text scale x font x display zoom x theme (a system-bar
+# profile spread over them) plus the sweep of every size under every system-bar profile. The pull-request run (ci.yml, `device-matrix`) is the quick profile; this is the one that
+# proves "works on every Android device" as far as a browser can. It takes the better part of an hour, hence the nightly slot; it can also be started by hand.
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  full-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install the browser driver
+        run: npm install --no-save playwright-core@1.64.1
+
+      - name: Full matrix
+        run: node scripts/browser/android-matrix.mjs --profile full --workers 2 --sheets --out matrix-full
+        env:
+          E2E_BROWSER_PATH: /usr/bin/google-chrome
+
+      - name: System-bar sweep
+        run: node scripts/browser/android-matrix.mjs --profile sweep --workers 2 --out matrix-sweep
+        env:
+          E2E_BROWSER_PATH: /usr/bin/google-chrome
+
+      - name: Keep the results and the contact sheets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-matrix-nightly
+          path: |
+            matrix-full
+            matrix-sweep
+          if-no-files-found: ignore

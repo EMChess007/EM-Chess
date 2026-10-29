@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
+import { Text } from '../components/AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, type StoredGame } from '../api/client';
 import { appAlert } from '../components/AppAlert';
+import LoadFailed from '../components/LoadFailed';
+import { loadErrorMessage } from '../logic/loadError';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getDailyPuzzle } from '../logic/puzzles';
 import { isTodayPuzzleSolved } from '../logic/puzzleStorage';
@@ -58,6 +62,9 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onOp
   const [puzzleSolved, setPuzzleSolved] = useState(false);
   const [games, setGames] = useState<StoredGame[] | null>(null);
   const [loadingGames, setLoadingGames] = useState(false);
+  // The load failed (after the client's own retries): shown as "Can't reach the server" + Retry instead of a silent "0 games". reloadTick is bumped by Retry.
+  const [gamesError, setGamesError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,13 +83,15 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onOp
     }
     let cancelled = false;
     setLoadingGames(true);
+    setGamesError(null);
     api
       .listGames(authToken)
       .then((data) => {
         if (!cancelled) setGames(data);
       })
-      .catch(() => {
-        // Silent, non-blocking — the Home screen still works fine without stats/history.
+      .catch((err) => {
+        // Non-blocking — the rest of Home works without stats/history - but not silent: the two sections say why they are empty and offer Retry.
+        if (!cancelled) setGamesError(loadErrorMessage(err, "Couldn't load your games"));
       })
       .finally(() => {
         if (!cancelled) setLoadingGames(false);
@@ -90,7 +99,8 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onOp
     return () => {
       cancelled = true;
     };
-  }, [authToken]);
+  }, [authToken, reloadTick]);
+  const retryGames = () => setReloadTick((tick) => tick + 1);
 
   const recentGames = games?.slice(0, 3) ?? [];
 
@@ -136,6 +146,8 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onOp
             <Text style={styles.sectionPlaceholder}>Log in to track your stats.</Text>
           ) : loadingGames ? (
             <ActivityIndicator size="small" color={colors.text} />
+          ) : gamesError ? (
+            <LoadFailed message={gamesError} onRetry={retryGames} testID="home-stats-failed" />
           ) : (
             <View style={styles.statsRow}>
               <View style={styles.statBox}>
@@ -159,6 +171,8 @@ export default function HomeScreen({ onPlay, onOpenPuzzles, onOpenAnalysis, onOp
             <Text style={styles.sectionPlaceholder}>Log in to see your recent games.</Text>
           ) : loadingGames ? (
             <ActivityIndicator size="small" color={colors.text} />
+          ) : gamesError ? (
+            <LoadFailed message={gamesError} onRetry={retryGames} testID="home-recent-failed" />
           ) : recentGames.length === 0 ? (
             <Text style={styles.sectionPlaceholder}>No games played yet.</Text>
           ) : (

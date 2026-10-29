@@ -1,4 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Pressable } from './AppPressable';
+import { Text } from './AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
@@ -40,11 +42,11 @@ export default function ScreenHeader({ title, subtitle, onBack, backLabel = '‹
         </Pressable>
       )}
       <View style={styles.titleBlock}>
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={styles.title}>
           {title}
         </Text>
         {subtitle && (
-          <Text style={styles.subtitle} numberOfLines={1}>
+          <Text style={styles.subtitle}>
             {subtitle}
           </Text>
         )}

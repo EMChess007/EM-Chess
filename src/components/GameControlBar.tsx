@@ -1,5 +1,8 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Pressable } from './AppPressable';
+import { Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import { DENSE_MAX_FONT_SIZE_MULTIPLIER } from '../logic/typography';
 
 export interface GameControlBarItem {
   key: string;
@@ -28,7 +31,9 @@ export default function GameControlBar({ items }: GameControlBarProps) {
           onPress={item.onPress}
           disabled={item.disabled}
         >
-          <Text style={[styles.buttonText, item.active && styles.buttonTextActive]}>{item.label}</Text>
+          <Text style={[styles.buttonText, item.active && styles.buttonTextActive]} maxFontSizeMultiplier={DENSE_MAX_FONT_SIZE_MULTIPLIER}>
+            {item.label}
+          </Text>
         </Pressable>
       ))}
     </View>
@@ -37,8 +42,11 @@ export default function GameControlBar({ items }: GameControlBarProps) {
 
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
+    // Wraps (Android device matrix): five buttons with large text no longer fit one line of a 320 dp window.
     row: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
       gap: 8,
     },
     button: {

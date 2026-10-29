@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
+import { Text } from '../components/AppText';
 import { appAlert } from '../components/AppAlert';
 import ChaturajiRulesSheet from '../components/ChaturajiRulesSheet';
 import FourPlayerBoard from '../components/FourPlayerBoard';

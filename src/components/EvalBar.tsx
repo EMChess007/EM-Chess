@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from './AppText';
 import type { EngineEvaluation } from '../engine/ChessEngine';
 import { evalToWhiteFillPercent, formatEvaluationCompact } from '../logic/analysis';
 

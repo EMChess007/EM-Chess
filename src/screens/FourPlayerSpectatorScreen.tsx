@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from '../components/AppText';
 import FourPlayerBoard from '../components/FourPlayerBoard';
 import FourPlayerChatPanel from '../components/FourPlayerChatPanel';
 import FourPlayerResultCard from '../components/FourPlayerResultCard';

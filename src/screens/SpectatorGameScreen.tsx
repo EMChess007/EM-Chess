@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from '../components/AppText';
 import ChessBoard from '../components/ChessBoard';
 import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';

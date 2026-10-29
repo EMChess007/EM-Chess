@@ -1,4 +1,6 @@
-import { Text, type StyleProp, type TextStyle } from 'react-native';
+import type { StyleProp, TextStyle } from 'react-native';
+import { Text } from './AppText';
+import { DENSE_MAX_FONT_SIZE_MULTIPLIER } from '../logic/typography';
 
 interface ModeButtonLabelProps {
   label: string;
@@ -6,24 +8,14 @@ interface ModeButtonLabelProps {
 }
 
 /**
- * Label for an equal-width row of mode-select buttons (see PlayModeSelectScreen). A single-word
- * label (e.g. "Classic", "Tournaments") never breaks mid-word — there's no good place to wrap it,
- * so it shrinks to fit one line instead. A multi-word label (e.g. "King of the Hill") wraps at a
- * word boundary across up to 2 lines, at the ORIGINAL font size, since a natural break point
- * always exists there. Picking behavior by word count means a future variant with a long name
- * gets correct treatment automatically, without deciding it case by case.
+ * Label for a row of mode-select buttons (see PlayModeSelectScreen). It always fits, whatever the font and the text scale: a multi-word label (e.g. "King of the Hill") wraps at
+ * a word boundary, a single long word ("Tournaments") that is wider than its button breaks inside the word as a last resort (AppText) - the button grows in height (it has a
+ * minimum height, not a fixed one). It used to shrink a single word with `adjustsFontSizeToFit`, which the browser ignores (so the word overflowed there) and which an
+ * Android phone applies to a text box measured with other glyph metrics (the cut "Chess96", "Three-C" of the device report). Growth is capped (dense control, 1.2 x).
  */
 export default function ModeButtonLabel({ label, style }: ModeButtonLabelProps) {
-  const isSingleWord = !label.trim().includes(' ');
-  if (isSingleWord) {
-    return (
-      <Text style={style} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>
-        {label}
-      </Text>
-    );
-  }
   return (
-    <Text style={style} numberOfLines={2}>
+    <Text style={style} maxFontSizeMultiplier={DENSE_MAX_FONT_SIZE_MULTIPLIER}>
       {label}
     </Text>
   );

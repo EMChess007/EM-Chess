@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Pressable } from './AppPressable';
+import { Text, TextInput } from './AppText';
 
 const HEX_PATTERN = /^#[0-9a-fA-F]{6}$/;
 

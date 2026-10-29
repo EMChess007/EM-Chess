@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, SafeAreaView, StyleSheet } from 'react-native';
+import { Pressable } from '../components/AppPressable';
+import { Text } from '../components/AppText';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { checkMatchVariant, describeQueue, fillSecondsLeft, joinQueueRequest } from '../logic/fourPlayerOnlineUi';

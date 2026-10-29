@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Pressable } from '../components/AppPressable';
+import { Text } from '../components/AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { appAlert } from '../components/AppAlert';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
