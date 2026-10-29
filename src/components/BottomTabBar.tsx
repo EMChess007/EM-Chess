@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 import { Pressable } from './AppPressable';
 import { Text } from './AppText';
+import TabIcon from './TabIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
@@ -11,11 +12,11 @@ interface BottomTabBarProps {
   onTabPress: (tab: MainTab) => void;
 }
 
-const TABS: { id: MainTab; label: string; icon: string }[] = [
-  { id: 'home', label: 'Home', icon: '♟' },
-  { id: 'puzzles', label: 'Puzzles', icon: '🧩' },
-  { id: 'analysis', label: 'Analysis', icon: '📊' },
-  { id: 'more', label: 'More', icon: '⋯' },
+const TABS: { id: MainTab; label: string }[] = [
+  { id: 'home', label: 'Home' },
+  { id: 'puzzles', label: 'Puzzles' },
+  { id: 'analysis', label: 'Analysis' },
+  { id: 'more', label: 'More' },
 ];
 
 export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProps) {
@@ -34,7 +35,8 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
         const isActive = tab.id === activeTab;
         return (
           <Pressable key={tab.id} style={styles.tab} onPress={() => onTabPress(tab.id)}>
-            <Text style={[styles.icon, isActive && styles.iconActive]}>{tab.icon}</Text>
+            {/* Drawn in a theme colour (TabIcon.tsx): the active tab in the text colour, the others in the secondary one - both >= 3:1 on the bar in both themes. */}
+            <TabIcon name={tab.id} color={isActive ? colors.text : colors.textSecondary} />
             <Text style={[styles.label, isActive && styles.labelActive]}>{tab.label}</Text>
           </Pressable>
         );
@@ -57,13 +59,6 @@ function createStyles(colors: AppColors) {
       justifyContent: 'center',
       paddingVertical: 8,
       gap: 2,
-    },
-    icon: {
-      fontSize: 20,
-      opacity: 0.5,
-    },
-    iconActive: {
-      opacity: 1,
     },
     label: {
       fontSize: 11,

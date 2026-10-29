@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
+import LoadFailed from '../components/LoadFailed';
 import ScreenHeader from '../components/ScreenHeader';
+import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { connectSocket, disconnectSocket } from '../api/socket';
+import { emitWithin } from '../api/socketAck';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { AuthUser } from '../types/auth';
 import type { Ack, MatchFoundPayload, TournamentMatchReadyPayload, TournamentStandingsPayload } from '../types/multiplayer';
@@ -29,6 +32,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
   const [standings, setStandings] = useState<TournamentStandingsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     const socket = connectSocket(authToken);
@@ -60,21 +64,31 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
 
     socket.on('tournament_standings_update', handleStandingsUpdate);
     socket.on('tournament_match_ready', handleMatchReady);
-    socket.emit('get_tournament_standings', { tournamentId }, (ack: Ack<{ standings: TournamentStandingsPayload }>) => {
+    setLoading(true);
+    setError(null);
+    let cancelled = false;
+    // With a deadline: an emit on a socket that never connects is never acknowledged. Retry (reloadTick) asks again.
+    emitWithin<Ack<{ standings: TournamentStandingsPayload }>>(socket, 'get_tournament_standings', { tournamentId }, (result) => {
+      if (cancelled) return;
       setLoading(false);
-      if (!ack.ok) {
-        setError(ack.error);
+      if (result.unreachable) {
+        setError(SERVER_UNREACHABLE_MESSAGE);
         return;
       }
-      setStandings(ack.standings);
+      if (!result.ack.ok) {
+        setError(result.ack.error);
+        return;
+      }
+      setStandings(result.ack.standings);
     });
 
     return () => {
+      cancelled = true;
       socket.off('tournament_standings_update', handleStandingsUpdate);
       socket.off('tournament_match_ready', handleMatchReady);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tournamentId]);
+  }, [tournamentId, reloadTick]);
 
   const handlePlayNow = () => {
     const match = standings?.yourNextMatch;
@@ -119,7 +133,11 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
 
       {!loading && error && (
         <View style={styles.centerColumn}>
-          <Text style={styles.errorText}>{error}</Text>
+          {error === SERVER_UNREACHABLE_MESSAGE ? (
+            <LoadFailed message={error} onRetry={() => setReloadTick((tick) => tick + 1)} />
+          ) : (
+            <Text style={styles.errorText}>{error}</Text>
+          )}
         </View>
       )}
 

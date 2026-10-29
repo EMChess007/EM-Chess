@@ -4,8 +4,11 @@ import { Text } from '../components/AppText';
 import ChessBoard from '../components/ChessBoard';
 import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
+import LoadFailed from '../components/LoadFailed';
 import ScreenHeader from '../components/ScreenHeader';
+import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { connectSocket, disconnectSocket } from '../api/socket';
+import { emitWithin } from '../api/socketAck';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { initialCrazyhouseState } from '../logic/crazyhouse';
 import { duckMoveNotation } from '../logic/duckChess';
@@ -39,11 +42,19 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
   const [error, setError] = useState<string | null>(null);
   const [gameOver, setGameOver] = useState<GameOverPayload | null>(null);
   const [moves, setMoves] = useState<MoveRow[]>([]);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     const socket = connectSocket(authToken);
 
-    socket.emit('spectate_game', { roomId }, (ack: Ack<{ state: SpectateStatePayload }>) => {
+    setError(null);
+    // With a deadline: an emit on a socket that never connects is never acknowledged, and this screen would stay blank for ever. Retry (reloadTick) asks again.
+    emitWithin<Ack<{ state: SpectateStatePayload }>>(socket, 'spectate_game', { roomId }, (result) => {
+      if (result.unreachable) {
+        setError(SERVER_UNREACHABLE_MESSAGE);
+        return;
+      }
+      const { ack } = result;
       if (!ack.ok) {
         setError(ack.error);
         return;
@@ -103,7 +114,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
       disconnectSocket();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId]);
+  }, [roomId, reloadTick]);
 
   const handleExit = () => {
     onExit();
@@ -114,7 +125,11 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
       <View style={styles.container}>
         <ScreenHeader title="Spectate" onBack={handleExit} backLabel="‹ Back" />
         <View style={styles.centerRow}>
-          <Text style={styles.error}>{error}</Text>
+          {error === SERVER_UNREACHABLE_MESSAGE ? (
+            <LoadFailed message={error} onRetry={() => setReloadTick((tick) => tick + 1)} />
+          ) : (
+            <Text style={styles.error}>{error}</Text>
+          )}
         </View>
       </View>
     );

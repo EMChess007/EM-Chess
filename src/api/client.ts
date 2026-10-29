@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { logDiagnostic } from '../logic/diagnosticLog';
 import type { AuthResponse, AuthUser } from '../types/auth';
 import { parseApiUrlOverride, resolveApiBaseUrl } from './apiBaseUrl';
 
@@ -106,51 +107,75 @@ interface RequestOptions {
   method?: 'GET' | 'POST';
   body?: unknown;
   token?: string;
+  /**
+   * A write nobody is waiting for on screen (the game save at the end of a game, the rating sync, the puzzle-solved mark): it keeps the patient policy below, so a cold Render
+   * backend still gets the result. Everything a person waits for - every load, log in, register - uses the short policy.
+   */
+  background?: boolean;
 }
 
-// A network that's up but whose backend never responds (host reachable, process hung/unreachable
-// port with no RST) doesn't make fetch() reject on its own — without this, a caller's .catch()
-// (Home's stats/recent games, GameHistoryScreen, ...) would simply never run and its loading
-// spinner would spin forever. This aborts the request after a generous grace period so every
-// caller's existing error handling kicks in instead. Deliberately NOT used to shorten the
-// "genuinely no network" path below, which already rejects immediately on its own.
-const REQUEST_TIMEOUT_MS = 12000;
+/**
+ * How long a request may take, as ONE budget (offline-states branch). A screen that loads from the server shows "Can't reach the server" + Retry, so a request must END, whatever
+ * is wrong: a refused connection, a firewall that drops the packets (the connection attempt just hangs), an address that does not exist, a host name that does not resolve, a
+ * server that accepts and never answers, one that sends the headers and stalls, one that stalls halfway through the body.
+ *
+ * It used to be 12 s per attempt with two retries after 3 s and 6 s: 45 s for any hang and 9 s even for a plain refusal (measured with real servers, see
+ * apiOfflineRealServers.test.ts). On the Blackview the screens spun for more than 20 s and the person gave up before they ever showed the error. The tests that passed
+ * used fake timers, which skipped all of that waiting.
+ *
+ * `totalMs` is the hard limit for the WHOLE request including the retries and the body, `attemptMs` the limit of one try, `retryDelaysMs` the wait before each retry. A retry
+ * only follows a try that FAILED (fetch rejected: refused, unreachable, DNS) and only while budget is left; a try that ran out its attempt time is the end of a short budget.
+ */
+interface RequestPolicy {
+  totalMs: number;
+  attemptMs: number;
+  retryDelaysMs: readonly number[];
+}
 
-// The Render free tier spins the whole backend down after a period of inactivity and takes up to
-// "50 seconds or more" (Render's own wording) to wake back up on the next request — long enough
-// that the very first request of a session can fail outright (a connection-level failure while
-// the container is still booting, not merely a slow response) well within REQUEST_TIMEOUT_MS.
-// Retrying a couple of times with a growing delay rides out that window across several short
-// attempts instead of one long one, so a user doesn't have to notice the failure and manually
-// retry themselves (see the "second attempt worked" bug report this was added for). Only ever
-// retries a connection-level failure (fetch() itself rejecting) — a real HTTP response, even an
-// error one, is never blindly retried here.
-const RETRY_DELAYS_MS = [3000, 6000];
+/** Whole requests must be over in this time: with the screen drawing its error this is far under the 8 s the app promises. */
+export const REQUEST_DEADLINE_MS = 6000;
+/** One quick retry for a connection that failed at once (a server that was just restarting), not a new wait. */
+const INTERACTIVE_POLICY: RequestPolicy = { totalMs: REQUEST_DEADLINE_MS, attemptMs: REQUEST_DEADLINE_MS, retryDelaysMs: [1000] };
+
+// The Render free tier spins the whole backend down after a period of inactivity and takes up to "50 seconds or more" (Render's own wording) to wake back up on the next request,
+// long enough that a request made right after can fail outright. A background write (see RequestOptions.background) rides that window out across several attempts: 12 s each,
+// retried after 3 s and 6 s - the behaviour every request used to have.
+const BACKGROUND_POLICY: RequestPolicy = { totalMs: 45000, attemptMs: 12000, retryDelaysMs: [3000, 6000] };
 
 function isRenderBackend(): boolean {
   return API_BASE_URL === RENDER_BACKEND_URL;
+}
+
+/** The attempt's own time ran out. `phase` says where it was stuck: still waiting for the response, or inside its body. Named AbortError like the signal's own rejection. */
+class AttemptTimeout extends Error {
+  readonly phase: 'headers' | 'body';
+  constructor(phase: 'headers' | 'body') {
+    super('Request timed out');
+    this.name = 'AbortError';
+    this.phase = phase;
+  }
 }
 
 /**
  * One attempt, INCLUDING reading the body: the timer keeps running until the JSON is read. It used to stop at the response headers, so a server that sent the headers and
  * then stalled left `response.json()` pending for ever - the caller's spinner (Home's stats, the Analysis list) never ended and its error state never showed.
  */
-async function fetchOnce(url: string, init: RequestInit): Promise<{ response: Response; data: unknown }> {
+async function fetchOnce(url: string, init: RequestInit, attemptMs: number): Promise<{ response: Response; data: unknown }> {
   const controller = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  // Racing the timer as well as aborting: not every fetch implementation rejects a pending body read when the signal fires.
+  let gotHeaders = false;
+  // Racing the timer as well as aborting: not every fetch implementation rejects a pending connect or body read when the signal fires (React Native's does not reliably).
   const timedOut = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
       controller.abort();
-      const error = new Error('Request timed out');
-      error.name = 'AbortError';
-      reject(error);
-    }, REQUEST_TIMEOUT_MS);
+      reject(new AttemptTimeout(gotHeaders ? 'body' : 'headers'));
+    }, attemptMs);
   });
   try {
     return await Promise.race([
       (async () => {
         const response = await fetch(url, { ...init, signal: controller.signal });
+        gotHeaders = true;
         const isJson = response.headers.get('content-type')?.includes('application/json');
         const data: unknown = isJson ? await response.json().catch(() => null) : null;
         return { response, data };
@@ -160,6 +185,40 @@ async function fetchOnce(url: string, init: RequestInit): Promise<{ response: Re
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+/** The tries of one request inside its policy. Throws the last try's error when every one failed (an AttemptTimeout, or whatever fetch rejected with). */
+async function fetchWithPolicy(url: string, init: RequestInit, policy: RequestPolicy, startedAt: number, tally: { tries: number }): Promise<{ response: Response; data: unknown }> {
+  let lastError: unknown = new AttemptTimeout('headers');
+  for (let attempt = 0; attempt <= policy.retryDelaysMs.length; attempt++) {
+    const remaining = policy.totalMs - (Date.now() - startedAt);
+    if (remaining <= 0) break;
+    console.log(`[api/client] ${init.method} ${url}${attempt > 0 ? ` (retry ${attempt})` : ''}`);
+    tally.tries++;
+    try {
+      return await fetchOnce(url, init, Math.min(policy.attemptMs, remaining));
+    } catch (err) {
+      lastError = err;
+      if (attempt < policy.retryDelaysMs.length) {
+        const wait = Math.min(policy.retryDelaysMs[attempt], policy.totalMs - (Date.now() - startedAt));
+        if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+    }
+  }
+  throw lastError;
+}
+
+/** "192.168.1.5:3000" out of "http://192.168.1.5:3000": the host the request went to, for the diagnostic line (no path, no query, no credentials). */
+function hostOf(baseUrl: string): string {
+  return /^https?:\/\/([^/?#]+)/.exec(baseUrl)?.[1]?.replace(/^[^@]*@/, '') ?? 'unknown';
+}
+
+/**
+ * ONE line per failed request in More > Diagnostics (the person screenshots it): the host, what kind of failure, how long it took. Never the token, a body or a query.
+ *   [api] GET 192.168.1.5:3000/games failed: no response, 6004 ms, 1 try
+ */
+function logFailure(method: string, path: string, failure: string, startedAt: number, attempts: number): void {
+  logDiagnostic(`[api] ${method} ${hostOf(API_BASE_URL)}${path.split('?')[0]} failed: ${failure}, ${Date.now() - startedAt} ms, ${attempts} ${attempts === 1 ? 'try' : 'tries'}`);
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -174,27 +233,18 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   };
 
-  let response: Response | undefined;
+  const startedAt = Date.now();
+  const tally = { tries: 0 };
+  let response: Response;
   let data: unknown;
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
-    console.log(`[api/client] ${method} ${url}${attempt > 0 ? ` (retry ${attempt})` : ''}`);
-    try {
-      ({ response, data } = await fetchOnce(url, init));
-      lastError = null;
-      break;
-    } catch (err) {
-      lastError = err;
-      if (attempt < RETRY_DELAYS_MS.length) {
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
-      }
-    }
-  }
-
-  if (lastError || !response) {
-    if (lastError instanceof Error && lastError.name === 'AbortError') {
+  try {
+    ({ response, data } = await fetchWithPolicy(url, init, options.background ? BACKGROUND_POLICY : INTERACTIVE_POLICY, startedAt, tally));
+  } catch (err) {
+    if (err instanceof AttemptTimeout) {
+      logFailure(method, path, err.phase === 'headers' ? 'no response' : 'the body stalled', startedAt, tally.tries);
       throw new ApiError(0, 'Request timed out. The server took too long to respond.');
     }
+    logFailure(method, path, `network error "${err instanceof Error ? err.message.slice(0, 60) : 'unknown'}"`, startedAt, tally.tries);
     throw new ApiError(
       0,
       isRenderBackend()
@@ -208,6 +258,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
         ? data.error
         : `Request failed (${response.status})`;
+    logFailure(method, path, `HTTP ${response.status}`, startedAt, tally.tries);
     if (response.status === 401 && options.token) sessionExpiredHandler?.();
     throw new ApiError(response.status, message);
   }
@@ -265,13 +316,13 @@ export const api = {
   getMe: (token: string) => request<AuthUser>('/users/me', { token }),
 
   updateRating: (token: string, category: 'bullet' | 'blitz' | 'rapid', rating: number) =>
-    request<{ ok: true }>('/users/me/rating', { method: 'POST', token, body: { category, rating } }),
+    request<{ ok: true }>('/users/me/rating', { method: 'POST', token, body: { category, rating }, background: true }),
 
   getLeaderboard: (token: string, category: 'bullet' | 'blitz' | 'rapid') =>
     request<LeaderboardResponse>(`/users/leaderboard?category=${category}`, { token }),
 
   createGame: (token: string, game: GamePayload) =>
-    request<StoredGame>('/games', { method: 'POST', body: game, token }),
+    request<StoredGame>('/games', { method: 'POST', body: game, token, background: true }),
 
   listGames: (token: string) => request<StoredGame[]>('/games', { token }),
 
@@ -283,5 +334,6 @@ export const api = {
       method: 'POST',
       token,
       body: { puzzleDate: date, solved: true },
+      background: true,
     }),
 };

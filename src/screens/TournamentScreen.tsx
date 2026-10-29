@@ -5,6 +5,8 @@ import { Text, TextInput } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { connectSocket, disconnectSocket, getSocket } from '../api/socket';
+import { emitWithin } from '../api/socketAck';
+import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getTimeControlsByCategory } from '../logic/timeControls';
 import type { AuthUser } from '../types/auth';
@@ -71,7 +73,8 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
     const isKingOfTheHill = variant === 'kingOfTheHill';
     const isThreeCheck = variant === 'threeCheck';
     const socket = connectSocket(authToken);
-    socket.emit(
+    emitWithin<Ack<{ code: string; tournamentId: string }>>(
+      socket,
       'create_tournament',
       {
         name: trimmedName,
@@ -81,7 +84,12 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
         isKingOfTheHill,
         isThreeCheck,
       },
-      (ack: Ack<{ code: string; tournamentId: string }>) => {
+      (result) => {
+        if (result.unreachable) {
+          setError(SERVER_UNREACHABLE_MESSAGE); // choosing the time control again is the retry
+          return;
+        }
+        const { ack } = result;
         if (!ack.ok) {
           setError(ack.error);
           return;
@@ -108,12 +116,16 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
     if (!trimmed) return;
     setError(null);
     const socket = connectSocket(authToken);
-    socket.emit('join_tournament', { code: trimmed }, (ack: Ack<{ tournament: TournamentLobbyState }>) => {
-      if (!ack.ok) {
-        setError(ack.error);
+    emitWithin<Ack<{ tournament: TournamentLobbyState }>>(socket, 'join_tournament', { code: trimmed }, (result) => {
+      if (result.unreachable) {
+        setError(SERVER_UNREACHABLE_MESSAGE); // pressing Join again is the retry
         return;
       }
-      setLobby(ack.tournament);
+      if (!result.ack.ok) {
+        setError(result.ack.error);
+        return;
+      }
+      setLobby(result.ack.tournament);
       setPhase('lobby');
     });
   };
@@ -127,10 +139,14 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
     if (!lobby) return;
     setError(null);
     setStarting(true);
-    getSocket().emit('start_tournament', { tournamentId: lobby.id }, (ack: Ack) => {
+    emitWithin<Ack>(getSocket(), 'start_tournament', { tournamentId: lobby.id }, (result) => {
       setStarting(false);
-      if (!ack.ok) {
-        setError(ack.error);
+      if (result.unreachable) {
+        setError(SERVER_UNREACHABLE_MESSAGE); // pressing Start again is the retry
+        return;
+      }
+      if (!result.ack.ok) {
+        setError(result.ack.error);
         return;
       }
       onEnterStandings(lobby.id);
