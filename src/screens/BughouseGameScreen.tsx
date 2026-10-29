@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } fr
 import BughouseBoard from '../components/BughouseBoard';
 import BughouseBoardBlock from '../components/BughouseBoardBlock';
 import BughouseRulesSheet from '../components/BughouseRulesSheet';
+import { getTouchDebugOverlay } from '../components/devOverlayRegistry';
 import PromotionPicker from '../components/PromotionPicker';
 import ScreenHeader from '../components/ScreenHeader';
 import { firstLegalAction, legalMovesOn, remainingAt, type BughouseMatch, type BughouseTimeControl, type PromotionPiece } from '../logic/bughouse';
@@ -75,6 +76,9 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   const [swapped, setSwapped] = useState(false);
   const [autoFlip, setAutoFlip] = useState(true);
   const [rulesOpen, setRulesOpen] = useState(false);
+  // DEV ONLY (a development build): the touch-debug overlay, switched on from the controls. A release build has neither the switch nor the overlay's code (BughouseBoard).
+  const devTouchDebug = typeof __DEV__ !== 'undefined' && __DEV__ && getTouchDebugOverlay() !== null;
+  const [touchDebug, setTouchDebug] = useState(false);
   // What the human has half-way through on a board (a picked-up piece, a picked pocket piece, a promotion choice). Each remembers the position of ITS board it was made in and is
   // dropped the moment that board changes - not when the match as a whole commits: with bots on the other board a commit lands every few hundred milliseconds, and a selection that
   // any commit cleared could never be followed by its second tap.
@@ -292,6 +296,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         outlined={summary !== null && summary.decidingBoard === board}
         compact={dual || arrangement === 'sideBySide'}
         rawTouch={dual}
+        touchDebug={devTouchDebug && touchDebug}
         shared={dual && match.result === null && dualBoardPlan(seats, board).shared}
         promotionChoices={own ? own.promotionChoices : undefined}
         onPromotionChoice={(chosen, choice) => dualInput(chosen, choice === 'cancel' ? { kind: 'cancelPromotion' } : { kind: 'choosePromotion', piece: choice })}
@@ -376,6 +381,11 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
       {(layout.kind === 'passAndPlay' || hasSharedBoard) && (
         <Pressable accessibilityRole="button" accessibilityLabel={autoFlip ? 'Auto-turn is on' : 'Auto-turn is off'} testID="bughouse-autoflip" style={ctl} onPress={() => setAutoFlip((a) => !a)}>
           <Text style={ctlText}>{dual ? (autoFlip ? 'Turn: auto' : 'Turn: fixed') : autoFlip ? 'Auto-turn: on' : 'Auto-turn: off'}</Text>
+        </Pressable>
+      )}
+      {devTouchDebug && dual && (
+        <Pressable accessibilityRole="button" accessibilityLabel={touchDebug ? 'Touch debug is on' : 'Touch debug is off'} testID="bughouse-touch-debug" style={ctl} onPress={() => setTouchDebug((on) => !on)}>
+          <Text style={ctlText}>{touchDebug ? 'Touch debug: on' : 'Touch debug: off'}</Text>
         </Pressable>
       )}
       {dual ? (

@@ -20,7 +20,8 @@
  *   dead zone  a touch in the gutter between the boards, and one in the margin beside a board, is ignored (and clears nothing);
  *   20 taps    ten pairs of overlapping taps, alternating select / deselect on the two boards, every step checked;
  *   controls   a single finger on Rules still works after all of it (the responder system is intact), and the page logs no error from OUR code;
- *   overlay    (portrait) rotating below the minimum covers the boards, the clocks keep running, rotating back removes it.
+ *   overlay    (portrait) rotating below the minimum covers the boards, the clocks keep running, rotating back removes it;
+ *   offset     (command #26) the page moved down by a simulated top inset of 24 / 36 / 48 px: every pawn and knight of both boards still selects ITSELF (the mapping does not depend on where the page is).
  * Exit code 0 = every check passed. The report is printed as JSON lines; screenshots are saved to OUT_DIR.
  */
 import { spawn } from 'node:child_process';
@@ -264,6 +265,43 @@ async function scenario(browser, baseUrl, viewport) {
   await context.close();
 }
 
+/**
+ * Command #26 (the phone: every tap one rank too low): the mapping from a touch to a square must not depend on WHERE the page is. The app's root is moved down by a simulated top inset (a status
+ * bar / cutout of 24, 36 and 48 px: a CSS transform on #root, so layout is untouched and every rectangle the browser reports moves with it), the page is also scrolled a little, and every
+ * square of the pawn rank and the knights of both boards is tapped with a real CDP touch: each tap must select ITS piece (the squares the engine offers for it), never the neighbour's.
+ */
+async function offsetScenario(browser, baseUrl, viewport, offset) {
+  const tag = `${viewport.width}x${viewport.height} +${offset}px`;
+  const { context, page } = await openGame(browser, baseUrl, viewport);
+  const cdp = await cdpOf(context, page);
+  const before = await boxOf(page, 'board-A');
+  await page.addStyleTag({ content: `#root { transform: translateY(${offset}px); }` });
+  await page.waitForTimeout(150);
+  const after = await boxOf(page, 'board-A');
+  check(`${tag} offset: the whole page really moved down by ${offset} px`, Math.abs(after.y - before.y - offset) < 1, `board A y ${before.y} -> ${after.y}`);
+  let ok = true;
+  let tried = 0;
+  const bad = [];
+  for (const board of ['A', 'B']) {
+    // White is to move on both boards: each pawn offers its two squares, each knight its two
+    for (const [square, targets] of [
+      ['a2', ['a3', 'a4']], ['b2', ['b3', 'b4']], ['c2', ['c3', 'c4']], ['d2', ['d3', 'd4']], ['e2', ['e3', 'e4']], ['f2', ['f3', 'f4']], ['g2', ['g3', 'g4']], ['h2', ['h3', 'h4']],
+      ['b1', ['a3', 'c3']], ['g1', ['f3', 'h3']],
+    ]) {
+      await tap(cdp, page, board, square, 1 + (tried % 5));
+      tried++;
+      const offeredNow = await page.locator(`[data-testid^="${board}-"][aria-label*="can move here"]`).evaluateAll((els) => els.map((el) => el.getAttribute('data-testid').slice(2)).sort());
+      if (JSON.stringify(offeredNow) !== JSON.stringify([...targets].sort())) {
+        ok = false;
+        bad.push(`${board}-${square}: ${offeredNow.join(',') || 'nothing'}`);
+      }
+    }
+  }
+  check(`${tag} offset: all ${tried} taps (pawns and knights of both boards) select the piece under the finger`, ok, bad.slice(0, 4).join(' | '));
+  await page.screenshot({ path: path.join(OUT_DIR, `${tag.replace(/[ +]/g, '_')}-offset.png`) });
+  await context.close();
+}
+
 async function mouseScenario(browser, baseUrl) {
   const { context, page } = await openGame(browser, baseUrl, { width: 412, height: 915 }, { mouse: true });
   const a = await centre(page, 'A-e2');
@@ -282,6 +320,7 @@ try {
   const browser = await chromium.launch({ executablePath: process.env.E2E_BROWSER_PATH || undefined, headless: true });
   try {
     for (const viewport of VIEWPORTS) await scenario(browser, baseUrl, viewport);
+    for (const viewport of [{ width: 412, height: 915 }, { width: 360, height: 740 }]) for (const offset of [24, 36, 48]) await offsetScenario(browser, baseUrl, viewport, offset);
     await mouseScenario(browser, baseUrl);
   } finally {
     await browser.close();

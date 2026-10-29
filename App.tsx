@@ -203,6 +203,11 @@ type Screen =
       color2: ColorChoice;
     };
 
+// DEV ONLY: registers the Bughouse touch-debug overlay (components/devOverlayRegistry.ts). `__DEV__` is the literal false in a release bundle, so this require - and the overlay - are not in it.
+if (__DEV__) {
+  require('./src/dev/registerTouchDebug');
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>({ name: 'main' });
   const [activeTab, setActiveTab] = useState<MainTab>('home');

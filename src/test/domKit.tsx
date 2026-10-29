@@ -70,6 +70,9 @@ export interface FakeTouch {
   /** Page coordinates. */
   x: number;
   y: number;
+  /** A phone also reports the position inside the touch's TARGET view (locationX / locationY); the browser's touches do not. */
+  locationX?: number;
+  locationY?: number;
 }
 
 /**
@@ -78,7 +81,18 @@ export interface FakeTouch {
  */
 export function fireTouch(type: 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel', element: Element, touches: FakeTouch[]): void {
   const event = new Event(type, { bubbles: true, cancelable: true });
-  const list = touches.map((t) => ({ identifier: t.id, pageX: t.x, pageY: t.y, clientX: t.x, clientY: t.y, screenX: t.x, screenY: t.y, target: element }));
+  const list = touches.map((t) => ({
+    identifier: t.id,
+    pageX: t.x,
+    pageY: t.y,
+    clientX: t.x,
+    clientY: t.y,
+    screenX: t.x,
+    screenY: t.y,
+    target: element,
+    ...(t.locationX !== undefined ? { locationX: t.locationX } : {}),
+    ...(t.locationY !== undefined ? { locationY: t.locationY } : {}),
+  }));
   Object.defineProperty(event, 'changedTouches', { value: list });
   Object.defineProperty(event, 'touches', { value: type === 'touchend' || type === 'touchcancel' ? [] : list });
   act(() => {

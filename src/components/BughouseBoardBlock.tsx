@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { remainingAt, type BughouseMatch, type PromotionPiece } from '../logic/bughouse';
 import { PROMOTION_LABELS } from '../logic/promotion';
@@ -8,7 +9,7 @@ import type { BankFlash, LastMove } from '../logic/bughouseLocal';
 import { boardCellToSquare, boardSeatsTopFirst, boardStatusLine, checkedKingSquare, formatBughouseClock, pocketChips, type KingBadge } from '../logic/bughouseView';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import BughouseBoard from './BughouseBoard';
-import { useBoardTouches, type BoardTouches } from './useBoardTouches';
+import { useBoardTouches, type BoardTouches, type DebugFinger } from './useBoardTouches';
 
 const GLYPHS: Record<ReservePieceType, string> = { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛' };
 const PIECE_NAMES: Record<ReservePieceType, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen' };
@@ -40,6 +41,8 @@ export interface BughouseBoardBlockProps {
   compact?: boolean;
   /** W3b, humans on both boards: the grid and the chips take their input from this board's own raw touches (useBoardTouches), not from the responder system. */
   rawTouch?: boolean;
+  /** DEV ONLY: draw the square the app computes under each finger over the board (the in-game dev switch; never given in a release build). */
+  touchDebug?: boolean;
   /** The promotion choices waiting on THIS board (the dual layout draws them over the board), or none. */
   promotionChoices?: readonly PromotionPiece[];
   /** Both colours of this board are human (pass-and-play rules): the status line doubles as the "<Colour> to move" banner. */
@@ -60,6 +63,8 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
   const [top, bottom] = boardSeatsTopFirst(board, orientation);
   const checked = checkedKingSquare(match, board);
   const status = boardStatusLine(match, board, props.statusYou);
+  // DEV ONLY (the touch-debug overlay): the fingers on this board's grid, kept only while the dev switch is on.
+  const [debugFingers, setDebugFingers] = useState<DebugFinger[]>([]);
   // This board's own raw touches (W3b). The hook is always called; only the dual layout wires it to the grid and the chips.
   const touches = useBoardTouches({
     board,
@@ -70,6 +75,7 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
     },
     onTapChip: props.onPickPocket,
     onTapPromotion: (promotingBoard, choice) => props.onPromotionChoice?.(promotingBoard, choice),
+    onDebug: props.touchDebug ? setDebugFingers : undefined,
   });
   const choices = props.rawTouch ? props.promotionChoices ?? [] : [];
   return (
@@ -92,6 +98,7 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
         onTapSquare={onTapSquare}
         outlined={outlined}
         touches={props.rawTouch ? touches : undefined}
+        debugFingers={props.touchDebug ? debugFingers : undefined}
         />
         {choices.length > 0 && (
           // The promotion choice of THIS board, drawn over it: the shared Modal of the other layouts would cover the other board too, and the other board must stay playable.

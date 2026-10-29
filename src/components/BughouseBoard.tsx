@@ -1,12 +1,13 @@
 import { memo, useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { openBoard } from '../logic/bughouse';
 import type { BoardId, BughouseColor } from '../logic/bughouse/types';
 import { boardCellToSquare, type KingBadge } from '../logic/bughouseView';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import Piece from './Piece';
 import { useBoardGestures } from './useBoardGestures';
-import type { BoardTouches } from './useBoardTouches';
+import { getTouchDebugOverlay } from './devOverlayRegistry';
+import type { BoardTouches, DebugFinger } from './useBoardTouches';
 
 const PIECE_NAMES: Record<string, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 
@@ -38,13 +39,15 @@ export interface BughouseBoardProps {
    * cannot cancel or steal a gesture on this one. Given, the grid is wired to it at all times (the screen decides what a tap means for a side that may not move).
    */
   touches?: BoardTouches;
+  /** DEV ONLY: the fingers to draw the touch-debug overlay for (given only in a development build with the overlay switched on). */
+  debugFingers?: readonly DebugFinger[];
 }
 
 /**
  * One Bughouse board. Pieces and squares come from the engine's FEN; this component only DRAWS and reports a tap as (board, square) - the screen decides what a tap means. The board is the
  * unit the spec's HP9 is about: every cell is board-qualified ("e4, board A, White knight"), and a tap carries its board.
  */
-function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, checkedSquare, selected, moveTargets, dropTargets, badgeOf, interactive, onTapSquare, outlined, touches }: BughouseBoardProps) {
+function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, checkedSquare, selected, moveTargets, dropTargets, badgeOf, interactive, onTapSquare, outlined, touches, debugFingers }: BughouseBoardProps) {
   const theme = useActiveBoardTheme();
   const pieceTheme = useActivePieceTheme();
   const grid = useMemo(() => openBoard(fen)?.board() ?? [], [fen]);
@@ -68,11 +71,14 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
   });
 
   const size = cell * 8;
+  const DebugOverlay = getTouchDebugOverlay();
+  // On a phone the grid's touches come through the overlay (below) and carry the grid's own frame; in the browser the grid itself listens.
+  const surface = touches !== undefined && Platform.OS !== 'web';
   return (
     <View
       ref={touches ? touches.gridRef : interactive ? gestures.containerRef : undefined}
       onLayout={touches ? undefined : interactive ? gestures.onLayout : undefined}
-      {...(touches ? touches.gridProps : interactive ? gestures.panHandlers : {})}
+      {...(touches ? (surface ? {} : touches.gridProps) : interactive ? gestures.panHandlers : {})}
       style={[styles.board, { width: size, height: size }, touches && styles.rawTouch, outlined && styles.outlined]}
       testID={`board-${board}`}
       accessibilityLabel={outlined ? `Board ${board}, deciding board` : `Board ${board}`}
@@ -114,6 +120,14 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
           })}
         </View>
       ))}
+      {/*
+        The grid's touch surface (a phone): a transparent view over the whole grid, the LAST child so it is the touch target. A touch on it reports `locationX / locationY` in the grid's own frame
+        (useBoardTouches), which needs no origin - no window, status-bar, navigation-bar, header or scroll offset can enter the cell (command #26: on Android every tap landed one rank too low).
+        On web the browser reports page coordinates against the grid's rectangle and the cells stay the hit targets.
+      */}
+      {touches && surface && <View ref={touches.surfaceRef} testID={`board-${board}-surface`} style={StyleSheet.absoluteFill} {...touches.surfaceProps} />}
+      {/* DEV ONLY: the square under each finger. The overlay is registered only in a development build (devOverlayRegistry.ts); in a release build there is none. */}
+      {touches && debugFingers && DebugOverlay ? <DebugOverlay board={board} orientation={orientation} cell={cell} fingers={debugFingers} /> : null}
     </View>
   );
 }

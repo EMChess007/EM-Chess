@@ -25,6 +25,8 @@ export type TouchTarget = { kind: 'grid' } | { kind: 'chip'; piece: string } | {
 export interface TrackedTouch {
   readonly target: TouchTarget;
   readonly start: Point;
+  /** Where the touch began in the GRID's own frame (from the touch's `locationX / locationY`, see `TouchEventIn`), when the platform gave it. */
+  readonly startLocal?: Point;
   /** The touch moved further than TAP_MAX_DRIFT_PX at some point: whatever it does after, it is not a tap. */
   readonly drifted: boolean;
 }
@@ -34,16 +36,23 @@ export type TouchBook = Readonly<Record<string, TrackedTouch>>;
 
 export const EMPTY_TOUCH_BOOK: TouchBook = {};
 
+/**
+ * `at` is the touch's PAGE point (what the platform calls pageX / pageY: relative to the app's root view). `local`, when given, is the same point in the board GRID's own frame
+ * (locationX / locationY of a touch whose target is the grid's overlay view): it needs no origin, so no window, status-bar, navigation-bar, header or scroll offset can enter it.
+ */
 export type TouchEventIn =
-  | { kind: 'start'; id: string; at: Point; target: TouchTarget }
-  | { kind: 'move'; id: string; at: Point }
-  | { kind: 'end'; id: string; at: Point }
+  | { kind: 'start'; id: string; at: Point; target: TouchTarget; local?: Point }
+  | { kind: 'move'; id: string; at: Point; local?: Point }
+  | { kind: 'end'; id: string; at: Point; local?: Point }
   | { kind: 'cancel'; id: string };
 
 export interface Tap {
   target: TouchTarget;
   start: Point;
   end: Point;
+  /** Both ends in the grid's own frame - present only when BOTH the start and the lift reported them (never one of each: a point in one frame and a point in another is the bug). */
+  startLocal?: Point;
+  endLocal?: Point;
 }
 
 export interface TouchStep {
@@ -64,7 +73,10 @@ const without = (book: TouchBook, id: string): TouchBook => {
  * One touch event of one board. An event for an identifier this book never saw begin (a touch that started on another board, or before the board mounted) changes nothing and taps nothing.
  */
 export function stepTouches(book: TouchBook, event: TouchEventIn): TouchStep {
-  if (event.kind === 'start') return { book: { ...book, [event.id]: { target: event.target, start: event.at, drifted: false } }, tap: null };
+  if (event.kind === 'start') {
+    const tracked: TrackedTouch = { target: event.target, start: event.at, drifted: false, ...(event.local ? { startLocal: event.local } : {}) };
+    return { book: { ...book, [event.id]: tracked }, tap: null };
+  }
   const tracked = book[event.id];
   if (tracked === undefined) return { book, tap: null };
   if (event.kind === 'cancel') return { book: without(book, event.id), tap: null };
@@ -74,7 +86,36 @@ export function stepTouches(book: TouchBook, event: TouchEventIn): TouchStep {
   }
   const rest = without(book, event.id);
   if (tracked.drifted || distance(tracked.start, event.at) > TAP_MAX_DRIFT_PX) return { book: rest, tap: null };
-  return { book: rest, tap: { target: tracked.target, start: tracked.start, end: event.at } };
+  const locals = tracked.startLocal && event.local ? { startLocal: tracked.startLocal, endLocal: event.local } : {};
+  return { book: rest, tap: { target: tracked.target, start: tracked.start, end: event.at, ...locals } };
+}
+
+/**
+ * The grid-frame position of a touch delivered to the grid's overlay view (its target by construction: the overlay is on top of every cell and carries these handlers alone): its
+ * `locationX / locationY`, or undefined when the platform gave none (a non-finite or missing number: the page path decides instead).
+ */
+export function localOfTouch(touch: { locationX?: unknown; locationY?: unknown }): Point | undefined {
+  const { locationX, locationY } = touch;
+  if (typeof locationX !== 'number' || typeof locationY !== 'number' || !Number.isFinite(locationX) || !Number.isFinite(locationY)) return undefined;
+  return { x: locationX, y: locationY };
+}
+
+// --- Which frame the grid's position comes from -------------------------------------------------------------------------------------------------
+
+export type OriginSource = 'rect' | 'measure' | 'none';
+
+/**
+ * Where a page-coordinate origin of the grid may be read from, given the platform and what the grid's node offers. The touch's `pageX / pageY` are relative to the app's ROOT VIEW on a phone
+ * (react-native's TouchesHelper) and to the document on web. The two readings a node can give:
+ *   - `getBoundingClientRect()`: on the web the rectangle in the same frame as the touch. On a phone with React Native's new architecture a View ref ALSO has this method (ReactNativeElement), but there
+ *     it is in WINDOW coordinates - the root view's own position in the window is added, minus the status bar and cutout insets when edge-to-edge is off (`RootViewUtil.getViewportOffset`), which is
+ *     NEGATIVE for an app that draws under a translucent status bar. Subtracting it from a root-frame touch lands every tap that many dp too low: the Bughouse bug (b2 selected b1).
+ *   - `measure()`: pageX / pageY of the layout in the ROOT frame (no viewport offset): the same frame as the touch.
+ * So the rectangle is trusted on the web only; a phone uses `measure`, and when it has neither there is no origin (the local frame, `gridTapCell`, needs none).
+ */
+export function originSource(os: string, hasRect: boolean, hasMeasure: boolean): OriginSource {
+  if (os === 'web') return hasRect ? 'rect' : hasMeasure ? 'measure' : 'none';
+  return hasMeasure ? 'measure' : 'none';
 }
 
 // --- The grid: the dead zone and the cell -----------------------------------------------------------------------------------------------------
@@ -93,6 +134,20 @@ export function insideGrid(point: Point, origin: Point, width: number, height: n
 export function gridTapCell(tap: Tap, origin: Point, cell: number, rows: number, cols: number): Cell | null {
   const width = cell * cols;
   const height = cell * rows;
+  // The grid's own frame when the touch reported it (a phone): no origin, so nothing outside the grid can shift the answer. Otherwise the page points minus the measured origin.
+  if (tap.startLocal && tap.endLocal) {
+    const zero: Point = { x: 0, y: 0 };
+    if (!insideGrid(tap.startLocal, zero, width, height) || !insideGrid(tap.endLocal, zero, width, height)) return null;
+    return pixelToCell(tap.endLocal.x, tap.endLocal.y, cell, rows, cols);
+  }
   if (!insideGrid(tap.start, origin, width, height) || !insideGrid(tap.end, origin, width, height)) return null;
   return pixelToCell(tap.end.x - origin.x, tap.end.y - origin.y, cell, rows, cols);
+}
+
+/**
+ * The cell a finger is on RIGHT NOW (the dev touch-debug overlay): in the grid's own frame, or null when it is outside the grid. The same decision as a tap's, for one point.
+ */
+export function fingerCell(local: Point, cell: number, rows: number, cols: number): Cell | null {
+  if (!insideGrid(local, { x: 0, y: 0 }, cell * cols, cell * rows)) return null;
+  return pixelToCell(local.x, local.y, cell, rows, cols);
 }
