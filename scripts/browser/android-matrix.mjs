@@ -117,7 +117,28 @@ function stopServer() {
 }
 
 // --- the page ---------------------------------------------------------------------------------------------------------------------------------------
-const settle = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 120)))));
+// A screen that sizes itself from what it measured (the stacked Bughouse boards, fitStackedCell) takes a few layout passes after a window change; the checks must not see a pass half way. So:
+// two animation frames and 120 ms as before, then wait until the layout stops moving (the bottoms of up to 400 elements unchanged over two samples 80 ms apart, at most 2 s).
+const settle = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const signature = () =>
+          Array.from(document.querySelectorAll('body *'))
+            .slice(0, 400)
+            .map((el) => Math.round(el.getBoundingClientRect().bottom))
+            .join(',');
+        const started = Date.now();
+        let last = '';
+        const poll = () => {
+          const now = signature();
+          if (now === last || Date.now() - started > 2000) return resolve(undefined);
+          last = now;
+          setTimeout(poll, 80);
+        };
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(poll, 120)));
+      }),
+  );
 
 async function applyCombo(page, cdp, combo) {
   const vp = viewportFor(combo.size, combo.zoom);
