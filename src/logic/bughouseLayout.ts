@@ -47,13 +47,16 @@ export function seatRowLabel(seat: BughouseSeat): SeatRowLabel {
   return { seat, board: place.board, color, team: place.team, text: `Board ${place.board} · ${color} · Team ${place.team}`, shape: place.team === 1 ? '◆' : '●' };
 }
 
+/** U+00A0, built from its code so that no invisible character sits in the source. */
+export const NO_BREAK_SPACE = String.fromCharCode(160);
+
 /**
  * Display text in which "Team 1" and "Board A" never break across two lines: the space between the word and its letter or number becomes a no-break space (U+00A0). On a real phone the
  * setup row "Board A · White · Team 1" wrapped as "Team" / "1". Only what is DRAWN goes through this (the setup rows, the resign buttons, the rules sheet); the strings the engine, the
  * accessibility labels and the tests compare keep their ordinary spaces.
  */
 export function keepTogether(text: string): string {
-  return text.replace(/\b(Team|Board) (?=[A-Z0-9]\b)/g, '$1 ');
+  return text.replace(/\b(Team|Board) (?=[A-Z0-9]\b)/g, '$1' + NO_BREAK_SPACE);
 }
 
 export const BUGHOUSE_TEAM_NAMES: Readonly<Record<BughouseTeam, string>> = { 1: 'Team 1', 2: 'Team 2' };

@@ -93,7 +93,8 @@ describe('the setup screen', () => {
 
   it('has four rows labelled Board / colour / team, Human or Bot each, and four presets', () => {
     render(<Harness />);
-    expect([0, 1, 2, 3].map((s) => within(screen.getByTestId(`seat-row-${s}`)).getByText(/^Board [AB] · /).textContent)).toEqual(['Board A · White · Team 1', 'Board A · Black · Team 2', 'Board B · White · Team 2', 'Board B · Black · Team 1']); // drawn with no-break spaces: "Team 1" never wraps
+    const N = String.fromCharCode(160); // drawn with no-break spaces: "Team 1" and "Board A" never wrap
+    expect([0, 1, 2, 3].map((s) => within(screen.getByTestId(`seat-row-${s}`)).getByText(/^Board [AB] · /).textContent)).toEqual([`Board${N}A · White · Team${N}1`, `Board${N}A · Black · Team${N}2`, `Board${N}B · White · Team${N}2`, `Board${N}B · Black · Team${N}1`]);
     expect(screen.getByLabelText('Board A · White · Team 1: human')).toBeTruthy();
     expect(screen.getByLabelText('Board B · Black · Team 1: bot')).toBeTruthy();
     expect(within(screen.getByTestId('presets')).getAllByRole('button').map((b) => b.textContent)).toEqual(['You + 3 bots', '2 opponents', '2 teammates', '4 players']);

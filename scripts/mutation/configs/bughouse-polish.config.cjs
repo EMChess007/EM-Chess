@@ -28,13 +28,14 @@ module.exports = {
     ['screen: the result card shrinks the boards', G, 'if (!stacked || over || measured === null', 'if (!stacked || measured === null'],
     ['screen: a new window keeps the old adjustment', G, '  }, [width, height, stacked]);', '  }, [stacked]);'],
     ['screen: the measurement is taken at another cell', G, 'setMeasured({ cell: renderedCell.current, content: h });', 'setMeasured({ cell: dualFit.cell, content: h });'],
-    ['screen: the pass-and-play and standard layouts are fitted too', G, 'const stacked = dual && dualFit.arrangement', 'const stacked = dualFit.arrangement'],
+    ['screen: EQUIVALENT (the adjustment only feeds the dual render; in the standard layouts it changes nothing drawn)', G, 'const stacked = dual && dualFit.arrangement', 'const stacked = dualFit.arrangement'],
     ['screen: side by side is not told to the blocks', G, "sideBySide={dual ? dualFit.arrangement === 'sideBySide' : arrangement === 'sideBySide'}", 'sideBySide={false}'],
     // --- keepTogether ---
     ['keep: Board is not kept', L, '/\\b(Team|Board) (?=[A-Z0-9]\\b)/g', '/\\b(Team) (?=[A-Z0-9]\\b)/g'],
     ['keep: Team is not kept', L, '/\\b(Team|Board) (?=[A-Z0-9]\\b)/g', '/\\b(Board) (?=[A-Z0-9]\\b)/g'],
     ['keep: a team letter is not kept', L, '(?=[A-Z0-9]\\b)', '(?=[0-9]\\b)'],
-    ['keep: the space stays a space', L, "'$1\\u00a0'", "'$1 '"],
+    ['keep: the space stays a space', L, "'$1' + NO_BREAK_SPACE", "'$1 '"],
+    ['keep: the no-break space is U+00A1', L, 'String.fromCharCode(160)', 'String.fromCharCode(161)'],
     ['keep: every word is glued', L, '/\\b(Team|Board) (?=[A-Z0-9]\\b)/g', '/\\b(Team|Board) /g'],
     ['keep: only the first is glued', L, '/\\b(Team|Board) (?=[A-Z0-9]\\b)/g', '/\\b(Team|Board) (?=[A-Z0-9]\\b)/'],
     // --- the bars and the board art ---
