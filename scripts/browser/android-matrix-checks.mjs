@@ -68,13 +68,16 @@ export function pageChecks(opts) {
     const parts = m[1].split(/[ ,/]+/).filter(Boolean);
     return parts.length >= 4 ? Number(parts[3]) : 1;
   };
-  const blockingLayer = Array.from(document.querySelectorAll('div,[aria-modal="true"]')).find((m) => {
-    const cs = getComputedStyle(m);
-    if (cs.position !== 'fixed' && cs.position !== 'absolute') return false;
-    const mr = m.getBoundingClientRect();
-    if (mr.width * mr.height < vw * vh * 0.95) return false;
-    return m.getAttribute('aria-modal') === 'true' || alphaOf(cs.backgroundColor) >= 0.4;
-  });
+  // The LAST such element in document order: layers are drawn after the content they cover (an app root that is itself positioned and opaque comes first and is not the layer).
+  const blockingLayer = Array.from(document.querySelectorAll('div,[aria-modal="true"]'))
+    .filter((m) => {
+      const cs = getComputedStyle(m);
+      if (cs.position !== 'fixed' && cs.position !== 'absolute') return false;
+      const mr = m.getBoundingClientRect();
+      if (mr.width * mr.height < vw * vh * 0.95) return false;
+      return m.getAttribute('aria-modal') === 'true' || alphaOf(cs.backgroundColor) >= 0.4;
+    })
+    .pop();
   const covered = (el, r) => {
     if (blockingLayer && !blockingLayer.contains(el) && !el.contains(blockingLayer)) return true;
     const cx = r.left + r.width / 2;
