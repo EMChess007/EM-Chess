@@ -5,7 +5,7 @@
  * { wait } (ms), { fill: [placeholder, value] }. `boardKind` names the board's minimum cell (android-matrix-def.mjs CRITERIA.minBoardCell).
  * A screen whose steps fail is a FAILED screen of the matrix, never a silent skip.
  *
- * Screens that exist only on another branch (Bughouse is on paired/bughouse) are added there, in android-matrix-screens-bughouse.mjs, and merged with `allScreens`.
+ * Screens that exist only on another branch (Bughouse is on paired/bughouse) are added there, in android-matrix-screens-extra.mjs (an optional file the runner loads, exporting EXTRA_SCREENS), and merged with `allScreens`.
  */
 const PLAY = { text: 'Play' };
 

@@ -243,7 +243,12 @@ async function runGroup(browser, baseUrl, group, screens, record, sheets) {
 }
 
 async function mainRun() {
-  const screens = allScreens().filter((s) => !ONLY || ONLY.includes(s.id));
+  // Screens that exist only on another branch (Bughouse, on paired/bughouse) live in android-matrix-screens-extra.mjs there; the file is optional.
+  const extra = await import('./android-matrix-screens-extra.mjs').then(
+    (m) => m.EXTRA_SCREENS,
+    () => [],
+  );
+  const screens = allScreens(extra).filter((s) => !ONLY || ONLY.includes(s.id));
   const base = await startServer();
   console.log(`[matrix] ${PROFILE}: ${screens.length} screens at ${base}`);
   const browser = await chromium.launch({ executablePath: process.env.E2E_BROWSER_PATH || undefined, args: ['--no-sandbox'] });
