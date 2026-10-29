@@ -13,15 +13,18 @@ import { firstLegalAction, legalMovesOn, remainingAt, type BughouseMatch, type B
 import { BOARD_IDS, otherBoard, seatAt, seatPlace, type BoardId, type BughouseSeat } from '../logic/bughouse/types';
 import {
   BUGHOUSE_DUAL_GUTTER,
+  BUGHOUSE_DUAL_MIN_CELL,
   BUGHOUSE_ROTATE_OVERLAY_DETAIL,
   BUGHOUSE_ROTATE_OVERLAY_TITLE,
   BUGHOUSE_THUMB_CELL,
   dualBoardPlan,
+  fitStackedCell,
   deriveBughouseLayout,
   getBughouseDualCellSize,
   getBughouseMainCellSize,
   getBughouseSideCellSize,
   humanBughouseSeats,
+  keepTogether,
   needsRotateOverlay,
   seatRowLabel,
   standardArrangement,
@@ -272,6 +275,24 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
 
   const dual = layout.kind === 'dual';
   const dualFit = getBughouseDualCellSize(width, height);
+  // The stacked boards are sized from the room the scroll view REALLY has (fitStackedCell): the table's chrome constant is a calibration, not a measurement. `cellAdjust` is whole cells on top of
+  // the table, 0 until the first measurement and again whenever the window changes. A measurement is only used with the cell it was taken at (`measured.cell`), so a stale one cannot make
+  // the boards step twice; once the game is over the result card joins the content and the boards keep their size.
+  const [cellAdjust, setCellAdjust] = useState(0);
+  const [measured, setMeasured] = useState<{ cell: number; content: number } | null>(null);
+  const stacked = dual && dualFit.arrangement === 'stacked';
+  const dualCell = Math.max(stacked ? dualFit.cell + cellAdjust : dualFit.cell, 1);
+  const renderedCell = useRef(dualCell);
+  renderedCell.current = dualCell;
+  useEffect(() => {
+    setCellAdjust(0);
+    setMeasured(null);
+  }, [width, height, stacked]);
+  useEffect(() => {
+    if (!stacked || over || measured === null || measured.cell !== dualCell || scrollViewportHeight <= 0) return;
+    const next = fitStackedCell(dualCell, scrollViewportHeight, measured.content, Math.floor((width - 16) / 8), Math.min(dualFit.cell, BUGHOUSE_DUAL_MIN_CELL));
+    if (next !== dualCell) setCellAdjust(next - dualFit.cell);
+  }, [stacked, over, measured, dualCell, scrollViewportHeight, width, dualFit.cell]);
   /** What board `board` shows of its OWN reducer instance (dual layout): the picked piece, its targets, the picked chip, a promotion waiting. */
   const dualViewOf = (board: BoardId) => {
     const position = positionOf(match, board);
@@ -408,7 +429,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
       {dual ? (
         resignTeams.map((team) => (
           <Pressable key={team} accessibilityRole="button" accessibilityLabel={`Team ${team} resigns`} testID={`bughouse-resign-team-${team}`} style={ctl} onPress={() => resignTeam(team)} disabled={over} {...slim}>
-            <Text style={ctlText}>{`Resign ${team === 1 ? '◆' : '●'} Team ${team}`}</Text>
+            <Text style={ctlText}>{keepTogether(`Resign ${team === 1 ? '◆' : '●'} Team ${team}`)}</Text>
           </Pressable>
         ))
       ) : (
@@ -442,7 +463,10 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         // wide font wraps a control row onto a second line - so nothing is ever cut off (Android device matrix).
         scrollEnabled={!dual || over || contentOverflows}
         onLayout={(e) => setScrollViewportHeight(e.nativeEvent.layout.height)}
-        onContentSizeChange={(_w, h) => setScrollContentHeight(h)}
+        onContentSizeChange={(_w, h) => {
+          setScrollContentHeight(h);
+          setMeasured({ cell: renderedCell.current, content: h });
+        }}
       >
         {!controlsInBar && <View style={styles.controls}>{controls}</View>}
 
@@ -450,7 +474,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
           <Text style={styles.banner}>This seat setup is not available yet.</Text>
         ) : dual ? (
           <View style={dualFit.arrangement === 'sideBySide' ? styles.dualRow : styles.dualColumn} testID={dualFit.arrangement === 'sideBySide' ? 'layout-dual-side-by-side' : 'layout-dual-stacked'}>
-            {BOARD_IDS.map((board) => blockOf(board, Math.max(dualFit.cell, 1)))}
+            {BOARD_IDS.map((board) => blockOf(board, dualCell))}
           </View>
         ) : (
           <>

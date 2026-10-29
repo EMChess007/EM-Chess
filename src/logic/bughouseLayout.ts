@@ -47,6 +47,15 @@ export function seatRowLabel(seat: BughouseSeat): SeatRowLabel {
   return { seat, board: place.board, color, team: place.team, text: `Board ${place.board} · ${color} · Team ${place.team}`, shape: place.team === 1 ? '◆' : '●' };
 }
 
+/**
+ * Display text in which "Team 1" and "Board A" never break across two lines: the space between the word and its letter or number becomes a no-break space (U+00A0). On a real phone the
+ * setup row "Board A · White · Team 1" wrapped as "Team" / "1". Only what is DRAWN goes through this (the setup rows, the resign buttons, the rules sheet); the strings the engine, the
+ * accessibility labels and the tests compare keep their ordinary spaces.
+ */
+export function keepTogether(text: string): string {
+  return text.replace(/\b(Team|Board) (?=[A-Z0-9]\b)/g, '$1 ');
+}
+
 export const BUGHOUSE_TEAM_NAMES: Readonly<Record<BughouseTeam, string>> = { 1: 'Team 1', 2: 'Team 2' };
 export const bughouseTeamShape = (team: BughouseTeam): '◆' | '●' => (team === 1 ? '◆' : '●');
 
@@ -114,6 +123,21 @@ export type DualArrangement = 'stacked' | 'sideBySide';
 export const stackedDualCell = (width: number, height: number): number => Math.min(Math.floor((height - 288) / 16), Math.floor((width - 16) / 8));
 /** Landscape / tablet, two boards side by side: height needs 8c + 128, width 16c + 24. */
 export const sideBySideDualCell = (width: number, height: number): number => Math.min(Math.floor((height - 128) / 8), Math.floor((width - 24) / 16));
+
+/** Two boards of 8 rows stacked: every cell of the stacked layout counts twice 8 times in its height. */
+export const STACKED_BOARD_ROWS = 16;
+
+/**
+ * The largest stacked cell that fits what was MEASURED (offline-states / Bughouse polish). `stackedDualCell` is a table: its 288 px of chrome (bar, controls, four clock rows, two pocket
+ * rows, the gutter) was calibrated once, and the chrome really measures 300 px at font scale 1 in the browser, more with a bigger text scale or a wider font - and on a real phone the
+ * boards used about 60 % of the width with empty space below. So the screen sizes the boards from the room the scroll view really has: `current` plus whole cells for the free space
+ * (`viewportHeight - contentHeight`, negative when the content overflows), never wider than the window allows (`maxByWidth`) and never below `floor` (the minimum a board may have;
+ * when even that does not fit, the screen scrolls, as it always did). One step reaches the answer, because the chrome does not depend on the cell.
+ */
+export function fitStackedCell(current: number, viewportHeight: number, contentHeight: number, maxByWidth: number, floor: number): number {
+  const wanted = current + Math.floor((viewportHeight - contentHeight) / STACKED_BOARD_ROWS);
+  return Math.max(Math.min(floor, maxByWidth), Math.min(wanted, maxByWidth));
+}
 
 export interface DualFit {
   arrangement: DualArrangement;

@@ -4,7 +4,7 @@ import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
 import BughouseRulesSheet from '../components/BughouseRulesSheet';
 import ScreenHeader from '../components/ScreenHeader';
-import { BUGHOUSE_SETUP_PRESETS, bughouseSetupGate, presetOfConfig, presetSeatConfig, seatRowLabel } from '../logic/bughouseLayout';
+import { BUGHOUSE_SETUP_PRESETS, bughouseSetupGate, keepTogether, presetOfConfig, presetSeatConfig, seatRowLabel } from '../logic/bughouseLayout';
 import type { BughouseSeat } from '../logic/bughouse/types';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { DEFAULT_BOT_ELO, withController, type SeatConfig } from '../logic/fourPlayer/setup';
@@ -63,7 +63,7 @@ export default function BughouseSetupScreen({ seats, onChange, onPickBot, onCont
             <View key={seat} style={styles.seatCard} testID={`seat-row-${seat}`}>
               <View style={styles.seatHeader}>
                 <Text style={[styles.shape, { color: row.team === 1 ? '#1e88e5' : '#f9a825' }]}>{row.shape}</Text>
-                <Text style={styles.seatName}>{row.text}</Text>
+                <Text style={styles.seatName}>{keepTogether(row.text)}</Text>
                 <View style={styles.toggle}>
                   <Pressable
                     accessibilityLabel={`${row.text}: human`}

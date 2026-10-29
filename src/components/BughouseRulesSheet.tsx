@@ -3,6 +3,7 @@ import { Pressable } from './AppPressable';
 import { Text } from './AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import { keepTogether } from '../logic/bughouseLayout';
 import { bughouseRulesSheet } from '../logic/bughouseRulesSheet';
 
 interface BughouseRulesSheetProps {
@@ -32,7 +33,7 @@ export default function BughouseRulesSheet({ visible, onClose }: BughouseRulesSh
                   <Text style={styles.sectionTitle}>{section.title}</Text>
                   {section.lines.map((line) => (
                     <Text key={line} style={styles.line}>
-                      {line}
+                      {keepTogether(line)}
                     </Text>
                   ))}
                 </View>
