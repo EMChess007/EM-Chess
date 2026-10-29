@@ -137,9 +137,8 @@ export function useBoardTouches(options: BoardTouchOptions): BoardTouches {
       const hit = gridTapCell(tap, originRef.current, cell, 8, 8);
       if (hit !== null) onTapCell(board, hit);
     };
-    // A tap that carries the grid's own frame needs no origin and no wait.
-    if (tap.startLocal && tap.endLocal) resolve();
-    else if (pendingRef.current) void pendingRef.current.then(resolve);
+    // A tap that carries the grid's own frame starts no measurement, so with none pending it resolves at once; behind an earlier tap that IS waiting for its measurement it keeps its place in line.
+    if (pendingRef.current) void pendingRef.current.then(resolve);
     else resolve();
   };
 

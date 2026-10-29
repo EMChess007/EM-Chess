@@ -80,6 +80,22 @@ describe('a tap in the grid\'s own frame needs no origin', () => {
     expect(checked).toBe(4 * 3 * 3 * 3 * 6);
   });
 
+  it('the cell is the one under the LIFT, not under the start: a tap that crosses a cell edge by a few pixels', () => {
+    const tap = (start: Point, end: Point): Tap => ({ target: { kind: 'grid' }, start: { x: 0, y: 0 }, end: { x: 0, y: 0 }, startLocal: start, endLocal: end });
+    expect(gridTapCell(tap({ x: 39, y: 100 }, { x: 41, y: 100 }), { x: 0, y: 0 }, 40, 8, 8)).toEqual({ row: 2, col: 1 });
+    expect(gridTapCell(tap({ x: 41, y: 100 }, { x: 39, y: 100 }), { x: 0, y: 0 }, 40, 8, 8)).toEqual({ row: 2, col: 0 });
+    expect(gridTapCell(tap({ x: 100, y: 79 }, { x: 100, y: 81 }), { x: 0, y: 0 }, 40, 8, 8)).toEqual({ row: 2, col: 2 });
+    expect(gridTapCell(tap({ x: 100, y: 81 }, { x: 100, y: 79 }), { x: 0, y: 0 }, 40, 8, 8)).toEqual({ row: 1, col: 2 });
+  });
+
+  it('a tap that has the frame on one end only is read in page coordinates (the origin passed in decides)', () => {
+    const page = { x: 120, y: 260 }; // root frame: the grid's origin is (20, 100), so this is (100, 160) = row 4, col 2
+    const startOnly: Tap = { target: { kind: 'grid' }, start: page, end: page, startLocal: { x: 5, y: 5 } };
+    expect(gridTapCell(startOnly, { x: 20, y: 100 }, 40, 8, 8)).toEqual({ row: 4, col: 2 });
+    const endOnly: Tap = { target: { kind: 'grid' }, start: page, end: page, endLocal: { x: 5, y: 5 } };
+    expect(gridTapCell(endOnly, { x: 20, y: 100 }, 40, 8, 8)).toEqual({ row: 4, col: 2 });
+  });
+
   it('puts the corners and the edges where they belong, and the right and bottom edges outside', () => {
     const at = (x: number, y: number) => gridTapCell(tapAt({ x, y }, { x: 1000, y: 1000 }), { x: 0, y: 0 }, 40, 8, 8);
     expect(at(0, 0)).toEqual({ row: 0, col: 0 });

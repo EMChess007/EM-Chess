@@ -27,7 +27,7 @@ export default function TouchDebugOverlay({ board, orientation, cell, fingers }:
     <View pointerEvents="none" style={StyleSheet.absoluteFill} testID={`touch-debug-${board}`}>
       {fingers.map((finger) => (
         <View key={finger.id} pointerEvents="none" style={StyleSheet.absoluteFill}>
-          {finger.cell && <View style={[styles.frame, { left: finger.cell.col * cell, top: finger.cell.row * cell, width: cell, height: cell }]} />}
+          {finger.cell && <View testID={`touch-debug-${board}-frame`} style={[styles.frame, { left: finger.cell.col * cell, top: finger.cell.row * cell, width: cell, height: cell }]} />}
           {finger.local && <View style={[styles.dot, { left: finger.local.x - 4, top: finger.local.y - 4 }]} />}
           {finger.local && (
             <Text style={[styles.label, { left: Math.max(0, finger.local.x - 24), top: Math.max(0, finger.local.y - 30) }]} testID={`touch-debug-${board}-square`}>

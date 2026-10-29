@@ -174,6 +174,28 @@ describe('a touch the platform reported without the overlay frame never uses the
     expect(offered('A')).toEqual(['b3', 'b4']); // with the rectangle (a status bar of 32 too small) this was b1
   });
 
+  it('a tap with the overlay frame keeps its place behind an earlier tap that is still waiting for its measurement', async () => {
+    renderGame({ seats: cfg('HBHB') });
+    phoneGrid('A', 32);
+    const b2 = localOf('A', 'b2');
+    const g2 = localOf('A', 'g2');
+    // first: b2 without a frame (its measurement answers after 20 ms); then, at once, g2 with one
+    const first = { id: 1, x: ROOT.A.left + b2.x, y: ROOT.A.top + b2.y };
+    fireTouch('touchstart', overlay('A'), [first]);
+    fireTouch('touchend', overlay('A'), [first]);
+    const second = { id: 2, x: ROOT.A.left + g2.x, y: ROOT.A.top + g2.y, locationX: g2.x, locationY: g2.y };
+    fireTouch('touchstart', overlay('A'), [second]);
+    fireTouch('touchend', overlay('A'), [second]);
+    expect(offered('A')).toEqual([]); // both are in line behind the measurement
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(offered('A')).toEqual(['g3', 'g4']); // g2 was the LAST tap, so it is the selection the board ends with
+  });
+
   it('a lift that carries only one of the two frames is read in page coordinates, never as a mix', async () => {
     renderGame({ seats: cfg('HBHB') });
     phoneGrid('A', 32);
@@ -206,11 +228,25 @@ describe('the dev touch-debug overlay', () => {
     const f = fingerOnOverlay('A', 'g2');
     fireTouch('touchstart', overlay('A'), [f]);
     expect(screen.getByTestId('touch-debug-A-square').textContent).toBe('g2'); // the finger is on g2, and the overlay says so (not g1)
+    // the red frame is on g2's cell: column 6 (a white board is drawn a..h from the left), row 6 (rank 2 is the second from the bottom)
+    const frame = screen.getByTestId('touch-debug-A-frame').style; // a computed position is an inline style on web
+    expect([frame.left, frame.top, frame.width, frame.height]).toEqual([`${6 * cellPx()}px`, `${6 * cellPx()}px`, `${cellPx()}px`, `${cellPx()}px`]);
     const g1 = fingerOnOverlay('A', 'c3', 2);
     fireTouch('touchmove', overlay('A'), [{ ...g1, id: 1 }]);
     expect(screen.getByTestId('touch-debug-A-square').textContent).toBe('c3');
     fireTouch('touchend', overlay('A'), [{ ...g1, id: 1 }]);
     expect(screen.queryByTestId('touch-debug-A-square')).toBeNull(); // the finger is up: nothing drawn
+  });
+
+  it('says "outside" for a finger that is not on the grid, and draws no frame for it', () => {
+    g.__DEV__ = true;
+    renderGame({ seats: cfg('HBHB') });
+    act(() => screen.getByTestId('bughouse-touch-debug').click());
+    phoneGrid('A', 0);
+    const outside = { id: 3, x: ROOT.A.left - 6, y: ROOT.A.top + 50, locationX: -6, locationY: 50 };
+    fireTouch('touchstart', overlay('A'), [outside]);
+    expect(screen.getByTestId('touch-debug-A-square').textContent).toBe('outside');
+    expect(screen.queryByTestId('touch-debug-A-frame')).toBeNull(); // no frame on any cell
   });
 
   it('switches off again, and the other board has its own', () => {
