@@ -41,7 +41,7 @@ function exportedFunctions(): Fn[] {
 describe('the board is a required argument (scanned over the W3a logic files)', () => {
   const fns = exportedFunctions();
   // Screen-wide NUMBERS (the size of a cell, how many fit), not names of a board's square: they depend on the window, not on a board.
-  const WINDOW_SIZES = new Set(['stackedDualCell', 'sideBySideDualCell', 'getBughouseDualCellSize', 'getBughouseMainCellSize', 'getBughouseSideCellSize']);
+  const WINDOW_SIZES = new Set(['stackedDualCell', 'sideBySideDualCell', 'getBughouseDualCellSize', 'getBughouseMainCellSize', 'getBughouseSideCellSize', 'fitStackedCell']);
   // A number to text: it names no board data, it draws a clock value it is given.
   const TEXT_OF_A_VALUE = new Set(['formatBughouseClock']);
   const namesBoardData = (f: Fn) => /square|cell|pocket|reserve|clock/i.test(f.name);

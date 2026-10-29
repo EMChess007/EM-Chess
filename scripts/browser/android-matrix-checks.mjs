@@ -97,6 +97,11 @@ export function pageChecks(opts) {
     }
     return false;
   };
+  /** The board cell (an element labelled with a square name) that contains `el`, or null. */
+  const cellOfEl = (el) => {
+    for (let n = el; n && n !== document.body; n = n.parentElement) if (squareLabel.test(n.getAttribute('aria-label') || '')) return n;
+    return null;
+  };
   const isExempt = (el) => squareLabel.test(el.getAttribute('aria-label') || '') || exempt.some((selector) => el.closest(selector));
 
   // ---- text ---------------------------------------------------------------------------------------------------------------------------------------
@@ -229,6 +234,9 @@ export function pageChecks(opts) {
       const a = seenTexts[i];
       const b = seenTexts[j];
       if (a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
+      // Two marks drawn inside ONE board cell (a piece glyph and the "~" of a promoted piece, a badge) are board art laid over each other on purpose.
+      const cellA = cellOfEl(a.el);
+      if (cellA && cellA === cellOfEl(b.el)) continue;
       const shared = overlapArea(a.v, b.v);
       if (shared > 8 && shared > Math.min(area(a.v), area(b.v)) * 0.15) add('overlap', a.el, 'text overlaps the text of ' + describe(b.el));
     }

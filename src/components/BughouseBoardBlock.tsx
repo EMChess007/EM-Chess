@@ -81,7 +81,9 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
   });
   const choices = props.rawTouch ? props.promotionChoices ?? [] : [];
   return (
-    <View style={styles.block} testID={`block-${board}`}>
+    // As wide as its board (+ the 3 dp outline on each side): the bars take that width and wrap their pocket inside it. Without it the block was as wide as its bar's one-line content and two boards
+    // side by side pushed the second one past the window (landscape phone, a full pocket).
+    <View style={[styles.block, { width: cell * 8 + 6 }]} testID={`block-${board}`}>
       <SeatBar {...props} seat={top} touches={props.rawTouch ? touches : null} />
       <View>
         <BughouseBoard
@@ -134,7 +136,7 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
 const CHIP_HIT_SLOP = { top: 9, bottom: 9, left: 8, right: 8 };
 /** On web the device matrix reads this attribute: the small size is intended (react-native-web renders `dataSet` as data-* attributes; a phone ignores it). */
 const MATRIX_EXEMPT = { dataSet: { matrixExempt: '1' } } as object;
-/** `compact` opts out of AppPressable's 44 dp floor; react-native's own Pressable (until master's text-fit change is merged here) ignores it. */
+/** `compact` opts out of AppPressable's 44 dp floor (the chips are 22-26 dp tall with hit slop; bughouseCompact.dom.test.tsx pins that the prop reaches AppPressable). */
 const COMPACT = { compact: true } as object;
 
 function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPickPocket, compact, touches }: BughouseBoardBlockProps & { seat: BughouseSeat; touches: BoardTouches | null }) {
@@ -165,8 +167,9 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
           };
           const face = (
             <>
-              <Text style={[styles.glyph, place.color === 'w' ? styles.glyphWhite : styles.glyphBlack]}>{GLYPHS[chip.piece]}</Text>
-              <Text style={styles.count}>{chip.count}</Text>
+              {/* The chip is a fixed-size piece of board art: its glyph and count do not grow with the system font (maxFontSizeMultiplier 1, CHECKLIST 6b). */}
+              <Text maxFontSizeMultiplier={1} style={[styles.glyph, place.color === 'w' ? styles.glyphWhite : styles.glyphBlack]}>{GLYPHS[chip.piece]}</Text>
+              <Text maxFontSizeMultiplier={1} style={styles.count}>{chip.count}</Text>
             </>
           );
           // The dual layout: a chip is a plain View with this board's own touch handlers (a Pressable would join the responder system the two boards must stay out of).
@@ -203,7 +206,9 @@ function createStyles(colors: AppColors, compact: boolean) {
     dotBlack: { backgroundColor: '#111' },
     shape: { fontSize: 12, color: colors.textSecondary },
     name: { flexShrink: 1, fontSize: 13, fontWeight: '700', color: colors.text },
-    pocket: { flex: 1, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 3, minHeight: 28, paddingHorizontal: 4, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
+    // A pocket with many kinds of piece wraps onto a second line instead of running over the clock beside it (minWidth 0 lets the flex item shrink below its content); a taller bar is
+    // measured by the stacked layout (fitStackedCell) and by the scroll view, so nothing is cut off.
+    pocket: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 3, minHeight: 28, paddingHorizontal: 4, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
     pocketFlash: { borderColor: '#2e7d32', backgroundColor: 'rgba(46,125,50,0.18)' },
     empty: { fontSize: 12, color: colors.textSecondary },
     chip: { height: compact ? 22 : 26, minWidth: 28, paddingHorizontal: 3, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 1, borderRadius: 7, backgroundColor: '#b58863', borderWidth: 1, borderColor: '#8a6d3b' },

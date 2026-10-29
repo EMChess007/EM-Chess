@@ -114,7 +114,7 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
                     <PieceArt color={piece.color} type={piece.type} cell={cell} images={pieceTheme.images} />
                   </View>
                 )}
-                {promotedSet.has(square) && piece && <Text style={[styles.promotedMark, { fontSize: Math.max(8, cell * 0.3) }]}>~</Text>}
+                {promotedSet.has(square) && piece && <Text maxFontSizeMultiplier={1} style={[styles.promotedMark, { fontSize: Math.max(8, cell * 0.3) }]}>~</Text>}
                 {badge && <BadgeMark badge={badge} cell={cell} board={board} square={square} />}
               </View>
             );
