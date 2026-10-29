@@ -15,7 +15,7 @@
  *   contrast     an icon marked data-matrix-glyph (the tab bar's) whose ink has less than CRITERIA.minGlyphContrast : 1 against what is behind it, or is not drawn as a vector path.
  */
 export function pageChecks(opts) {
-  const { insets, minTarget, clipTolerance, minBoardCell, boardKind, exempt, minGlyphContrast } = opts;
+  const { insets, minTarget, clipTolerance, minBoardCell, boardKind, exempt, minGlyphContrast, expectGlyphs } = opts;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const issues = [];
@@ -273,6 +273,9 @@ export function pageChecks(opts) {
     const [hi, lo] = [luminanceOf(x), luminanceOf(y)].sort((p, q) => q - p);
     return (hi + 0.05) / (lo + 0.05);
   };
+  // A screen that is declared to carry N icons (the tab bar's four) must show N marked ones: an icon that lost its mark would otherwise stop being judged without anybody noticing.
+  const shownGlyphs = Array.from(document.querySelectorAll('[data-matrix-glyph]')).filter((g) => !isHidden(g) && g.getBoundingClientRect().width > 0);
+  if (expectGlyphs && shownGlyphs.length < expectGlyphs) add('contrast', document.body, 'the screen should show ' + expectGlyphs + ' marked icons, found ' + shownGlyphs.length);
   for (const glyph of document.querySelectorAll('[data-matrix-glyph]')) {
     if (isHidden(glyph)) continue;
     let ink = null;

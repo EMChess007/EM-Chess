@@ -108,6 +108,19 @@ describe('the combinations', () => {
   });
 });
 
+describe('the tab bar screens declare their icons (glyph contrast, offline-states branch)', () => {
+  it('home, puzzles, analysis and more each expect the four marked tab icons, so an icon that loses its mark is reported', async () => {
+    const { SCREENS } = await import('../../../scripts/browser/android-matrix-screens.mjs');
+    const withGlyphs = SCREENS.filter((s: { glyphs?: number }) => s.glyphs !== undefined).map((s: { id: string; glyphs?: number }) => [s.id, s.glyphs]);
+    expect(withGlyphs).toEqual([
+      ['home', 4],
+      ['puzzles', 4],
+      ['analysis', 4],
+      ['more', 4],
+    ]);
+  });
+});
+
 describe('the screens', () => {
   it('list every screen the requirement names, and each is reachable by steps', async () => {
     const { SCREENS } = await import('../../../scripts/browser/android-matrix-screens.mjs');

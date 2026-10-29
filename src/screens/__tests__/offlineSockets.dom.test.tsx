@@ -62,6 +62,16 @@ describe('Tournament standings', () => {
     expect(screen.queryByText("Can't reach the server")).toBeNull();
   });
 
+  it('a late answer to the request Retry replaced is ignored', () => {
+    renderStandings();
+    const first = last();
+    act(() => first.answer(timedOut()));
+    fireEvent.click(screen.getByTestId('load-failed-retry'));
+    act(() => first.answer(null, { ok: false, error: 'stale answer' }));
+    expect(screen.queryByText('stale answer')).toBeNull();
+    expect(screen.getAllByRole('progressbar')).toHaveLength(1); // still waiting for the second request
+  });
+
   it('the server\'s own refusal keeps its words (no Retry button for it)', () => {
     renderStandings();
     act(() => last().answer(null, { ok: false, error: 'Tournament not found' }));

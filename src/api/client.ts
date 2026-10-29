@@ -209,8 +209,9 @@ async function fetchWithPolicy(url: string, init: RequestInit, policy: RequestPo
 }
 
 /** "192.168.1.5:3000" out of "http://192.168.1.5:3000": the host the request went to, for the diagnostic line (no path, no query, no credentials). */
-function hostOf(baseUrl: string): string {
-  return /^https?:\/\/([^/?#]+)/.exec(baseUrl)?.[1]?.replace(/^[^@]*@/, '') ?? 'unknown';
+export function hostOf(baseUrl: string): string {
+  // A base URL never carries credentials (apiBaseUrl.ts rejects them), so there is nothing to strip.
+  return /^https?:\/\/([^/?#]+)/.exec(baseUrl)?.[1] ?? 'unknown';
 }
 
 /**

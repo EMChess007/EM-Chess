@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiError, REQUEST_DEADLINE_MS } from '../../api/client';
+import { api, ApiError, hostOf, REQUEST_DEADLINE_MS } from '../../api/client';
 
 // The client reads the platform and the Expo config to pick the server address; neither exists in node (a release build: __DEV__ false).
 vi.hoisted(() => {
@@ -198,6 +198,37 @@ describe('the diagnostic line: one per failed request, host + kind + elapsed, no
     expect(line).not.toContain(TOKEN);
     expect(line).not.toContain('2026-10-01');
     expect(line).toContain('/puzzles/progress failed');
+  });
+});
+
+describe('the request is really aborted when its budget ends', () => {
+  it('fetch gets an AbortSignal, and it is aborted at 6000 ms (not before)', async () => {
+    let signal: AbortSignal | undefined;
+    globalThis.fetch = ((_url: unknown, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Promise(() => {});
+    }) as typeof fetch;
+    const outcome = api.listGames(TOKEN).catch(() => null);
+    await vi.advanceTimersByTimeAsync(5999);
+    expect(signal).toBeDefined();
+    expect(signal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(signal?.aborted).toBe(true);
+    await outcome;
+  });
+});
+
+describe('hostOf (the host in the diagnostic line)', () => {
+  it('is the host and port of the base URL, without scheme, path or query', () => {
+    expect(hostOf('http://192.168.1.5:3000')).toBe('192.168.1.5:3000');
+    expect(hostOf('https://chess-app-backend-hjik.onrender.com')).toBe('chess-app-backend-hjik.onrender.com');
+    expect(hostOf('http://localhost:3000/some/path')).toBe('localhost:3000');
+    expect(hostOf('http://host.example?x=1')).toBe('host.example');
+    expect(hostOf('http://host.example#frag')).toBe('host.example');
+  });
+  it('is "unknown" for something that is not an http(s) URL', () => {
+    expect(hostOf('not a url')).toBe('unknown');
+    expect(hostOf('')).toBe('unknown');
   });
 });
 
