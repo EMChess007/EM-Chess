@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
@@ -6,7 +6,8 @@ import * as Clipboard from 'expo-clipboard';
 import { appAlert } from '../components/AppAlert';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
-import { clearDiagnosticLog, getDiagnosticLog } from '../logic/diagnosticLog';
+import TextFitProbe from '../components/TextFitProbe';
+import { clearDiagnosticLog, getDiagnosticLog, logDiagnostic } from '../logic/diagnosticLog';
 
 interface DiagnosticLogsScreenProps {
   onBack: () => void;
@@ -23,6 +24,14 @@ export default function DiagnosticLogsScreen({ onBack }: DiagnosticLogsScreenPro
   const colors = useAppColors();
   const styles = createStyles(colors);
   const [logs, setLogs] = useState(getDiagnosticLog);
+
+  // The text-fit check (logic/textFitProbe.ts): renders probe strings, then writes what it measured into this log and goes away.
+  const [probing, setProbing] = useState(false);
+  const handleProbeDone = useCallback((lines: string[]) => {
+    lines.forEach(logDiagnostic);
+    setLogs(getDiagnosticLog());
+    setProbing(false);
+  }, []);
 
   const handleCopy = async () => {
     try {
@@ -62,6 +71,13 @@ export default function DiagnosticLogsScreen({ onBack }: DiagnosticLogsScreenPro
           <Text style={styles.buttonText}>Clear</Text>
         </Pressable>
       </View>
+
+      <View style={styles.buttonRow}>
+        <Pressable style={styles.button} onPress={() => setProbing(true)} testID="run-text-fit-check">
+          <Text style={styles.buttonText}>Run text-fit check</Text>
+        </Pressable>
+      </View>
+      {probing && <TextFitProbe onDone={handleProbeDone} />}
 
       <ScrollView style={styles.logScroll} contentContainerStyle={styles.logScrollContent}>
         {logs.length === 0 ? (

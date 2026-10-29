@@ -72,7 +72,9 @@ export function pageChecks(opts) {
       const position = getComputedStyle(n).position;
       if (position !== 'fixed' && position !== 'absolute') continue;
       const nr = n.getBoundingClientRect();
-      if (nr.width * nr.height >= vw * vh * 0.6 && nr.left <= r.left + 1 && nr.top <= r.top + 1 && nr.right >= r.right - 1 && nr.bottom >= r.bottom - 1) return true;
+      // Compared with the part of the element that is in the window: a text that runs past the window's edge is still under the layer where it can be seen.
+      const seen = { left: Math.max(r.left, 0), top: Math.max(r.top, 0), right: Math.min(r.right, vw), bottom: Math.min(r.bottom, vh) };
+      if (nr.width * nr.height >= vw * vh * 0.6 && nr.left <= seen.left + 1 && nr.top <= seen.top + 1 && nr.right >= seen.right - 1 && nr.bottom >= seen.bottom - 1) return true;
     }
     return false;
   };

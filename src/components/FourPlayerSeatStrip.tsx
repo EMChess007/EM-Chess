@@ -1,15 +1,12 @@
 import { StyleSheet, View } from 'react-native';
-import { Text } from './AppText';
+// The strip is dense (four cards side by side): its text may grow only 1.2 x with the system font scale (DenseText), and it wraps rather than being cut.
+import { DenseText as Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { SEAT_COLORS, SEAT_NAMES, formatSeatClock, variantOfRules, type FourPlayerClock, type FourPlayerState, type Seat, type SeatConfig } from '../logic/fourPlayer';
 import { controllerName } from '../logic/fourPlayerBots';
 import { describeGain, formatGain, seatStatusOf, type ScoreGain } from '../logic/chaturajiUi';
-import { DENSE_MAX_FONT_SIZE_MULTIPLIER } from '../logic/typography';
 import { seatMetric, seatMetricText } from '../logic/fourPlayerVariant';
 import type { FourSeatLabel } from '../logic/fourPlayerOnlineUi';
-
-/** The strip is dense (four cards side by side): its text may grow only 1.2 x with the system font scale, and wraps rather than being cut. */
-const DENSE = DENSE_MAX_FONT_SIZE_MULTIPLIER;
 
 /** Below this many seconds an active seat's clock turns red. */
 const LOW_TIME_SECONDS = 10;
@@ -59,33 +56,27 @@ export default function FourPlayerSeatStrip({ state, seats, clock, labels, gains
           >
             <View style={styles.topRow}>
               <View style={[styles.dot, { backgroundColor: SEAT_COLORS[seat] }]} />
-              <Text style={styles.name} maxFontSizeMultiplier={DENSE}>
+              <Text style={styles.name}>
                 {SEAT_NAMES[seat]}
               </Text>
-              <Text style={styles.score} maxFontSizeMultiplier={DENSE}>
-                {seatMetric(state, seat)}
-              </Text>
+              <Text style={styles.score}>{seatMetric(state, seat)}</Text>
             </View>
-            {clock.enabled && (
-              <Text style={[styles.time, low && current && styles.timeLow, out && styles.timeOut]} maxFontSizeMultiplier={DENSE}>
-                {formatSeatClock(seconds)}
-              </Text>
-            )}
-            <Text style={styles.player} maxFontSizeMultiplier={DENSE}>
+            {clock.enabled && <Text style={[styles.time, low && current && styles.timeLow, out && styles.timeOut]}>{formatSeatClock(seconds)}</Text>}
+            <Text style={styles.player}>
               {out ? outWord : playerName}
             </Text>
             {attacked && (
-              <Text testID={`seat-${seat}-attacked`} style={styles.attacked} maxFontSizeMultiplier={DENSE}>
+              <Text testID={`seat-${seat}-attacked`} style={styles.attacked}>
                 king attacked
               </Text>
             )}
             {badge && (
-              <Text style={styles.badge} maxFontSizeMultiplier={DENSE}>
+              <Text style={styles.badge}>
                 {badge}
               </Text>
             )}
             {gain && (
-              <Text testID={`gain-${seat}`} style={styles.gain} pointerEvents="none" maxFontSizeMultiplier={DENSE}>
+              <Text testID={`gain-${seat}`} style={styles.gain} pointerEvents="none">
                 {formatGain(gain.points)}
               </Text>
             )}

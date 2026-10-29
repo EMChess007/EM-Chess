@@ -3,6 +3,7 @@ import { Platform, StyleSheet, Text as RNText, TextInput as RNTextInput, type Te
 import {
   areBundledFontsUsable,
   BODY_MAX_FONT_SIZE_MULTIPLIER,
+  DENSE_MAX_FONT_SIZE_MULTIPLIER,
   effectiveFontScale,
   EMULATED_TEXT_SCALE_GLOBAL,
   fitTextStyle,
@@ -26,11 +27,20 @@ const InsideText = createContext(false);
  * Web only: a word wider than its box breaks inside the word instead of overflowing it (and, unlike `overflow-wrap: break-word`, counts as breakable when a flex item's minimum
  * width is worked out, so a label can shrink to its column). The native text engines (Android's StaticLayout) already break a word that does not fit its line.
  */
-const WEB_BREAK_LONG_WORDS = (Platform.OS === 'web' ? { overflowWrap: 'anywhere' } : null) as TextStyle | null;
+const WEB_BREAK_LONG_WORDS = { overflowWrap: 'anywhere' } as TextStyle;
+
+/** The platform, read defensively: a test that replaces 'react-native' with a partial mock has no `Platform`, and that is not a reason for a Text to throw. */
+function platformOS(): string {
+  try {
+    return Platform.OS;
+  } catch {
+    return 'unknown';
+  }
+}
 
 function emulatedScale(): number {
   const dev = typeof __DEV__ !== 'undefined' && __DEV__;
-  return readEmulatedFontScale(dev, Platform.OS, (globalThis as Record<string, unknown>)[EMULATED_TEXT_SCALE_GLOBAL]);
+  return readEmulatedFontScale(dev, platformOS(), (globalThis as Record<string, unknown>)[EMULATED_TEXT_SCALE_GLOBAL]);
 }
 
 export const Text = forwardRef<RNText, TextProps>(function Text({ style, maxFontSizeMultiplier, children, ...rest }, ref) {
@@ -48,10 +58,15 @@ export const Text = forwardRef<RNText, TextProps>(function Text({ style, maxFont
     if (flat.fontSize === undefined) delete fit.fontSize;
   }
   return (
-    <RNText ref={ref} {...rest} maxFontSizeMultiplier={cap} style={[WEB_BREAK_LONG_WORDS, style, fit as TextStyle]}>
+    <RNText ref={ref} {...rest} maxFontSizeMultiplier={cap} style={[platformOS() === 'web' ? WEB_BREAK_LONG_WORDS : null, style, fit as TextStyle]}>
       <InsideText.Provider value>{children}</InsideText.Provider>
     </RNText>
   );
+});
+
+/** `Text` for dense controls (a seat strip, a clock row, a chip): grows at most DENSE_MAX_FONT_SIZE_MULTIPLIER x with the system font scale. A caller's own `maxFontSizeMultiplier` wins. */
+export const DenseText = forwardRef<RNText, TextProps>(function DenseText({ maxFontSizeMultiplier, ...rest }, ref) {
+  return <Text ref={ref} maxFontSizeMultiplier={maxFontSizeMultiplier ?? DENSE_MAX_FONT_SIZE_MULTIPLIER} {...rest} />;
 });
 
 /** Input text takes the bundled font and the cap; its line height is left to the platform (a fixed line height shifts the text inside an Android TextInput). */

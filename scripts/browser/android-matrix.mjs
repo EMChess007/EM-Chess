@@ -33,8 +33,18 @@ import { allScreens } from './android-matrix-screens.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(here, '..', '..');
-const requireFromBackend = createRequire(path.join(appDir, 'backend', 'package.json'));
-const { chromium } = requireFromBackend('playwright-core');
+// playwright-core is not an app dependency: it comes from the sibling backend checkout (cloud sessions, the laptop) or, in the app's own CI, from `npm i --no-save playwright-core`.
+const playwrightCore = (() => {
+  for (const base of [path.join(appDir, 'backend', 'package.json'), path.join(appDir, 'package.json')]) {
+    try {
+      return createRequire(base)('playwright-core');
+    } catch {
+      /* not there: try the next place */
+    }
+  }
+  throw new Error('playwright-core was not found in <app>/backend/node_modules or <app>/node_modules (npm i --no-save playwright-core)');
+})();
+const { chromium } = playwrightCore;
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
