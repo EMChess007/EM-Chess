@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Pressable } from '../components/AppPressable';
 import Text from '../components/BughouseText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +7,8 @@ import BughouseBoard from '../components/BughouseBoard';
 import BughouseBoardBlock from '../components/BughouseBoardBlock';
 import BughouseRulesSheet from '../components/BughouseRulesSheet';
 import { getTouchDebugOverlay } from '../components/devOverlayRegistry';
+import { pieceInk } from '../components/pieceArt';
+import PieceIcon from '../components/PieceIcon';
 import PromotionPicker from '../components/PromotionPicker';
 import ScreenHeader from '../components/ScreenHeader';
 import { firstLegalAction, legalMovesOn, remainingAt, type BughouseMatch, type BughouseTimeControl, type PromotionPiece } from '../logic/bughouse';
@@ -29,6 +31,7 @@ import {
   seatRowLabel,
   standardArrangement,
 } from '../logic/bughouseLayout';
+import { BUGHOUSE_FIXTURE_GLOBAL, fixtureMatch, readBughouseFixture } from '../logic/bughouseFixture';
 import { bughouseBotThinkMs, dueBotSeats, localBotAction, localStep, nextDeadline, startLocalGame, type LocalGameState } from '../logic/bughouseLocal';
 import { liveSelection, type BoardPosition, type SelectionInput } from '../logic/bughouseSelection';
 import { boardOrientation, boardStatusLine, dropSquares, dualBoardOrientation, formatBughouseClock, gameOverSummary, kingBadge, mainBoardOf, pocketChips, touchSeat } from '../logic/bughouseView';
@@ -50,7 +53,6 @@ interface BughouseGameScreenProps {
   startFrom?: BughouseMatch;
 }
 
-const GLYPH: Record<PromotionPiece, string> = { q: '♛', r: '♜', b: '♝', n: '♞' };
 const PROMOTION_ORDER: readonly PromotionPiece[] = ['q', 'r', 'b', 'n'];
 
 /**
@@ -82,7 +84,10 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
 
   const [state, setState] = useState<LocalGameState>(() => {
     const fresh = startLocalGame(timeControl, 0, Math.floor(random() * 1000000));
-    return startFrom ? { ...fresh, match: startFrom } : fresh;
+    // The device matrix's test-only fixture (bughouseFixture.ts): honoured on the web in a development build only, ignored (with one warning) anywhere else.
+    const fixture = readBughouseFixture(typeof __DEV__ !== 'undefined' && __DEV__, Platform.OS, (globalThis as Record<string, unknown>)[BUGHOUSE_FIXTURE_GLOBAL]);
+    const from = startFrom ?? (fixture !== null ? fixtureMatch(fixture, timeControl) : undefined);
+    return from ? { ...fresh, match: from } : fresh;
   });
   const stateRef = useRef(state);
   const [nowMs, setNowMs] = useState(0);
@@ -519,7 +524,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         choices={promotion?.choices ?? []}
         buttonSize={56}
         labelFor={(p) => PROMOTION_LABELS[p]}
-        renderChoice={(p) => <Text style={{ fontSize: 34 }}>{GLYPH[p]}</Text>}
+        renderChoice={(p) => <PieceIcon type={p} ink={pieceInk(promotion ? match.verdicts[promotion.board].turn : 'w')} size={40} />}
         onChoose={choosePromotion}
         onCancel={() => setPromotion(null)}
       />

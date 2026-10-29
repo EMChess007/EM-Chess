@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PAGE_CHECKS_SOURCE } from './android-matrix-checks.mjs';
+import { checkPieceColours } from './android-matrix-pieces.mjs';
 import { comboId, CRITERIA, fullCombos, insetSweep, insetsFor, miniCombos, quickCombos, SCREEN_SIZES, viewportFor, FONTS } from './android-matrix-def.mjs';
 import { allScreens } from './android-matrix-screens.mjs';
 
@@ -45,6 +46,8 @@ const playwrightCore = (() => {
   throw new Error('playwright-core was not found in <app>/backend/node_modules or <app>/node_modules (npm i --no-save playwright-core)');
 })();
 const { chromium } = playwrightCore;
+// pngjs decodes the photographs of the piece-colour check; it is already in the app's node_modules (a dependency of Expo's tooling).
+const { PNG } = createRequire(path.join(appDir, 'package.json'))('pngjs');
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -160,7 +163,7 @@ async function applyCombo(page, cdp, combo) {
 }
 
 function checkOptions(screen, insets) {
-  return { insets, minTarget: CRITERIA.minTouchTarget, clipTolerance: CRITERIA.clipTolerance, minBoardCell: CRITERIA.minBoardCell, boardKind: screen.boardKind ?? null, exempt };
+  return { insets, minTarget: CRITERIA.minTouchTarget, clipTolerance: CRITERIA.clipTolerance, minBoardCell: CRITERIA.minBoardCell, boardKind: screen.boardKind ?? null, pockets: Boolean(screen.pockets), exempt };
 }
 
 async function runChecks(page, screen, insets) {
@@ -187,6 +190,10 @@ async function navigate(page, cdp, baseUrl, screen) {
   await cdp.send('Emulation.setDeviceMetricsOverride', { ...NAV_VIEWPORT, deviceScaleFactor: 1, mobile: false });
   await page.goto(baseUrl, { waitUntil: 'load' });
   await page.getByText('Play', { exact: true }).first().waitFor({ timeout: 240000 });
+  // A screen that needs a fixed position (Bughouse's full pockets, all twelve pieces) names a fixture; the game screen reads it when it opens (src/logic/bughouseFixture.ts: web, dev build only).
+  await page.evaluate((name) => {
+    window.__EM_BUGHOUSE_FIXTURE__ = name ?? undefined;
+  }, screen.fixture ?? null);
   for (const step of screen.steps) {
     if (step.text) await page.getByText(step.text, { exact: true }).nth(step.nth ?? 0).click({ timeout: 15000 });
     else if (step.label) await page.locator(`[aria-label="${step.label}"]`).first().click({ timeout: 15000 });
@@ -250,6 +257,8 @@ async function runGroup(browser, baseUrl, group, screens, record, sheets) {
       for (const combo of group.combos) {
         const { insets } = await applyCombo(page, cdp, combo);
         const issues = await runChecks(page, screen, insets);
+        // The pixels of the pieces, on both square colours (android-matrix-pieces.mjs): only for the screens that declare `pieces`.
+        if (screen.pieces) issues.push(...(await checkPieceColours(page, PNG, screen.pieces)));
         record({ screen: screen.id, combo: comboId(combo), issues });
         if (sheets) {
           const wanted = SHEET.find((s) => s.size.id === combo.size.id && s.scale === combo.scale && s.font.id === combo.font.id && s.zoom === combo.zoom && s.theme === combo.theme && s.insetProfile === combo.insetProfile);
@@ -420,6 +429,23 @@ async function selfTest() {
     expect('a board cell inside an exempt thumbnail is not judged', !kinds(await run('<div data-testid="thumb-B"><div aria-label="a1" style="width:12px;height:12px">.</div></div>', { boardKind: 'twoPlayer' })).has('board-cell'));
     expect('a board cell under its minimum is reported', kinds(await run('<div aria-label="a1" style="width:12px;height:12px">.</div>', { boardKind: 'twoPlayer' })).has('board-cell'));
     expect('a board cell at its minimum is fine', !kinds(await run('<div aria-label="a1" style="width:24px;height:24px">.</div>', { boardKind: 'twoPlayer' })).has('board-cell'));
+
+    // the pocket check (command #27b): one row inside its strip, reaching no board, clock or status line
+    const chip = (piece, extra = '') => `<div data-testid="pocket-A-white-${piece}" style="width:24px;height:24px;flex-shrink:0;${extra}">1</div>`;
+    const stripFixture = ({ barStyle = '', pocketStyle = '', chips = chip('p') + chip('n') + chip('b'), after = '' }) =>
+      `<div style="width:300px"><div data-testid="bar-A-white" style="display:flex;align-items:center;width:300px;height:36px;${barStyle}"><span>You</span><div data-testid="pocket-A-white" style="display:flex;flex:1;min-width:0;height:28px;${pocketStyle}">${chips}</div><div data-testid="clock-A-white" style="min-width:46px">3:00</div></div><div data-testid="board-A" style="width:300px;height:100px;background:#ccc"></div>${after}<div data-testid="status-A">White to move</div></div>`;
+    const pocketIssues = async (html) => kinds(await run(html, { pockets: true }));
+    expect('a pocket of three chips in one row inside its strip is clean', !(await pocketIssues(stripFixture({ barStyle: 'overflow:hidden' }))).has('pocket'));
+    expect('five chips side by side are clean', !(await pocketIssues(stripFixture({ barStyle: 'overflow:hidden', chips: chip('p') + chip('n') + chip('b') + chip('r') + chip('q') }))).has('pocket'));
+    expect('an empty pocket is clean', !(await pocketIssues(stripFixture({ chips: '' }))).has('pocket'));
+    const wrapped = stripFixture({ pocketStyle: 'flex-wrap:wrap;width:50px;flex:none;align-content:flex-start', chips: chip('p') + chip('n') + chip('b') });
+    expect('chips that wrap onto a second row are reported', await pocketIssues(wrapped).then((k) => k.has('pocket')));
+    expect('a chip that runs out of its strip over the board is reported', (await run(stripFixture({ pocketStyle: 'flex-wrap:wrap;width:50px;flex:none;align-content:flex-start', chips: chip('p') + chip('n') + chip('b') + chip('r') }), { pockets: true })).some((i) => i.kind === 'pocket' && /leaves its strip|covers/.test(i.detail)));
+    expect('a chip drawn over the clock is reported', (await run(stripFixture({ chips: chip('p', 'margin-left:200px') }), { pockets: true })).some((i) => i.kind === 'pocket' && /clock|leaves/.test(i.detail)));
+    expect('a pocket that reaches the status line is reported', (await run(stripFixture({ barStyle: 'height:20px', pocketStyle: 'height:60px' }), { pockets: true })).some((i) => i.kind === 'pocket'));
+    expect('two chips on top of each other are reported', (await run(stripFixture({ chips: chip('p') + chip('n', 'margin-left:-12px') }), { pockets: true })).some((i) => i.kind === 'pocket' && /another chip/.test(i.detail)));
+    expect('a screen that declares pockets and shows none is reported', (await run('<div>no pockets</div>', { pockets: true })).some((i) => i.kind === 'pocket'));
+    expect('a screen that does not declare pockets is not judged', !kinds(await run(wrapped)).has('pocket'));
   } finally {
     await browser.close();
   }

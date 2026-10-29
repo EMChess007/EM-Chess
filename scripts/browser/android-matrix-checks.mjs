@@ -254,6 +254,38 @@ export function pageChecks(opts) {
       if (r.width > 0 && !covered(cell, r) && Math.min(r.width, r.height) < min - 0.5) add('board-cell', cell, Math.round(r.width) + 'x' + Math.round(r.height) + ' px < ' + min);
     }
   }
+
+  // ---- the pockets (Bughouse, command #27b) ----------------------------------------------------------------------------------------------------------
+  // A pocket is ONE row of chips inside its strip and reaches nothing else: not the board grid, the clocks, the status lines, the name beside it, and no chip lies on another or below the first
+  // row (a wrapped chip). On a real phone the chips stacked under one another and the second one was drawn over the top rank of the board: this is the rectangle test that would have said so.
+  if (opts.pockets) {
+    const rectOf = (el) => el.getBoundingClientRect();
+    const within = (r, outer, tol) => r.left >= outer.left - tol && r.right <= outer.right + tol && r.top >= outer.top - tol && r.bottom <= outer.bottom + tol;
+    const forbidden = Array.from(document.querySelectorAll('[data-testid^="board-"],[data-testid^="clock-"],[data-testid^="status-"]')).filter(
+      (el) => !/-surface$/.test(el.getAttribute('data-testid') || '') && !isHidden(el),
+    );
+    const pockets = Array.from(document.querySelectorAll('[data-testid^="pocket-"]')).filter((el) => /^pocket-[AB]-(white|black)$/.test(el.getAttribute('data-testid') || '') && !isHidden(el));
+    for (const pocket of pockets) {
+      const bar = pocket.closest('[data-testid^="bar-"]');
+      const pocketRect = rectOf(pocket);
+      const barRect = bar ? rectOf(bar) : null;
+      if (!barRect || !within(pocketRect, barRect, 1.5)) add('pocket', pocket, 'the pocket leaves its strip');
+      const chips = Array.from(pocket.querySelectorAll('[data-testid^="pocket-"]'));
+      const rects = chips.map(rectOf);
+      rects.forEach((r, i) => {
+        if (!barRect || !within(r, barRect, 1.5)) add('pocket', chips[i], 'a chip leaves its strip');
+        if (!within(r, pocketRect, 1.5)) add('pocket', chips[i], 'a chip leaves its pocket row');
+        if (Math.abs(r.top - rects[0].top) > 1.5) add('pocket', chips[i], 'the chips are not in one row (wrapped)');
+        for (let j = i + 1; j < rects.length; j++) if (overlapArea(r, rects[j]) > 0.5) add('pocket', chips[i], 'overlaps another chip of its pocket');
+        for (const f of forbidden) if (overlapArea(r, rectOf(f)) > 0.5) add('pocket', chips[i], 'covers ' + describe(f));
+      });
+      for (const f of forbidden) if (overlapArea(pocketRect, rectOf(f)) > 0.5) add('pocket', pocket, 'the pocket reaches ' + describe(f));
+      for (const t of textBoxes) {
+        if (bar && bar.contains(t.el) && !pocket.contains(t.el) && overlapArea(t.box, pocketRect) > 0.5) add('pocket', pocket, 'the pocket overlaps the text ' + describe(t.el));
+      }
+    }
+    if (pockets.length === 0) add('pocket', document.body, 'no pocket on a screen that declares pockets');
+  }
   return issues;
 }
 

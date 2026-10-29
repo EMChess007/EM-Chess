@@ -91,7 +91,8 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
             const file = square.charCodeAt(0) - 97;
             const rank = Number(square[1]);
             const piece = grid[8 - rank]?.[file] ?? null;
-            const light = (file + rank) % 2 === 1;
+            // a1 is a dark square and a8 a light one (file 0-based, rank 1-based: an even sum is light). It was the other way round on every Bughouse board until command #27b.
+            const light = (file + rank) % 2 === 0;
             const badge = piece && piece.type === 'k' ? badgeOf(piece.color) : null;
             const isMove = moveSet.has(square);
             const isDrop = dropSet.has(square);
@@ -135,8 +136,8 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
 
 function PieceArt({ color, type, cell, images }: { color: BughouseColor; type: string; cell: number; images?: Record<string, string> }) {
   return (
-    <View style={{ width: cell, height: cell, alignItems: 'center', justifyContent: 'center', transform: [{ scale: cell / 40 }] }}>
-      <Piece piece={{ color, type } as never} images={images} />
+    <View style={{ width: cell, height: cell, alignItems: 'center', justifyContent: 'center' }}>
+      <Piece piece={{ color, type } as never} images={images} size={cell} />
     </View>
   );
 }

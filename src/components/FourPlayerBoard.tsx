@@ -7,6 +7,8 @@ import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { PieceImageMap } from '../types/theme';
 import BoardAnnotations from './BoardAnnotations';
 import BoatIcon from './BoatIcon';
+import type { PieceShapeType } from './pieceArt';
+import PieceIcon from './PieceIcon';
 import PromotionPicker from './PromotionPicker';
 import { useBoardGestures } from './useBoardGestures';
 import { useClearAnnotationsOnMove } from './useClearAnnotationsOnMove';
@@ -41,8 +43,12 @@ import {
   type SquareArrow,
 } from '../logic/fourPlayer';
 
-/** Filled glyphs for every seat (the outlined set is unreadable once tinted); colour identifies the seat. Promoted types draw as the piece they became. */
-const GLYPHS = ['', '♟', '♞', '♝', '♜', '♛', '♚', '♛', '♞', '♝', '♜'];
+/** The shape of every piece type (1 pawn .. 6 king; 7..10 the promoted queen / knight / bishop / rook, drawn as the piece they became); the seat's colour is the fill. */
+const SHAPE_OF_TYPE: readonly PieceShapeType[] = ['p', 'p', 'n', 'b', 'r', 'q', 'k', 'q', 'n', 'b', 'r'];
+/** A thin dark outline keeps yellow and red readable on both square colours. */
+const SEAT_PIECE_OUTLINE = 'rgba(0,0,0,0.85)';
+/** react-native-web renders `dataSet` as data-* attributes (a phone ignores it): the matrix and the tests read which piece and which seat a drawn piece is. */
+const seatPieceData = (seat: Seat, type: number) => ({ dataSet: { seatPiece: `${seat}:${SHAPE_OF_TYPE[type]}` } }) as object;
 const TYPE_NAMES = ['', 'pawn', 'knight', 'bishop', 'rook', 'queen', 'king', 'promoted queen', 'promoted knight', 'promoted bishop', 'promoted rook'];
 const DEAD_COLOR = '#8f8f8f';
 const PREMOVE_COLOR = '#8ec5ff';
@@ -104,7 +110,7 @@ const PieceArt = memo(function PieceArt({ seat, type, size, dead, images, boat =
         {promoted && <View style={[styles.promotedBar, { width: size * 0.4, bottom: size * 0.05 }]} />}
       </View>
     ) : (
-      <View testID="boat" style={[styles.disc, { width: size, height: size }, dead && styles.dead]}>
+      <View testID="boat" style={[styles.disc, { width: size, height: size }, dead && styles.dead]} {...seatPieceData(seat, type)}>
         <BoatIcon size={size * 0.9} color={dead ? DEAD_COLOR : SEAT_COLORS[seat]} outline="rgba(0,0,0,0.85)" />
         {promoted && <View style={[styles.promotedBar, { width: size * 0.4, bottom: size * 0.04 }]} />}
       </View>
@@ -124,19 +130,12 @@ const PieceArt = memo(function PieceArt({ seat, type, size, dead, images, boat =
       </View>
     );
   }
+  // The seat's colour as a vector piece (pieceArt.ts): a font glyph took its look from whatever font the phone fell back to (command #27b, the black king drawn white).
   return (
-    <Text
-      style={[
-        styles.glyph,
-        { fontSize: size * 0.78, lineHeight: size, color: dead ? DEAD_COLOR : SEAT_COLORS[seat] },
-        dead && styles.dead,
-        promoted && styles.promoted,
-      ]}
-      // Board art, sized from its cell: it never follows the system font scale (see Piece.tsx).
-      maxFontSizeMultiplier={1}
-    >
-      {GLYPHS[type]}
-    </Text>
+    <View style={[styles.disc, { width: size, height: size }, dead && styles.dead]} {...seatPieceData(seat, type)}>
+      <PieceIcon type={SHAPE_OF_TYPE[type]} ink={{ fill: dead ? DEAD_COLOR : SEAT_COLORS[seat], outline: SEAT_PIECE_OUTLINE }} size={Math.floor(size * 0.92)} />
+      {promoted && <View style={[styles.promotedBar, { width: size * 0.4, bottom: size * 0.04 }]} />}
+    </View>
   );
 });
 

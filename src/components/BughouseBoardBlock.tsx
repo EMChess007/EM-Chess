@@ -10,10 +10,24 @@ import { bughouseTeamShape } from '../logic/bughouseLayout';
 import type { BankFlash, LastMove } from '../logic/bughouseLocal';
 import { boardCellToSquare, boardSeatsTopFirst, boardStatusLine, checkedKingSquare, formatBughouseClock, pocketChips, type KingBadge } from '../logic/bughouseView';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import {
+  pocketChipHeight,
+  pocketChipWidth,
+  pocketPieceSize,
+  POCKET_GAP,
+  POCKET_PADDING,
+  showSeatName,
+  STRIP_CLOCK_MIN_WIDTH,
+  STRIP_DOT,
+  STRIP_GAP,
+  STRIP_PADDING,
+  STRIP_SHAPE,
+} from '../logic/bughousePocket';
 import BughouseBoard from './BughouseBoard';
+import { pieceInk } from './pieceArt';
+import PieceIcon from './PieceIcon';
 import { useBoardTouches, type BoardTouches, type DebugFinger } from './useBoardTouches';
 
-const GLYPHS: Record<ReservePieceType, string> = { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛' };
 const PIECE_NAMES: Record<ReservePieceType, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen' };
 
 export interface BughouseBoardBlockProps {
@@ -54,7 +68,6 @@ export interface BughouseBoardBlockProps {
   onPromotionChoice?: (board: BoardId, choice: PromotionPiece | 'cancel') => void;
 }
 
-const PROMOTION_GLYPHS: Record<PromotionPiece, string> = { q: '♛', r: '♜', b: '♝', n: '♞' };
 
 /**
  * One board with everything that belongs to it: the two players' bars (colour, name, clock, running marker), their pockets with counts, the board and its status line. Every test id
@@ -113,7 +126,7 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
             <View style={styles.promotionRow}>
               {choices.map((choice) => (
                 <View key={choice} accessible accessibilityRole="button" testID={`promote-${board}-${choice}`} accessibilityLabel={`Board ${board}: promote to ${PROMOTION_LABELS[choice]}`} style={styles.promotionButton} {...touches.promotionProps(choice)}>
-                  <Text style={styles.promotionGlyph}>{PROMOTION_GLYPHS[choice]}</Text>
+                  <PieceIcon type={choice} ink={pieceInk(match.verdicts[board].turn)} size={30} />
                 </View>
               ))}
               <View accessible accessibilityRole="button" testID={`promote-${board}-cancel`} accessibilityLabel={`Board ${board}: cancel promotion`} style={styles.promotionButton} {...touches.promotionProps('cancel')}>
@@ -134,8 +147,12 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
   );
 }
 
-/** A chip is 22-26 dp tall in a bar that is as slim as the two-board layouts need: 9 dp above and below (and 8 to the sides of a 28 dp minimum width) make its touch area 44 dp. */
-const CHIP_HIT_SLOP = { top: 9, bottom: 9, left: 8, right: 8 };
+/**
+ * A chip is 24-26 dp tall and 24-40 wide in a bar that is as slim as the two-board layouts need. The hit slop reaches the bar's own edge above and below (the bar clips, and a touch outside a
+ * clipping parent is not a touch of its child) and half a gap to each neighbour, so two chips never claim the same point: a touch area of about 36 x 26..40 dp, the most five chips of a full
+ * pocket can have side by side in a 304 dp strip.
+ */
+const CHIP_HIT_SLOP = { top: 5, bottom: 5, left: 1, right: 1 };
 /** On web the device matrix reads this attribute: the small size is intended (react-native-web renders `dataSet` as data-* attributes; a phone ignores it). */
 const MATRIX_EXEMPT = { dataSet: { matrixExempt: '1' } } as object;
 /** `compact` opts out of AppPressable's 44 dp floor (the chips are 22-26 dp tall with hit slop; bughouseCompact.dom.test.tsx pins that the prop reaches AppPressable). */
@@ -151,27 +168,42 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
   const remaining = remainingAt(clock, nowMs);
   const chips = pocketChips(match, seat, actor);
   const flashed = bank !== null && bank.seat === seat && bank.seq === match.seq;
+  // The strip is MEASURED, never assumed (bughousePocket.ts): its width decides whether the name is shown, the pocket row's width how wide the chips are. Not measured yet (the first render, a
+  // test without layout): the name is shown and the chips are the smallest, which always fit.
+  const [stripWidth, setStripWidth] = useState<number | null>(null);
+  const [rowWidth, setRowWidth] = useState<number | null>(null);
+  const chipWidth = pocketChipWidth(rowWidth, chips.length);
   return (
-    <View style={[styles.bar, running && styles.barRunning]} testID={`bar-${place.board}-${word}`}>
+    <View
+      style={[styles.bar, running && styles.barRunning]}
+      testID={`bar-${place.board}-${word}`}
+      accessibilityLabel={`${seatName(seat)}, board ${place.board} ${word}`}
+      onLayout={(e) => setStripWidth(Math.round(e.nativeEvent.layout.width))}
+    >
       <View style={[styles.colourDot, place.color === 'w' ? styles.dotWhite : styles.dotBlack]} />
       <Text style={styles.shape}>{bughouseTeamShape(place.team)}</Text>
-      <Text style={styles.name}>
-        {seatName(seat)}
-      </Text>
-      <View style={[styles.pocket, flashed && styles.pocketFlash]} testID={`pocket-${place.board}-${word}`} accessibilityLabel={flashed ? `Board ${place.board} ${word} pocket, just received a piece` : `Board ${place.board} ${word} pocket`}>
-        {chips.length === 0 && <Text style={styles.empty}>-</Text>}
+      {showSeatName(stripWidth) && <Text style={styles.name}>{seatName(seat)}</Text>}
+      {/* ONE row that never wraps: an empty pocket shows nothing, a full one shrinks its chips. */}
+      <View
+        style={[styles.pocket, flashed && styles.pocketFlash]}
+        testID={`pocket-${place.board}-${word}`}
+        accessibilityLabel={flashed ? `Board ${place.board} ${word} pocket, just received a piece` : `Board ${place.board} ${word} pocket`}
+        onLayout={(e) => setRowWidth(Math.round(e.nativeEvent.layout.width))}
+      >
         {chips.map((chip) => {
           const common = {
             testID: `pocket-${place.board}-${word}-${chip.piece}`,
             accessibilityRole: 'button' as const,
             accessibilityLabel: `Board ${place.board} ${word} pocket: ${chip.count} ${PIECE_NAMES[chip.piece]}${chip.count === 1 ? '' : 's'}${chip.usable ? ', tap to drop' : ''}${pickedPiece === chip.piece && actor === seat ? ', picked up' : ''}`,
-            style: [styles.chip, pickedPiece === chip.piece && actor === seat && styles.chipSelected, !chip.usable && actor === seat && styles.chipUnavailable],
+            style: [styles.chip, { width: chipWidth }, pickedPiece === chip.piece && actor === seat && styles.chipSelected, !chip.usable && actor === seat && styles.chipUnavailable],
           };
           const face = (
             <>
-              {/* The chip is a fixed-size piece of board art: its glyph and count do not grow with the system font (maxFontSizeMultiplier 1, CHECKLIST 6b). */}
-              <Text maxFontSizeMultiplier={1} style={[styles.glyph, place.color === 'w' ? styles.glyphWhite : styles.glyphBlack]}>{GLYPHS[chip.piece]}</Text>
-              <Text maxFontSizeMultiplier={1} style={styles.count}>{chip.count}</Text>
+              {/* The chip is board art: the piece is a vector in its colour (pieceArt.ts) and the count a small pill on it; neither grows with the system font (maxFontSizeMultiplier 1, CHECKLIST 6b). */}
+              <PieceIcon type={chip.piece} ink={pieceInk(place.color)} size={pocketPieceSize(Boolean(compact))} />
+              <View style={styles.countPill} pointerEvents="none">
+                <Text maxFontSizeMultiplier={1} style={styles.count}>{chip.count}</Text>
+              </View>
             </>
           );
           // The dual layout: a chip is a plain View with this board's own touch handlers (a Pressable would join the responder system the two boards must stay out of).
@@ -201,26 +233,26 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
 function createStyles(colors: AppColors, compact: boolean) {
   return StyleSheet.create({
     block: { alignItems: 'center', gap: compact ? 1 : 4 },
-    bar: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: compact ? 0 : 3, paddingHorizontal: 6, borderRadius: 8, borderWidth: 1, borderColor: 'transparent' },
+    // The strip: one row, at least as tall as its chips, CLIPPING what it holds (overflow hidden): whatever a layout engine does with the parts inside, nothing is drawn outside it, so nothing
+    // can cover the board, the clock beside it or the status line below. Its height is the chip's plus the bar's own padding - it does not depend on what the pocket holds.
+    bar: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: STRIP_GAP, minHeight: compact ? 30 : 36, paddingHorizontal: STRIP_PADDING, borderRadius: 8, borderWidth: 1, borderColor: 'transparent', overflow: 'hidden' },
     barRunning: { borderColor: colors.gold },
-    colourDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: '#555' },
+    colourDot: { width: STRIP_DOT, height: STRIP_DOT, borderRadius: STRIP_DOT / 2, borderWidth: 1, borderColor: '#555' },
     dotWhite: { backgroundColor: '#fff' },
     dotBlack: { backgroundColor: '#111' },
-    shape: { fontSize: 12, color: colors.textSecondary },
-    name: { flexShrink: 1, fontSize: 13, fontWeight: '700', color: colors.text },
-    // A pocket with many kinds of piece wraps onto a second line instead of running over the clock beside it (minWidth 0 lets the flex item shrink below its content); a taller bar is
-    // measured by the stacked layout (fitStackedCell) and by the scroll view, so nothing is cut off.
-    pocket: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 3, minHeight: 28, paddingHorizontal: 4, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
+    shape: { width: STRIP_SHAPE, textAlign: 'center', fontSize: 12, color: colors.textSecondary },
+    name: { flexShrink: 1, minWidth: 0, fontSize: compact ? 12 : 13, fontWeight: '700', color: colors.text },
+    // The pocket: a row that NEVER wraps (the old flex-wrap row stacked its chips vertically on the phone and let them run out of the bar), exactly as tall as a chip. It takes what the other
+    // parts leave (flex 1, minWidth 0); the chips' own widths are computed to fit it (pocketChipWidth).
+    pocket: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'flex-start', gap: POCKET_GAP, height: pocketChipHeight(compact) + 2, paddingHorizontal: POCKET_PADDING, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
     pocketFlash: { borderColor: '#2e7d32', backgroundColor: 'rgba(46,125,50,0.18)' },
-    empty: { fontSize: 12, color: colors.textSecondary },
-    chip: { height: compact ? 22 : 26, minWidth: 28, paddingHorizontal: 3, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 1, borderRadius: 7, backgroundColor: '#b58863', borderWidth: 1, borderColor: '#8a6d3b' },
+    chip: { height: pocketChipHeight(compact), flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: 7, backgroundColor: '#b58863', borderWidth: 1, borderColor: '#8a6d3b' },
     chipSelected: { backgroundColor: '#a2d149', borderColor: '#5a7a1a' },
     chipUnavailable: { opacity: 0.45 },
-    glyph: { fontSize: 16, lineHeight: 20 },
-    glyphWhite: { color: '#fff', textShadowColor: 'rgba(0,0,0,0.55)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 2 },
-    glyphBlack: { color: '#1b130c' },
-    count: { fontSize: 11, fontWeight: '700', color: '#2a1d10' },
-    clock: { minWidth: 58, textAlign: 'right', fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'], color: colors.textSecondary },
+    // the count: a small pill on the chip's lower right corner, readable on the piece in either colour
+    countPill: { position: 'absolute', right: -1, bottom: -1, minWidth: 13, height: 13, paddingHorizontal: 2, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.92)' },
+    count: { fontSize: 10, lineHeight: 12, fontWeight: '700', color: '#2a1d10' },
+    clock: { minWidth: STRIP_CLOCK_MIN_WIDTH, textAlign: 'right', fontSize: compact ? 14 : 16, fontWeight: '700', fontVariant: ['tabular-nums'], color: colors.textSecondary },
     clockRunning: { color: colors.text },
     clockLow: { color: colors.danger },
     banner: { fontSize: compact ? 13 : 15, fontWeight: '800', color: colors.text },

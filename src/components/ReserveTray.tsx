@@ -4,6 +4,8 @@ import { Pressable } from './AppPressable';
 import { Text } from './AppText';
 import { RESERVE_PIECE_TYPES, reserveTotal, type CrazyhouseState, type ReservePieceType } from '../logic/crazyhouse';
 import type { PieceColor } from '../types/chess';
+import { pieceInk } from './pieceArt';
+import PieceIcon from './PieceIcon';
 
 /** The tray's fixed height. The row never wraps and never changes height, so the layout around the board is deterministic —
  * GameScreenBody's `compact` spacing is sized against exactly this much extra chrome (same reasoning as the Spell Chess row). */
@@ -12,8 +14,6 @@ export const RESERVE_TRAY_MARGIN_TOP = 8;
 /** The smallest the row is scaled to when both reserves are full (a chip is then ~21 px wide: small, but this is the extreme of five piece types held by BOTH sides). */
 export const MIN_SCALE = 0.6;
 
-// Filled glyphs for both colours (the outlined "white" set is unreadable at small sizes); colour does the rest.
-const GLYPHS: Record<ReservePieceType, string> = { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛' };
 const PIECE_NAMES: Record<ReservePieceType, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen' };
 
 interface ReserveTrayProps {
@@ -68,7 +68,7 @@ export default function ReserveTray({ state, turn, interactive, selected, canDro
                       accessibilityRole="button"
                       accessibilityLabel={`${color === 'w' ? 'White' : 'Black'} reserve: ${state.reserve[color][piece]} ${PIECE_NAMES[piece]}${state.reserve[color][piece] === 1 ? '' : 's'}${usable ? ', tap to drop' : ''}`}
                     >
-                      <Text style={[styles.glyph, color === 'w' ? styles.glyphWhite : styles.glyphBlack]}>{GLYPHS[piece]}</Text>
+                      <PieceIcon type={piece} ink={pieceInk(color)} size={22} />
                       <Text style={styles.count}>{state.reserve[color][piece]}</Text>
                     </Pressable>
                   );
