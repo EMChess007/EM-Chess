@@ -32,6 +32,12 @@ describe('nextAutoRetryDelay', () => {
     expect(nextAutoRetryDelay(at(0), 57000)).toBeNull();
   });
 
+  it('counts from the FIRST failure, not from the latest one: a latest failure at 58000 ms of an episode that began at 0 has no try left', () => {
+    expect(nextAutoRetryDelay({ firstFailureAt: 0, lastFailureAt: 58000, retries: 0 }, 58000)).toBeNull();
+    expect(nextAutoRetryDelay({ firstFailureAt: 0, lastFailureAt: 40000, retries: 1 }, 55000)).toBeNull(); // 55000 + 6000 >= 60000
+    expect(nextAutoRetryDelay({ firstFailureAt: 0, lastFailureAt: 40000, retries: 1 }, 53999)).toBe(6000);
+  });
+
   it('counts from the FIRST failure of the episode, not from now', () => {
     expect(nextAutoRetryDelay(at(0, 100000), 100000)).toBe(3000);
     expect(nextAutoRetryDelay(at(0, 100000), 157000)).toBeNull();

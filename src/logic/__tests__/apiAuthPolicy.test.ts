@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, ApiError, AUTH_DEADLINE_MS, AUTH_WAKING_NOTICE_MS, CancelledError, isCancelled, setSessionExpiredHandler } from '../../api/client';
 
@@ -187,6 +189,9 @@ describe('a try that fails is tried again while the minute lasts', () => {
     [401, 'Invalid email or password'],
     [409, 'Email or username already in use'],
     [500, 'boom'],
+    [404, 'not found'],
+    [408, 'request timeout'],
+    [429, 'slow down'],
   ])('a %i is an answer: one try, its own message, no retry', async (status, message) => {
     const seen = script(() => json(status, { error: message }));
     const end = await settledAfter(0, () => api.login('a@b.co', 'password-1'));
@@ -333,6 +338,128 @@ describe('never more than one sign-in in flight', () => {
     setSessionExpiredHandler(handler);
     await settledAfter(0, () => api.getMe('the-token'));
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the guard of a register that may have created the account is exact', () => {
+  /** A register that is cancelled while the server holds it: the pair (email, username) is now "maybe created". */
+  async function lose(email: string, username: string) {
+    script((_n, init) => hanging(init));
+    const controller = new AbortController();
+    void api.register(email, username, 'password-1', { signal: controller.signal }).catch(() => {});
+    await vi.advanceTimersByTimeAsync(10);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(0);
+  }
+  const kinds = (seen: Scripted) => seen.calls.map((call) => call.url.split('/auth/')[1]);
+  const conflict = () => json(409, { error: 'Email or username already in use' });
+
+  it('the log in it tries carries the EMAIL (and the password) - not the username', async () => {
+    await lose('Mia@B.co', 'mia-the-user');
+    let body = '';
+    const seen = script((_n, init, url) => {
+      if (url.endsWith('/auth/login')) body = String(init.body);
+      return url.endsWith('/auth/register') ? conflict() : json(200, SESSION);
+    });
+    await settledAfter(0, () => api.register('Mia@B.co', 'mia-the-user', 'password-9'));
+    expect(kinds(seen)).toEqual(['register', 'login']);
+    expect(JSON.parse(body)).toEqual({ email: 'Mia@B.co', password: 'password-9' });
+  });
+
+  it('the pair is compared without regard to case: the same email in another spelling is the same account', async () => {
+    await lose('Nina@B.co', 'nina');
+    const seen = script((_n, _init, url) => (url.endsWith('/auth/register') ? conflict() : json(200, SESSION)));
+    const end = await settledAfter(0, () => api.register('nina@b.co', 'NINA', 'password-1'));
+    expect(kinds(seen)).toEqual(['register', 'login']);
+    expect(end.value).toEqual(SESSION);
+  });
+
+  it('another username for the same email is another pair: a 409 stays a 409', async () => {
+    await lose('pair@b.co', 'first');
+    const seen = script(() => conflict());
+    const end = await settledAfter(0, () => api.register('pair@b.co', 'second', 'password-1'));
+    expect((end.error as ApiError).status).toBe(409);
+    expect(kinds(seen)).toEqual(['register']);
+  });
+
+  it('another email for the same username is another pair: a 409 stays a 409', async () => {
+    await lose('one@b.co', 'shared');
+    const seen = script(() => conflict());
+    const end = await settledAfter(0, () => api.register('two@b.co', 'shared', 'password-1'));
+    expect((end.error as ApiError).status).toBe(409);
+    expect(kinds(seen)).toEqual(['register']);
+  });
+
+  it('an ANSWER of the server (a 400) after the lost try clears it: the next 409 for the pair stays a 409', async () => {
+    await lose('clear@b.co', 'clear');
+    script(() => json(400, { error: 'Invalid email' }));
+    await settledAfter(0, () => api.register('clear@b.co', 'clear', 'short'));
+    const seen = script(() => conflict());
+    const end = await settledAfter(0, () => api.register('clear@b.co', 'clear', 'password-1'));
+    expect((end.error as ApiError).status).toBe(409);
+    expect(kinds(seen)).toEqual(['register']);
+  });
+
+  it('a SUCCESS after the lost try clears it too', async () => {
+    await lose('won@b.co', 'won');
+    script(() => json(201, SESSION));
+    await settledAfter(0, () => api.register('won@b.co', 'won', 'password-1'));
+    const seen = script(() => conflict());
+    const end = await settledAfter(0, () => api.register('won@b.co', 'won', 'password-1'));
+    expect((end.error as ApiError).status).toBe(409);
+    expect(kinds(seen)).toEqual(['register']);
+  });
+});
+
+describe('the waking notice belongs to the sign-in alone', () => {
+  it('a load cannot be given one: `onWaking` is handed to a request in exactly one place, authRequest, and only the three sign-in calls reach it', () => {
+    const source = readFileSync(path.resolve(__dirname, '../../api/client.ts'), 'utf8');
+    expect(source.match(/onWaking: call\?\.onWaking/g)).toHaveLength(1);
+    expect(source.match(/authRequest[<(]/g)?.length).toBe(5); // its definition, register, the guard's log in, log in and the session check
+  });
+});
+
+describe('the one slot, in detail', () => {
+  it('a cancelled sign-in that finishes late does not free the slot of the sign-in that replaced it', async () => {
+    script((n, init) => (n <= 2 ? hanging(init) : json(200, SESSION)));
+    const first = new AbortController();
+    void api.login('a@b.co', 'password-1', { signal: first.signal }).catch(() => {});
+    await vi.advanceTimersByTimeAsync(10);
+    first.abort(); // frees the slot at once
+    const second = new AbortController();
+    void api.login('a@b.co', 'password-1', { signal: second.signal }).catch(() => {}); // takes it
+    await vi.advanceTimersByTimeAsync(10); // the first call's own cleanup has run by now
+    const third = await settledAfter(0, () => api.login('a@b.co', 'password-1'));
+    expect((third.error as ApiError).message).toBe('A sign-in is already in progress. Please wait for it, or cancel it first.');
+    second.abort();
+  });
+
+  it('the session check holds the slot like any sign-in, and is refused while one runs', async () => {
+    script((_n, init) => hanging(init));
+    const running = new AbortController();
+    void api.login('a@b.co', 'password-1', { signal: running.signal }).catch(() => {});
+    await vi.advanceTimersByTimeAsync(10);
+    const check = await settledAfter(0, () => api.getMe('the-token'));
+    expect((check.error as ApiError).message).toContain('already in progress');
+    running.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    const checking = new AbortController();
+    void api.getMe('the-token', { signal: checking.signal }).catch(() => {});
+    await vi.advanceTimersByTimeAsync(10);
+    const login = await settledAfter(0, () => api.login('a@b.co', 'password-1'));
+    expect((login.error as ApiError).message).toContain('already in progress');
+    checking.abort();
+  });
+
+  it('a Cancel during the wait between two tries leaves no timer running', async () => {
+    script(() => Promise.reject(new TypeError('Network request failed')));
+    const controller = new AbortController();
+    void api.login('a@b.co', 'password-1', { signal: controller.signal }).catch(() => {});
+    await vi.advanceTimersByTimeAsync(500);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

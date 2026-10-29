@@ -90,15 +90,18 @@ describe('on the online backend', () => {
     expect(onLoad).toHaveBeenCalledTimes(6);
   });
 
-  it('a screen that re-renders with a new Retry function does not restart the timer', async () => {
-    const onLoad = vi.fn();
-    const view = render(<Screen online onLoad={onLoad} />);
+  it('a screen that re-renders with a new Retry function does not restart the timer, and the NEW function is the one that is called', async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const view = render(<Screen online onLoad={first} />);
     await advance(2000);
-    view.rerender(<Screen online onLoad={() => onLoad()} />);
+    view.rerender(<Screen online onLoad={second} />);
     await advance(999);
-    expect(onLoad).not.toHaveBeenCalled();
+    expect(first).not.toHaveBeenCalled();
+    expect(second).not.toHaveBeenCalled();
     await advance(1);
-    expect(onLoad).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(first).not.toHaveBeenCalled();
   });
 
   it('leaving the screen cancels the automatic try', async () => {

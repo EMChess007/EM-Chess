@@ -20,7 +20,7 @@ module.exports = {
   copy: ['src', 'assets', 'scripts/browser', 'App.tsx', 'package.json', 'tsconfig.json', 'vitest.config.mts'],
   junction: ['node_modules'],
   cmd:
-    'npx vitest run src/logic/__tests__/apiAuthPolicy.test.ts src/logic/__tests__/serverStartup.test.ts src/logic/__tests__/apiRequestDeadline.test.ts src/screens/__tests__/serverStarting.dom.test.tsx src/screens/__tests__/signInWaking.dom.test.tsx src/screens/__tests__/loadFailed.dom.test.tsx',
+    'npx vitest run src/logic/__tests__/apiAuthPolicy.test.ts src/logic/__tests__/serverStartup.test.ts src/logic/__tests__/apiRequestDeadline.test.ts src/screens/__tests__/serverStarting.dom.test.tsx src/screens/__tests__/signInHook.dom.test.tsx src/screens/__tests__/signInWaking.dom.test.tsx src/screens/__tests__/loadFailed.dom.test.tsx',
   mutantTimeoutMs: 6 * 60 * 1000,
   mutants: [
     // --- the numbers ---
@@ -48,7 +48,7 @@ module.exports = {
     ['log: a gateway status is described as a network error', C, 'if (err instanceof GatewayStatus) return `HTTP ${err.status}`;', ''],
     // --- the waking notice ---
     ['auth: the notice timer is left running', C, '    clearTimeout(wakingTimer);', ''],
-    ['auth: the notice is asked for by loads too', C, 'const wakingTimer = options.auth && options.onWaking ?', 'const wakingTimer = options.onWaking ?'],
+    ['auth: EQUIVALENT (no load can be given onWaking: it reaches a request only through authRequest; pinned by the scan test "the waking notice belongs to the sign-in alone") the notice is asked for by loads too', C, 'const wakingTimer = options.auth && options.onWaking ?', 'const wakingTimer = options.onWaking ?'],
     // --- Cancel ---
     ['cancel: the signal is not handed to the tries', C, 'options.auth ? options.signal : undefined,', 'undefined,'],
     ['cancel: the try is not aborted', C, '      controller.abort();\n      reject(new CancelledError());', '      reject(new CancelledError());'],
@@ -88,7 +88,7 @@ module.exports = {
     ['register: the 409 carries the new status when the sign in fails', C, '        throw err; // not the account this person made', '        throw loginErr; // not the account this person made'],
     // --- the screens' hook and message ---
     ['hook: Cancel does nothing', H, '    controllerRef.current?.abort();\n  }, []);', '  }, []);'],
-    ['hook: leaving the screen does not cancel', H, '    () => {\n      controllerRef.current?.abort();\n    },', '    () => {},'],
+    ['hook: leaving the screen does not cancel', H, '    () => () => {\n      controllerRef.current?.abort();\n    },', '    () => () => {},'],
     ['hook: the notice never shows', H, 'onWaking: () => setWaking(true)', 'onWaking: () => setWaking(false)'],
     ['hook: the notice stays after the answer', H, '      if (controllerRef.current === controller) controllerRef.current = null;\n      setWaking(false);', '      if (controllerRef.current === controller) controllerRef.current = null;'],
     ['hook: the signal is not handed on', H, '{ signal: controller.signal, onWaking', '{ onWaking'],

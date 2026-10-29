@@ -102,6 +102,25 @@ describe('Log in', () => {
   }, 30000);
 });
 
+describe('Sign up, Cancel', () => {
+  it('Cancel closes the request and shows no error', async () => {
+    server.set({ neverAnswer: true });
+    const abandonedBefore = server.abandoned;
+    render(<RegisterScreen onSuccess={() => {}} onSwitchToLogin={() => {}} onBack={() => {}} />);
+    type('Email', 'cancel-user@example.com');
+    type('Username', 'cancel-user');
+    type('Password (at least 8 characters)', 'password-7');
+    fireEvent.click(screen.getAllByText('Sign Up').at(-1) as HTMLElement);
+    await waitFor(() => expect(screen.getByTestId('signin-cancel')).toBeTruthy(), { timeout: BOUND_MS });
+    await waitFor(() => expect(server.requests.length).toBeGreaterThan(0), { timeout: BOUND_MS });
+    fireEvent.click(screen.getByTestId('signin-cancel'));
+    await waitFor(() => expect(screen.queryByTestId('signin-cancel')).toBeNull(), { timeout: BOUND_MS });
+    await waitFor(() => expect(server.abandoned).toBe(abandonedBefore + 1), { timeout: BOUND_MS });
+    expect(screen.queryByText('Cancelled.')).toBeNull();
+    expect(screen.queryByText(/Something went wrong/)).toBeNull();
+  }, 60000);
+});
+
 describe('Sign up', () => {
   it('shows the same Cancel and waking message and creates the account once', async () => {
     server.set({ holdEachMs: 7000 });
