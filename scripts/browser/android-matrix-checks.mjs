@@ -60,11 +60,20 @@ export function pageChecks(opts) {
   // A board square answers to the board's own minimum cell (below), not to the 44 dp target rule.
   const squareLabel = /^[a-n](1[0-4]|[1-9])(,|$)/;
   /** Under a modal or another layer: its centre point belongs to an unrelated element. Such an element is not on screen for the person, so it is not judged here. */
-  // A window-sized modal layer (aria-modal: the Bughouse size gate's "rotate the device" overlay) hides everything outside it, including what lies beyond the window's edge.
-  const blockingLayer = Array.from(document.querySelectorAll('[aria-modal="true"]')).find((m) => {
+  // A window-sized layer that dims what is under it (a dialog's overlay, the Bughouse size gate's "rotate the device" overlay: positioned, covering the window, a background at least 40 % opaque)
+  // hides everything outside it, including what lies beyond the window's edge. react-native-web does not render accessibilityViewIsModal as aria-modal, so the layer is found by what it is.
+  const alphaOf = (color) => {
+    const m = /^rgba?\(([^)]*)\)$/.exec(color);
+    if (!m) return 0;
+    const parts = m[1].split(/[ ,/]+/).filter(Boolean);
+    return parts.length >= 4 ? Number(parts[3]) : 1;
+  };
+  const blockingLayer = Array.from(document.querySelectorAll('div,[aria-modal="true"]')).find((m) => {
+    const cs = getComputedStyle(m);
+    if (cs.position !== 'fixed' && cs.position !== 'absolute') return false;
     const mr = m.getBoundingClientRect();
-    const position = getComputedStyle(m).position;
-    return (position === 'fixed' || position === 'absolute') && mr.width * mr.height >= vw * vh * 0.9;
+    if (mr.width * mr.height < vw * vh * 0.95) return false;
+    return m.getAttribute('aria-modal') === 'true' || alphaOf(cs.backgroundColor) >= 0.4;
   });
   const covered = (el, r) => {
     if (blockingLayer && !blockingLayer.contains(el) && !el.contains(blockingLayer)) return true;
