@@ -447,7 +447,8 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
     <View style={styles.container} testID="bughouse-game">
       {compact ? (
         <View style={[styles.compactBar, { paddingTop: insets.top }]} testID="bughouse-compact-bar">
-          <Pressable accessibilityRole="button" accessibilityLabel="Back to the menu" onPress={onExit} style={styles.compactBack}>
+          {/* Slim like the controls beside it (28 dp + hit slop = 44 dp): with AppPressable's 44 dp floor the bar grew by 8 dp and two boards side by side no longer fitted a 360 dp high window. */}
+          <Pressable accessibilityRole="button" accessibilityLabel="Back to the menu" onPress={onExit} style={styles.compactBack} compact hitSlop={SLIM_HIT_SLOP}>
             <Text style={styles.controlText}>‹ Menu</Text>
           </Pressable>
           <Text style={styles.compactTitle}>
