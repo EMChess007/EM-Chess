@@ -40,6 +40,10 @@ import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { ReservePieceType } from '../logic/crazyhouse';
 import type { SeatConfig } from '../logic/fourPlayer/setup';
 import { botDisplayName } from '../logic/fourPlayerBots';
+import { resultOf, serverNowAt, type BughouseOnlineAction, type BughouseOnlineView } from '../logic/bughouseOnline';
+import type { BughouseConnection } from '../logic/bughouseOnlineSession';
+import { matchIntroLine, seatDisplayName } from '../logic/bughouseOnlineUi';
+import { CANT_REACH } from '../logic/bughouseOnlineSession';
 import { PROMOTION_LABELS } from '../logic/promotion';
 
 interface BughouseGameScreenProps {
@@ -51,6 +55,29 @@ interface BughouseGameScreenProps {
   clock?: () => number;
   /** Tests only: start from this position instead of the standard one (its clocks must be on the screen's time base, i.e. start at 0). */
   startFrom?: BughouseMatch;
+  /**
+   * ONLINE (W4): the game is the server's. The binding carries the view (the match as the server last said it), the connection, and what to do with the person's input: an action is SENT
+   * (`onAction`), never played here; there are no bots, no flag timers and no rematch on this screen (the server runs them). `seats` is then `onlineSeatConfig(mySeat)`. Everything that
+   * draws - the layouts, the boards, the touch input, the pockets, the promotion choice, the result card - is this screen's own, not a copy.
+   */
+  online?: BughouseOnlineBinding;
+}
+
+/** What the online wrapper (`BughouseOnlineGameScreen`) gives the game screen. */
+export interface BughouseOnlineBinding {
+  view: BughouseOnlineView;
+  /** The local clock (ms), ticking: the clocks are the server's "now" estimated from it (`serverNowAt`). */
+  now: number;
+  connection: BughouseConnection;
+  /** Why the room could not be read again ("Can't reach the server"), or why the game is gone; null when all is well. */
+  problem: string | null;
+  onAction: (action: BughouseOnlineAction) => void;
+  /** The wrapper asks "Resign?" and sends it. */
+  onResign: () => void;
+  onRetry: () => void;
+  onPlayAgain: () => void;
+  /** A refusal of the resignation, in words. */
+  resignError: string | null;
 }
 
 const PROMOTION_ORDER: readonly PromotionPiece[] = ['q', 'r', 'b', 'n'];
@@ -62,7 +89,7 @@ const PROMOTION_ORDER: readonly PromotionPiece[] = ['q', 'r', 'b', 'n'];
 /** The hit slop of a slim control (28 dp tall): 8 dp above and below, 4 dp to the sides - a 44 dp touch area without the height. */
 const SLIM_HIT_SLOP = { top: 8, bottom: 8, left: 4, right: 4 };
 
-export default function BughouseGameScreen({ seats, timeControl, onExit, rng, clock, startFrom }: BughouseGameScreenProps) {
+export default function BughouseGameScreen({ seats, timeControl, onExit, rng, clock, startFrom, online }: BughouseGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const win = useWindowDimensions();
@@ -82,14 +109,23 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
     return lastRead.current;
   }, [readClock]);
 
-  const [state, setState] = useState<LocalGameState>(() => {
+  const [localState, setState] = useState<LocalGameState>(() => {
     const fresh = startLocalGame(timeControl, 0, Math.floor(random() * 1000000));
     // The device matrix's test-only fixture (bughouseFixture.ts): honoured on the web in a development build only, ignored (with one warning) anywhere else.
-    const fixture = readBughouseFixture(typeof __DEV__ !== 'undefined' && __DEV__, Platform.OS, (globalThis as Record<string, unknown>)[BUGHOUSE_FIXTURE_GLOBAL]);
+    const fixture = online ? null : readBughouseFixture(typeof __DEV__ !== 'undefined' && __DEV__, Platform.OS, (globalThis as Record<string, unknown>)[BUGHOUSE_FIXTURE_GLOBAL]);
     const from = startFrom ?? (fixture !== null ? fixtureMatch(fixture, timeControl) : undefined);
     return from ? { ...fresh, match: from } : fresh;
   });
+  // ONLINE (W4): the match, the last moves and the bank come from the server's snapshots (the binding's view), never from this screen. A result that `bug_game_over` carried but the
+  // snapshot has not yet is put on the match so the whole screen agrees the game is over.
+  const onlineResult = online ? resultOf(online.view) : null;
+  const state: LocalGameState = online
+    ? { match: online.view.match.result === null && onlineResult !== null ? { ...online.view.match, result: onlineResult } : online.view.match, lastMove: online.view.lastMove, bank: online.view.bank }
+    : localState;
   const stateRef = useRef(state);
+  if (online) stateRef.current = state;
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
   const [nowMs, setNowMs] = useState(0);
   const [flagKick, setFlagKick] = useState(0);
   const [swapped, setSwapped] = useState(false);
@@ -119,6 +155,12 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   /** The one place the state changes: the engine's funnel at the current instant. */
   const commit = useCallback(
     (input: Parameters<typeof localStep>[1]) => {
+      // ONLINE: nothing is played here. A move or a drop is SENT; the board changes when the server's snapshot arrives. (The outcome is only read by the bots and the flag timer, which do not run online.)
+      const bound = onlineRef.current;
+      if (bound) {
+        if (input !== null && (input.action.kind === 'move' || input.action.kind === 'drop')) bound.onAction(input.action);
+        return { kind: 'idle' } as unknown as ReturnType<typeof localStep>['outcome'];
+      }
       const step = localStep(stateRef.current, input, elapsed());
       if (step.outcome.kind === 'applied' || step.outcome.kind === 'flag') {
         stateRef.current = step.state;
@@ -133,24 +175,26 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   // The clocks on screen.
   const over = match.result !== null;
   useEffect(() => {
-    if (over) return;
+    if (over || online) return; // online, the hook ticks the local clock and the clocks are the server's instant estimated from it
     const id = setInterval(() => setNowMs(elapsed()), 200);
     return () => clearInterval(id);
-  }, [over, elapsed]);
+  }, [over, online, elapsed]);
 
-  // The flag timer: it fires when the earliest running clock would flag; a timer that wakes a hair early is idle and re-armed.
+  // The flag timer: it fires when the earliest running clock would flag; a timer that wakes a hair early is idle and re-armed. Online the SERVER settles flags and says so in a snapshot.
   useEffect(() => {
     const deadline = nextDeadline(match);
-    if (deadline === null) return;
+    if (deadline === null || online) return;
     const id = setTimeout(() => {
       if (commit(null).kind === 'idle') setFlagKick((k) => k + 1);
     }, Math.max(0, deadline - elapsed()));
     return () => clearTimeout(id);
-  }, [match, commit, elapsed, flagKick]);
+  }, [match, commit, elapsed, flagKick, online]);
 
   // The bots: one pending move per board, kept while the same seat is still on move (a busy other board must not postpone it).
   const botTimers = useRef<Record<BoardId, { seat: BughouseSeat; id: ReturnType<typeof setTimeout> } | null>>({ A: null, B: null });
   useEffect(() => {
+    // Online the other three seats are drawn as bots only so that the layout is the one-human one: the SERVER plays them (and the real humans).
+    if (online) return;
     const due = dueBotSeats(seats, match);
     for (const board of BOARD_IDS) {
       const pending = botTimers.current[board];
@@ -173,7 +217,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
       }, bughouseBotThinkMs(timeControl.initialMs));
       botTimers.current[board] = { seat, id };
     }
-  }, [match, seats, commit, random, timeControl.initialMs]);
+  }, [match, seats, commit, random, timeControl.initialMs, online]);
   useEffect(
     () => () => {
       for (const board of BOARD_IDS) {
@@ -185,7 +229,9 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   );
 
   // --- Taps ---------------------------------------------------------------------------------------------------------------------------------
-  const actors = { A: touchSeat(seats, match, 'A'), B: touchSeat(seats, match, 'B') };
+  // Online, a board is touchable only while the connection is up, no resync is running and none of our actions is waiting for the server's answer (a second one would run ahead of the match).
+  const onlineBlocked = online !== undefined && (online.connection !== 'connected' || online.view.resyncing || online.view.pending !== null);
+  const actors = onlineBlocked ? { A: null, B: null } : { A: touchSeat(seats, match, 'A'), B: touchSeat(seats, match, 'B') };
 
   const movesOfSelected = useMemo(() => (selected ? legalMovesOn(match, selected.board).filter((m) => m.from === selected.square) : []), [match, selected]);
   const selectedTargets = useMemo(() => Array.from(new Set(movesOfSelected.map((m) => m.to))), [movesOfSelected]);
@@ -262,6 +308,10 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   };
 
   const resign = () => {
+    if (online) {
+      if (match.result === null) online.onResign();
+      return;
+    }
     const board = mainBoardOf(layout);
     const seat = layout.kind === 'standard' ? layout.seat : touchSeat(seats, match, board);
     if (seat !== null && match.result === null) commit({ seat, action: { kind: 'resign' } });
@@ -269,7 +319,10 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
 
   // --- Rendering ----------------------------------------------------------------------------------------------------------------------------
   const humans = humanBughouseSeats(seats);
+  // The instant the clocks are drawn at: Local its own elapsed time; online the SERVER's "now" estimated from the last snapshot (never the wall clock compared with the server's).
+  const clockNow = online ? serverNowAt(online.view, online.now) : nowMs;
   const seatName = (seat: BughouseSeat): string => {
+    if (online) return seatDisplayName(online.view, seat, online.now);
     const controller = seats[seat];
     if (controller.kind === 'bot') return botDisplayName(controller.elo);
     return humans.length === 1 ? 'You' : seatRowLabel(seat).text.replace(/ · Team \d/, '');
@@ -318,7 +371,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         key={board}
         board={board}
         match={match}
-        nowMs={nowMs}
+        nowMs={clockNow}
         orientation={dual ? dualBoardOrientation(seats, board, match, autoFlip) : boardOrientation(layout, board, match, autoFlip)}
         cell={cell}
         lastMove={state.lastMove[board]}
@@ -379,7 +432,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
             const chips = pocketChips(match, seat, null);
             return (
               <Text key={seat} style={styles.thumbLine} testID={`thumb-line-${board}-${word}`}>
-                {`${word === 'white' ? '○' : '●'} ${seatName(seat)}  ${formatBughouseClock(remainingAt(match.clocks[seat], nowMs))}${chips.length ? `  ${chips.map((c) => `${c.piece.toUpperCase()}${c.count}`).join(' ')}` : ''}`}
+                {`${word === 'white' ? '○' : '●'} ${seatName(seat)}  ${formatBughouseClock(remainingAt(match.clocks[seat], clockNow))}${chips.length ? `  ${chips.map((c) => `${c.piece.toUpperCase()}${c.count}`).join(' ')}` : ''}`}
               </Text>
             );
           })}
@@ -462,7 +515,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
           {controlsInBar && <View style={styles.compactControls}>{controls}</View>}
         </View>
       ) : (
-        <ScreenHeader title="Bughouse" subtitle={layout.kind === 'passAndPlay' ? 'Local · pass and play' : 'Local'} onBack={onExit} backLabel="‹ Menu" />
+        <ScreenHeader title="Bughouse" subtitle={online ? `Online · ${online.view.timeControlLabel}` : layout.kind === 'passAndPlay' ? 'Local · pass and play' : 'Local'} onBack={onExit} backLabel="‹ Menu" />
       )}
       <ScrollView
         contentContainerStyle={styles.content}
@@ -476,6 +529,51 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         }}
       >
         {!controlsInBar && <View style={styles.controls}>{controls}</View>}
+
+        {online && (
+          <View style={styles.onlineStatus} testID="bughouse-online-status">
+            <Text style={styles.onlineIntro} testID="bughouse-online-intro">
+              {matchIntroLine(online.view)}
+            </Text>
+            {online.connection === 'reconnecting' && (
+              <Text style={styles.onlineWarning} testID="bughouse-online-reconnecting">
+                Connection lost — trying to reconnect…
+              </Text>
+            )}
+            {online.connection === 'connected' && online.view.resyncing && (
+              <Text style={styles.onlineWarning} testID="bughouse-online-resync">
+                Catching up with the game…
+              </Text>
+            )}
+            {online.connection === 'unavailable' ? (
+              <Text style={styles.onlineError} testID="bughouse-online-unavailable">
+                {online.problem ?? 'This game is no longer available.'}
+              </Text>
+            ) : (
+              online.problem !== null &&
+              !over && (
+                <View style={styles.onlineRetryRow}>
+                  <Text style={styles.onlineError} testID="bughouse-online-problem">
+                    {online.problem === CANT_REACH ? `${CANT_REACH} Your board may be out of date.` : online.problem}
+                  </Text>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Retry" testID="bughouse-online-retry" style={styles.control} onPress={online.onRetry}>
+                    <Text style={styles.controlText}>Retry</Text>
+                  </Pressable>
+                </View>
+              )
+            )}
+            {online.view.actionError !== null && (
+              <Text style={styles.onlineError} testID="bughouse-online-action-error">
+                {online.view.actionError}
+              </Text>
+            )}
+            {online.resignError !== null && (
+              <Text style={styles.onlineError} testID="bughouse-online-resign-error">
+                {online.resignError}
+              </Text>
+            )}
+          </View>
+        )}
 
         {blockedLayout ? (
           <Text style={styles.banner}>This seat setup is not available yet.</Text>
@@ -508,8 +606,8 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
               {summary.detail}
             </Text>
             <View style={styles.gameOverButtons}>
-              <Pressable accessibilityRole="button" testID="bughouse-rematch" style={styles.primary} onPress={rematch}>
-                <Text style={styles.primaryText}>Rematch</Text>
+              <Pressable accessibilityRole="button" testID="bughouse-rematch" style={styles.primary} onPress={online ? online.onPlayAgain : rematch}>
+                <Text style={styles.primaryText}>{online ? 'Play again' : 'Rematch'}</Text>
               </Pressable>
               <Pressable accessibilityRole="button" testID="bughouse-menu" style={styles.secondary} onPress={onExit}>
                 <Text style={styles.secondaryText}>Back to menu</Text>
@@ -554,6 +652,11 @@ function createStyles(colors: AppColors) {
     compactTitle: { flexGrow: 1, flexShrink: 1, minWidth: 0, fontSize: 16, fontWeight: '800', color: colors.text },
     compactControls: { flexDirection: 'row', flexWrap: 'wrap', flexShrink: 1, justifyContent: 'flex-end', gap: 6 },
     banner: { fontSize: 16, fontWeight: '800', color: colors.text, textAlign: 'center' },
+    onlineStatus: { alignSelf: 'stretch', gap: 4, alignItems: 'center' },
+    onlineIntro: { fontSize: 13, fontWeight: '700', color: colors.text, textAlign: 'center' },
+    onlineWarning: { fontSize: 13, color: colors.mode === 'dark' ? '#e0c34a' : '#8d6e00', textAlign: 'center' },
+    onlineError: { fontSize: 13, color: colors.danger, textAlign: 'center' },
+    onlineRetryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'center' },
     portrait: { alignItems: 'center', gap: 8, alignSelf: 'stretch' },
     sideBySide: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', justifyContent: 'center' },
     // humans on both boards: the gap between the boards is a dead zone for touches (BUGHOUSE_DUAL_GUTTER)

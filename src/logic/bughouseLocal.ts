@@ -31,8 +31,8 @@ export function startLocalGame(timeControl: BughouseTimeControl, startMs: number
   return { match: createMatch({ timeControl, roomNumber, startMs }), lastMove: { A: null, B: null }, bank: null };
 }
 
-/** What a commit's events change in the screen-only state. */
-function afterEvents(state: LocalGameState, match: BughouseMatch, events: readonly BughouseEvent[]): LocalGameState {
+/** What a commit's events change in the screen-only state (the Online view uses the same function on the events of a `bug_state`). */
+export function afterEvents(state: LocalGameState, match: BughouseMatch, events: readonly BughouseEvent[]): LocalGameState {
   let lastMove = state.lastMove;
   let bank = state.bank;
   for (const event of events) {

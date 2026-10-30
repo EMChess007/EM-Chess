@@ -47,8 +47,9 @@ interface PlayModeSelectScreenProps {
   /** Chaturaji (4 players on an 8 x 8 board): Local (seat setup, bots allowed) and Online (behind the login gate). */
   onChaturaji: () => void;
   onChaturajiOnline: () => void;
-  /** Bughouse (two teams of two, two boards): Local only so far (seat setup, bots allowed). */
+  /** Bughouse (two teams of two, two boards): Local (seat setup, bots allowed) and Online (W4, behind the login gate: queue, bots fill the empty seats after 30 s). */
   onBughouse: () => void;
+  onBughouseOnline: () => void;
   /** Set while the player has left an online 4 Player game that is still going: offers "Return to your game". */
   onFourPlayerResume?: () => void;
   /** Which game that left online game is, so the link sits under its card (4 Player Chess when omitted, as before Chaturaji). */
@@ -103,6 +104,7 @@ export default function PlayModeSelectScreen({
   onChaturaji,
   onChaturajiOnline,
   onBughouse,
+  onBughouseOnline,
   onFourPlayerResume,
   fourPlayerResumeVariant = 'ffa',
   onLocalSpellChess,
@@ -139,6 +141,7 @@ export default function PlayModeSelectScreen({
   const handleFourPlayerOnline = requireLogin(onFourPlayerOnline);
   const handleFourPlayerGiveawayOnline = requireLogin(onFourPlayerGiveawayOnline);
   const handleChaturajiOnline = requireLogin(onChaturajiOnline);
+  const handleBughouseOnline = requireLogin(onBughouseOnline);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [bughouseRulesOpen, setBughouseRulesOpen] = useState(false);
   const resumeLink = (variant: FourVariant) =>
@@ -322,10 +325,13 @@ export default function PlayModeSelectScreen({
 
         <View style={styles.categoryCard} testID="bughouse-card">
           <Text style={styles.categoryTitle}>Bughouse</Text>
-          <Text style={styles.categorySubtitle}>Two teams of two on two boards — a piece you capture goes to your partner&apos;s pocket. Play against bots or pass the device</Text>
+          <Text style={styles.categorySubtitle}>Two teams of two on two boards — a piece you capture goes to your partner&apos;s pocket. Play against bots, pass the device, or play online</Text>
           <View style={styles.subButtonRow}>
             <Pressable accessibilityLabel="Bughouse local" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onBughouse}>
               <ModeButtonLabel label="Local" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable accessibilityLabel="Bughouse online" testID="bughouse-online-button" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={handleBughouseOnline}>
+              <ModeButtonLabel label="Online" style={styles.subButtonText} />
             </Pressable>
           </View>
           <Pressable accessibilityLabel="Bughouse rules" testID="bughouse-rules-link" style={styles.spectateLink} onPress={() => setBughouseRulesOpen(true)}>
