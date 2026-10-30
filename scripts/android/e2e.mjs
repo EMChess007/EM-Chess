@@ -20,7 +20,8 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { SCREENS } from '../browser/android-matrix-screens.mjs';
-import { EXTRA_SCREENS } from '../browser/android-matrix-screens-extra.mjs';
+// Bughouse's screens live in an optional file (a branch without Bughouse has none): the run then covers the screens it has.
+const EXTRA_SCREENS = await import('../browser/android-matrix-screens-extra.mjs').then((m) => m.EXTRA_SCREENS, () => []);
 import { Device, PROFILES, sleep } from './lib/device.mjs';
 import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
 import { crashIssues, judgePieceCell, judgeSelection, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
