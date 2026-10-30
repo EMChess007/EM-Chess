@@ -133,11 +133,11 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
     if (box === null) continue;
     // Bots keep playing on a screen with bots: the piece that was in this cell when the cell was chosen may have moved away before the photograph. The marker is read again after it, and a
     // cell whose piece changed meanwhile is not judged (a stale photograph, not a wrong colour).
-    // A photograph that shows a problem is taken up to three times: a bot's move landing during it is gone in the next one, a wrong colour is still there.
+    // A photograph that shows a problem is taken up to five times: a bot's move landing during it is gone in the next one, a wrong colour is still there.
     const markerNow = () => handle.getAttribute(attribute).catch(() => null);
     let png = null;
     let problem = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       if ((await markerNow()) !== f.marker) {
         png = null;
         break;
@@ -150,10 +150,10 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
       png = PNG.sync.read(shot);
       problem = judgeCell(f.marker, png);
       if (problem === null) break;
-      await page.waitForTimeout(60);
+      await page.waitForTimeout(150);
     }
     if (png === null) continue;
-    if (problem !== null) issues.push({ kind: 'piece-colour', el: `${f.marker} on board ${f.board}`, detail: problem });
+    if (problem !== null) issues.push({ kind: 'piece-colour', el: `${f.marker} on board ${f.board}`, detail: `${problem} [cell ${png.width}x${png.height}, at ${Math.round(box.x)},${Math.round(box.y)}]` });
     const bg = analyseCell(png).background.join(',');
     if (!photographed.has(f.marker)) photographed.set(f.marker, []);
     photographed.get(f.marker).push(`${f.board}:${f.parity}:${png.width}x${png.height}`);
