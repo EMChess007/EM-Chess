@@ -70,7 +70,13 @@ export interface BughouseBoardBlockProps {
   /** Both colours of this board are human (pass-and-play rules): the status line doubles as the "<Colour> to move" banner. */
   shared?: boolean;
   onPromotionChoice?: (board: BoardId, choice: PromotionPiece | 'cancel') => void;
+  /** W5: the seat of the one human at this device while it WAITS for the opponent on this board: its board takes premove taps and its chips can be picked for a drop premove. */
+  premoveSeat?: BughouseSeat | null;
+  /** W5: the queued premove drawn on this board (the squares in the premove colour and the ghost piece). */
+  premove?: BoardPremoveMarks | null;
 }
+
+type BoardPremoveMarks = NonNullable<React.ComponentProps<typeof BughouseBoard>['premove']>;
 
 
 /**
@@ -117,7 +123,8 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
         moveTargets={moveTargets}
         dropTargets={dropTargets}
         badgeOf={badgeOf}
-        interactive={actor !== null}
+        interactive={actor !== null || (props.premoveSeat ?? null) !== null}
+        premove={props.premove}
         onTapSquare={onTapSquare}
         outlined={outlined}
         touches={props.rawTouch ? touches : undefined}
@@ -162,7 +169,10 @@ const MATRIX_EXEMPT = { dataSet: { matrixExempt: '1' } } as object;
 /** `compact` opts out of AppPressable's 44 dp floor (the chips are 22-26 dp tall with hit slop; bughouseCompact.dom.test.tsx pins that the prop reaches AppPressable). */
 const COMPACT = { compact: true } as object;
 
-function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPickPocket, compact, touches }: BughouseBoardBlockProps & { seat: BughouseSeat; touches: BoardTouches | null }) {
+function SeatBar({ seat, match, nowMs, seatName, actor: moveActor, premoveSeat, pickedPiece, bank, onPickPocket, compact, touches }: BughouseBoardBlockProps & { seat: BughouseSeat; touches: BoardTouches | null }) {
+  // While the opponent is to move, the chips of the waiting human can be picked for a DROP PREMOVE (every chip it holds); otherwise only the side to move's chips with a legal square are usable.
+  const premoving = premoveSeat === seat && moveActor !== seat;
+  const actor = premoving ? seat : moveActor;
   const colors = useAppColors();
   const styles = createStyles(colors, Boolean(compact));
   const place = seatPlace(seat);
@@ -170,7 +180,7 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
   const clock = match.clocks[seat];
   const running = match.result === null && clock.runningSince !== null;
   const remaining = remainingAt(clock, nowMs);
-  const chips = pocketChips(match, seat, actor);
+  const chips = pocketChips(match, seat, actor).map((chip) => (premoving ? { ...chip, usable: true } : chip));
   const flashed = bank !== null && bank.seat === seat && bank.seq === match.seq;
   // The strip is MEASURED, never assumed (bughousePocket.ts): its width decides whether the name is shown, the pocket row's width how wide the chips are. Not measured yet (the first render, a
   // test without layout): the name is shown and the chips are the smallest, which always fit.
@@ -205,7 +215,7 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
           const common = {
             testID: `pocket-${place.board}-${word}-${chip.piece}`,
             accessibilityRole: 'button' as const,
-            accessibilityLabel: `Board ${place.board} ${word} pocket: ${chip.count} ${PIECE_NAMES[chip.piece]}${chip.count === 1 ? '' : 's'}${chip.usable ? ', tap to drop' : ''}${pickedPiece === chip.piece && actor === seat ? ', picked up' : ''}`,
+            accessibilityLabel: `Board ${place.board} ${word} pocket: ${chip.count} ${PIECE_NAMES[chip.piece]}${chip.count === 1 ? '' : 's'}${chip.usable ? (premoving ? ', tap to premove a drop' : ', tap to drop') : ''}${pickedPiece === chip.piece && actor === seat ? ', picked up' : ''}`,
             style: [styles.chip, { width: chipWidth }, pickedPiece === chip.piece && actor === seat && styles.chipSelected, !chip.usable && actor === seat && styles.chipUnavailable],
           };
           const face = (

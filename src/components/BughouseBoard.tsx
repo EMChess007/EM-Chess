@@ -43,13 +43,18 @@ export interface BughouseBoardProps {
   touches?: BoardTouches;
   /** DEV ONLY: the fingers to draw the touch-debug overlay for (given only in a development build with the overlay switched on). */
   debugFingers?: readonly DebugFinger[];
+  /** W5: the queued premove of the human at this device on this board - the squares in the premove colour and a ghost of the piece on the target. */
+  premove?: { from: string | null; to: string; ghost: { color: BughouseColor; type: string } } | null;
 }
+
+/** The premove colour: a blue the other highlights (green selection, yellow last move, red check) are not. A literal on purpose. */
+export const PREMOVE_COLOR = '#7fa8e0';
 
 /**
  * One Bughouse board. Pieces and squares come from the engine's FEN; this component only DRAWS and reports a tap as (board, square) - the screen decides what a tap means. The board is the
  * unit the spec's HP9 is about: every cell is board-qualified ("e4, board A, White knight"), and a tap carries its board.
  */
-function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, checkedSquare, selected, moveTargets, dropTargets, badgeOf, interactive, onTapSquare, outlined, touches, debugFingers }: BughouseBoardProps) {
+function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, checkedSquare, selected, moveTargets, dropTargets, badgeOf, interactive, onTapSquare, outlined, touches, debugFingers, premove }: BughouseBoardProps) {
   const theme = useActiveBoardTheme();
   const pieceTheme = useActivePieceTheme();
   const grid = useMemo(() => openBoard(fen)?.board() ?? [], [fen]);
@@ -103,17 +108,24 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
               piece ? `${piece.color === 'w' ? 'White' : 'Black'} ${PIECE_NAMES[piece.type]}${promotedSet.has(square) ? ' (promoted)' : ''}` : null,
               isMove ? 'can move here' : null,
               isDrop ? 'can drop here' : null,
+              premove && premove.from === square ? 'premove from' : null,
+              premove && premove.to === square ? 'premove to' : null,
               badge ? badge.label : null,
             ]
               .filter(Boolean)
               .join(', ');
-            const background = checkedSquare === square ? '#ef5350' : selected === square ? '#a2d149' : lastMove && (lastMove.from === square || lastMove.to === square) ? '#f7ec74' : light ? theme.lightColor : theme.darkColor;
+            const background = checkedSquare === square ? '#ef5350' : selected === square ? '#a2d149' : premove && (premove.from === square || premove.to === square) ? PREMOVE_COLOR : lastMove &&(lastMove.from === square || lastMove.to === square) ? '#f7ec74' : light ? theme.lightColor : theme.darkColor;
             return (
               <View key={col} testID={`${board}-${square}`} accessibilityLabel={label} style={[styles.cell, { width: cell, height: cell, backgroundColor: background }]}>
                 {(isMove || isDrop) && <View style={[styles.dot, isDrop && styles.dropDot, { width: cell * 0.36, height: cell * 0.36, borderRadius: cell * 0.18 }]} />}
                 {piece && (
                   <View style={{ width: cell, height: cell, alignItems: 'center', justifyContent: 'center' }}>
                     <PieceArt color={piece.color} type={piece.type} cell={cell} images={pieceTheme.images} />
+                  </View>
+                )}
+                {premove && premove.to === square && (
+                  <View pointerEvents="none" testID={`premove-ghost-${board}`} style={[styles.ghost, { width: cell, height: cell }]}>
+                    <PieceArt color={premove.ghost.color} type={premove.ghost.type} cell={cell} images={pieceTheme.images} />
                   </View>
                 )}
                 {promotedSet.has(square) && piece && <Text maxFontSizeMultiplier={1} style={[styles.promotedMark, { fontSize: Math.max(8, cell * 0.3) }]}>~</Text>}
@@ -169,6 +181,7 @@ const styles = StyleSheet.create({
   cell: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   dot: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.3)' },
   dropDot: { backgroundColor: 'rgba(46,125,50,0.55)' },
+  ghost: { position: 'absolute', opacity: 0.55 },
   promotedMark: { position: 'absolute', top: 0, left: 2, fontWeight: '800', color: '#c62828' },
   badge: { position: 'absolute', borderWidth: 1, borderColor: '#fff' },
 });

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The run's own backend and the Bughouse buddy for the Android end-to-end run (command #29).
 #
-#   bash scripts/android/backend.sh start | stop
+#   bash scripts/android/backend.sh start | buddy | stop
 #
 # Needs: ./backend (the chess-app-backend checkout), a PostgreSQL on localhost:5432 with the role / database below (the workflow's service container, TEST-ONLY values the same as
 # backend/docker-compose.yml), `npm ci` done in ./backend. Starts the server on port 3000 (the emulator reaches it at 10.0.2.2:3000) and the buddy: a second HUMAN socket that queues
@@ -49,19 +49,29 @@ case "${1:-}" in
     done
     curl -sf http://localhost:3000/health >/dev/null || { echo "[backend] did not start; its log:" >&2; tail -n 40 "$state/backend.log" >&2; exit 1; }
     echo "[backend] up (pid $(cat "$state/backend.pid"))"
-    BACKEND_URL=http://localhost:3000 TIME_CONTROL=1 nohup $tsx scripts/bughouse-buddy.mjs > "$state/buddy.log" 2>&1 &
-    echo $! > "$state/buddy.pid"
+    # Two buddies queue now: two humans start a game of their own (with bots) after the fill wait, which gives the Spectate list something to show. The phone's own opponent is a THIRD
+    # buddy, started on demand (`buddy`), so that the phone's queue is one human + one buddy.
+    for n in 1 2; do
+      BACKEND_URL=http://localhost:3000 TIME_CONTROL=1 nohup $tsx scripts/bughouse-buddy.mjs > "$state/buddy$n.log" 2>&1 &
+      echo $! > "$state/buddy$n.pid"
+    done
     sleep 3
-    echo "[backend] buddy started (pid $(cat "$state/buddy.pid")); its first lines:"
-    head -n 3 "$state/buddy.log" || true
+    echo "[backend] two buddies started; the first lines of the first:"
+    head -n 3 "$state/buddy1.log" || true
+    ;;
+  buddy)
+    stop_one "$state/buddy3.pid" # a previous profile's phone opponent: one at a time
+    BACKEND_URL=http://localhost:3000 TIME_CONTROL=1 nohup $tsx scripts/bughouse-buddy.mjs > "$state/buddy3.log" 2>&1 &
+    echo $! > "$state/buddy3.pid"
+    echo "[backend] a third buddy started (pid $(cat "$state/buddy3.pid"))"
     ;;
   stop)
-    stop_one "$state/buddy.pid"
+    for n in 1 2 3; do stop_one "$state/buddy$n.pid"; done
     stop_one "$state/backend.pid"
     echo "[backend] stopped"
     ;;
   *)
-    echo "usage: backend.sh start | stop" >&2
+    echo "usage: backend.sh start | buddy | stop" >&2
     exit 2
     ;;
 esac

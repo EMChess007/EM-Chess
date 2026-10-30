@@ -45,6 +45,8 @@ import type { BughouseConnection } from '../logic/bughouseOnlineSession';
 import { matchIntroLine, seatDisplayName } from '../logic/bughouseOnlineUi';
 import { CANT_REACH } from '../logic/bughouseOnlineSession';
 import { PROMOTION_LABELS } from '../logic/promotion';
+import type { Premove } from '../logic/bughouse/premove';
+import { isWaiting, liveHalf, premoveMarks, premovePick, premovesAllowed, premoveTap, stepPremove, type PremoveHalf } from '../logic/bughousePremoveInput';
 
 interface BughouseGameScreenProps {
   seats: SeatConfig;
@@ -235,11 +237,47 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   const onlineBlocked = online !== undefined && (spectator || online.connection !== 'connected' || online.view.resyncing || online.view.pending !== null);
   const actors = onlineBlocked ? { A: null, B: null } : { A: touchSeat(seats, match, 'A'), B: touchSeat(seats, match, 'B') };
 
+  // --- Premoves (W5; BUGHOUSE_SPEC.md HP3): ONE slot, client-only, never sent early ------------------------------------------------------------
+  // On while the opponent is to move on my board, with exactly ONE human at the device (the standard layout - Local with one human, and every online seat); off for pass-and-play and for two
+  // boards played at once (B23), for a spectator and after the end. The half-made premove (a picked piece / chip) belongs to the position of its board; the queued one is resolved by
+  // `stepPremove` at the snapshot that gives me the turn, against THAT match, and sent as an ordinary action - or dropped with its reason.
+  const premoveHuman: BughouseSeat | null = layout.kind === 'standard' && !spectator ? layout.seat : null;
+  const premoveSeat: BughouseSeat | null = premoveHuman !== null && premovesAllowed(1, match) && isWaiting(match, premoveHuman) ? premoveHuman : null;
+  const [rawHalf, setHalf] = useState<PremoveHalf | null>(null);
+  const [premove, setPremove] = useState<Premove | null>(null);
+  const [premoveNotice, setPremoveNotice] = useState<string | null>(null);
+  const half = liveHalf(rawHalf, match);
+  useEffect(() => {
+    if (premove === null || premoveHuman === null) return;
+    const step = stepPremove(match, premoveHuman, premove);
+    if (step.kind === 'wait') return;
+    setPremove(null);
+    setHalf(null);
+    if (step.kind === 'play') {
+      setPremoveNotice(null);
+      commit({ seat: premoveHuman, action: step.action });
+    } else {
+      setPremoveNotice(step.notice);
+    }
+  }, [match, premove, premoveHuman, commit]);
+  const cancelPremove = () => {
+    setPremove(null);
+    setHalf(null);
+    setPremoveNotice(null);
+  };
+
   const movesOfSelected = useMemo(() => (selected ? legalMovesOn(match, selected.board).filter((m) => m.from === selected.square) : []), [match, selected]);
   const selectedTargets = useMemo(() => Array.from(new Set(movesOfSelected.map((m) => m.to))), [movesOfSelected]);
   const dropTargetsOfPick = useMemo(() => (picked ? dropSquares(match, picked.board, picked.piece) : []), [match, picked]);
 
   const onTapSquare = (board: BoardId, square: string) => {
+    if (premoveSeat !== null && board === seatPlace(premoveSeat).board) {
+      const next = premoveTap(match, premoveSeat, half, square);
+      setHalf(next.half);
+      setPremoveNotice(null);
+      if (next.queued !== null) setPremove(next.queued);
+      return;
+    }
     const actor = actors[board];
     if (actor === null) return;
     if (picked && picked.board === board) {
@@ -268,6 +306,11 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   };
 
   const onPickPocket = (board: BoardId, piece: ReservePieceType) => {
+    if (premoveSeat !== null && board === seatPlace(premoveSeat).board) {
+      setHalf(premovePick(match, premoveSeat, half, piece));
+      setPremoveNotice(null);
+      return;
+    }
     if (actors[board] === null) return;
     setSelected(null);
     setPicked(picked && picked.board === board && picked.piece === piece ? null : { board, piece, fen: match.boards[board].fen });
@@ -371,6 +414,9 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
 
   const blockOf = (board: BoardId, cell: number) => {
     const own = dual ? dualViewOf(board) : null;
+    const preHere = premoveHuman !== null && seatPlace(premoveHuman).board === board;
+    const preHalf = preHere ? half : null;
+    const preMarks = preHere && premoveHuman !== null ? premoveMarks(match, premoveHuman, premove) : null;
     return (
       <BughouseBoardBlock
         key={board}
@@ -383,10 +429,12 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         seatName={seatName}
         badgeOf={(color) => kingBadge(layout, board, color)}
         actor={actors[board]}
-        selected={own ? own.selected : selected && selected.board === board ? selected.square : null}
+        selected={own ? own.selected : preHalf?.kind === 'select' ? preHalf.square : selected && selected.board === board ? selected.square : null}
         moveTargets={own ? own.moveTargets : selected && selected.board === board ? selectedTargets : []}
         dropTargets={own ? own.dropTargets : picked && picked.board === board ? dropTargetsOfPick : []}
-        pickedPiece={own ? own.picked : picked && picked.board === board ? picked.piece : null}
+        pickedPiece={own ? own.picked : preHalf?.kind === 'pick' ? preHalf.piece : picked && picked.board === board ? picked.piece : null}
+        premoveSeat={preHere ? premoveSeat : null}
+        premove={preMarks}
         bank={state.bank}
         statusYou={layout.kind === 'standard' ? seatAt(board, match.verdicts[board].turn) === layout.seat : actors[board] !== null}
         onTapSquare={dual ? (tapped, square) => dualInput(tapped, { kind: 'tapSquare', square }) : onTapSquare}
@@ -503,6 +551,22 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
       )}
     </>
   );
+  // The premove's strip (W5): a Cancel control while one is queued, and the one-sentence reason when one was dropped (a notice for a game that ended is never shown).
+  const premoveBar =
+    premove !== null || premoveNotice !== null ? (
+      <View style={styles.premoveBar} testID="bughouse-premove-bar">
+        {premoveNotice !== null && (
+          <Text style={styles.premoveNotice} testID="bughouse-premove-notice" accessibilityLiveRegion="polite">
+            {premoveNotice}
+          </Text>
+        )}
+        {premove !== null && (
+          <Pressable accessibilityRole="button" accessibilityLabel="Cancel premove" testID="bughouse-premove-cancel" style={styles.control} onPress={cancelPremove}>
+            <Text style={styles.controlText}>Cancel premove ✕</Text>
+          </Pressable>
+        )}
+      </View>
+    ) : null;
   // Local has no pause: below the minimum the boards are covered, and the clocks keep running (5.6).
   const rotateOverlay = !over && needsRotateOverlay(seats, width, height);
 
@@ -589,6 +653,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         ) : (
           <>
             {turnBanner}
+            {premoveBar}
             {arrangement === 'sideBySide' ? (
               <View style={styles.sideBySide} testID="layout-side-by-side">
                 {BOARD_IDS.map((board) => blockOf(board, getBughouseSideCellSize(width, height)))}
@@ -657,6 +722,8 @@ function createStyles(colors: AppColors) {
     compactTitle: { flexGrow: 1, flexShrink: 1, minWidth: 0, fontSize: 16, fontWeight: '800', color: colors.text },
     compactControls: { flexDirection: 'row', flexWrap: 'wrap', flexShrink: 1, justifyContent: 'flex-end', gap: 6 },
     banner: { fontSize: 16, fontWeight: '800', color: colors.text, textAlign: 'center' },
+    premoveBar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 8 },
+    premoveNotice: { fontSize: 13, fontWeight: '700', color: colors.danger, textAlign: 'center' },
     onlineStatus: { alignSelf: 'stretch', gap: 4, alignItems: 'center' },
     onlineIntro: { fontSize: 13, fontWeight: '700', color: colors.text, textAlign: 'center' },
     onlineWarning: { fontSize: 13, color: colors.mode === 'dark' ? '#e0c34a' : '#8d6e00', textAlign: 'center' },

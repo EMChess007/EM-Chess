@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { SCREENS } from '../browser/android-matrix-screens.mjs';
 import { EXTRA_SCREENS } from '../browser/android-matrix-screens-extra.mjs';
 import { Device, PROFILES, sleep } from './lib/device.mjs';
@@ -373,8 +374,50 @@ async function online(dev) {
   });
   if (!account) return;
 
+  // The two first buddies play a game of their own (backend.sh): it is in the Spectate list under "Bughouse"; the phone watches it, can touch nothing, and leaves.
+  await scenario(dev, 'online: spectate a Bughouse game', async () => {
+    await toHome(dev);
+    await dev.runSteps([{ text: 'Play' }, { text: 'Spectate a live game ›' }]);
+    let row = null;
+    for (let attempt = 0; attempt < 14 && row === null; attempt++) {
+      const nodes = await dev.waitFor('the Spectate list', (list) => list.some((n) => n.text === 'Refresh' || n.text.startsWith('No games')), 20_000);
+      row = nodes.find((n) => n.id.startsWith('spectate-bughouse-') && n.bounds) ?? null;
+      if (row === null) {
+        const refresh = findNodes(nodes, { text: 'Refresh' })[0];
+        await sleep(6000); // the buddies' game starts after the 30 s fill wait
+        if (refresh) dev.tap(refresh.bounds.cx, refresh.bounds.cy);
+        await sleep(1500);
+      }
+    }
+    if (row === null) return record('online: spectate a Bughouse game', ['no Bughouse game in the Spectate list after 80 s']);
+    await dev.snapshot('spectate-list');
+    dev.tap(row.bounds.cx, row.bounds.cy);
+    const watching = await dev.waitFor('the spectator screen', (list) => list.some((n) => n.id === 'board-A') && list.some((n) => n.id === 'board-B'), 30_000, 1000);
+    await sleep(1200);
+    const issues = [...crashIssues(watching), ...textIssues(watching, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`)];
+    const intro = (await dev.dump()).find((n) => n.id === 'bughouse-online-intro')?.text ?? '';
+    if (!intro.startsWith('Watching:')) issues.push(`the strip above the boards does not say "Watching:": "${intro}"`);
+    const nodes = await dev.dump();
+    if (nodes.some((n) => n.id === 'bughouse-resign' || n.id.startsWith('bughouse-resign-team'))) issues.push('a spectator has a Resign control');
+    if (nodes.some((n) => n.id === 'bughouse-team-bar')) issues.push('a spectator has the Quick / Team chat bar');
+    // a tap on a board selects nothing
+    const boardA = await boardNode(dev, 'board-A');
+    const a1 = nodes.find((n) => n.id === 'A-a1')?.bounds;
+    const orientation = a1 ? orientationFromA1(boardA, a1) : 'w';
+    for (const square of ['e2', 'e7', 'd2', 'd7']) {
+      const r = squareRect(boardA, orientation, square);
+      dev.tap(r.cx, r.cy);
+      await sleep(350);
+    }
+    const after = await dev.look();
+    if (selectedSquares(after.png, boardA, orientation).length > 0) issues.push(`a spectator's tap selected ${selectedSquares(after.png, boardA, orientation).join(',')}`);
+    await dev.snapshot('spectator');
+    record('online: spectate a Bughouse game', issues, intro.slice(0, 80));
+  });
+
   await scenario(dev, 'online: Bughouse game', async () => {
     await toHome(dev);
+    execFileSync('bash', ['scripts/android/backend.sh', 'buddy'], { stdio: 'inherit' }); // the phone's own opponent: one human + one buddy
     await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse online' }, { text: '1 min' }]);
     const queued = await dev.waitFor('the queue screen', (list) => list.some((n) => n.id === 'bughouse-queue' || n.id.startsWith('bughouse-queue-')), 20_000);
     await dev.snapshot('online-queue');
@@ -397,12 +440,17 @@ async function online(dev) {
     const orientation = a1 ? orientationFromA1(boards[board], a1) : colour === 'White' ? 'w' : 'b';
     const plan = colour === 'White' ? [['e2', 'e4'], ['d2', 'd4'], ['g1', 'f3']] : [['e7', 'e5'], ['d7', 'd5'], ['g8', 'f6']];
     let moves = 0;
-    for (const [from, to] of plan) {
-      try {
-        await dev.waitFor(`my turn on board ${board}`, (list) => (list.find((n) => n.id === `status-${board}`)?.text ?? '').startsWith(colour) || list.some((n) => n.id === 'game-over'), 90_000, 1200);
-      } catch (e) {
-        issues.push(`never my turn on board ${board}: ${e.message.slice(0, 160)}`);
-        break;
+    let premoveSeen = false;
+    for (const [index, [from, to]] of plan.entries()) {
+      // the SECOND move is made as a PREMOVE: right after the first one, while the opponent is to move (W5). If the opponent has already answered, it is just an ordinary move.
+      const premoving = index === 1;
+      if (!premoving) {
+        try {
+          await dev.waitFor(`my turn on board ${board}`, (list) => (list.find((n) => n.id === `status-${board}`)?.text ?? '').startsWith(colour) || list.some((n) => n.id === 'game-over'), 90_000, 1200);
+        } catch (e) {
+          issues.push(`never my turn on board ${board}: ${e.message.slice(0, 160)}`);
+          break;
+        }
       }
       if ((await dev.dump()).some((n) => n.id === 'game-over')) break;
       const f = squareRect(boards[board], orientation, from);
@@ -410,6 +458,11 @@ async function online(dev) {
       dev.tap(f.cx, f.cy);
       await sleep(500);
       dev.tap(t.cx, t.cy);
+      if (premoving) {
+        await sleep(500);
+        const marked = (await dev.dump()).find((n) => n.id === `${board}-${to}`)?.desc ?? '';
+        premoveSeen = marked.includes('premove to');
+      }
       // the server decides: the piece appears on `to` when its snapshot arrives
       try {
         await dev.waitFor(`${from}-${to} to show on board ${board}`, (list) => /(White|Black) (Pawn|Knight)/.test(list.find((n) => n.id === `${board}-${to}`)?.desc ?? ''), 12_000, 700);
@@ -420,6 +473,41 @@ async function online(dev) {
     }
     await dev.snapshot('online-game');
     if (moves === 0) issues.push('no move of mine reached the server and back');
+    log(`premove drawn while waiting: ${premoveSeen} (false only if the opponent had already answered)`);
+
+    // the team bar: the Quick grid (ten buttons) and the team-chat panel with its "only your partner sees this" header
+    const bar = await dev.waitFor('the Quick / Team chat bar', (list) => list.some((n) => n.id === 'bughouse-quick'), 15_000);
+    issues.push(...textIssues(bar, dev.display).map((i) => `team bar ${i.kind}: "${i.text}" - ${i.detail}`));
+    await dev.runSteps([{ id: 'bughouse-quick' }]);
+    const grid = await dev.dump();
+    for (let code = 0; code < 10; code++) if (!grid.some((n) => n.id === `bughouse-quick-${code}`)) issues.push(`the Quick grid has no button ${code}`);
+    issues.push(...textIssues(grid, dev.display).map((i) => `Quick grid ${i.kind}: "${i.text}" - ${i.detail}`));
+    await dev.snapshot('online-quick-grid');
+    await dev.runSteps([{ id: 'bughouse-quick-8' }]);
+    await sleep(1200);
+    const afterQuick = await dev.dump();
+    // sent (nothing to show the sender), or refused in words (the buddy's partner may be a bot): either way the grid is closed and no error screen is up
+    if (afterQuick.some((n) => n.id === 'bughouse-quick-grid')) issues.push('the Quick grid did not close after a message');
+    await dev.runSteps([{ id: 'bughouse-chat' }]);
+    const chat = await dev.dump();
+    const header = chat.find((n) => n.id === 'bughouse-team-chat-header')?.text ?? '';
+    if (header !== 'Team chat - only your partner sees this') issues.push(`the team-chat header says "${header}"`);
+    issues.push(...textIssues(chat, dev.display).map((i) => `team chat ${i.kind}: "${i.text}" - ${i.detail}`));
+    await dev.snapshot('online-team-chat');
+    await dev.runSteps([{ id: 'bughouse-chat' }]);
+
+    // an app restart in the middle of the game: the app walks back into the seat by itself (the persisted rejoin)
+    dev.stop();
+    await sleep(800);
+    dev.launch();
+    try {
+      const back = await dev.waitFor('the game after a restart', (list) => list.some((n) => n.id === 'board-A') && (list.find((n) => n.id === 'bughouse-online-intro')?.text ?? '') === intro, 150_000, 2000);
+      issues.push(...crashIssues(back));
+    } catch (e) {
+      issues.push(`after an app restart the game did not come back: ${e.message.slice(0, 200)}`);
+      await dev.snapshot('FAILED-restart');
+      await dev.waitHome(120_000).catch(() => {});
+    }
     // resign: the control, then the dialog's button
     await dev.runSteps([{ id: 'bughouse-resign' }]);
     const dialog = await dev.waitFor('the Resign dialog', (list) => findNodes(list, { text: 'resign', ci: true, button: true }).length > 0, 10_000);

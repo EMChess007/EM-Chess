@@ -97,7 +97,8 @@ export class Device {
     let lastError = '';
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        const out = this.sh('uiautomator dump /dev/tty', { timeout: 40_000 });
+        // (`uiautomator dump /dev/tty` prints only its trailer through `adb shell`, which has no terminal: the tree goes to a file on the phone and is read back.)
+        const out = this.sh('uiautomator dump /sdcard/e2e-ui.xml > /dev/null && cat /sdcard/e2e-ui.xml', { timeout: 40_000 });
         const xml = extractXml(out);
         if (xml) {
           this.last = { xml, nodes: parseHierarchy(xml) };

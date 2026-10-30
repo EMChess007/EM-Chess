@@ -22,6 +22,8 @@ adb reverse tcp:8081 tcp:8081
 adb logcat -c || true
 echo "[run] device: $(adb shell getprop ro.product.model | tr -d '\r') Android $(adb shell getprop ro.build.version.release | tr -d '\r') (API $(adb shell getprop ro.build.version.sdk | tr -d '\r'))"
 
+node scripts/android/smoke.mjs "$out" || { echo "[run] the app did not reach its Home screen: stopping here"; exit 1; }
+
 rc=0
 phase() {
   local profile="$1" name="$2"
