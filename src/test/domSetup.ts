@@ -66,8 +66,12 @@ vi.mock('react-native-svg', async () => {
   const shape = (name: string) => {
     // fill / stroke / opacity are kept as data attributes: a piece's colour is the thing the piece tests read (pieceColours.dom.test.tsx).
     // (width and the path data too: a test reads how big a piece is drawn and which silhouette it is)
-    const Shape = ({ children, fill, stroke, opacity, width, d }: { children?: unknown; fill?: string; stroke?: string; opacity?: number; width?: number; d?: string }) =>
-      createElement('span', { 'data-svg': name, 'data-fill': fill, 'data-stroke': stroke, 'data-opacity': opacity, 'data-width': width, 'data-d': d }, children as never);
+    // data-props: EVERY prop the code gave the shape (sorted keys, JSON), minus the children and the geometry: a test compares whole paint sets (pieceIcon.dom.test.tsx, command #27d).
+    const Shape = (props: { children?: unknown; fill?: string; stroke?: string; opacity?: number; width?: number; d?: string }) => {
+      const { children, fill, stroke, opacity, width, d, ...rest } = props as typeof props & Record<string, unknown>;
+      const paint = Object.fromEntries(Object.entries({ ...rest, fill, stroke }).sort(([a], [b]) => (a < b ? -1 : 1)));
+      return createElement('span', { 'data-svg': name, 'data-fill': fill, 'data-stroke': stroke, 'data-opacity': opacity, 'data-width': width, 'data-d': d, 'data-props': JSON.stringify(paint) }, children as never);
+    };
     return Shape;
   };
   return {

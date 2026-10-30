@@ -35,3 +35,32 @@ export function pieceInk(color: 'w' | 'b'): PieceInk {
 
 /** Stroke width in the 100-unit box. */
 export const PIECE_OUTLINE_WIDTH = 4;
+
+/**
+ * EVERY paint property of a piece's path, written out (command #27d: a phone drew black Classic pieces with a light fill on the dark squares only). Nothing is left to a default or to inheritance
+ * (`currentColor`, a parent's `color`, an unset opacity or fill rule): the props are a function of the piece's COLOUR alone - the square the piece stands on is not an input, and no module that
+ * draws a piece imports a square colour (pieceIcon.test.ts pins both).
+ */
+export interface PiecePathPaint {
+  fill: string;
+  fillOpacity: 1;
+  fillRule: 'nonzero';
+  stroke: string;
+  strokeOpacity: 1;
+  strokeWidth: number;
+  strokeLinejoin: 'round';
+  strokeLinecap: 'round';
+}
+
+export function piecePathPaint(ink: PieceInk): PiecePathPaint {
+  return {
+    fill: ink.fill,
+    fillOpacity: 1,
+    fillRule: 'nonzero',
+    stroke: ink.outline,
+    strokeOpacity: 1,
+    strokeWidth: PIECE_OUTLINE_WIDTH,
+    strokeLinejoin: 'round',
+    strokeLinecap: 'round',
+  };
+}

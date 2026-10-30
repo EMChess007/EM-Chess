@@ -15,6 +15,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import zlib from 'node:zlib';
 
 const appDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const check = process.argv.includes('--check');
@@ -41,6 +42,41 @@ for (const theme of THEMES) {
       writeFileSync(file, bytes);
     }
   }
+}
+
+// The Piece gallery's probe image: a flat 16 x 16 PNG in the black piece's ink (#1d1d1d), drawn on a light and a dark square next to a plain View and a plain SVG of the same colour. If a phone
+// lightens ONE of the three on the dark square, the cause is that kind of drawing and not a piece (src/screens/PieceGalleryScreen.tsx).
+function solidPng(size, [r, g, b]) {
+  const crcTable = (buffer) => {
+    const out = Buffer.alloc(4);
+    out.writeUInt32BE(zlib.crc32(buffer) >>> 0);
+    return out;
+  };
+  const chunk = (type, data) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    return Buffer.concat([length, body, crcTable(body)]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // RGBA
+  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: size }, () => [r, g, b, 255]).flat())]);
+  const raw = Buffer.concat(Array.from({ length: size }, () => row));
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+const probe = solidPng(16, [0x1d, 0x1d, 0x1d]);
+const probeFile = path.join(appDir, 'assets', 'diagnostics', 'probe-black.png');
+if (check) {
+  if (!existsSync(probeFile) || !readFileSync(probeFile).equals(probe)) {
+    console.error('stale: assets/diagnostics/probe-black.png');
+    stale++;
+  }
+} else {
+  mkdirSync(path.dirname(probeFile), { recursive: true });
+  writeFileSync(probeFile, probe);
 }
 
 const lines = [];

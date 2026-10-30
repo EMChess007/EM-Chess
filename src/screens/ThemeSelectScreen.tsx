@@ -115,12 +115,16 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
   // --- Piece theme add form ---
   const [pieceAdding, setPieceAdding] = useState(false);
   const [pieceNameInput, setPieceNameInput] = useState('');
+  // The picked images as data URIs are the BYTES of the draft (written to files when the theme is saved, customThemes.ts); what a slot DRAWS is the picker's own file (`piecePreviews`),
+  // so no data URI is ever handed to an Image on a phone (command #27d).
   const [pieceImages, setPieceImages] = useState<Record<string, string>>({});
+  const [piecePreviews, setPiecePreviews] = useState<Record<string, string>>({});
 
   const resetPieceForm = () => {
     setPieceAdding(false);
     setPieceNameInput('');
     setPieceImages({});
+    setPiecePreviews({});
   };
 
   const handlePickPieceImage = async (key: string) => {
@@ -149,6 +153,7 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
     try {
       const dataUri = await readFileAsDataUri(asset.uri);
       setPieceImages((prev) => ({ ...prev, [key]: dataUri }));
+      setPiecePreviews((prev) => ({ ...prev, [key]: asset.uri }));
     } catch {
       appAlert('Failed to load', 'Could not read the image.');
     }
@@ -297,7 +302,7 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
               {PIECE_SLOTS.map((slot) => (
                 <Pressable key={slot.key} style={styles.pieceSlot} onPress={() => handlePickPieceImage(slot.key)}>
                   {pieceImages[slot.key] ? (
-                    <Image source={{ uri: pieceImages[slot.key] }} style={styles.pieceSlotImage} resizeMode="contain" />
+                    <Image source={pieceImageSource(piecePreviews[slot.key] ?? pieceImages[slot.key])} style={styles.pieceSlotImage} resizeMode="contain" />
                   ) : (
                     <Text style={styles.pieceSlotPlus} maxFontSizeMultiplier={1}>
                       +

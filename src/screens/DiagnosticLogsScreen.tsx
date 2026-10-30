@@ -7,10 +7,13 @@ import { appAlert } from '../components/AppAlert';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import TextFitProbe from '../components/TextFitProbe';
+import { getBuildInfo } from '../logic/buildInfo';
 import { clearDiagnosticLog, getDiagnosticLog, logDiagnostic } from '../logic/diagnosticLog';
 
 interface DiagnosticLogsScreenProps {
   onBack: () => void;
+  /** Opens the Piece gallery (command #27d). */
+  onOpenPieceGallery: () => void;
 }
 
 /**
@@ -20,7 +23,7 @@ interface DiagnosticLogsScreenProps {
  * deliberately not hidden behind a secret gesture either — a small, plainly-labelled link is
  * enough, and one less thing to explain over chat when asking for a screenshot of this screen.
  */
-export default function DiagnosticLogsScreen({ onBack }: DiagnosticLogsScreenProps) {
+export default function DiagnosticLogsScreen({ onBack, onOpenPieceGallery }: DiagnosticLogsScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const [logs, setLogs] = useState(getDiagnosticLog);
@@ -72,9 +75,15 @@ export default function DiagnosticLogsScreen({ onBack }: DiagnosticLogsScreenPro
         </Pressable>
       </View>
 
+      <Text style={styles.subtitle} testID="build-id" selectable>
+        {getBuildInfo().label}
+      </Text>
       <View style={styles.buttonRow}>
         <Pressable style={styles.button} onPress={() => setProbing(true)} testID="run-text-fit-check">
           <Text style={styles.buttonText}>Run text-fit check</Text>
+        </Pressable>
+        <Pressable style={styles.button} onPress={onOpenPieceGallery} testID="open-piece-gallery">
+          <Text style={styles.buttonText}>Piece gallery</Text>
         </Pressable>
       </View>
       {probing && <TextFitProbe onDone={handleProbeDone} />}

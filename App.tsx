@@ -21,6 +21,7 @@ import BotSetupChessFlowScreen from './src/screens/BotSetupChessFlowScreen';
 import ChallengeScreen from './src/screens/ChallengeScreen';
 import DailyPuzzleScreen from './src/screens/DailyPuzzleScreen';
 import DiagnosticLogsScreen from './src/screens/DiagnosticLogsScreen';
+import PieceGalleryScreen from './src/screens/PieceGalleryScreen';
 import EngineSelectScreen from './src/screens/EngineSelectScreen';
 import EngineVsEngineGameScreen from './src/screens/EngineVsEngineGameScreen';
 import EngineVsEngineSetupScreen from './src/screens/EngineVsEngineSetupScreen';
@@ -168,6 +169,7 @@ type Screen =
   | { name: 'puzzleTraining' }
   | { name: 'achievements' }
   | { name: 'diagnosticLogs' }
+  | { name: 'pieceGallery' }
   | { name: 'leaderboard'; token: string }
   | { name: 'ratingHistory' }
   | {
@@ -972,7 +974,9 @@ export default function App() {
   } else if (screen.name === 'ratingHistory') {
     content = <RatingHistoryScreen onBack={() => setScreen({ name: 'main' })} />;
   } else if (screen.name === 'diagnosticLogs') {
-    content = <DiagnosticLogsScreen onBack={() => setScreen({ name: 'main' })} />;
+    content = <DiagnosticLogsScreen onBack={() => setScreen({ name: 'main' })} onOpenPieceGallery={() => setScreen({ name: 'pieceGallery' })} />;
+  } else if (screen.name === 'pieceGallery') {
+    content = <PieceGalleryScreen onBack={() => setScreen({ name: 'diagnosticLogs' })} />;
   } else if (screen.name === 'engineVsEngineSetup') {
     content = (
       <EngineVsEngineSetupScreen
