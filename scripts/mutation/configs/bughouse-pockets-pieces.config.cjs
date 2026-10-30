@@ -23,7 +23,7 @@ module.exports = {
   copy: ['src', 'assets', 'scripts/browser', 'App.tsx', 'package.json', 'tsconfig.json', 'vitest.config.mts'],
   junction: ['node_modules'],
   cmd:
-    'npx vitest run src/logic/__tests__/bughousePocket.test.ts src/logic/__tests__/bughouseFixture.test.ts src/logic/__tests__/pieceArt.test.ts src/logic/__tests__/androidMatrixPieces.test.ts src/screens/__tests__/bughousePockets.dom.test.tsx src/screens/__tests__/pieceColours.dom.test.tsx',
+    'npx vitest run src/logic/__tests__/bughousePocket.test.ts src/logic/__tests__/bughouseFixture.test.ts src/logic/__tests__/pieceArt.test.ts src/logic/__tests__/androidMatrixPieces.test.ts src/screens/__tests__/bughousePockets.dom.test.tsx src/screens/__tests__/pieceColours.dom.test.tsx src/screens/__tests__/bughouseDual.dom.test.tsx',
   mutantTimeoutMs: 6 * 60 * 1000,
   mutants: [
     // --- the geometry ---
