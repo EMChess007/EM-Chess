@@ -119,17 +119,20 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
   const photographed = new Map();
   for (const f of picked.values()) {
     const handle = handles[f.index];
+    // A piece that a bot's move removed from the page is gone for good: its cell is simply not judged.
     const cell = (
-      await handle.evaluateHandle((el) => {
-        let node = el;
-        while (node && !/^[a-n]\d+(,|$)/.test(node.getAttribute('aria-label') || '')) node = node.parentElement;
-        return node || el;
-      })
-    ).asElement();
-    if (cell === null) continue;
+      await handle
+        .evaluateHandle((el) => {
+          let node = el;
+          while (node && !/^[a-n]\d+(,|$)/.test(node.getAttribute('aria-label') || '')) node = node.parentElement;
+          return node || el;
+        })
+        .catch(() => null)
+    )?.asElement();
+    if (!cell) continue;
     await cell.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
     // a clip of the page, not `element.screenshot()`: that waits for the element to be "stable", which a board that bots are playing on never is
-    const box = await cell.boundingBox();
+    let box = await cell.boundingBox().catch(() => null);
     if (box === null) continue;
     // Bots keep playing on a screen with bots: the piece that was in this cell when the cell was chosen may have moved away before the photograph. The marker is read again after it, and a
     // cell whose piece changed meanwhile is not judged (a stale photograph, not a wrong colour).
@@ -142,6 +145,8 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
         png = null;
         break;
       }
+      // the cell may have moved (a status line changed above it): its rectangle is read again for every photograph
+      box = (await cell.boundingBox().catch(() => null)) ?? box;
       const shot = await page.screenshot({ clip: box, timeout: 8000 }).catch(() => null);
       if (shot === null || (await markerNow()) !== f.marker) {
         png = null;
