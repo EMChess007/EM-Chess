@@ -92,14 +92,16 @@ jobs:
       - name: Restore the APK
         if: steps.changes.outputs.code == 'true'
         id: apk
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: apk-cache
           key: apk-v1-${{ hashFiles('package-lock.json', 'app.json', 'app.config.js', 'assets/icon.png', 'assets/android-icon-*.png', 'scripts/android/build-apk.sh') }}
 
+      # (restore + explicit save steps, not the combined action: the combined one saves only when the WHOLE job is green, and a red run - the case where a rerun matters most - would throw away
+      # a 10 minute build every time)
       - name: Restore Gradle
         if: steps.changes.outputs.code == 'true' && steps.apk.outputs.cache-hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.gradle/caches
@@ -110,6 +112,22 @@ jobs:
       - name: Build the debug APK (expo prebuild + Gradle, x86_64)
         if: steps.changes.outputs.code == 'true' && steps.apk.outputs.cache-hit != 'true'
         run: bash scripts/android/build-apk.sh apk-cache
+
+      - name: Save the APK
+        if: steps.changes.outputs.code == 'true' && steps.apk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: apk-cache
+          key: ${{ steps.apk.outputs.cache-primary-key }}
+
+      - name: Save Gradle
+        if: steps.changes.outputs.code == 'true' && steps.apk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-v1-${{ hashFiles('package-lock.json') }}
 
       # --- Metro (development mode, pointed at the run's backend) and the emulator ---------------------------------------------------------------------------------------------
       - name: Start Metro
@@ -126,7 +144,7 @@ jobs:
       - name: Restore the emulator image
         if: steps.changes.outputs.code == 'true'
         id: avd
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.android/avd/*
@@ -147,6 +165,15 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: echo "Generated the emulator snapshot for caching."
+
+      - name: Save the emulator image
+        if: steps.changes.outputs.code == 'true' && steps.avd.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: ${{ steps.avd.outputs.cache-primary-key }}
 
       - name: Android end-to-end run
         if: steps.changes.outputs.code == 'true'
