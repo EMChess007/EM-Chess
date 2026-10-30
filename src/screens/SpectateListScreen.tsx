@@ -6,6 +6,7 @@ import LoadFailed from '../components/LoadFailed';
 import ScreenHeader from '../components/ScreenHeader';
 import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { connectSocket, disconnectSocket } from '../api/socket';
+import { emitWithin } from '../api/socketAck';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { buildSpectateRows, describeFourGame, type SpectateRow } from '../logic/fourPlayerOnlineUi';
 import type { FourActiveGameSummary, FourAck } from '../logic/fourPlayerWire';
@@ -20,8 +21,6 @@ interface SpectateListScreenProps {
 
 /** A server without 4 Player support never answers `four_list_active_games`; the 4 Player section then simply stays out of the list. */
 const FOUR_LIST_TIMEOUT_MS = 5000;
-/** The 2-player list has no "older server" excuse: if it does not answer in this time the server cannot be reached, and the screen says so with a Retry. */
-const LIST_TIMEOUT_MS = 12000;
 
 export default function SpectateListScreen({ authToken, onWatch, onWatchFour, onBack }: SpectateListScreenProps) {
   const colors = useAppColors();
@@ -48,11 +47,12 @@ export default function SpectateListScreen({ authToken, onWatch, onWatchFour, on
       else setRows(buildSpectateRows(twoGames ?? [], fourGames));
       setLoading(false);
     };
-    // With a timeout: an emit on a socket that never connects waits for ever, and the spinner with it.
-    socket.timeout(LIST_TIMEOUT_MS).emit('list_active_games', {}, (err: unknown, ack?: Ack<{ games: ActiveGameSummary[] }>) => {
-      if (err || !ack) twoError = SERVER_UNREACHABLE_MESSAGE;
-      else if (ack.ok) twoGames = ack.games;
-      else twoError = ack.error;
+    // With a deadline (emitWithin): an emit on a socket that never connects waits for ever, and the spinner with it. The 2-player list has no "older server" excuse: if it does not
+    // answer in time the server cannot be reached, and the screen says so with a Retry.
+    emitWithin<Ack<{ games: ActiveGameSummary[] }>>(socket, 'list_active_games', {}, (result) => {
+      if (result.unreachable) twoError = SERVER_UNREACHABLE_MESSAGE;
+      else if (result.ack.ok) twoGames = result.ack.games;
+      else twoError = result.ack.error;
       finish();
     });
     socket.timeout(FOUR_LIST_TIMEOUT_MS).emit('four_list_active_games', {}, (err: unknown, ack?: FourAck<{ games: FourActiveGameSummary[] }>) => {

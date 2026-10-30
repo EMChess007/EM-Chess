@@ -139,7 +139,7 @@ async function applyCombo(page, cdp, combo) {
 }
 
 function checkOptions(screen, insets) {
-  return { insets, minTarget: CRITERIA.minTouchTarget, clipTolerance: CRITERIA.clipTolerance, minBoardCell: CRITERIA.minBoardCell, boardKind: screen.boardKind ?? null, exempt };
+  return { insets, minTarget: CRITERIA.minTouchTarget, minGlyphContrast: CRITERIA.minGlyphContrast, expectGlyphs: screen.glyphs ?? 0, clipTolerance: CRITERIA.clipTolerance, minBoardCell: CRITERIA.minBoardCell, boardKind: screen.boardKind ?? null, exempt };
 }
 
 async function runChecks(page, screen, insets) {
@@ -396,6 +396,19 @@ async function selfTest() {
     expect('a board cell inside an exempt thumbnail is not judged', !kinds(await run('<div data-testid="thumb-B"><div aria-label="a1" style="width:12px;height:12px">.</div></div>', { boardKind: 'twoPlayer' })).has('board-cell'));
     expect('a board cell under its minimum is reported', kinds(await run('<div aria-label="a1" style="width:12px;height:12px">.</div>', { boardKind: 'twoPlayer' })).has('board-cell'));
     expect('a board cell at its minimum is fine', !kinds(await run('<div aria-label="a1" style="width:24px;height:24px">.</div>', { boardKind: 'twoPlayer' })).has('board-cell'));
+    const glyph = (ink, background, extra = '') => `<div style="background:${background}"><div data-matrix-glyph="1" style="${extra}"><svg width="24" height="24"><path d="M2 2 L20 20" stroke="${ink}" stroke-width="2" fill="none"/></svg></div></div>`;
+    expect('a black icon on the dark bar (the old Home pawn) is a contrast defect', kinds(await run(glyph('#000000', '#121212'))).has('contrast'));
+    expect('a light icon on the dark bar is fine', !kinds(await run(glyph('#efe6d8', '#121212'))).has('contrast'));
+    expect('a dark icon on the white bar is fine', !kinds(await run(glyph('#3a2618', '#ffffff'))).has('contrast'));
+    expect('the grey that is just under 3:1 on white (#999) is a contrast defect', kinds(await run(glyph('#999999', '#ffffff'))).has('contrast'));
+    expect('a good ink made faint by opacity is a contrast defect', kinds(await run(glyph('#3a2618', '#ffffff', 'opacity:0.3'))).has('contrast'));
+    expect('a see-through bar falls back to the white page', kinds(await run(glyph('#f0f0f0', 'transparent'))).has('contrast'));
+    expect('a text glyph marked as an icon (no drawn ink) is a contrast defect', kinds(await run('<div data-matrix-glyph="1">♟</div>')).has('contrast'));
+    expect('a page with no marked icon reports no contrast defect', !kinds(await run('<div>♟</div>')).has('contrast'));
+    expect('a screen declared to carry 4 icons but showing none is reported', kinds(await run('<div>no icons here</div>', { glyphs: 4 })).has('contrast'));
+    const four = [1, 2, 3, 4].map((n) => glyph('#3a2618', '#ffffff')).join('');
+    expect('a screen declared to carry 4 icons and showing 4 good ones is fine', !kinds(await run(four, { glyphs: 4 })).has('contrast'));
+    expect('an icon that is hidden does not count towards the declared 4', kinds(await run(four.replace('data-matrix-glyph="1" style=""', 'data-matrix-glyph="1" style="display:none"'), { glyphs: 4 })).has('contrast'));
   } finally {
     await browser.close();
   }

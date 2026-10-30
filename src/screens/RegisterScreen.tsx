@@ -3,7 +3,9 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleShe
 import { Pressable } from '../components/AppPressable';
 import { Text, TextInput } from '../components/AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { api, ApiError } from '../api/client';
+import { api, ApiError, isCancelled } from '../api/client';
+import SignInWaiting from '../components/SignInWaiting';
+import { useSignInRequest } from '../logic/useSignInRequest';
 import { saveAuthSession, type AuthSession } from '../api/authStorage';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 
@@ -24,17 +26,19 @@ export default function RegisterScreen({ onSuccess, onSwitchToLogin, onBack }: R
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const signIn = useSignInRequest();
 
   const handleSubmit = async () => {
     if (loading) return;
     setError(null);
     setLoading(true);
     try {
-      const response = await api.register(email.trim(), username.trim(), password);
+      const response = await signIn.start((call) => api.register(email.trim(), username.trim(), password, call));
       await saveAuthSession(response);
       onSuccess({ token: response.token, user: response.user });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
+      // Cancel is the person's own choice: no error to show for it.
+      if (!isCancelled(e)) setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -84,6 +88,7 @@ export default function RegisterScreen({ onSuccess, onSwitchToLogin, onBack }: R
           <Pressable style={[styles.button, loading && styles.buttonDisabled]} onPress={handleSubmit} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign Up</Text>}
           </Pressable>
+          {loading && <SignInWaiting waking={signIn.waking} onCancel={signIn.cancel} />}
 
           <Pressable style={styles.switchLink} onPress={onSwitchToLogin}>
             <Text style={styles.switchLinkText}>Already have an account? Log in</Text>

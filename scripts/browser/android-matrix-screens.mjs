@@ -10,7 +10,7 @@
 const PLAY = { text: 'Play' };
 
 export const SCREENS = [
-  { id: 'home', title: 'Home (with the tab bar)', steps: [] },
+  { id: 'home', title: 'Home (with the tab bar)', steps: [], glyphs: 4 },
   { id: 'streak', title: 'Streak', steps: [{ text: '🔥' }] },
   { id: 'play-menu', title: 'Play menu (full scroll)', steps: [PLAY] },
   { id: 'time-control', title: 'Time control (2-player)', steps: [PLAY, { text: 'Classic', nth: 1 }] },
@@ -28,11 +28,11 @@ export const SCREENS = [
   { id: 'game-chaturaji', title: 'Game: Chaturaji', steps: [PLAY, { label: 'Chaturaji local' }, { text: 'Choose time control' }, { text: '5 min' }], boardKind: 'chaturaji' },
   { id: 'rules-chaturaji', title: 'Rules sheet: Chaturaji', steps: [PLAY, { id: 'chaturaji-rules-link' }] },
   { id: 'dialog-login', title: 'Dialog: login required', steps: [PLAY, { text: 'Quick Match' }] },
-  { id: 'puzzles', title: 'Puzzle (daily, with the tab bar)', steps: [{ text: 'Puzzles' }] },
+  { id: 'puzzles', title: 'Puzzle (daily, with the tab bar)', steps: [{ text: 'Puzzles' }], glyphs: 4 },
   { id: 'puzzle-training', title: 'Puzzle Training', steps: [{ text: 'Puzzles' }, { text: 'Puzzle Training ›' }] },
   { id: 'puzzle-rush', title: 'Puzzle Rush', steps: [{ text: 'Puzzles' }, { text: 'Puzzle Rush ›' }] },
-  { id: 'analysis', title: 'Analysis list (with the tab bar)', steps: [{ text: 'Analysis' }] },
-  { id: 'more', title: 'More (with the tab bar)', steps: [{ text: 'More' }] },
+  { id: 'analysis', title: 'Analysis list (with the tab bar)', steps: [{ text: 'Analysis' }], glyphs: 4 },
+  { id: 'more', title: 'More (with the tab bar)', steps: [{ text: 'More' }], glyphs: 4 },
   { id: 'more-login', title: 'Log in', steps: [{ text: 'More' }, { text: 'Log in / Sign up' }] },
   { id: 'more-rating-history', title: 'Rating history', steps: [{ text: 'More' }, { text: 'View Rating History' }] },
   { id: 'more-achievements', title: 'Achievements', steps: [{ text: 'More' }, { text: 'View Achievements' }] },

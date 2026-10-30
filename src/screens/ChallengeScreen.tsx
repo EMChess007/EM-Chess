@@ -5,6 +5,8 @@ import { Text, TextInput } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { connectSocket, disconnectSocket } from '../api/socket';
+import { emitWithin } from '../api/socketAck';
+import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { variantWireFlags } from '../logic/onlineVariants';
 import { getTimeControlsByCategory } from '../logic/timeControls';
@@ -62,14 +64,20 @@ export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessP
   const handleCreate = (timeControl: TimeControl) => {
     setError(null);
     const socket = connectSocket(authToken);
-    socket.emit(
+    emitWithin<Ack<{ code: string }>>(
+      socket,
       'create_challenge',
       {
         timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
         timeControlLabel: timeControl.label,
         ...variantWireFlags(variant),
       },
-      (ack: Ack<{ code: string }>) => {
+      (result) => {
+        if (result.unreachable) {
+          setError(SERVER_UNREACHABLE_MESSAGE); // choosing the time control again is the retry
+          return;
+        }
+        const { ack } = result;
         if (!ack.ok) {
           setError(ack.error);
           return;
@@ -101,8 +109,9 @@ export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessP
     if (!trimmed) return;
     setError(null);
     const socket = connectSocket(authToken);
-    socket.emit('join_challenge', { code: trimmed }, (ack: Ack) => {
-      if (!ack.ok) setError(ack.error);
+    emitWithin<Ack>(socket, 'join_challenge', { code: trimmed }, (result) => {
+      if (result.unreachable) setError(SERVER_UNREACHABLE_MESSAGE); // pressing Join again is the retry
+      else if (!result.ack.ok) setError(result.ack.error);
     });
   };
 

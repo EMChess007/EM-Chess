@@ -57,6 +57,8 @@ export const INSET_PROFILE_IDS = Object.keys(INSET_PROFILES);
 export const CRITERIA = {
   /** Smallest side of a control, dp. */
   minTouchTarget: 44,
+  /** Smallest contrast ratio of an icon's ink against its background (WCAG 1.4.11 non-text contrast). */
+  minGlyphContrast: 3,
   /** Sub-pixel tolerance for "text is outside its box". */
   clipTolerance: 1.5,
   /** Cell sizes (px) the board gates allow, by game kind (boardSize.ts, fourPlayer/presentation.ts, BUGHOUSE_SPEC.md): a smaller cell means the size gate / scrolling must apply. */

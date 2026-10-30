@@ -72,7 +72,7 @@ module.exports = {
     [ 'Home: the load does not depend on Retry', H, '}, [authToken, reloadTick]);', '}, [authToken]);'],
     [ 'Home: the error is not shown in Stats', H, 'gamesError ? (\n            <LoadFailed message={gamesError} onRetry={retryGames} testID="home-stats-failed" />', 'false ? (\n            <LoadFailed message={gamesError!} onRetry={retryGames} testID="home-stats-failed" />'],
     // --- the request deadline ---
-    [ 'client: the deadline is 100 times longer', C, 'const REQUEST_TIMEOUT_MS = 12000;', 'const REQUEST_TIMEOUT_MS = 1200000;'],
+    [ 'client: the deadline is 100 times longer', C, 'export const REQUEST_DEADLINE_MS = 6000;', 'export const REQUEST_DEADLINE_MS = 600000;'],
     [ 'client: the deadline does not cover the body', C, '      timedOut,\n    ]);', '    ]);'],
     // --- the on-device probe ---
     [ 'probe: a wrapped text is not a mismatch', Q, 'sample.lineCount > 1 || ', ''],
