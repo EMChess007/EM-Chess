@@ -11,9 +11,8 @@ export interface CustomBoardThemeRecord {
 export interface CustomPieceThemeRecord {
   id: string;
   name: string;
-  /** All 12 piece images, base64-encoded data URIs — stored directly rather than as copied files
-   * on disk, same reasoning as customEngineStorage.ts's wasm records: works identically on web,
-   * where there is no filesystem to copy into anyway. */
+  /** All 12 piece images. On a phone: file URIs of files in the app's own folder (piece-themes/<id>/<key>.png, customPieceFiles.ts; command #27d - never data URIs there). In the browser, which has
+   * no file system: base64 data URIs. A record written before #27d may still hold data URIs on a phone; restoreCustomThemes moves them into files. */
   images: PieceImageMap;
 }
 
@@ -71,12 +70,24 @@ export async function listCustomPieceThemes(): Promise<CustomPieceThemeRecord[]>
   return loadRecords<CustomPieceThemeRecord>(PIECE_KEY);
 }
 
-export async function addCustomPieceTheme(name: string, images: PieceImageMap): Promise<CustomPieceThemeRecord> {
-  const record: CustomPieceThemeRecord = { id: makeId(), name, images };
+/** A fresh theme id. Unique, so a custom theme's files (piece-themes/<id>/<key>.png) never share a path with another theme's. */
+export const newCustomThemeId = makeId;
+
+export async function addCustomPieceTheme(name: string, images: PieceImageMap, id: string = makeId()): Promise<CustomPieceThemeRecord> {
+  const record: CustomPieceThemeRecord = { id, name, images };
   const records = await listCustomPieceThemes();
   records.push(record);
   await saveRecords(PIECE_KEY, records);
   return record;
+}
+
+/** Replaces the images of a stored theme (an old record whose data URIs were moved into files). */
+export async function updateCustomPieceThemeImages(id: string, images: PieceImageMap): Promise<void> {
+  const records = await listCustomPieceThemes();
+  await saveRecords(
+    PIECE_KEY,
+    records.map((r) => (r.id === id ? { ...r, images } : r))
+  );
 }
 
 export async function removeCustomPieceTheme(id: string): Promise<void> {

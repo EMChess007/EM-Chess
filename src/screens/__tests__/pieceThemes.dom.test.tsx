@@ -26,7 +26,7 @@ const WORDS = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: '
 const imagesOf = (id: string): Record<string, string> => {
   const images = AVAILABLE_PIECE_THEMES.find((theme) => theme.id === id)?.images;
   if (!images) throw new Error(`${id} has no images`);
-  return images;
+  return images as Record<string, string>; // a bundled file's URL under vitest (an asset id on a phone)
 };
 const srcOf = (marked: Element) => marked.querySelector('img')?.getAttribute('src') ?? null;
 const markers = (root: Element) => Array.from(root.querySelectorAll('[data-piece]')) as HTMLElement[];

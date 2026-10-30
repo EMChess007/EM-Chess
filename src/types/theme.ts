@@ -8,8 +8,14 @@ export interface BoardTheme {
   isCustom?: boolean;
 }
 
+/**
+ * One piece image: a bundled asset id (a built-in theme, `import x from '...png'`) or a file URI (a custom theme's file in the app's own folder, `file://...`).
+ * Never a `data:` URI (command #27d: a phone showed two Merida pieces wrong while every data URI was right in a browser).
+ */
+export type PieceImageSource = string | number;
+
 /** Keyed the same way `Piece.tsx`'s glyph map already is: `${color}${type}`, e.g. 'wp', 'bk'. */
-export type PieceImageMap = Record<string, string>;
+export type PieceImageMap = Record<string, PieceImageSource>;
 
 export interface PieceTheme {
   id: string;

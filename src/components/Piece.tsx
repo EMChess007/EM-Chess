@@ -2,6 +2,7 @@ import { Image, StyleSheet, View } from 'react-native';
 import type { Piece as PieceModel } from '../types/chess';
 import type { PieceImageMap } from '../types/theme';
 import { pieceInk } from './pieceArt';
+import { pieceImageSource } from './pieceImageSource';
 import PieceIcon from './PieceIcon';
 
 interface PieceProps {
@@ -30,7 +31,7 @@ export default function Piece({ piece, images, size }: PieceProps) {
     // The marker sits on a wrapper (react-native-web's Image does not forward `dataSet`): the wrapper is the old 85 % box and the image fills it, so the picture is where it always was.
     return (
       <View style={styles.pieceImage} accessibilityRole="image" accessibilityLabel={label} {...pieceData(key)}>
-        <Image source={{ uri: imageUri }} style={styles.pieceImageFill} resizeMode="contain" />
+        <Image source={pieceImageSource(imageUri)} style={styles.pieceImageFill} resizeMode="contain" />
       </View>
     );
   }

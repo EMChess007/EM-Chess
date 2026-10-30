@@ -8,6 +8,7 @@ import type { PieceImageMap } from '../types/theme';
 import BoardAnnotations from './BoardAnnotations';
 import BoatIcon from './BoatIcon';
 import type { PieceShapeType } from './pieceArt';
+import { pieceImageSource } from './pieceImageSource';
 import PieceIcon from './PieceIcon';
 import PromotionPicker from './PromotionPicker';
 import { useBoardGestures } from './useBoardGestures';
@@ -125,7 +126,7 @@ const PieceArt = memo(function PieceArt({ seat, type, size, dead, images, boat =
           dead && styles.dead,
         ]}
       >
-        <Image source={{ uri: imageUri }} style={{ width: size * 0.78, height: size * 0.78 }} resizeMode="contain" />
+        <Image source={pieceImageSource(imageUri)} style={{ width: size * 0.78, height: size * 0.78 }} resizeMode="contain" />
         {promoted && <View style={[styles.promotedBar, { width: size * 0.4, bottom: size * 0.05 }]} />}
       </View>
     );

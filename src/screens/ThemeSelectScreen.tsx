@@ -21,6 +21,7 @@ import {
 } from '../logic/themeSettings';
 import type { BoardTheme, PieceTheme } from '../types/theme';
 import { pieceInk } from '../components/pieceArt';
+import { pieceImageSource } from '../components/pieceImageSource';
 import PieceIcon from '../components/PieceIcon';
 
 interface ThemeSelectScreenProps {
@@ -265,7 +266,7 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
               onPress={() => handleSelectPieceTheme(theme)}
             >
               {theme.images ? (
-                <Image source={{ uri: theme.images.wn }} style={styles.pieceThumb} resizeMode="contain" />
+                <Image source={pieceImageSource(theme.images.wn)} style={styles.pieceThumb} resizeMode="contain" />
               ) : (
                 <PieceIcon type="n" ink={pieceInk('w')} size={32} />
               )}

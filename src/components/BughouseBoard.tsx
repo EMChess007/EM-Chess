@@ -5,6 +5,7 @@ import { openBoard } from '../logic/bughouse';
 import type { BoardId, BughouseColor } from '../logic/bughouse/types';
 import { boardCellToSquare, type KingBadge } from '../logic/bughouseView';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
+import type { PieceImageMap } from '../types/theme';
 import Piece from './Piece';
 import { useBoardGestures } from './useBoardGestures';
 import { getTouchDebugOverlay } from './devOverlayRegistry';
@@ -134,7 +135,7 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
   );
 }
 
-function PieceArt({ color, type, cell, images }: { color: BughouseColor; type: string; cell: number; images?: Record<string, string> }) {
+function PieceArt({ color, type, cell, images }: { color: BughouseColor; type: string; cell: number; images?: PieceImageMap }) {
   return (
     <View style={{ width: cell, height: cell, alignItems: 'center', justifyContent: 'center' }}>
       <Piece piece={{ color, type } as never} images={images} size={cell} />

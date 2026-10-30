@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PIECE_PATHS, PIECE_SHAPE_TYPES, WHITE_PIECE_INK, BLACK_PIECE_INK, pieceInk } from '../../components/pieceArt';
 import pieceSets from '../../data/pieceSets.json';
@@ -25,13 +27,13 @@ const KINDS = ['k', 'q', 'r', 'b', 'n', 'p'];
 const imagesOf = (id: string): Record<string, string> => {
   const images = AVAILABLE_PIECE_THEMES.find((theme) => theme.id === id)?.images;
   if (!images) throw new Error(`${id} has no images`);
-  return images;
+  // Under vitest an imported PNG is its root-relative URL ("/assets/pieces/merida/bk.png"); on a phone Metro gives an asset id. Either way it is a BUNDLED file, never a data URI.
+  for (const [key, source] of Object.entries(images)) if (typeof source !== 'string') throw new Error(`${id}/${key} is not a bundled file URL`);
+  return images as Record<string, string>;
 };
-const decode = (uri: string) => {
-  const match = /^data:image\/png;base64,(.+)$/.exec(uri);
-  if (!match) throw new Error('not a PNG data URI');
-  return PNG.sync.read(Buffer.from(match[1], 'base64'));
-};
+/** The bytes of a bundled piece image: the file the registry points at. */
+const bytesOf = (source: string) => readFileSync(path.join(process.cwd(), source));
+const decode = (source: string) => PNG.sync.read(bytesOf(source));
 const luminance = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
 /** The mean luminance of the opaque pixels (alpha >= 200) of an asset, and the share of the 120 x 120 box they cover. */
@@ -114,16 +116,25 @@ describe('the built-in theme: a vector set with one ink per colour', () => {
 });
 
 describe.each(IMAGE_THEME_IDS)('image theme %s: all twelve pieces', (id) => {
-  it('has exactly the twelve keys wk wq wr wb wn wp bk bq br bb bn bp, each a PNG data URI', () => {
+  it('has exactly the twelve keys wk wq wr wb wn wp bk bq br bb bn bp, each its OWN bundled file assets/pieces/<theme>/<key>.png (never a data URI)', () => {
     const images = imagesOf(id);
     expect(Object.keys(images).sort()).toEqual([...KEYS].sort());
-    for (const key of KEYS) expect(images[key].startsWith('data:image/png;base64,'), key).toBe(true);
+    for (const key of KEYS) {
+      expect(images[key], key).toBe(`/assets/pieces/${id}/${key}.png`);
+      expect(images[key].startsWith('data:'), key).toBe(false);
+    }
   });
 
-  it('is the set of pieceSets.json, key for key (the registry does not shuffle them)', () => {
+  it('is the set of pieceSets.json, key for key and BYTE for byte (the files have the pixels of the JSON they were generated from)', () => {
     const shipped = (pieceSets as Record<string, Record<string, string>>)[id];
     const images = imagesOf(id);
-    for (const key of KEYS) expect(images[key], key).toBe(shipped[key]);
+    for (const key of KEYS) expect(bytesOf(images[key]).equals(Buffer.from(shipped[key].replace('data:image/png;base64,', ''), 'base64')), key).toBe(true);
+  });
+
+  it('the twelve files are twelve DIFFERENT files: no two share a path or a byte', () => {
+    const images = imagesOf(id);
+    expect(new Set(KEYS.map((key) => images[key])).size).toBe(12);
+    expect(new Set(KEYS.map((key) => bytesOf(images[key]).toString('base64'))).size).toBe(12);
   });
 
   it('the white and the black piece of a kind are different images, and all twelve are different', () => {
