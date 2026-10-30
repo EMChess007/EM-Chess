@@ -224,7 +224,7 @@ export class Device {
 
   /** Is the app's first screen up (the tab bar's Play)? */
   async waitHome(timeoutMs = 240_000) {
-    return this.waitFor('the Home screen', (nodes) => findNodes(nodes, { text: 'Play' }).length > 0 && findNodes(nodes, { text: 'More' }).length > 0, timeoutMs, 1500);
+    return this.waitFor('the Home screen', (nodes) => (findNodes(nodes, { text: 'Play' }).length > 0 && findNodes(nodes, { text: 'More' }).length > 0 ? nodes : false), timeoutMs, 1500);
   }
 
   logcat(lines = 400) {
