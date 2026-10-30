@@ -717,6 +717,8 @@ function ChessBoard({
           ref={boardContainerRef}
           onLayout={onBoardLayout}
           style={[styles.board, { width: boardSize, height: boardSize }]}
+          testID="chess-board"
+          accessibilityLabel="Chess board"
           {...panHandlers}
         >
         {displayRows.map((row, rowIndex) =>

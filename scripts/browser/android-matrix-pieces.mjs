@@ -25,6 +25,8 @@ export const INK = {
 export const INK_TOLERANCE = 40;
 /** A pixel counts as part of the piece when it differs from the square's colour by more than this. */
 const BACKGROUND_DISTANCE = 48;
+/** The finer threshold a WHITE piece is retried at: the lightest built-in squares are 20-30 from the white fill (Marble #e8e8e8, Ocean #dee3e6). */
+export const FINE_BACKGROUND_DISTANCE = 12;
 /** Fewer piece pixels than this fraction of the cell means the piece is not there (or too small to judge). */
 const MIN_PIECE_FRACTION = 0.1;
 
@@ -34,7 +36,7 @@ const distance = (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])
  * What an image of one cell says: the square's colour (the top-left pixel), the colour of the piece (the commonest 32-step bin among the pixels unlike the square, averaged) and the
  * fraction of the cell the piece covers. `png` is {width, height, data} with RGBA bytes.
  */
-export function analyseCell(png) {
+export function analyseCell(png, backgroundDistance = BACKGROUND_DISTANCE) {
   const { width, height, data } = png;
   const at = (x, y) => [data[(y * width + x) * 4], data[(y * width + x) * 4 + 1], data[(y * width + x) * 4 + 2]];
   const background = at(1, 1);
@@ -43,7 +45,7 @@ export function analyseCell(png) {
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const pixel = at(x, y);
-      if (distance(pixel, background) <= BACKGROUND_DISTANCE) continue;
+      if (distance(pixel, background) <= backgroundDistance) continue;
       candidates++;
       const key = `${pixel[0] >> 5},${pixel[1] >> 5},${pixel[2] >> 5}`;
       const bin = bins.get(key) ?? { n: 0, sum: [0, 0, 0] };
@@ -56,6 +58,34 @@ export function analyseCell(png) {
   for (const bin of bins.values()) if (best === null || bin.n > best.n) best = bin;
   const piece = best === null ? null : best.sum.map((s) => Math.round(s / best.n));
   return { background, piece, fraction: candidates / (width * height) };
+}
+
+/**
+ * The BODY of a black piece must be dark (command #28): the median luminance (0-255) of the pixels that are not the square's own colour, at most BLACK_BODY_MAX. The commonest colour (analyseCell)
+ * is blind to a body that is half light bands (Merida's black king) and the mean is moved by an outline; the median of everything the piece covers says what the eye sees at game size.
+ * A white piece has no counterpart: its outline is most of its pixels in some sets.
+ */
+export const BLACK_BODY_MAX = 90;
+
+export function bodyLuminance(png) {
+  const { width, height, data } = png;
+  const background = [data[(1 * width + 1) * 4], data[(1 * width + 1) * 4 + 1], data[(1 * width + 1) * 4 + 2]];
+  const values = [];
+  for (let i = 0; i < width * height; i++) {
+    const pixel = [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]];
+    if (distance(pixel, background) <= BACKGROUND_DISTANCE) continue;
+    values.push(0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2]);
+  }
+  if (values.length === 0) return null;
+  values.sort((a, b) => a - b);
+  return values[Math.floor(values.length / 2)];
+}
+
+/** The issue text for a black piece whose body reads light, or null. */
+function lightBodyIssue(marker, png) {
+  if (marker[0] !== 'b' || !/^b[pnbrqk]$/.test(marker)) return null;
+  const body = bodyLuminance(png);
+  return body !== null && body > BLACK_BODY_MAX ? `${marker}: the body reads light (median luminance ${Math.round(body)}, limit ${BLACK_BODY_MAX})` : null;
 }
 
 /** The ink a piece must have, from its marker: "wk" / "bq" (colour + type) or "2:n" (seat + type). Null for a marker nobody knows. */
@@ -71,10 +101,16 @@ export const inkMatches = (measured, ink) => measured !== null && distance(measu
 export function judgeCell(marker, png) {
   const ink = expectedInk(marker);
   if (ink === null) return `unknown piece marker "${marker}"`;
-  const { piece, fraction } = analyseCell(png);
+  let { piece, fraction } = analyseCell(png);
+  // A near-white fill on a light square (a white piece on Ocean's #dee3e6, 28 away) is "the square" to the coarse threshold and only its thin outline would be seen (command #28): a white
+  // piece that does not pass at the coarse threshold is looked at again at the fine one, which keeps the fill. A white piece that is NOT drawn differs from the square nowhere, so it still fails.
+  if (/^w[pnbrqk]$/.test(marker) && (piece === null || fraction < MIN_PIECE_FRACTION || !inkMatches(piece, ink))) {
+    const fine = analyseCell(png, FINE_BACKGROUND_DISTANCE);
+    if (fine.piece !== null && fine.fraction >= MIN_PIECE_FRACTION && inkMatches(fine.piece, ink)) ({ piece, fraction } = fine);
+  }
   if (piece === null || fraction < MIN_PIECE_FRACTION) return `${marker}: no piece found in its cell (covers ${(fraction * 100).toFixed(1)} %)`;
   if (!inkMatches(piece, ink)) return `${marker}: drawn rgb(${piece.join(',')}), expected rgb(${ink.join(',')}) +-${INK_TOLERANCE}`;
-  return null;
+  return lightBodyIssue(marker, png);
 }
 
 // --- an IMAGE theme (Cburnett, Merida, Chess with Checkers: command #27c) -----------------------------------------------------------------------------------------------------------
@@ -179,7 +215,7 @@ export function judgeImageCell(marker, png, assets, rect) {
   const swapped = distances[(marker[0] === 'w' ? 'b' : 'w') + marker[1]];
   if (nearest[0] !== marker[0]) return `${marker}: drawn like ${nearest} (distance ${nearestDistance.toFixed(1)}), not like its own image (${own.toFixed(1)}); the other colour's ${marker[1]} is at ${swapped.toFixed(1)}`;
   if (own > IMAGE_MAX_DISTANCE) return `${marker}: ${own.toFixed(1)} away from its own image (limit ${IMAGE_MAX_DISTANCE})`;
-  return null;
+  return lightBodyIssue(marker, png);
 }
 
 /**

@@ -64,3 +64,7 @@ export function piecePathPaint(ink: PieceInk): PiecePathPaint {
     strokeLinecap: 'round',
   };
 }
+
+// proof branch only: the two constants the current Piece gallery imports (the art above is 4cf8c46s)
+export const PIECE_CHIP_BACKGROUND = "#b58863";
+export const PIECE_CHIP_BORDER = "#8a6d3b";
