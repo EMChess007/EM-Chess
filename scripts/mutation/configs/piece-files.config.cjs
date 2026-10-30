@@ -31,9 +31,9 @@ module.exports = {
   mutantTimeoutMs: 6 * 60 * 1000,
   mutants: [
     // --- what an Image is handed ---
-    ['source: everything is a { uri }', PI, "return typeof image === 'number' ? image : { uri: image };", 'return { uri: image as string };'],
-    ['source: everything is passed as it is', PI, "return typeof image === 'number' ? image : { uri: image };", 'return image;'],
-    ['source: a string is the asset id', PI, "typeof image === 'number'", "typeof image === 'string'"],
+    ['source: everything is a { uri }', PI, "return typeof image === 'string' ? { uri: image } : image;", 'return { uri: image as string };'],
+    ['source: everything is passed as it is', PI, "return typeof image === 'string' ? { uri: image } : image;", 'return image;'],
+    ['source: a string is the asset', PI, "typeof image === 'string'", "typeof image !== 'string'"],
     ['piece: the image goes in as a hand-made { uri }', PC, 'source={pieceImageSource(imageUri)}', 'source={{ uri: imageUri as string }}'],
     // --- the vector paint, prop by prop ---
     ['paint: the fill is half transparent', A, '    fillOpacity: 1,', '    fillOpacity: 0.5,'],

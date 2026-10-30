@@ -13,6 +13,11 @@ describe('pieceImageSource', () => {
     expect(pieceImageSource(123456)).toBe(123456);
   });
 
+  it('a bundled asset the web build resolves to { uri, width, height } is the source as it is (not wrapped in a second { uri }: every image theme was blank on web)', () => {
+    const asset = { uri: '/assets/?unstable_path=.%2Fassets%2Fpieces%2Fmerida/bk.png', width: 120, height: 120 };
+    expect(pieceImageSource(asset)).toBe(asset);
+  });
+
   it('a file URI is { uri }', () => {
     expect(pieceImageSource('file:///data/user/0/app/files/piece-themes/custom-1-a/wk.png')).toEqual({ uri: 'file:///data/user/0/app/files/piece-themes/custom-1-a/wk.png' });
     expect(pieceImageSource('/assets/pieces/merida/bk.png')).toEqual({ uri: '/assets/pieces/merida/bk.png' });

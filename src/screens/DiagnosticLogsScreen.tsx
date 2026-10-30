@@ -118,6 +118,8 @@ function createStyles(colors: AppColors) {
     },
     buttonRow: {
       flexDirection: 'row',
+      // a row of buttons wraps (CHECKLIST 6b): "Run text-fit check" and "Piece gallery" do not fit side by side at the narrowest window with large text
+      flexWrap: 'wrap',
       gap: 10,
       paddingHorizontal: 16,
       marginBottom: 8,
