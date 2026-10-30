@@ -281,7 +281,8 @@ describe.each(['cburnett', 'merida', 'checkers'])('judgeImageCell on %s, photogr
     // and the corner that IS read decides: a different colour at (1, 1) is the square the piece is judged over
     const odd = photograph(assets.bk, LIGHT, 40, RECT);
     odd.data.set([0x00, 0x80, 0x00, 255], (1 * 40 + 1) * 4);
-    expect(imageDistances(odd, assets, RECT).bk).not.toBe(imageDistances(photograph(assets.bk, LIGHT, 40, RECT), assets, RECT).bk);
+    const distancesOf = (image: Image) => imageDistances(image, assets, RECT) as Record<string, number>;
+    expect(distancesOf(odd).bk).not.toBe(distancesOf(photograph(assets.bk, LIGHT, 40, RECT)).bk);
   });
 
   it('a piece in a rectangle that is not square (wider than tall) is scaled into it on both axes', () => {
