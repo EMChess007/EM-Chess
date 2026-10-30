@@ -243,6 +243,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
     if (picked && picked.board === board) {
       if (dropSquares(match, board, picked.piece).includes(square)) {
         commit({ seat: actor, action: { kind: 'drop', board, piece: picked.piece, square } });
+        if (online) setPicked(null); // online the position does not change until the server's snapshot: the half-made action is over now, not then
         return;
       }
       setPicked(null);
@@ -256,6 +257,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
           return;
         }
         commit({ seat: actor, action: { kind: 'move', board, from: selected.square, to: square } });
+        if (online) setSelected(null);
         return;
       }
     }
@@ -274,6 +276,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
     setPromotion(null);
     const actor = pending ? actors[pending.board] : null;
     if (pending && actor !== null) commit({ seat: actor, action: { kind: 'move', board: pending.board, from: pending.from, to: pending.to, promotion: piece } });
+    if (online) setSelected(null);
   };
 
   // --- Humans on both boards (W3b): each board's taps go to ITS reducer only ------------------------------------------------------------------
