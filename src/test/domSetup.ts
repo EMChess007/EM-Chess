@@ -65,8 +65,9 @@ vi.mock('react-native-svg', async () => {
   const { createElement } = await import('react');
   const shape = (name: string) => {
     // fill / stroke / opacity are kept as data attributes: a piece's colour is the thing the piece tests read (pieceColours.dom.test.tsx).
-    const Shape = ({ children, fill, stroke, opacity }: { children?: unknown; fill?: string; stroke?: string; opacity?: number }) =>
-      createElement('span', { 'data-svg': name, 'data-fill': fill, 'data-stroke': stroke, 'data-opacity': opacity }, children as never);
+    // (width and the path data too: a test reads how big a piece is drawn and which silhouette it is)
+    const Shape = ({ children, fill, stroke, opacity, width, d }: { children?: unknown; fill?: string; stroke?: string; opacity?: number; width?: number; d?: string }) =>
+      createElement('span', { 'data-svg': name, 'data-fill': fill, 'data-stroke': stroke, 'data-opacity': opacity, 'data-width': width, 'data-d': d }, children as never);
     return Shape;
   };
   return {

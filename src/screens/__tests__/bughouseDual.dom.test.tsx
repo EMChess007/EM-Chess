@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PIECE_PATHS } from '../../components/pieceArt';
 import { legalDropsOn, legalMovesOn, type BughouseMatch } from '../../logic/bughouse';
 import type { BoardId } from '../../logic/bughouse/types';
 import { BUGHOUSE_ROTATE_OVERLAY_DETAIL, BUGHOUSE_ROTATE_OVERLAY_TITLE, deriveBughouseLayout, getBughouseDualCellSize } from '../../logic/bughouseLayout';
@@ -657,6 +658,29 @@ describe('drops and promotions, one board at a time', () => {
     fireTouch('touchend', cancel, [{ id: 5, x: 20, y: 20 }]);
     expect(screen.queryByTestId('promotion-A')).toBeNull();
     expect(labelOf('A', 'a8')).not.toContain('queen');
+  });
+});
+
+describe('the promotion choice is drawn in the colour of the side that promotes (command #27b)', () => {
+  const paths = (id: string) => Array.from(screen.getByTestId(id).querySelectorAll('[data-svg="Path"]')) as HTMLElement[];
+
+  it('Black promoting on A sees black pieces, White promoting on B sees white ones - all four choices, each its own silhouette', () => {
+    const blackNear = '4k3/8/8/8/8/8/p7/4K3 b - - 0 1';
+    const whiteNear = '4k3/P7/8/8/8/8/8/4K3 w - - 0 1';
+    renderGame({ seats: cfg('HHHH'), startFrom: scene({ startMs: 0, a: blackNear, b: whiteNear }) });
+    tap('A', 'a2');
+    tap('A', 'a1');
+    tap('B', 'a7');
+    tap('B', 'a8');
+    for (const piece of ['q', 'r', 'b', 'n'] as const) {
+      const blackFills = paths(`promote-A-${piece}`).map((path) => path.getAttribute('data-fill'));
+      const whiteFills = paths(`promote-B-${piece}`).map((path) => path.getAttribute('data-fill'));
+      expect(blackFills.length, `A ${piece}`).toBeGreaterThan(0);
+      expect(blackFills.every((fill) => fill === '#1d1d1d'), `A ${piece}`).toBe(true);
+      expect(whiteFills.length, `B ${piece}`).toBeGreaterThan(0);
+      expect(whiteFills.every((fill) => fill === '#fafafa'), `B ${piece}`).toBe(true);
+      expect(paths(`promote-A-${piece}`).map((path) => path.getAttribute('data-d'))).toEqual([...PIECE_PATHS[piece]]);
+    }
   });
 });
 

@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Piece from '../../components/Piece';
+import { PIECE_PATHS } from '../../components/pieceArt';
+import { getBughouseDualCellSize } from '../../logic/bughouseLayout';
 import { mulberry32 } from '../../logic/__tests__/bughouseTestKit';
 import { openBoard } from '../../logic/bughouse';
 import type { SeatConfig, SeatController } from '../../logic/fourPlayer/setup';
@@ -24,6 +26,32 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe('what a piece says about itself', () => {
+  const WORDS = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' } as const;
+  const PATH_COUNTS = { p: 2, n: 1, b: 2, r: 1, q: 4, k: 1 } as const;
+
+  it.each(['w', 'b'] as const)('every %s piece is labelled with its colour and kind for a screen reader, and draws ALL of its paths', (color) => {
+    for (const type of TYPES) {
+      const { container, unmount } = render(<Piece piece={{ color, type } as never} size={40} />);
+      const marked = container.querySelector(`[data-piece="${color}${type}"]`) as HTMLElement;
+      expect(marked.getAttribute('aria-label'), `${color}${type}`).toBe(`${color === 'w' ? 'white' : 'black'} ${WORDS[type]}`);
+      expect(paths(marked), `${color}${type} paths`).toHaveLength(PATH_COUNTS[type]);
+      unmount();
+    }
+  });
+
+  it('a piece is drawn at 90 % of its cell, and 36 dp without one', () => {
+    const sized = render(<Piece piece={{ color: 'w', type: 'k' } as never} size={40} />);
+    expect(sized.container.querySelector('[data-svg="Svg"]')?.getAttribute('data-width')).toBe('36');
+    sized.unmount();
+    const bare = render(<Piece piece={{ color: 'w', type: 'k' } as never} />);
+    expect(bare.container.querySelector('[data-svg="Svg"]')?.getAttribute('data-width')).toBe('36');
+    bare.unmount();
+    const small = render(<Piece piece={{ color: 'b', type: 'p' } as never} size={29} />);
+    expect(small.container.querySelector('[data-svg="Svg"]')?.getAttribute('data-width')).toBe('26');
+  });
 });
 
 describe('the piece itself: all twelve kinds', () => {
@@ -91,6 +119,13 @@ describe('the Bughouse boards: the colour of every drawn piece is the colour of 
   });
   // (the pocket chips - each in its player's colour - are in bughousePockets.dom.test.tsx, with the full pockets)
 
+  it('a piece on a Bughouse board is drawn at 90 % of ITS CELL (the cell of the layout, not a default)', () => {
+    render(<BughouseGameScreen seats={HUMANS} timeControl={{ initialMs: 180000, incrementMs: 0 }} onExit={() => {}} rng={mulberry32(5)} clock={() => Date.now()} />);
+    const cell = getBughouseDualCellSize(window.innerWidth, window.innerHeight).cell;
+    expect(cell).toBeGreaterThan(30);
+    expect(screen.getByTestId('A-e8').querySelector('[data-svg="Svg"]')?.getAttribute('data-width')).toBe(String(Math.floor(cell * 0.9)));
+  });
+
   it('the SQUARES are coloured as on every chess board (found while looking at the pieces): a1 and h8 dark, a8 and h1 light - they were the other way round', () => {
     render(<BughouseGameScreen seats={HUMANS} timeControl={{ initialMs: 180000, incrementMs: 0 }} onExit={() => {}} rng={mulberry32(5)} clock={() => Date.now()} />);
     const colour = (id: string) => (screen.getByTestId(id).getAttribute('style') ?? '').match(/background-color: ([^;]+)/)?.[1];
@@ -122,5 +157,13 @@ describe('the 4-seat board: every piece is in its SEAT\'s colour', () => {
       for (const path of paths(element)) expect(path.getAttribute('data-fill')).toBe(SEAT_FILL[seat]);
     }
     expect(perSeat).toEqual([16, 16, 16, 16]);
+    // every seat has its own army: 8 pawns, 2 knights, 2 bishops, 2 rooks, a queen and a king - each drawn as that silhouette
+    const byKind = new Map<string, number>();
+    for (const element of marked) {
+      const kind = (element.getAttribute('data-seat-piece') ?? '').split(':')[1];
+      byKind.set(kind, (byKind.get(kind) ?? 0) + 1);
+      expect(paths(element).map((path) => path.getAttribute('data-d')), kind).toEqual([...PIECE_PATHS[kind as 'p']]);
+    }
+    expect(Object.fromEntries(byKind)).toEqual({ p: 32, n: 8, b: 8, r: 8, q: 4, k: 4 });
   });
 });

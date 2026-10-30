@@ -185,7 +185,7 @@ function SeatBar({ seat, match, nowMs, seatName, actor, pickedPiece, bank, onPic
       onLayout={(e) => setStripWidth(Math.round(e.nativeEvent.layout.width))}
     >
       {/* a NARROW strip (a 20 dp cell, side by side) drops the colour dot and the team shape to keep room for a full pocket */}
-      {showStripMarks(stripWidth) && <View style={[styles.colourDot, place.color === 'w' ? styles.dotWhite : styles.dotBlack]} />}
+      {showStripMarks(stripWidth) && <View testID={`dot-${place.board}-${word}`} style={[styles.colourDot, place.color === 'w' ? styles.dotWhite : styles.dotBlack]} />}
       {showStripMarks(stripWidth) && (
         <Text maxFontSizeMultiplier={1} style={styles.shape}>
           {bughouseTeamShape(place.team)}

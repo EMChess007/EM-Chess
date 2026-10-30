@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PIECE_PATHS } from '../../components/pieceArt';
 import { fixtureMatch } from '../../logic/bughouseFixture';
 import { legalDropsOn, pocketOfSeat } from '../../logic/bughouse';
 import type { SeatConfig, SeatController } from '../../logic/fourPlayer/setup';
@@ -182,6 +183,49 @@ describe('the strip is measured: the name gives up its place before the pocket d
     expect(bar.textContent).toContain('◆');
     expect(clock()).toBe('46px');
     expect(chip()).toBe('24px');
+  });
+
+  it('the colour dot goes with the shape: drawn from 224 dp, gone below it', () => {
+    renderGame(cfg('HHHH'), match);
+    const bar = screen.getByTestId('bar-A-white');
+    expect(screen.queryByTestId('dot-A-white')).not.toBeNull();
+    measured(bar, 223);
+    expect(screen.queryByTestId('dot-A-white')).toBeNull();
+    expect(screen.queryByTestId('dot-A-black')).not.toBeNull(); // the other strips are unaffected
+    measured(bar, 224);
+    expect(screen.queryByTestId('dot-A-white')).not.toBeNull();
+  });
+
+  it('the piece in a chip is as big as its chip allows: 18 dp (compact bars) in a 24+ dp chip, 16 dp in a 20 dp chip', () => {
+    renderGame(cfg('HHHH'), match);
+    const bar = screen.getByTestId('bar-A-white');
+    const size = () => screen.getByTestId('pocket-A-white-q').querySelector('[data-svg="Svg"]')?.getAttribute('data-width');
+    expect(size()).toBe('18');
+    measured(bar, 223);
+    measured(screen.getByTestId('pocket-A-white'), 112);
+    expect(size()).toBe('16');
+  });
+
+  it('every chip is its own piece: the silhouette of a pawn, knight, bishop, rook and queen, in order', () => {
+    renderGame(cfg('HHHH'), match);
+    for (const piece of PIECES) {
+      const drawn = Array.from(screen.getByTestId(`pocket-A-white-${piece}`).querySelectorAll('[data-svg="Path"]')).map((path) => path.getAttribute('data-d'));
+      expect(drawn, piece).toEqual([...PIECE_PATHS[piece]]);
+    }
+  });
+
+  it('the two-board layouts are COMPACT: a 24 dp chip in a 26 dp row in a strip at least 30 dp tall', () => {
+    renderGame(cfg('HHHH'), match);
+    expect(declaredStyle(screen.getByTestId('pocket-A-white-q'))['height']).toBe('24px');
+    expect(declaredStyle(screen.getByTestId('pocket-A-white'))['height']).toBe('26px');
+    expect(declaredStyle(screen.getByTestId('bar-A-white'))['min-height']).toBe('30px');
+  });
+
+  it('the one-human layout is not: a 26 dp chip in a 28 dp row in a strip at least 36 dp tall', () => {
+    renderGame(cfg('HBBB'), match);
+    expect(declaredStyle(screen.getByTestId('pocket-A-white-q'))['height']).toBe('26px');
+    expect(declaredStyle(screen.getByTestId('pocket-A-white'))['height']).toBe('28px');
+    expect(declaredStyle(screen.getByTestId('bar-A-white'))['min-height']).toBe('36px');
   });
 
   it('the chips are as wide as the measured row allows: 24 dp at 132 dp, 37 at 200, 40 from 232 dp', () => {
