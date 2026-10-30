@@ -39,6 +39,7 @@ export const SCREENS = [
   { id: 'more-engines', title: 'Custom engines', steps: [{ text: 'More' }, { text: 'Manage Custom Engines' }] },
   { id: 'more-themes', title: 'Board & piece themes', steps: [{ text: 'More' }, { text: 'Manage Board & Piece Themes' }] },
   { id: 'more-diagnostics', title: 'Diagnostics', steps: [{ text: 'More' }, { text: 'Diagnostics' }] },
+  { id: 'piece-gallery', title: 'Diagnostics: Piece gallery (every theme x 12 pieces x 2 squares)', steps: [{ text: 'More' }, { text: 'Diagnostics' }, { id: 'open-piece-gallery' }] },
 ];
 
 /**

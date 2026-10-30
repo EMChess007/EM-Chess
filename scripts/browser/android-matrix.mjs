@@ -10,6 +10,7 @@
  *   node scripts/browser/android-matrix.mjs --profile sweep            every size under every system-bar profile
  *   node scripts/browser/android-matrix.mjs --self-test                the checks against a fixture with every defect on purpose (no app, no server)
  *   --screens home,game-2p     only these screens          --out DIR   where results.json, the screenshots and the contact sheets go
+ *   --progress FILE.jsonl      resumable: every finished screen of a page group is written to FILE at once, a restart skips them (android-matrix-progress.mjs; not with --sheets)
  *   --workers 3                parallel browser contexts   --sheets    also write the contact sheet of every screen
  *   BASE_URL=http://127.0.0.1:19071 uses a dev server you started (kills nothing); otherwise it starts its OWN `expo start --web` on a free port and kills it by PID.
  *
@@ -30,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { PAGE_CHECKS_SOURCE } from './android-matrix-checks.mjs';
 import { checkPieceColours } from './android-matrix-pieces.mjs';
 import { comboId, CRITERIA, fullCombos, insetSweep, insetsFor, miniCombos, quickCombos, SCREEN_SIZES, viewportFor, FONTS } from './android-matrix-def.mjs';
+import { openProgress, progressKey } from './android-matrix-progress.mjs';
 import { allScreens } from './android-matrix-screens.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -266,7 +268,7 @@ function groupByPage(combos) {
   return [...groups.values()];
 }
 
-async function runGroup(browser, baseUrl, group, screens, record, sheets) {
+async function runGroup(browser, baseUrl, group, screens, outerRecord, sheets, progress) {
   const context = await openContext(browser, group.scale, group.theme);
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
@@ -274,6 +276,13 @@ async function runGroup(browser, baseUrl, group, screens, record, sheets) {
   page.on('pageerror', (e) => pageErrors.push(e.message));
   try {
     for (const screen of screens) {
+      // --progress: a screen of this page group that an earlier (killed) run finished is not run again; its results were read back from the file.
+      if (progress?.done.has(progressKey(group, screen.id))) continue;
+      const produced = [];
+      const record = (r) => {
+        produced.push(r);
+        outerRecord(r);
+      };
       try {
         await navigate(page, cdp, baseUrl, screen);
       } catch (error) {
@@ -293,11 +302,17 @@ async function runGroup(browser, baseUrl, group, screens, record, sheets) {
           if (wanted) sheets.push({ screen: screen.id, combo, issues: issues.length, png: await page.screenshot() });
         }
       }
+      progress?.save(progressKey(group, screen.id), produced);
+      if (progress) console.log(`[matrix] progress: ${group.scale}|${group.theme}|${screen.id} saved`);
     }
   } finally {
     await context.close();
   }
-  if (pageErrors.length) record({ screen: '(page)', combo: `${group.scale}|${group.theme}`, issues: [{ kind: 'pageerror', el: '-', detail: pageErrors[0].slice(0, 200) }] });
+  if (pageErrors.length) {
+    const pageError = { screen: '(page)', combo: `${group.scale}|${group.theme}`, issues: [{ kind: 'pageerror', el: '-', detail: pageErrors[0].slice(0, 200) }] };
+    outerRecord(pageError);
+    progress?.save(`${group.scale}|${group.theme}|(page error)|${Date.now()}`, [pageError]);
+  }
 }
 
 async function mainRun() {
@@ -325,13 +340,21 @@ async function mainRun() {
   }
   const results = [];
   const sheets = flag('sheets') ? [] : null;
+  // --progress FILE: resumable run (android-matrix-progress.mjs). The contact sheets are photographs taken during a run and are not kept in the file, so the two do not combine.
+  const progressFile = option('progress', '');
+  if (progressFile && sheets) throw new Error('--progress and --sheets cannot be combined (the sheets are not kept in the progress file)');
+  const progress = progressFile ? openProgress(progressFile, { profile: PROFILE, screens: screens.map((s) => s.id) }) : null;
+  if (progress) {
+    results.push(...progress.results);
+    console.log(`[matrix] progress file ${progressFile}: ${progress.done.size} screen runs already finished, skipped`);
+  }
   const record = (r) => results.push(r);
   let next = 0;
   const started = Date.now();
   const worker = async () => {
     while (next < groups.length) {
       const group = groups[next++];
-      await runGroup(browser, base, group, screens, record, sheets);
+      await runGroup(browser, base, group, screens, record, sheets, progress);
       console.log(`[matrix] page group scale ${group.scale} / ${group.theme} done (${group.combos.length} combos, ${Math.round((Date.now() - started) / 1000)} s)`);
     }
   };
