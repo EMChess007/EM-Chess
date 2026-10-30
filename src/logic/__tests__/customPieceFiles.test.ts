@@ -100,6 +100,17 @@ describe('migrating an old record (data URIs) into files', () => {
     expect(await migrateDataUriImages('old-1', moved as Record<string, string>, store)).toBeNull();
   });
 
+  it('a record that holds SOME data URIs and some files is old too: the data URIs move, the files stay', async () => {
+    const { store, files } = memoryStore();
+    const mixed = { ...draft(), wk: 'file:///elsewhere/wk.png' };
+    expect(hasDataUriImages(mixed)).toBe(true);
+    expect(hasDataUriImages({ wk: 'file:///a.png', bk: 'file:///b.png' })).toBe(false);
+    const moved = (await migrateDataUriImages('old-3', mixed, store)) as Record<string, string>;
+    expect(moved.wk).toBe('file:///elsewhere/wk.png');
+    expect(moved.bk).toBe('file:///app/piece-themes/old-3/bk.png');
+    expect(files.size).toBe(11);
+  });
+
   it('a failed move leaves the old record as it is (null), with nothing half written', async () => {
     const { store, files } = memoryStore({ failOn: 'wp.png' });
     expect(await migrateDataUriImages('old-2', draft(), store)).toBeNull();

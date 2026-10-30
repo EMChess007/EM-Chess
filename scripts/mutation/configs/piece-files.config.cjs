@@ -90,7 +90,7 @@ module.exports = {
     ['build (bundler): an answer that is not a hash is taken', BC, 'if (/^[0-9a-f]{7,40}$/.test(hash)) {', 'if (hash) {'],
     // --- the matrix's progress file ---
     ['progress: another run\'s file is accepted', PR, 'JSON.stringify(first.header) !== JSON.stringify(header)', 'JSON.stringify(first.header) === JSON.stringify(header)'],
-    ['progress: the header line is read as a screen', PR, 'for (const line of lines.slice(1)) {', 'for (const line of lines) {'],
+    ['progress: EQUIVALENT - the header line is read as a screen (its shape has no "done", the guard skips it; androidMatrixProgress.test.ts pins it)', PR, 'for (const line of lines.slice(1)) {', 'for (const line of lines) {'],
     ['progress: a line of the wrong shape is read', PR, "if (typeof entry.done !== 'string' || !Array.isArray(entry.results)) continue;", ''],
     ['progress: a saved screen is not remembered', PR, '      done.add(key);\n    },', '    },'],
     ['progress: a cut line stops the read', PR, '        continue; // a line cut short by a kill: its screen runs again', '        break;'],

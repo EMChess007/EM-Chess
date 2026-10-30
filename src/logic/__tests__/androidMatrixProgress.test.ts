@@ -64,6 +64,27 @@ describe('openProgress', () => {
     expect(second.results).toHaveLength(1);
   });
 
+  it('a broken line in the MIDDLE costs only its own screen: the finished screens after it are still read', () => {
+    const file = fileIn();
+    const first = openProgress(file, HEADER);
+    first.save('1|light|home', [{ screen: 'home', combo: 'a', issues: [] }]);
+    appendFileSync(file, '{"done":"1|light|piece-gall\n');
+    first.save('1|dark|home', [{ screen: 'home', combo: 'b', issues: [] }]);
+    const second = openProgress(file, HEADER);
+    expect([...second.done]).toEqual(['1|light|home', '1|dark|home']);
+    expect(second.results.map((r: { combo: string }) => r.combo)).toEqual(['a', 'b']);
+  });
+
+  it('the header line is never a finished screen: it has no "done" key, so reading from line 0 or 1 gives the same answer (the proof that the slice is equivalent)', () => {
+    const file = fileIn();
+    openProgress(file, HEADER);
+    const lines = readFileSync(file, 'utf8').trim().split('\n');
+    expect(lines).toHaveLength(1);
+    expect(Object.keys(JSON.parse(lines[0]))).toEqual(['header']);
+    expect(openProgress(file, HEADER).done.size).toBe(0);
+    expect(openProgress(file, HEADER).results).toEqual([]);
+  });
+
   it('an empty file is a new file', () => {
     const file = fileIn();
     writeFileSync(file, '');
