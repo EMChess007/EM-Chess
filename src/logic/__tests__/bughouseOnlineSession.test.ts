@@ -104,7 +104,7 @@ describe('starting', () => {
     expect(h.session.state.view?.mySeat).toBe(0);
     expect(h.socket.asked).toHaveLength(0);
     expect(h.socket.plain).toHaveLength(0);
-    expect([...h.socket.handlers.keys()].sort()).toEqual(['bug_game_over', 'bug_seat_update', 'bug_state', 'disconnect']);
+    expect([...h.socket.handlers.keys()].sort()).toEqual(['bug_chat_from', 'bug_game_over', 'bug_quick_from', 'bug_seat_update', 'bug_state', 'disconnect']);
     expect([...h.socket.managerHandlers.keys()]).toEqual(['reconnect']);
   });
 

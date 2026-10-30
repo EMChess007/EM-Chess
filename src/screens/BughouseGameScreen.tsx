@@ -230,7 +230,9 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
 
   // --- Taps ---------------------------------------------------------------------------------------------------------------------------------
   // Online, a board is touchable only while the connection is up, no resync is running and none of our actions is waiting for the server's answer (a second one would run ahead of the match).
-  const onlineBlocked = online !== undefined && (online.connection !== 'connected' || online.view.resyncing || online.view.pending !== null);
+  // A SPECTATOR (W4b) never acts: the boards are drawn the same way and no tap, drop or promotion is taken.
+  const spectator = online?.view.spectator === true;
+  const onlineBlocked = online !== undefined && (spectator || online.connection !== 'connected' || online.view.resyncing || online.view.pending !== null);
   const actors = onlineBlocked ? { A: null, B: null } : { A: touchSeat(seats, match, 'A'), B: touchSeat(seats, match, 'B') };
 
   const movesOfSelected = useMemo(() => (selected ? legalMovesOn(match, selected.board).filter((m) => m.from === selected.square) : []), [match, selected]);
@@ -294,7 +296,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   /** One input of one board: through that board's reducer, and a completed selection to the engine's funnel. Reads the LATEST match, so a tap that lands before a re-render is still right. */
   const dualInput = (board: BoardId, input: SelectionInput) => {
     const current = stateRef.current.match;
-    const actor = touchSeat(seats, current, board);
+    const actor = onlineRef.current?.view.spectator ? null : touchSeat(seats, current, board);
     if (actor === null) return;
     const done = selectionOf(board).apply(input, positionOf(current, board));
     if (done === null) return;
@@ -468,7 +470,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   const ctlText = dual ? styles.controlTextSlim : styles.controlText;
   const hasSharedBoard = dual && BOARD_IDS.some((board) => dualBoardPlan(seats, board).shared);
   // Humans on both boards: who resigns is a TEAM matter (any seat's resignation ends the match against its team); one button per team that has a human at the device.
-  const resignTeams = ([1, 2] as const).filter((team) => humans.some((seat) => seatPlace(seat).team === team));
+  const resignTeams = spectator ? [] : ([1, 2] as const).filter((team) => humans.some((seat) => seatPlace(seat).team === team));
   const resignTeam = (team: 1 | 2) => {
     const seat = humans.find((s) => seatPlace(s).team === team);
     if (seat !== undefined && match.result === null) commit({ seat, action: { kind: 'resign' } });
@@ -518,7 +520,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
           {controlsInBar && <View style={styles.compactControls}>{controls}</View>}
         </View>
       ) : (
-        <ScreenHeader title="Bughouse" subtitle={online ? `Online · ${online.view.timeControlLabel}` : layout.kind === 'passAndPlay' ? 'Local · pass and play' : 'Local'} onBack={onExit} backLabel="‹ Menu" />
+        <ScreenHeader title="Bughouse" subtitle={online ? `${online.view.spectator ? 'Watching' : 'Online'} · ${online.view.timeControlLabel}` : layout.kind === 'passAndPlay' ? 'Local · pass and play' : 'Local'} onBack={onExit} backLabel="‹ Menu" />
       )}
       <ScrollView
         contentContainerStyle={styles.content}

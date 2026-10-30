@@ -26,6 +26,7 @@ import {
   type BugRejoinState,
   type BugSeatUpdatePayload,
   type BugSeats,
+  type BugSpectateState,
   type BugStatePayload,
 } from './bughouse/wire';
 
@@ -35,6 +36,8 @@ export type BughouseOnlineAction = Extract<BughouseAction, { kind: 'move' | 'dro
 export interface BughouseOnlineView {
   readonly roomId: string;
   readonly mySeat: BughouseSeat;
+  /** A spectator (W4b) owns no seat: `mySeat` is only a placeholder (0), no action is ever sent and no line says "you". */
+  readonly spectator?: boolean;
   readonly seats: BugSeats;
   /** When the seat list arrived (local ms): the grace countdowns count from it. */
   readonly seatsAt: number;
@@ -82,6 +85,31 @@ export function viewFromMatchFound(payload: BugMatchFoundPayload, localNow: numb
     lastMove: { A: null, B: null },
     bank: null,
     serverNowMs: payload.serverNowMs,
+    receivedAt: localNow,
+    gameOver: null,
+    pending: null,
+    resyncing: false,
+    actionError: null,
+    nextId: 1,
+  };
+}
+
+/** The first view of a SPECTATOR, from the room `bug_spectate_game` answered with; null when the answer cannot be used. */
+export function viewFromSpectate(state: BugSpectateState, localNow: number): BughouseOnlineView | null {
+  if (!state || typeof state !== 'object' || typeof state.roomId !== 'string' || !validSeats(state.seats)) return null;
+  const match = parse(state.state);
+  if (match === null || typeof state.serverNowMs !== 'number') return null;
+  return {
+    roomId: state.roomId,
+    mySeat: 0,
+    spectator: true,
+    seats: state.seats,
+    seatsAt: localNow,
+    timeControlLabel: String(state.timeControlLabel ?? ''),
+    match,
+    lastMove: { A: null, B: null },
+    bank: null,
+    serverNowMs: state.serverNowMs,
     receivedAt: localNow,
     gameOver: null,
     pending: null,

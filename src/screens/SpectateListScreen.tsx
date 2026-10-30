@@ -8,7 +8,8 @@ import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { emitWithin } from '../api/socketAck';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
-import { buildSpectateRows, describeFourGame, type SpectateRow } from '../logic/fourPlayerOnlineUi';
+import { buildSpectateRows, describeBughouseGame, describeFourGame, type SpectateRow } from '../logic/fourPlayerOnlineUi';
+import type { BugActiveGameSummary, BugAck } from '../logic/bughouse/wire';
 import type { FourActiveGameSummary, FourAck } from '../logic/fourPlayerWire';
 import type { ActiveGameSummary, Ack } from '../types/multiplayer';
 
@@ -16,13 +17,15 @@ interface SpectateListScreenProps {
   authToken: string | null;
   onWatch: (game: ActiveGameSummary) => void;
   onWatchFour: (game: FourActiveGameSummary) => void;
+  /** Bughouse (W4b): optional so a caller that predates it still renders the list without that section. */
+  onWatchBughouse?: (game: BugActiveGameSummary) => void;
   onBack: () => void;
 }
 
 /** A server without 4 Player support never answers `four_list_active_games`; the 4 Player section then simply stays out of the list. */
 const FOUR_LIST_TIMEOUT_MS = 5000;
 
-export default function SpectateListScreen({ authToken, onWatch, onWatchFour, onBack }: SpectateListScreenProps) {
+export default function SpectateListScreen({ authToken, onWatch, onWatchFour, onWatchBughouse, onBack }: SpectateListScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const [rows, setRows] = useState<SpectateRow[] | null>(null);
@@ -36,15 +39,16 @@ export default function SpectateListScreen({ authToken, onWatch, onWatchFour, on
     setLoading(true);
     setError(null);
     const socket = connectSocket(authToken);
-    let pending = 2;
+    let pending = 3;
     let twoGames: ActiveGameSummary[] | null = null;
     let twoError: string | null = null;
     let fourGames: FourActiveGameSummary[] | null = null;
+    let bughouseGames: BugActiveGameSummary[] | null = null;
     const finish = () => {
       pending -= 1;
       if (pending > 0 || request !== requestRef.current) return;
-      if (twoGames === null && (fourGames === null || fourGames.length === 0)) setError(twoError ?? 'Could not load games.');
-      else setRows(buildSpectateRows(twoGames ?? [], fourGames));
+      if (twoGames === null && (fourGames === null || fourGames.length === 0) && (bughouseGames === null || bughouseGames.length === 0)) setError(twoError ?? 'Could not load games.');
+      else setRows(buildSpectateRows(twoGames ?? [], fourGames, bughouseGames));
       setLoading(false);
     };
     // With a deadline (emitWithin): an emit on a socket that never connects waits for ever, and the spinner with it. The 2-player list has no "older server" excuse: if it does not
@@ -57,6 +61,11 @@ export default function SpectateListScreen({ authToken, onWatch, onWatchFour, on
     });
     socket.timeout(FOUR_LIST_TIMEOUT_MS).emit('four_list_active_games', {}, (err: unknown, ack?: FourAck<{ games: FourActiveGameSummary[] }>) => {
       if (!err && ack && ack.ok) fourGames = ack.games;
+      finish();
+    });
+    // The Bughouse section, with the same soft failure: a server without it simply leaves the section out.
+    socket.timeout(FOUR_LIST_TIMEOUT_MS).emit('bug_list_active_games', {}, (err: unknown, ack?: BugAck<{ games: BugActiveGameSummary[] }>) => {
+      if (!err && ack && ack.ok && Array.isArray(ack.games)) bughouseGames = ack.games;
       finish();
     });
   }, [authToken]);
@@ -115,6 +124,14 @@ export default function SpectateListScreen({ authToken, onWatch, onWatchFour, on
                   <Text style={styles.rowTitle} numberOfLines={1}>
                     {describeFourGame(item.game)}
                   </Text>
+                  <Text style={styles.rowMeta}>{item.game.timeControlLabel}</Text>
+                </Pressable>
+              );
+            }
+            if (item.kind === 'bughouse') {
+              return (
+                <Pressable style={styles.row} onPress={() => onWatchBughouse?.(item.game)} testID={`spectate-bughouse-${item.game.roomId}`}>
+                  <Text style={styles.rowTitle}>{describeBughouseGame(item.game)}</Text>
                   <Text style={styles.rowMeta}>{item.game.timeControlLabel}</Text>
                 </Pressable>
               );

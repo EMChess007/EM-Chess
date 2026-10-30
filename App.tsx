@@ -47,6 +47,7 @@ import TournamentStandingsScreen from './src/screens/TournamentStandingsScreen';
 import BughouseGameScreen from './src/screens/BughouseGameScreen';
 import BughouseMatchmakingScreen from './src/screens/BughouseMatchmakingScreen';
 import BughouseOnlineGameScreen from './src/screens/BughouseOnlineGameScreen';
+import BughouseSpectatorScreen from './src/screens/BughouseSpectatorScreen';
 import type { BugMatchFoundPayload } from './src/logic/bughouse/wire';
 import BughouseSetupScreen from './src/screens/BughouseSetupScreen';
 import FourPlayerGameScreen from './src/screens/FourPlayerGameScreen';
@@ -143,6 +144,7 @@ type Screen =
   | { name: 'setupChessOnline'; token: string; pairingId: string; color: PieceColor }
   | { name: 'challenge'; token: string }
   | { name: 'spectateList'; token: string | null }
+  | { name: 'bughouseSpectate'; token: string | null; roomId: string }
   | { name: 'spectatorGame'; token: string | null; roomId: string; whiteUsername: string; blackUsername: string }
   | { name: 'onlineGame'; token: string; match: MatchFoundPayload; returnToTournamentId?: string; resume?: boolean }
   | { name: 'tournament'; token: string }
@@ -169,7 +171,7 @@ type Screen =
   // Bughouse Online (W4): pick one of the six time controls -> queue -> the game (the server's).
   | { name: 'bughouseOnlineTimeControl'; token: string }
   | { name: 'bughouseMatchmaking'; token: string; timeControl: TimeControl }
-  | { name: 'bughouseOnlineGame'; token: string; match: BugMatchFoundPayload; timeControl: TimeControl }
+  | { name: 'bughouseOnlineGame'; token: string; match: BugMatchFoundPayload; timeControl: TimeControl; resume: boolean }
   | { name: 'themeSelect' }
   | { name: 'streak' }
   | { name: 'puzzleRush'; themeFilter?: string[] }
@@ -226,6 +228,8 @@ export default function App() {
   // An online 4 Player game the player left while their seat was still live (a bot plays it after 45 s; they may return until it ends). Kept in
   // memory for the "Return to your game" card; the same game is ALSO persisted (activeGameStorage.ts) so an app restart or a web refresh rejoins it.
   const [fourResume, setFourResume] = useState<{ token: string; match: FourMatchFoundPayload; timeControl: TimeControl } | null>(null);
+  // The same for an online Bughouse game (W4b): left while the seat was live -> "Return to your game" on the Bughouse card; also persisted for a restart.
+  const [bughouseResume, setBughouseResume] = useState<{ token: string; match: BugMatchFoundPayload; timeControl: TimeControl } | null>(null);
   // Gates the very first render on the persisted Dark/Light preference having actually loaded —
   // without this, every screen mounts once with useAppColors()'s synchronous default ('light',
   // see colorSchemeSettings.ts) and only corrects itself once restoreColorSchemeMode's AsyncStorage
@@ -261,6 +265,7 @@ export default function App() {
           logDiagnostic(`[App] Resuming a ${game.kind} online game after a restart (room ${game.match.roomId}).`);
           setScreen((current) => {
             if (current.name !== 'main') return current;
+            if (game.kind === 'bughouse') return { name: 'bughouseOnlineGame', token: session.token, match: game.match, timeControl: game.timeControl, resume: true };
             return game.kind === 'twoPlayer'
               ? { name: 'onlineGame', token: session.token, match: game.match, returnToTournamentId: game.returnToTournamentId, resume: true }
               : { name: 'fourPlayerOnlineGame', token: session.token, match: game.match, timeControl: game.timeControl, resume: true };
@@ -321,10 +326,14 @@ export default function App() {
       void saveActiveGame({ kind: 'twoPlayer', userId: authSession.user.id, match: screen.match, returnToTournamentId: screen.returnToTournamentId });
     } else if (screen.name === 'fourPlayerOnlineGame') {
       void saveActiveGame({ kind: 'fourPlayer', userId: authSession.user.id, match: screen.match, timeControl: screen.timeControl });
+    } else if (screen.name === 'bughouseOnlineGame') {
+      void saveActiveGame({ kind: 'bughouse', userId: authSession.user.id, match: screen.match, timeControl: screen.timeControl });
     }
   }, [screen, authSession]);
   const liveGameRoomId =
-    screen.name === 'onlineGame' || screen.name === 'fourPlayerOnlineGame' ? screen.match.roomId : (fourResume?.match.roomId ?? null);
+    screen.name === 'onlineGame' || screen.name === 'fourPlayerOnlineGame' || screen.name === 'bughouseOnlineGame'
+      ? screen.match.roomId
+      : (fourResume?.match.roomId ?? bughouseResume?.match.roomId ?? null);
   useEffect(() => {
     if (!liveGameRoomId) return;
     const id = setInterval(() => void touchActiveGame(liveGameRoomId), 20_000);
@@ -415,6 +424,11 @@ export default function App() {
         onFourPlayerResume={
           fourResume && authSession?.token === fourResume.token
             ? () => setScreen({ name: 'fourPlayerOnlineGame', token: fourResume.token, match: fourResume.match, timeControl: fourResume.timeControl, resume: true })
+            : undefined
+        }
+        onBughouseResume={
+          bughouseResume && authSession?.token === bughouseResume.token
+            ? () => setScreen({ name: 'bughouseOnlineGame', token: bughouseResume.token, match: bughouseResume.match, timeControl: bughouseResume.timeControl, resume: true })
             : undefined
         }
         onBotClassic={() =>
@@ -648,9 +662,12 @@ export default function App() {
           })
         }
         onWatchFour={(game) => setScreen({ name: 'fourPlayerSpectate', token, roomId: game.roomId })}
+        onWatchBughouse={(game) => setScreen({ name: 'bughouseSpectate', token, roomId: game.roomId })}
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
     );
+  } else if (screen.name === 'bughouseSpectate') {
+    content = <BughouseSpectatorScreen key={screen.roomId} authToken={screen.token} roomId={screen.roomId} onExit={() => setScreen({ name: 'spectateList', token: screen.token })} />;
   } else if (screen.name === 'fourPlayerSpectate') {
     content = <FourPlayerSpectatorScreen authToken={screen.token} roomId={screen.roomId} onExit={() => setScreen({ name: 'spectateList', token: screen.token })} />;
   } else if (screen.name === 'spectatorGame') {
@@ -933,20 +950,32 @@ export default function App() {
         authToken={token}
         timeControl={bughouseTimeControlOf(timeControl)}
         timeControlLabel={timeControl.label}
-        onMatchFound={(match) => setScreen({ name: 'bughouseOnlineGame', token, match, timeControl })}
+        onMatchFound={(match) => {
+          setBughouseResume(null);
+          setScreen({ name: 'bughouseOnlineGame', token, match, timeControl, resume: false });
+        }}
         onCancel={() => setScreen({ name: 'playModeSelect' })}
       />
     );
   } else if (screen.name === 'bughouseOnlineGame') {
-    const { token, match, timeControl } = screen;
+    const { token, match, timeControl, resume } = screen;
     content = (
       <BughouseOnlineGameScreen
         key={match.roomId}
         authToken={token}
         match={match}
-        resume={false}
-        onExit={() => setScreen({ name: 'playModeSelect' })}
-        onPlayAgain={() => setScreen({ name: 'bughouseMatchmaking', token, timeControl })} // the same time control again
+        resume={resume}
+        onGameEnded={() => void clearActiveGame()}
+        onExit={(resumable) => {
+          if (!resumable) void clearActiveGame();
+          setBughouseResume(resumable ? { token, match, timeControl } : null);
+          setScreen({ name: 'playModeSelect' });
+        }}
+        onPlayAgain={() => {
+          void clearActiveGame();
+          setBughouseResume(null);
+          setScreen({ name: 'bughouseMatchmaking', token, timeControl }); // the same time control again
+        }}
       />
     );
   } else if (screen.name === 'fourPlayerOnlineTimeControl') {

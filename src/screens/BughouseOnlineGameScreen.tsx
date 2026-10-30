@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { appAlert } from '../components/AppAlert';
 import { Text } from '../components/AppText';
@@ -10,6 +10,8 @@ import { isOver } from '../logic/bughouseOnline';
 import { onlineSeatConfig } from '../logic/bughouseOnlineUi';
 import { useBughouseOnlineGame } from '../logic/useBughouseOnlineGame';
 import BughouseGameScreen from './BughouseGameScreen';
+import BughouseTeamBar from '../components/BughouseTeamBar';
+import { partnerOf } from '../logic/bughouse/types';
 
 interface BughouseOnlineGameScreenProps {
   authToken: string;
@@ -19,6 +21,8 @@ interface BughouseOnlineGameScreenProps {
   /** Back to the menu. `resumable` = the player still holds a live seat (they left a running game). */
   onExit: (resumable: boolean) => void;
   onPlayAgain: () => void;
+  /** The game is over (or the server no longer has it): the saved rejoin record is of no use any more (App.tsx forgets it). */
+  onGameEnded?: () => void;
 }
 
 export const LEAVE_BUGHOUSE_TITLE = 'Leave the game?';
@@ -30,13 +34,17 @@ export const LEAVE_BUGHOUSE_MESSAGE = 'The clocks keep running. If you do not co
  * own, with every input SENT and never played here. This wrapper owns what only the online game has: the session, leaving and resigning with a question first, and the way out of a game the
  * server no longer has.
  */
-export default function BughouseOnlineGameScreen({ authToken, match, resume, onExit, onPlayAgain }: BughouseOnlineGameScreenProps) {
+export default function BughouseOnlineGameScreen({ authToken, match, resume, onExit, onPlayAgain, onGameEnded }: BughouseOnlineGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const game = useBughouseOnlineGame(authToken, { match, resume });
-  const { view, connection, problem, now, sendAction, resign, retry, leave } = game;
+  const { view, connection, problem, now, sendAction, resign, retry, leave, chat, quick, sendQuick, sendChat } = game;
   const [resignError, setResignError] = useState<string | null>(null);
   const seats = useMemo(() => (view ? onlineSeatConfig(view.mySeat) : null), [view?.mySeat]);
+  const ended = view !== null && isOver(view);
+  useEffect(() => {
+    if (ended || connection === 'unavailable') onGameEnded?.();
+  }, [ended, connection, onGameEnded]);
 
   const leaveNow = (resumable: boolean) => {
     leave();
@@ -96,6 +104,15 @@ export default function BughouseOnlineGameScreen({ authToken, match, resume, onE
           resignError,
         }}
       />
+      {live && (
+        <BughouseTeamBar
+          partnerName={view.seats[partnerOf(view.mySeat)].name}
+          chat={chat}
+          quick={quick}
+          onQuick={sendQuick}
+          onChat={sendChat}
+        />
+      )}
       {connection === 'unavailable' && (
         <Pressable accessibilityRole="button" testID="bughouse-online-leave" style={styles.leave} onPress={() => leaveNow(false)}>
           <Text style={styles.leaveText}>Back to menu</Text>

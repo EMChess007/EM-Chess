@@ -54,6 +54,8 @@ interface PlayModeSelectScreenProps {
   onFourPlayerResume?: () => void;
   /** Which game that left online game is, so the link sits under its card (4 Player Chess when omitted, as before Chaturaji). */
   fourPlayerResumeVariant?: FourVariant;
+  /** Set while the player has left an online Bughouse game that is still going (or the app was restarted in one): offers "Return to your game" under the Bughouse card. */
+  onBughouseResume?: () => void;
   onLocalSpellChess: () => void;
   onLocalHorde: () => void;
   onLocalCrazyhouse: () => void;
@@ -107,6 +109,7 @@ export default function PlayModeSelectScreen({
   onBughouseOnline,
   onFourPlayerResume,
   fourPlayerResumeVariant = 'ffa',
+  onBughouseResume,
   onLocalSpellChess,
   onLocalHorde,
   onLocalCrazyhouse,
@@ -337,6 +340,11 @@ export default function PlayModeSelectScreen({
           <Pressable accessibilityLabel="Bughouse rules" testID="bughouse-rules-link" style={styles.spectateLink} onPress={() => setBughouseRulesOpen(true)}>
             <Text style={styles.spectateLinkText}>How to play ›</Text>
           </Pressable>
+          {onBughouseResume && (
+            <Pressable accessibilityLabel="Return to your Bughouse game" testID="bughouse-resume" style={styles.spectateLink} onPress={onBughouseResume}>
+              <Text style={styles.spectateLinkText}>Return to your game ›</Text>
+            </Pressable>
+          )}
         </View>
         <BughouseRulesSheet visible={bughouseRulesOpen} onClose={() => setBughouseRulesOpen(false)} />
 

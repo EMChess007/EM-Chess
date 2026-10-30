@@ -1,6 +1,7 @@
 import type { MatchFoundPayload } from '../types/multiplayer';
 import type { TimeControl } from '../types/timeControl';
 import type { FourMatchFoundPayload } from './fourPlayerWire';
+import type { BugMatchFoundPayload } from './bughouse/wire';
 
 // The online game the player is in right now, remembered across a page reload / app kill so they can walk straight back into their seat.
 //
@@ -22,7 +23,9 @@ export const ACTIVE_GAME_TTL_MS = 6 * 60 * 1000;
 
 export type ActiveOnlineGame =
   | { kind: 'twoPlayer'; userId: string; match: MatchFoundPayload; returnToTournamentId?: string }
-  | { kind: 'fourPlayer'; userId: string; match: FourMatchFoundPayload; timeControl: TimeControl };
+  | { kind: 'fourPlayer'; userId: string; match: FourMatchFoundPayload; timeControl: TimeControl }
+  // Bughouse (W4b): the same record with its own payload; `timeControl` is the app's, to queue the same one again after the game.
+  | { kind: 'bughouse'; userId: string; match: BugMatchFoundPayload; timeControl: TimeControl };
 
 export function serializeActiveGame(game: ActiveOnlineGame): string {
   return JSON.stringify(game);
@@ -55,6 +58,11 @@ export function parseActiveGame(raw: string | null | undefined): ActiveOnlineGam
   if (value.kind === 'fourPlayer') {
     if (!isString(match.state) || typeof match.seats !== 'object' || match.seats === null || !isObject(value.timeControl)) return null; // seats is an array of four
     return { kind: 'fourPlayer', userId: value.userId, match: match as unknown as FourMatchFoundPayload, timeControl: value.timeControl as unknown as TimeControl };
+  }
+  if (value.kind === 'bughouse') {
+    const seat = match.seat;
+    if (!isString(match.state) || !Array.isArray(match.seats) || match.seats.length !== 4 || typeof seat !== 'number' || !Number.isInteger(seat) || seat < 0 || seat > 3 || !isObject(value.timeControl)) return null;
+    return { kind: 'bughouse', userId: value.userId, match: match as unknown as BugMatchFoundPayload, timeControl: value.timeControl as unknown as TimeControl };
   }
   return null;
 }

@@ -17,6 +17,7 @@ import type { FourOnlineView } from './fourPlayerOnline';
 import { describeResultNote, rankSeats, statusSuffix } from './fourPlayerVariant';
 import { fourVariantOf, validateFourVariant, type FourActiveGameSummary, type FourGameOverPayload, type FourMatchFoundPayload, type FourQueueUpdatePayload, type FourSeatInfo, type FourVariant } from './fourPlayerWire';
 import type { ActiveGameSummary } from '../types/multiplayer';
+import type { BugActiveGameSummary } from './bughouse/wire';
 
 // --- Seats --------------------------------------------------------------------------------------------------------------------------
 
@@ -208,13 +209,24 @@ export function appendChat(log: readonly FourChatEntry[], entry: Omit<FourChatEn
 export type SpectateRow =
   | { key: string; kind: 'header'; title: string }
   | { key: string; kind: 'two'; game: ActiveGameSummary }
-  | { key: string; kind: 'four'; game: FourActiveGameSummary };
+  | { key: string; kind: 'four'; game: FourActiveGameSummary }
+  | { key: string; kind: 'bughouse'; game: BugActiveGameSummary };
+
+/** "A + D vs B + C": Team 1 holds seats 0 and 3 (Board A White and Board B Black), Team 2 seats 1 and 2 (bughouse/types.ts). */
+export const describeBughouseGame = (game: BugActiveGameSummary): string => {
+  const name = (seat: number) => game.seats[seat]?.name ?? '?';
+  return `${name(0)} + ${name(3)} vs ${name(1)} + ${name(2)}`;
+};
 
 /**
- * One list for both kinds of game. A section appears only when it has games; `four` is null when the server could not list 4 Player
- * games at all (an older server without the handlers), which must not hide the 2-player list.
+ * One list for all kinds of game. A section appears only when it has games; `four` and `bughouse` are null when the server could not list those games at all (an older
+ * server without the handlers), which must not hide the 2-player list.
  */
-export function buildSpectateRows(two: readonly ActiveGameSummary[], four: readonly FourActiveGameSummary[] | null): SpectateRow[] {
+export function buildSpectateRows(
+  two: readonly ActiveGameSummary[],
+  four: readonly FourActiveGameSummary[] | null,
+  bughouse: readonly BugActiveGameSummary[] | null = null,
+): SpectateRow[] {
   const rows: SpectateRow[] = [];
   // Each 4-seat variant gets its own section (the list rows are tagged by the header they sit under); a server that predates Giveaway sends no variant = Chess.
   // A game of a variant this client does not know (a newer server) is left out rather than listed under the wrong name - opening it could not work anyway.
@@ -232,6 +244,10 @@ export function buildSpectateRows(two: readonly ActiveGameSummary[], four: reado
   if (chaturaji.length > 0) {
     rows.push({ key: 'header:fourChaturaji', kind: 'header', title: 'Chaturaji' });
     for (const game of chaturaji) rows.push({ key: `four:${game.roomId}`, kind: 'four', game });
+  }
+  if (bughouse !== null && bughouse.length > 0) {
+    rows.push({ key: 'header:bughouse', kind: 'header', title: 'Bughouse' });
+    for (const game of bughouse) rows.push({ key: `bughouse:${game.roomId}`, kind: 'bughouse', game });
   }
   if (two.length > 0) {
     if (rows.length > 0) rows.push({ key: 'header:two', kind: 'header', title: 'Head to head' });

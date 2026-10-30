@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { logDiagnostic } from './diagnosticLog';
-import { BughouseOnlineSession, initialSessionState, type BugSocket, type BughouseOnlineRole, type BughouseSessionEffects, type BughouseSessionState } from './bughouseOnlineSession';
+import { BughouseOnlineSession, initialSessionState, type SendOutcome, type BugSocket, type BughouseOnlineRole, type BughouseSessionEffects, type BughouseSessionState } from './bughouseOnlineSession';
 import type { BughouseOnlineAction } from './bughouseOnline';
 import { triggerGameEndHaptics, triggerMoveHaptics } from './haptics';
 import { playMoveSound } from './moveSounds';
@@ -25,7 +25,7 @@ const REAL_EFFECTS: BughouseSessionEffects = {
  * that queued the player carries the game, because the server finds a seat by socket. `leave()` drops it (the server then starts its 45 s grace for the seat).
  */
 export function useBughouseOnlineGame(authToken: string | null, role: BughouseOnlineRole) {
-  const roomId = role.match.roomId;
+  const roomId = 'spectate' in role ? role.spectate.roomId : role.match.roomId;
   const [state, setState] = useState<BughouseSessionState>(() => initialSessionState(role, Date.now()));
   const [now, setNow] = useState(() => Date.now());
   const sessionRef = useRef<BughouseOnlineSession | null>(null);
@@ -55,7 +55,12 @@ export function useBughouseOnlineGame(authToken: string | null, role: BughouseOn
   const sendAction = useCallback((action: BughouseOnlineAction) => sessionRef.current?.sendAction(action), []);
   const resign = useCallback((onError: (message: string) => void) => sessionRef.current?.resign(onError), []);
   const retry = useCallback(() => sessionRef.current?.retry(), []);
-  const leave = useCallback(() => disconnectSocket(), []);
+  const leave = useCallback(() => {
+    sessionRef.current?.stopSpectating();
+    disconnectSocket();
+  }, []);
+  const sendQuick = useCallback((code: number, done: (outcome: SendOutcome) => void) => sessionRef.current?.sendQuick(code, done), []);
+  const sendChat = useCallback((text: string, done: (outcome: SendOutcome) => void) => sessionRef.current?.sendChat(text, done), []);
 
-  return { ...state, now, sendAction, resign, retry, leave };
+  return { ...state, now, sendAction, resign, retry, leave, sendQuick, sendChat };
 }
