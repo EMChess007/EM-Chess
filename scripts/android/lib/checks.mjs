@@ -16,23 +16,25 @@ export const PACKAGE = 'com.emchess.app';
  * is deliberately low (a narrow word like "Filter" is 0.29 and must not fail); the on-device text-fit probe (below) is the sharp instrument, this is the net for every other label.
  */
 export const MIN_WIDTH_PER_LETTER = 0.2;
+/** The tallest a one-line label's box may be for the narrowness check (dp); the first emulator run met a 41 dp seat badge whose "Yellow" box was square. */
+export const MAX_LABEL_HEIGHT_DP = 36;
 
 /**
  * Problems with the TEXT on a screen, from its tree: a text box with no size, a text that runs out of the window sideways, a one-word label far too narrow for its letters.
- * `screen` is { w, h } in pixels. Returns [{ kind, text, detail }].
+ * `screen` is { w, h, scale? } in pixels (scale = density / 160). Returns [{ kind, text, detail }].
  */
 export function textIssues(nodes, screen) {
   const issues = [];
   for (const n of nodes) {
     if (!n.text || n.cls.endsWith('EditText') || n.bounds === null) continue;
     const { w, h, x1, x2 } = n.bounds;
-    if (w <= 0 || h <= 0) {
-      issues.push({ kind: 'zero-size', text: n.text, detail: `text box ${w}x${h}` });
-      continue;
-    }
+    // A box with no positive size is a text the scroll view has moved out of sight (uiautomator reports its bounds clipped to nothing, even negative): not on the screen, nothing to judge.
+    if (w <= 0 || h <= 0) continue;
     if (x1 < -1 || x2 > screen.w + 1) issues.push({ kind: 'outside', text: n.text, detail: `box x ${x1}..${x2} in a window ${screen.w} px wide` });
     const letters = n.text.length;
-    if (/^\S+$/.test(n.text) && letters >= 4 && letters <= 16 && w / (letters * h) < MIN_WIDTH_PER_LETTER) {
+    // a label is one line: a box taller than a line (36 dp) is a container around it, not the label's own box
+    const oneLine = h / (screen.scale ?? 1) <= MAX_LABEL_HEIGHT_DP;
+    if (oneLine && /^\S+$/.test(n.text) && letters >= 4 && letters <= 16 && w / (letters * h) < MIN_WIDTH_PER_LETTER) {
       issues.push({ kind: 'narrow', text: n.text, detail: `${w}x${h} px for ${letters} letters (${(w / (letters * h)).toFixed(2)} per letter, minimum ${MIN_WIDTH_PER_LETTER})` });
     }
   }
@@ -164,11 +166,16 @@ export function parseGalleryLabel(label) {
  * centred). `cell` is the rectangle of the SQUARE in the screenshot. Returns an issue text or null.
  */
 export function judgePieceCell(screenshot, cell, marker, assets = null) {
-  const png = crop(screenshot, cell);
+  // The cell is cropped 2 px inside the bounds the tree gives: the judges take the square's colour from the crop's top-left pixel, and a bound off by one pixel (cells that touch, a light row
+  // under a dark one) would put a neighbour's colour there (the first emulator run judged every black piece on a light square as "blank" for that reason).
+  const inset = CELL_INSET_PX;
+  const png = crop(screenshot, { x: cell.x + inset, y: cell.y + inset, w: cell.w - 2 * inset, h: cell.h - 2 * inset });
   if (png.width < 8 || png.height < 8) return `${marker}: the cell is ${png.width}x${png.height} px, too small to judge`;
   if (assets === null) return judgeCell(marker, png);
-  const rect = { x: png.width * 0.075, y: png.height * 0.075, w: png.width * 0.85, h: png.height * 0.85 };
+  const rect = { x: cell.w * 0.075 - inset, y: cell.h * 0.075 - inset, w: cell.w * 0.85, h: cell.h * 0.85 };
   return judgeImageCell(marker, png, assets, rect);
 }
+
+export const CELL_INSET_PX = 2;
 
 export { analyseCell, bodyLuminance, BLACK_BODY_MAX };

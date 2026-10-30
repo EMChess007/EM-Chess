@@ -25,7 +25,7 @@ const EXTRA_SCREENS = await import('../browser/android-matrix-screens-extra.mjs'
 import { Device, PROFILES, sleep } from './lib/device.mjs';
 import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
 import { crashIssues, judgePieceCell, judgeSelection, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
-import { decodePng } from './lib/png.mjs';
+import { crop, decodePng, encodePng } from './lib/png.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -101,7 +101,23 @@ async function toHome(dev) {
 
 // --- the screens ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 /** Screens whose steps need a test-only web fixture or a piece theme set through the page: the Piece gallery covers every theme on the phone itself. */
-const phoneScreens = () => [...SCREENS, ...EXTRA_SCREENS].filter((s) => !s.fixture && !s.pieceTheme && (!ONLY || ONLY.has(s.id)));
+const LARGE_SCREENS = new Set(['home', 'play-menu', 'game-2p', 'ffa-setup', 'game-ffa', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-dual']);
+/**
+ * The cramped phone (small, font scale 1.3) runs EVERY screen; the large phone runs the ones whose layout differs most (a board, a setup, the tab screens): the whole job has a budget of
+ * about 25 minutes and each screen costs 10 - 20 s on the emulator. `--only` overrides both.
+ */
+const phoneScreens = () =>
+  [...SCREENS, ...EXTRA_SCREENS].filter((s) => !s.fixture && !s.pieceTheme && (ONLY ? ONLY.has(s.id) : profile.id === 'small' || LARGE_SCREENS.has(s.id)));
+
+/**
+ * The web matrix finds "the second Classic" in document order; on the phone only what is on screen exists, so that is "the Classic under the heading Local". The headings of the cards on the
+ * Play menu (PlayModeSelectScreen) by the order the web steps count them in.
+ */
+const POSITION_HEADINGS = { Classic: ['Bots', 'Local', 'Engine vs Engine'], 'Setup Chess': ['Bots', 'Local'], Local: [null, '4 Player Giveaway'] };
+function phoneStep(step) {
+  const headings = step.text === undefined ? undefined : POSITION_HEADINGS[step.text];
+  return step.nth !== undefined && headings?.[step.nth] ? { text: step.text, below: headings[step.nth] } : step;
+}
 
 async function judgeGamePieces(dev, screen) {
   const { nodes, png } = await dev.look();
@@ -140,13 +156,14 @@ async function screens(dev) {
   for (const s of phoneScreens()) {
     await scenario(dev, `screen ${s.id}`, async () => {
       await toHome(dev);
-      await dev.runSteps(s.steps);
+      await dev.runSteps(s.steps.map(phoneStep));
       await sleep(1200);
       const nodes = await dev.dump();
       const issues = [...crashIssues(nodes), ...textIssues(nodes, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`)];
       let note = `${nodes.length} nodes`;
       const narrow = narrowestLabel(nodes);
       if (narrow) note += `, narrowest label "${narrow.text}" ${narrow.ratio.toFixed(2)}`;
+      note += ` | on screen: ${visibleWords(nodes, 14).join(' / ')}`;
       if (s.pieces && s.pieces.mode === 'bw') {
         const verdict = await judgeGamePieces(dev, s);
         issues.push(...verdict.issues);
@@ -180,8 +197,8 @@ async function textFit(dev) {
 
 // --- the Piece gallery ----------------------------------------------------------------------------------------------------------------------------------------------------------------
 const GALLERY_THEMES = { Classic: 'default', Cburnett: 'cburnett', Merida: 'merida', 'Chess with Checkers': 'checkers' };
-/** 4 themes x (48 large cells + 5 board themes x 2 squares x 12 game-size cells): a run that judged fewer did not see the whole gallery. */
-const GALLERY_CELLS = 4 * (48 + 5 * 2 * 12);
+/** 4 themes x (24 large cells: 2 colours x 2 squares x 6 kinds, + 5 board themes x 2 squares x 12 game-size cells): a run that judged fewer did not see the whole gallery. */
+const GALLERY_CELLS = 4 * (24 + 5 * 2 * 12);
 const assetCache = new Map();
 function themeAssets(id) {
   if (id === 'default') return null;
@@ -208,6 +225,7 @@ async function gallery(dev) {
     const judged = new Set();
     const issues = [];
     const perTheme = {};
+    const failuresBy = {};
     let stuck = 0;
     for (let page = 0; page < 120 && stuck < 3; page++) {
       const { nodes, png } = await dev.look();
@@ -229,7 +247,13 @@ async function gallery(dev) {
         }
         const problem = judgePieceCell(png, { x: b.x1, y: b.y1, w: b.w, h: b.h }, parsed.marker, themeAssets(id));
         perTheme[id] = (perTheme[id] ?? 0) + 1;
-        if (problem) issues.push(`${n.desc}: ${problem}`);
+        if (problem) {
+          issues.push(`${n.desc}: ${problem}`);
+          const group = `${id} ${parsed.marker[0] === 'w' ? 'white' : 'black'} on ${parsed.square}`;
+          failuresBy[group] = (failuresBy[group] ?? 0) + 1;
+          // the first failure of each group is printed as a PNG (the log is the only way out of the runner): decode with `base64 -d`
+          if (failuresBy[group] === 1) log(`PNG64 ${n.desc} ${encodePng(crop(png, { x: b.x1, y: b.y1, w: b.w, h: b.h })).toString('base64')}`);
+        }
       }
       if (page % 8 === 0) await dev.snapshot(`gallery-${page}`);
       stuck = fresh === 0 ? stuck + 1 : 0;
@@ -237,6 +261,7 @@ async function gallery(dev) {
       await sleep(500);
     }
     if (judged.size < GALLERY_CELLS) issues.push(`only ${judged.size} of ${GALLERY_CELLS} gallery cells were seen and judged`);
+    if (Object.keys(failuresBy).length > 0) issues.unshift(`failed cells by group: ${JSON.stringify(failuresBy)}`);
     record('piece gallery pixels', issues, `${judged.size} cells judged: ${JSON.stringify(perTheme)}`);
   });
 }
@@ -252,7 +277,7 @@ async function boardNode(dev, id) {
 async function touches2p(dev) {
   await scenario(dev, 'touch: 2-player board', async () => {
     await toHome(dev);
-    await dev.runSteps([{ text: 'Play' }, { text: 'Classic', nth: 1 }, { text: '5 min' }]);
+    await dev.runSteps([{ text: 'Play' }, { text: 'Classic', below: 'Local' }, { text: '5 min' }]);
     await sleep(1200);
     const board = await boardNode(dev, 'chess-board');
     const issues = [];
@@ -576,7 +601,8 @@ try {
     await dev.waitHome(300_000);
     await screens(dev);
     await textFit(dev);
-    if (!flag('skip-gallery')) await gallery(dev);
+    // the gallery's pixels do not depend on the window: the cramped phone runs it, the large phone's budget goes to the screens
+    if (!flag('skip-gallery') && profile.id === 'small') await gallery(dev);
     await touches2p(dev);
     await touchesBughouse(dev);
   } else if (phase === 'online') {

@@ -91,13 +91,17 @@ UI hierchary dumped to: /dev/tty`;
 });
 
 describe('text on the screen', () => {
-  const screen = { w: 720, h: 1280 };
+  const screen = { w: 720, h: 1280, scale: 2 };
   it('reports a label clipped to under half its width (the net; the on-device probe is the sharp instrument) and a text that leaves the window', () => {
     const clipped = [node({ text: 'Home', bounds: box(10, 1200, 45, 1260) })]; // 35 px for 4 letters at 60 px high
     expect(textIssues(clipped, screen).map((i) => i.kind)).toEqual(['narrow']);
     const outside = [node({ text: 'A long line', bounds: box(600, 100, 800, 150) })];
     expect(textIssues(outside, screen).map((i) => i.kind)).toEqual(['outside']);
-    expect(textIssues([node({ text: 'Zero', bounds: box(10, 10, 10, 40) })], screen).map((i) => i.kind)).toEqual(['zero-size']);
+    // a text the scroll view moved out of sight has no positive box (even a negative height): nothing is on the screen to judge
+    expect(textIssues([node({ text: 'Zero', bounds: box(10, 10, 10, 40) }), node({ text: 'Negative', bounds: box(10, 100, 250, -35) })], screen)).toEqual([]);
+    // a box taller than one line is a container around the label, not its box (86 x 82 px for "Yellow" at density 2 = 41 dp), unless the scale says it is small
+    expect(textIssues([node({ text: 'Yellow', bounds: box(10, 100, 96, 182) })], { ...screen, scale: 2 })).toEqual([]);
+    expect(textIssues([node({ text: 'Yellow', bounds: box(10, 100, 50, 150) })], { ...screen, scale: 2 }).map((i) => i.kind)).toEqual(['narrow']);
   });
 
   it('accepts text that fits, a narrow word that is not clipped, wrapped text and an input', () => {

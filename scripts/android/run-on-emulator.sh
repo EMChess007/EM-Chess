@@ -37,11 +37,12 @@ phase() {
 
 for p in small large; do phase "$p" static; done
 
+# The online game and the offline states run on the cramped phone only (the budget of the job is about 25 minutes; the layouts they exercise are the ones the static phase checks on both).
 bash scripts/android/backend.sh start || { echo "[run] the backend could not start"; rc=1; }
-for p in small large; do phase "$p" online; done
+phase small online
 bash scripts/android/backend.sh stop
 
-for p in small large; do phase "$p" offline; done
+phase small offline
 
 cp "${ANDROID_E2E_STATE:-${RUNNER_TEMP:-/tmp}/android-e2e-state}"/*.log "$out"/ 2>/dev/null || true
 exit $rc
