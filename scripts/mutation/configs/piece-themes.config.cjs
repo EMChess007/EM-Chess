@@ -8,19 +8,16 @@
 // board and the Bughouse screen under every theme), pieceColours.dom.test.tsx, pieceArt.test.ts and the synthetic photographs of androidMatrixPieces.test.ts. The matrix itself (a real
 // Chromium) is NOT in this command; `--screens game-2p-theme-*,bughouse-all-pieces-dual-theme-*` is its own check.
 // A name that says EQUIVALENT cannot change behaviour; the test named in it pins why.
-const fs = require('node:fs');
-const path = require('node:path');
 
 const R = 'src/logic/pieceThemes.ts';
 const PC = 'src/components/Piece.tsx';
 const A = 'src/components/pieceArt.ts';
 const PR = 'src/logic/fourPlayer/presentation.ts';
 const M = 'scripts/browser/android-matrix-pieces.mjs';
-const J = 'src/data/pieceSets.json';
+const J = 'src/logic/pieceAssets.ts';
 
-// The assets are read from the real file (read only): a mutant's `find` is the exact text of one entry, which occurs once because every asset is a different picture.
-const root = process.env.MUTATION_ROOT || path.resolve(__dirname, '..', '..', '..');
-const sets = JSON.parse(fs.readFileSync(path.join(root, 'src', 'data', 'pieceSets.json'), 'utf8'));
+// Since command #27d the three image sets are bundled files, listed by the generated registry src/logic/pieceAssets.ts (`bk: merida_bk,`): a mutant points a black piece at the file of the white
+// piece of its kind, the bug the phone showed, planted in the data. Each line occurs once (the import names carry the theme).
 const KINDS = [
   ['k', 'king'],
   ['q', 'queen'],
@@ -32,7 +29,7 @@ const KINDS = [
 const assetMutants = [];
 for (const theme of ['cburnett', 'merida', 'checkers']) {
   for (const [kind, word] of KINDS) {
-    assetMutants.push([`asset: ${theme}'s black ${word} is the white ${word}`, J, `"b${kind}":"${sets[theme]['b' + kind]}"`, `"b${kind}":"${sets[theme]['w' + kind]}"`]);
+    assetMutants.push([`asset: ${theme}'s black ${word} is the white ${word}`, J, `  b${kind}: ${theme}_b${kind},`, `  b${kind}: ${theme}_w${kind},`]);
   }
 }
 
@@ -44,10 +41,10 @@ module.exports = {
   mutantTimeoutMs: 6 * 60 * 1000,
   mutants: [
     // --- the registry ---
-    ['registry: Cburnett is Merida', R, "{ id: 'cburnett', name: 'Cburnett', images: pieceSetImages.cburnett }", "{ id: 'cburnett', name: 'Cburnett', images: pieceSetImages.merida }"],
-    ['registry: Merida is Cburnett', R, "{ id: 'merida', name: 'Merida', images: pieceSetImages.merida }", "{ id: 'merida', name: 'Merida', images: pieceSetImages.cburnett }"],
-    ['registry: Chess with Checkers is Cburnett', R, "images: pieceSetImages.checkers }", "images: pieceSetImages.cburnett }"],
-    ['registry: the built-in theme has images', R, "{ id: DEFAULT_PIECE_THEME_ID, name: 'Classic' },", "{ id: DEFAULT_PIECE_THEME_ID, name: 'Classic', images: pieceSetImages.cburnett },"],
+    ['registry: Cburnett is Merida', R, "{ id: 'cburnett', name: 'Cburnett', images: CBURNETT_IMAGES }", "{ id: 'cburnett', name: 'Cburnett', images: MERIDA_IMAGES }"],
+    ['registry: Merida is Cburnett', R, "{ id: 'merida', name: 'Merida', images: MERIDA_IMAGES }", "{ id: 'merida', name: 'Merida', images: CBURNETT_IMAGES }"],
+    ['registry: Chess with Checkers is Cburnett', R, "images: CHECKERS_IMAGES }", "images: CBURNETT_IMAGES }"],
+    ['registry: the built-in theme has images', R, "{ id: DEFAULT_PIECE_THEME_ID, name: 'Classic' },", "{ id: DEFAULT_PIECE_THEME_ID, name: 'Classic', images: CBURNETT_IMAGES },"],
     ['registry: the default id is another word', R, "export const DEFAULT_PIECE_THEME_ID = 'default';", "export const DEFAULT_PIECE_THEME_ID = 'classic';"],
     ['registry: the built-in theme is called Default', R, "name: 'Classic' }", "name: 'Default' }"],
     ['registry: an unknown id is the second theme', R, '?? AVAILABLE_PIECE_THEMES[0]', '?? AVAILABLE_PIECE_THEMES[1]'],
