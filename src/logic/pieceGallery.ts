@@ -27,6 +27,14 @@ export const KIND_WORDS: Record<GalleryKind, string> = { k: 'king', q: 'queen', 
 /** The twelve pieces of a theme, as the image map keys them (`${color}${kind}`): white first, then black, each king to pawn. */
 export const GALLERY_PIECE_KEYS: readonly string[] = GALLERY_COLORS.flatMap((color) => GALLERY_KINDS.map((kind) => `${color}${kind}`));
 
+/** The cell a game draws a piece in, in dp (the 2-player board at 412 dp is 51, Bughouse's side by side boards 20-40): the gallery's "game size" rows use 32. */
+export const GALLERY_GAME_CELL = 32;
+
+/** "Merida on the Ocean board: black king on a dark square", the accessibility label of a game-size cell. */
+export function galleryGameCellLabel(themeName: string, boardName: string, color: GalleryColor, kind: GalleryKind, square: GallerySquare): string {
+  return `${themeName} on the ${boardName} board: ${color === 'w' ? 'white' : 'black'} ${KIND_WORDS[kind]} on a ${square} square`;
+}
+
 /** The width of the row-label column and of the screen's side gutters, in dp. */
 export const GALLERY_LABEL_WIDTH = 64;
 export const GALLERY_GUTTER = 16;

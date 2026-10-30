@@ -28,7 +28,7 @@ import {
   STRIP_SHAPE,
 } from '../logic/bughousePocket';
 import BughouseBoard from './BughouseBoard';
-import { pieceInk } from './pieceArt';
+import { PIECE_CHIP_BACKGROUND, PIECE_CHIP_BORDER, pieceInk } from './pieceArt';
 import PieceIcon from './PieceIcon';
 import { useBoardTouches, type BoardTouches, type DebugFinger } from './useBoardTouches';
 
@@ -257,7 +257,7 @@ function createStyles(colors: AppColors, compact: boolean) {
     // parts leave (flex 1, minWidth 0); the chips' own widths are computed to fit it (pocketChipWidth).
     pocket: { flexGrow: 1, flexShrink: 0, minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'flex-start', gap: POCKET_GAP, height: pocketChipHeight(compact) + 2, paddingHorizontal: POCKET_PADDING, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
     pocketFlash: { borderColor: '#2e7d32', backgroundColor: 'rgba(46,125,50,0.18)' },
-    chip: { height: pocketChipHeight(compact), flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: 7, backgroundColor: '#b58863', borderWidth: 1, borderColor: '#8a6d3b' },
+    chip: { height: pocketChipHeight(compact), flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: 7, backgroundColor: PIECE_CHIP_BACKGROUND, borderWidth: 1, borderColor: PIECE_CHIP_BORDER },
     chipSelected: { backgroundColor: '#a2d149', borderColor: '#5a7a1a' },
     chipUnavailable: { opacity: 0.45 },
     // the count: a small pill on the chip's lower right corner, readable on the piece in either colour
@@ -270,7 +270,7 @@ function createStyles(colors: AppColors, compact: boolean) {
     promotion: { position: 'absolute', left: 0, right: 0, top: '30%', alignItems: 'center', gap: 4, paddingVertical: 6, backgroundColor: 'rgba(244,236,216,0.96)', borderRadius: 8 },
     promotionTitle: { fontSize: 12, fontWeight: '700', color: '#3a2d1a' },
     promotionRow: { flexDirection: 'row', gap: 8 },
-    promotionButton: { width: 40, height: 40, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#b58863', borderWidth: 1, borderColor: '#8a6d3b' },
+    promotionButton: { width: 40, height: 40, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: PIECE_CHIP_BACKGROUND, borderWidth: 1, borderColor: PIECE_CHIP_BORDER },
     promotionGlyph: { fontSize: 26, color: '#1b130c' },
     promotionCancel: { fontSize: 18, color: '#3a2d1a' },
     status: { fontSize: compact ? 12 : 13, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },

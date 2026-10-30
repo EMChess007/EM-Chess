@@ -12,8 +12,8 @@ import { piecePathPaint, pieceInk, PIECE_SHAPE_TYPES, type PieceInk } from '../.
  * a square: it renders each piece in front of both of the active board theme's colours and compares, and it scans the drawing modules for a board-colour import.
  * Every expectation is a LITERAL.
  */
-const WHITE_PAINT = { fill: '#fafafa', fillOpacity: 1, fillRule: 'nonzero', stroke: '#1b1b1b', strokeLinecap: 'round', strokeLinejoin: 'round', strokeOpacity: 1, strokeWidth: 4 };
-const BLACK_PAINT = { fill: '#1d1d1d', fillOpacity: 1, fillRule: 'nonzero', stroke: '#f1f1f1', strokeLinecap: 'round', strokeLinejoin: 'round', strokeOpacity: 1, strokeWidth: 4 };
+const WHITE_PAINT = { fill: '#fafafa', fillOpacity: 1, fillRule: 'nonzero', stroke: '#1b1b1b', strokeLinecap: 'round', strokeLinejoin: 'round', strokeOpacity: 1, strokeWidth: 3 };
+const BLACK_PAINT = { fill: '#1d1d1d', fillOpacity: 1, fillRule: 'nonzero', stroke: '#666666', strokeLinecap: 'round', strokeLinejoin: 'round', strokeOpacity: 1, strokeWidth: 3 };
 const LIGHT_SQUARE = '#eeeed2';
 const DARK_SQUARE = '#1e4d78';
 
@@ -87,7 +87,8 @@ describe('a black piece is never drawn with the white piece\'s paint, on any squ
       expect(blackHtml, type).not.toContain('#fafafa');
       expect(blackHtml, type).not.toContain('#1b1b1b');
       expect(whiteHtml, type).not.toContain('#1d1d1d');
-      expect(whiteHtml, type).not.toContain('#f1f1f1');
+      expect(whiteHtml, type).not.toContain('#666666');
+      expect(blackHtml, type).not.toContain('#f1f1f1');
     }
   });
 });

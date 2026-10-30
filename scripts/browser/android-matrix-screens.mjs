@@ -39,7 +39,7 @@ export const SCREENS = [
   { id: 'more-engines', title: 'Custom engines', steps: [{ text: 'More' }, { text: 'Manage Custom Engines' }] },
   { id: 'more-themes', title: 'Board & piece themes', steps: [{ text: 'More' }, { text: 'Manage Board & Piece Themes' }] },
   { id: 'more-diagnostics', title: 'Diagnostics', steps: [{ text: 'More' }, { text: 'Diagnostics' }] },
-  { id: 'piece-gallery', title: 'Diagnostics: Piece gallery (every theme x 12 pieces x 2 squares)', steps: [{ text: 'More' }, { text: 'Diagnostics' }, { id: 'open-piece-gallery' }] },
+  { id: 'piece-gallery', title: 'Diagnostics: Piece gallery (every theme x 12 pieces x large and game size x every board theme)', steps: [{ text: 'More' }, { text: 'Diagnostics' }, { id: 'open-piece-gallery' }] },
 ];
 
 /**
@@ -49,15 +49,24 @@ export const SCREENS = [
  */
 export const PIECE_THEME_IDS = ['default', 'cburnett', 'merida', 'checkers'];
 
-/** The 2-player board under every piece theme: the start position, so every kind but the two queens' and kings' second square colour is on both squares (the Bughouse screens cover all twelve on both). */
-export const THEME_SCREENS = PIECE_THEME_IDS.map((id) => ({
-  id: `game-2p-theme-${id}`,
-  title: `Game: 2-player, piece theme ${id} (pixels)`,
-  steps: [PLAY, { text: 'Classic', nth: 1 }, { text: '5 min' }],
-  boardKind: 'twoPlayer',
-  pieceTheme: id,
-  pieces: { mode: 'bw', allKinds: true, bothSquares: false },
-}));
+/** EVERY BOARD THEME the app ships, as literals (command #28: the Ocean squares made Classic's black pieces read white; pieceThemes.test.ts pins this to AVAILABLE_BOARD_THEMES). */
+export const BOARD_THEME_IDS = ['default', 'wood', 'green', 'ocean', 'marble'];
+
+/**
+ * The 2-player board under every piece theme on EVERY board theme (command #28): the start position, so every kind but the two queens' and kings' second square colour is on both squares (the
+ * Bughouse screens cover all twelve on both). The black pieces' BODY must read dark on each (android-matrix-pieces.mjs `bodyLuminance`).
+ */
+export const THEME_SCREENS = PIECE_THEME_IDS.flatMap((id) =>
+  BOARD_THEME_IDS.map((board) => ({
+    id: `game-2p-theme-${id}${board === 'default' ? '' : `-${board}`}`,
+    title: `Game: 2-player, piece theme ${id}, board theme ${board} (pixels)`,
+    steps: [PLAY, { text: 'Classic', nth: 1 }, { text: '5 min' }],
+    boardKind: 'twoPlayer',
+    pieceTheme: id,
+    boardTheme: board,
+    pieces: { mode: 'bw', allKinds: true, bothSquares: false },
+  }))
+);
 
 /** Screens to run: the master list, the piece-theme screens, plus another branch's extra list when given. */
 export function allScreens(extra = []) {

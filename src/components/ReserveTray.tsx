@@ -4,7 +4,7 @@ import { Pressable } from './AppPressable';
 import { Text } from './AppText';
 import { RESERVE_PIECE_TYPES, reserveTotal, type CrazyhouseState, type ReservePieceType } from '../logic/crazyhouse';
 import type { PieceColor } from '../types/chess';
-import { pieceInk } from './pieceArt';
+import { PIECE_CHIP_BACKGROUND, PIECE_CHIP_BORDER, pieceInk } from './pieceArt';
 import PieceIcon from './PieceIcon';
 
 /** The tray's fixed height. The row never wraps and never changes height, so the layout around the board is deterministic —
@@ -116,9 +116,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 2,
     borderRadius: 8,
-    backgroundColor: '#b58863',
+    backgroundColor: PIECE_CHIP_BACKGROUND,
     borderWidth: 1,
-    borderColor: '#8a6d3b',
+    borderColor: PIECE_CHIP_BORDER,
   },
   chipSelected: {
     backgroundColor: '#a2d149',

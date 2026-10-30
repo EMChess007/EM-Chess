@@ -58,6 +58,34 @@ export function analyseCell(png) {
   return { background, piece, fraction: candidates / (width * height) };
 }
 
+/**
+ * The BODY of a black piece must be dark (command #28): the median luminance (0-255) of the pixels that are not the square's own colour, at most BLACK_BODY_MAX. The commonest colour (analyseCell)
+ * is blind to a body that is half light bands (Merida's black king) and the mean is moved by an outline; the median of everything the piece covers says what the eye sees at game size.
+ * A white piece has no counterpart: its outline is most of its pixels in some sets.
+ */
+export const BLACK_BODY_MAX = 90;
+
+export function bodyLuminance(png) {
+  const { width, height, data } = png;
+  const background = [data[(1 * width + 1) * 4], data[(1 * width + 1) * 4 + 1], data[(1 * width + 1) * 4 + 2]];
+  const values = [];
+  for (let i = 0; i < width * height; i++) {
+    const pixel = [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]];
+    if (distance(pixel, background) <= BACKGROUND_DISTANCE) continue;
+    values.push(0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2]);
+  }
+  if (values.length === 0) return null;
+  values.sort((a, b) => a - b);
+  return values[Math.floor(values.length / 2)];
+}
+
+/** The issue text for a black piece whose body reads light, or null. */
+function lightBodyIssue(marker, png) {
+  if (marker[0] !== 'b' || !/^b[pnbrqk]$/.test(marker)) return null;
+  const body = bodyLuminance(png);
+  return body !== null && body > BLACK_BODY_MAX ? `${marker}: the body reads light (median luminance ${Math.round(body)}, limit ${BLACK_BODY_MAX})` : null;
+}
+
 /** The ink a piece must have, from its marker: "wk" / "bq" (colour + type) or "2:n" (seat + type). Null for a marker nobody knows. */
 export function expectedInk(marker) {
   if (/^[wb][pnbrqk]$/.test(marker)) return INK[marker[0]];
@@ -74,7 +102,7 @@ export function judgeCell(marker, png) {
   const { piece, fraction } = analyseCell(png);
   if (piece === null || fraction < MIN_PIECE_FRACTION) return `${marker}: no piece found in its cell (covers ${(fraction * 100).toFixed(1)} %)`;
   if (!inkMatches(piece, ink)) return `${marker}: drawn rgb(${piece.join(',')}), expected rgb(${ink.join(',')}) +-${INK_TOLERANCE}`;
-  return null;
+  return lightBodyIssue(marker, png);
 }
 
 // --- an IMAGE theme (Cburnett, Merida, Chess with Checkers: command #27c) -----------------------------------------------------------------------------------------------------------
@@ -179,7 +207,7 @@ export function judgeImageCell(marker, png, assets, rect) {
   const swapped = distances[(marker[0] === 'w' ? 'b' : 'w') + marker[1]];
   if (nearest[0] !== marker[0]) return `${marker}: drawn like ${nearest} (distance ${nearestDistance.toFixed(1)}), not like its own image (${own.toFixed(1)}); the other colour's ${marker[1]} is at ${swapped.toFixed(1)}`;
   if (own > IMAGE_MAX_DISTANCE) return `${marker}: ${own.toFixed(1)} away from its own image (limit ${IMAGE_MAX_DISTANCE})`;
-  return null;
+  return lightBodyIssue(marker, png);
 }
 
 /**

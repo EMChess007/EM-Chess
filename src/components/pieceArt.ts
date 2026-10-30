@@ -25,16 +25,27 @@ export interface PieceInk {
   outline: string;
 }
 
-/** A white piece is light with a dark outline, a black piece dark with a light outline: both read on a light and on a dark square. */
+/**
+ * A white piece is light with a thin dark outline, a black piece dark with a thin dark-grey outline (command #28). The black piece used to have a thick LIGHT outline (#f1f1f1): at game size
+ * (about 27 dp) on the blue Ocean squares the outline was most of what the eye saw and the pieces read as white, and in a pocket chip a black piece looked hollow. Neither colour has a light
+ * edge on its dark side now; the grey outline only keeps a black piece apart from a dark square.
+ */
 export const WHITE_PIECE_INK: PieceInk = { fill: '#fafafa', outline: '#1b1b1b' };
-export const BLACK_PIECE_INK: PieceInk = { fill: '#1d1d1d', outline: '#f1f1f1' };
+export const BLACK_PIECE_INK: PieceInk = { fill: '#1d1d1d', outline: '#666666' };
+
+/**
+ * The background of every pocket chip, reserve chip and promotion button that holds a vector piece (command #28): a MID-tone brown that both inks stand out on (the black fill 5.3:1, the white
+ * outline 4.6:1, pieceBodies.test.ts) - a light chip lost the white pieces and a dark one the black. One constant for the Bughouse chips, the Crazyhouse reserve and the Piece gallery's chips.
+ */
+export const PIECE_CHIP_BACKGROUND = '#b58863';
+export const PIECE_CHIP_BORDER = '#8a6d3b';
 
 export function pieceInk(color: 'w' | 'b'): PieceInk {
   return color === 'w' ? WHITE_PIECE_INK : BLACK_PIECE_INK;
 }
 
-/** Stroke width in the 100-unit box. */
-export const PIECE_OUTLINE_WIDTH = 4;
+/** Stroke width in the 100-unit box: 3 is 0.8 dp on a 27 dp piece, never more than 1 dp at 32 dp (half of it lies outside the shape). */
+export const PIECE_OUTLINE_WIDTH = 3;
 
 /**
  * EVERY paint property of a piece's path, written out (command #27d: a phone drew black Classic pieces with a light fill on the dark squares only). Nothing is left to a default or to inheritance

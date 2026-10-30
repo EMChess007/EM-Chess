@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
-import { GALLERY_PIECE_KEYS, GALLERY_ROWS, KIND_LETTERS, galleryCellLabel, galleryCellSize } from '../pieceGallery';
+import { GALLERY_GAME_CELL, GALLERY_PIECE_KEYS, GALLERY_ROWS, KIND_LETTERS, galleryCellLabel, galleryCellSize, galleryGameCellLabel } from '../pieceGallery';
 import { readBuildInfo } from '../buildInfo';
 
 /**
@@ -32,6 +32,12 @@ describe('the gallery grid', () => {
     expect(galleryCellSize(360)).toBe(44);
     expect(galleryCellSize(800)).toBe(56);
     expect(galleryCellSize(200)).toBe(28);
+  });
+
+  it('the game-size cell is 32 dp and labelled with the theme, the board theme, the colour, the piece and the square', () => {
+    expect(GALLERY_GAME_CELL).toBe(32);
+    expect(galleryGameCellLabel('Merida', 'Ocean', 'b', 'k', 'dark')).toBe('Merida on the Ocean board: black king on a dark square');
+    expect(galleryGameCellLabel('Classic', 'Wood', 'w', 'n', 'light')).toBe('Classic on the Wood board: white knight on a light square');
   });
 
   it('a cell is labelled with the theme, the colour, the piece and the square', () => {

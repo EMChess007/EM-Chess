@@ -216,6 +216,14 @@ async function navigate(page, cdp, baseUrl, screen) {
       /* storage blocked: the built-in theme is drawn and the piece check says so */
     }
   }, screen.pieceTheme ?? 'default');
+  // The board theme the same way (command #28): the squares a piece is photographed on.
+  await page.addInitScript((id) => {
+    try {
+      localStorage.setItem('settings:activeBoardTheme', id);
+    } catch {
+      /* storage blocked: the built-in board is drawn */
+    }
+  }, screen.boardTheme ?? 'default');
   await page.goto(baseUrl, { waitUntil: 'load' });
   await page.getByText('Play', { exact: true }).first().waitFor({ timeout: 240000 });
   // A screen that needs a fixed position (Bughouse's full pockets, all twelve pieces) names a fixture; the game screen reads it when it opens (src/logic/bughouseFixture.ts: web, dev build only).

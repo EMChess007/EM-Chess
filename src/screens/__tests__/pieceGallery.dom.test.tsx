@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { addCustomBoardThemeOption, removeCustomBoardThemeOption } from '../../logic/boardThemes';
 import { AVAILABLE_PIECE_THEMES, addCustomPieceThemeOption, removeCustomPieceThemeOption } from '../../logic/pieceThemes';
 import DiagnosticLogsScreen from '../DiagnosticLogsScreen';
 import PieceGalleryScreen from '../PieceGalleryScreen';
@@ -48,8 +49,10 @@ describe('the gallery', () => {
   it.each(THEME_IDS)('under %s: 24 cells (12 pieces x light and dark), each marked with the colour and kind of its own row and column', (id) => {
     render(<PieceGalleryScreen onBack={() => undefined} />);
     const section = document.querySelector(`[data-testid="gallery-theme-${id}"]`) as HTMLElement;
-    const cells = Array.from(section.querySelectorAll('[data-gallery-square]')) as HTMLElement[];
+    // the large grid only: the game-size blocks (5 board themes x 24 cells) are tested below
+    const cells = (Array.from(section.querySelectorAll('[data-gallery-square]')) as HTMLElement[]).filter((c) => !(c.getAttribute('data-testid') ?? '').startsWith('gallery-game-'));
     expect(cells).toHaveLength(24);
+    expect(section.querySelectorAll('[data-gallery-square]')).toHaveLength(24 + 5 * 24);
     for (const color of ['w', 'b']) {
       for (const square of ['light', 'dark']) {
         for (const kind of KINDS) {
@@ -86,14 +89,57 @@ describe('the gallery', () => {
     expect(srcIn('gallery-merida-bq-dark')).not.toBe(srcIn('gallery-merida-wq-dark'));
   });
 
-  it('shows the three probes on each square colour and the two colour-scheme buttons', () => {
+  it('has no probes and no colour-scheme buttons any more (the phone proved Android recolours nothing, command #28), and still says the system scheme', () => {
     render(<PieceGalleryScreen onBack={() => undefined} />);
-    const probes = screen.getByTestId('gallery-probes');
-    expect(probes.querySelectorAll('[data-gallery-square]')).toHaveLength(2);
-    expect(probes.querySelectorAll('[data-svg="Rect"]')).toHaveLength(2);
-    expect(probes.querySelectorAll('img')).toHaveLength(2);
-    expect(screen.getByTestId('gallery-lock-light')).toBeTruthy();
-    expect(screen.getByTestId('gallery-follow-system')).toBeTruthy();
+    expect(screen.queryByTestId('gallery-probes')).toBeNull();
+    expect(screen.queryByTestId('gallery-lock-light')).toBeNull();
+    expect(screen.queryByTestId('gallery-follow-system')).toBeNull();
+    expect(screen.queryByText('Lock app to light')).toBeNull();
+    expect(screen.queryByText('Follow system')).toBeNull();
     expect(screen.getByTestId('gallery-device').textContent).toContain('system scheme');
+  });
+
+  it.each(THEME_IDS)('under %s: GAME SIZE, 32 dp cells, on every one of the five board themes: 24 cells each (12 pieces x light and dark), marked with the right colour and kind', (id) => {
+    render(<PieceGalleryScreen onBack={() => undefined} />);
+    const boards = ['default', 'wood', 'green', 'ocean', 'marble'];
+    const squares: Record<string, [string, string]> = { default: ['#f0d9b5', '#b58863'], wood: ['#e8ca9a', '#a5682a'], green: ['#eeeed2', '#769656'], ocean: ['#dee3e6', '#4b7399'], marble: ['#e8e8e8', '#8a8a8a'] };
+    const hexToRgb = (hex: string) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
+    for (const board of boards) {
+      const block = document.querySelector(`[data-testid="gallery-game-${id}-${board}"]`) as HTMLElement;
+      expect(block, board).not.toBeNull();
+      expect(block.querySelectorAll('[data-gallery-square]'), board).toHaveLength(24);
+      for (const color of ['w', 'b']) {
+        for (const [index, square] of ['light', 'dark'].entries()) {
+          for (const kind of KINDS) {
+            const cell = block.querySelector(`[data-testid="gallery-game-${id}-${board}-${color}${kind}-${square}"]`) as HTMLElement;
+            expect(cell, `${board} ${color}${kind} ${square}`).not.toBeNull();
+            // a cell is 32 dp wide and tall and painted in its board theme's square colour (a literal)
+            expect(cell.style.width).toBe('32px');
+            expect(cell.style.height).toBe('32px');
+            expect(cell.style.backgroundColor).toBe(hexToRgb(squares[board][index]));
+            const marked = cell.querySelectorAll('[data-piece]');
+            expect(marked).toHaveLength(1);
+            expect(marked[0].getAttribute('data-piece')).toBe(`${color}${kind}`);
+          }
+        }
+      }
+    }
+  });
+
+  it('a custom board theme gets its own game-size block', () => {
+    addCustomBoardThemeOption({ id: 'custom-board', name: 'Mine', lightColor: '#ffffff', darkColor: '#000000', isCustom: true } as never);
+    try {
+      render(<PieceGalleryScreen onBack={() => undefined} />);
+      expect(document.querySelector('[data-testid="gallery-game-default-custom-board"]')).not.toBeNull();
+    } finally {
+      removeCustomBoardThemeOption('custom-board');
+    }
+  });
+
+  it('the pocket chips sit on the shared mid-tone chip colour', () => {
+    render(<PieceGalleryScreen onBack={() => undefined} />);
+    const chip = document.querySelector('[aria-label="Classic: black k pocket chip"]') as HTMLElement;
+    expect(chip).not.toBeNull();
+    expect(chip.style.backgroundColor).toBe('rgb(181, 136, 99)');
   });
 });

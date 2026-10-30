@@ -11,9 +11,9 @@ describe('the ink of the two colours', () => {
     expect(WHITE_PIECE_INK).toEqual({ fill: '#fafafa', outline: '#1b1b1b' });
   });
 
-  it('black: fill #1d1d1d, outline #f1f1f1', () => {
-    expect(pieceInk('b')).toEqual({ fill: '#1d1d1d', outline: '#f1f1f1' });
-    expect(BLACK_PIECE_INK).toEqual({ fill: '#1d1d1d', outline: '#f1f1f1' });
+  it('black: fill #1d1d1d, outline #666666 (command #28: no light outline)', () => {
+    expect(pieceInk('b')).toEqual({ fill: '#1d1d1d', outline: '#666666' });
+    expect(BLACK_PIECE_INK).toEqual({ fill: '#1d1d1d', outline: '#666666' });
   });
 
   it('the two inks are as far apart as a fill can be: the black fill is dark, the white fill is light', () => {
@@ -21,7 +21,9 @@ describe('the ink of the two colours', () => {
     expect(luminance(pieceInk('w').fill)).toBeGreaterThan(240);
     expect(luminance(pieceInk('b').fill)).toBeLessThan(40);
     expect(luminance(pieceInk('w').outline)).toBeLessThan(40);
-    expect(luminance(pieceInk('b').outline)).toBeGreaterThan(230);
+    // command #28: the black outline is a thin dark grey, never a light edge (it was #f1f1f1 and the pieces read as white at game size)
+    expect(luminance(pieceInk('b').outline)).toBeLessThan(120);
+    expect(luminance(pieceInk('b').outline)).toBeGreaterThan(luminance(pieceInk('b').fill));
   });
 });
 
@@ -50,7 +52,8 @@ describe('the six silhouettes', () => {
     }
   });
 
-  it('the outline is 4 units wide', () => {
-    expect(PIECE_OUTLINE_WIDTH).toBe(4);
+  it('the outline is 3 units wide: at most 1 dp on a 32 dp piece, whose box is 90 % of the cell', () => {
+    expect(PIECE_OUTLINE_WIDTH).toBe(3);
+    expect((3 / 100) * Math.floor(32 * 0.9)).toBeLessThanOrEqual(1);
   });
 });

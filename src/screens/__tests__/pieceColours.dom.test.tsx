@@ -16,7 +16,7 @@ import BughouseGameScreen from '../BughouseGameScreen';
  * (android-matrix-pieces.mjs, androidMatrixPieces.test.ts).
  */
 const WHITE = { fill: '#fafafa', stroke: '#1b1b1b' };
-const BLACK = { fill: '#1d1d1d', stroke: '#f1f1f1' };
+const BLACK = { fill: '#1d1d1d', stroke: '#666666' };
 const TYPES = ['k', 'q', 'r', 'b', 'n', 'p'] as const;
 
 const paths = (root: HTMLElement) => Array.from(root.querySelectorAll('[data-svg="Path"]')) as HTMLElement[];

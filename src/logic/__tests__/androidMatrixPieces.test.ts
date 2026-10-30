@@ -96,6 +96,27 @@ describe('judgeCell: the verdict on a photographed piece', () => {
     expect(judgeCell(marker, cell(DARK, ink, outline))).toBeNull();
   });
 
+  it('command #28: a black piece whose commonest colour is its ink but whose BODY is mostly light bands is reported (Merida\'s old black king), a white piece never is', () => {
+    // 200 pixels of the ink (the commonest 32-step bin) and 376 spread over seven lighter bins of ~54 pixels: the commonest colour is right, the median is light
+    const size = 40;
+    const data = new Uint8Array(size * size * 4);
+    for (let i = 0; i < size * size; i++) data.set([LIGHT[0], LIGHT[1], LIGHT[2], 255], i * 4);
+    let n = 0;
+    for (let y = 8; y < 32; y++) {
+      for (let x = 8; x < 32; x++) {
+        const light = n >= 200;
+        const grey = light ? 100 + Math.floor((n - 200) / 54) * 22 + 32 : 0x1d;
+        // greys 132..: 7 bins of 54 pixels, every one at least 70 away from the square (240, 217, 181) is not required: they are far from LIGHT on the blue channel
+        data.set([Math.min(grey, 255), Math.min(grey, 255), Math.min(grey, 255), 255], (y * size + x) * 4);
+        n++;
+      }
+    }
+    const problem = judgeCell('bk', { width: size, height: size, data });
+    expect(problem).toContain('bk: the body reads light');
+    // the same picture as a white king has no such rule
+    expect(judgeCell('wk', { width: size, height: size, data })).not.toContain('reads light');
+  });
+
   it('THE BUG: a black king drawn white is reported, on both square colours', () => {
     for (const square of [LIGHT, DARK]) {
       const problem = judgeCell('bk', cell(square, [0xfa, 0xfa, 0xfa], [0x1b, 0x1b, 0x1b]));
