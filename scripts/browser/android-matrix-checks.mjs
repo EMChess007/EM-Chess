@@ -11,10 +11,11 @@
  *   overlap      two controls overlap, or two pieces of text overlap (neither contains the other);
  *   target       a control smaller than 44 dp on a side (board squares are exempt: they answer to the board's own minimum cell);
  *   board-cell   a board cell smaller than the board's minimum (the size gate / scrolling must have applied);
- *   inset        text or a control inside a system bar / display cutout (the insets are emulated with CDP, see android-matrix-def.mjs).
+ *   inset        text or a control inside a system bar / display cutout (the insets are emulated with CDP, see android-matrix-def.mjs);
+ *   contrast     an icon marked data-matrix-glyph (the tab bar's) whose ink has less than CRITERIA.minGlyphContrast : 1 against what is behind it, or is not drawn as a vector path.
  */
 export function pageChecks(opts) {
-  const { insets, minTarget, clipTolerance, minBoardCell, boardKind, exempt } = opts;
+  const { insets, minTarget, clipTolerance, minBoardCell, boardKind, exempt, minGlyphContrast, expectGlyphs } = opts;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const issues = [];
@@ -288,6 +289,64 @@ export function pageChecks(opts) {
       }
     }
     if (pockets.length === 0 && !blockingLayer) add('pocket', document.body, 'no pocket on a screen that declares pockets');
+  }
+
+  // ---- icon / glyph contrast ----------------------------------------------------------------------------------------------------------------------
+  // An element marked data-matrix-glyph (the tab bar's icons) is an icon the person must see: its ink, composited over what is behind it, needs `minGlyphContrast` : 1 (WCAG 1.4.11).
+  // The ink is the stroke (or fill) of the drawn path, with the opacity of every ancestor applied; the background is the first opaque background colour going up the tree.
+  const rgbaOf = (color) => {
+    const m = /^rgba?\(([^)]*)\)$/.exec(color || '');
+    if (!m) return null;
+    const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+    return { r: p[0], g: p[1], b: p[2], a: p.length >= 4 ? p[3] : 1 };
+  };
+  const over = (top, bottom) => {
+    const a = top.a + bottom.a * (1 - top.a);
+    const mix = (t, b) => (a === 0 ? 0 : (t * top.a + b * bottom.a * (1 - top.a)) / a);
+    return { r: mix(top.r, bottom.r), g: mix(top.g, bottom.g), b: mix(top.b, bottom.b), a };
+  };
+  const luminanceOf = (c) => {
+    const f = (v) => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+  };
+  const ratioOf = (x, y) => {
+    const [hi, lo] = [luminanceOf(x), luminanceOf(y)].sort((p, q) => q - p);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  // A screen that is declared to carry N icons (the tab bar's four) must show N marked ones: an icon that lost its mark would otherwise stop being judged without anybody noticing.
+  const shownGlyphs = Array.from(document.querySelectorAll('[data-matrix-glyph]')).filter((g) => !isHidden(g) && g.getBoundingClientRect().width > 0);
+  if (expectGlyphs && shownGlyphs.length < expectGlyphs) add('contrast', document.body, 'the screen should show ' + expectGlyphs + ' marked icons, found ' + shownGlyphs.length);
+  for (const glyph of document.querySelectorAll('[data-matrix-glyph]')) {
+    if (isHidden(glyph)) continue;
+    let ink = null;
+    for (const shape of glyph.querySelectorAll('path,circle,rect,line,polyline,polygon')) {
+      const cs = getComputedStyle(shape);
+      const stroke = cs.stroke !== 'none' ? rgbaOf(cs.stroke) : null;
+      const fill = cs.fill !== 'none' ? rgbaOf(cs.fill) : null;
+      ink = stroke || fill;
+      if (ink) break;
+    }
+    if (!ink) {
+      // Not drawn at all (or a text glyph, whose colour an emoji font may ignore): the person has nothing to see.
+      add('contrast', glyph, 'no drawn ink: a glyph must be an SVG path in a theme colour');
+      continue;
+    }
+    let alpha = 1;
+    for (let n = glyph; n && n.nodeType === 1; n = n.parentElement) alpha *= parseFloat(getComputedStyle(n).opacity) || 0;
+    ink = { ...ink, a: ink.a * alpha };
+    let behind = { r: 255, g: 255, b: 255, a: 0 };
+    for (let n = glyph; n && n.nodeType === 1 && behind.a < 1; n = n.parentElement) {
+      const bg = rgbaOf(getComputedStyle(n).backgroundColor);
+      if (bg && bg.a > 0) behind = over(behind, bg);
+    }
+    // Going outwards, what was found nearer the glyph lies above the next layer (`over(top, bottom)`); anything still see-through falls back to white (the page).
+    const base = behind.a < 1 ? over(behind, { r: 255, g: 255, b: 255, a: 1 }) : behind;
+    const seen = over(ink, base);
+    const ratio = ratioOf(seen, base);
+    if (ratio < minGlyphContrast) add('contrast', glyph, 'ink ' + Math.round(seen.r) + ',' + Math.round(seen.g) + ',' + Math.round(seen.b) + ' on ' + Math.round(base.r) + ',' + Math.round(base.g) + ',' + Math.round(base.b) + ' = ' + ratio.toFixed(2) + ':1 < ' + minGlyphContrast);
   }
   return issues;
 }

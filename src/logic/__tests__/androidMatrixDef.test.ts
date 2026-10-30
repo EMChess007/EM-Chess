@@ -46,6 +46,7 @@ describe('the matrix axes', () => {
 describe('the pass criteria', () => {
   it('are the requirement\'s numbers', () => {
     expect(def.CRITERIA.minTouchTarget).toBe(44);
+    expect(def.CRITERIA.minGlyphContrast).toBe(3);
     expect(def.CRITERIA.minBoardCell).toEqual({ twoPlayer: 24, fourPlayer: 20, chaturaji: 28, bughouse: 28, bughouseStandard: 20 }); // bughouse: the dual layout (BUGHOUSE_SPEC 5.6); bughouseStandard: the one-human layout has no spec minimum, so the app's smallest board cell (4 Player Chess) is its floor
     expect(def.MIN_SMALLEST_WIDTH_DP).toBe(320);
   });
@@ -104,6 +105,19 @@ describe('the combinations', () => {
   it('orientation is by the larger side', () => {
     expect(def.orientationOf({ width: 740, height: 360 })).toBe('landscape');
     expect(def.orientationOf({ width: 360, height: 740 })).toBe('portrait');
+  });
+});
+
+describe('the tab bar screens declare their icons (glyph contrast, offline-states branch)', () => {
+  it('home, puzzles, analysis and more each expect the four marked tab icons, so an icon that loses its mark is reported', async () => {
+    const { SCREENS } = await import('../../../scripts/browser/android-matrix-screens.mjs');
+    const withGlyphs = SCREENS.filter((s: { glyphs?: number }) => s.glyphs !== undefined).map((s: { id: string; glyphs?: number }) => [s.id, s.glyphs]);
+    expect(withGlyphs).toEqual([
+      ['home', 4],
+      ['puzzles', 4],
+      ['analysis', 4],
+      ['more', 4],
+    ]);
   });
 });
 
