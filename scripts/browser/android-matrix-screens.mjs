@@ -41,7 +41,24 @@ export const SCREENS = [
   { id: 'more-diagnostics', title: 'Diagnostics', steps: [{ text: 'More' }, { text: 'Diagnostics' }] },
 ];
 
-/** Screens to run: the master list, plus another branch's extra list when given. */
+/**
+ * EVERY PIECE THEME the app ships, as literals (command #27c; pieceThemes.test.ts pins that this is exactly the ids of AVAILABLE_PIECE_THEMES, so a theme added to the app without a line here fails
+ * a test). A screen that names one of them (`pieceTheme`, with `baseOnly` implied) is opened with that theme as the app's persisted piece theme, and its pieces are photographed on both square
+ * colours: the built-in theme by its exact ink, an image theme by its own asset (android-matrix-pieces.mjs `judgeImageCell`).
+ */
+export const PIECE_THEME_IDS = ['default', 'cburnett', 'merida', 'checkers'];
+
+/** The 2-player board under every piece theme: the start position, so every kind but the two queens' and kings' second square colour is on both squares (the Bughouse screens cover all twelve on both). */
+export const THEME_SCREENS = PIECE_THEME_IDS.map((id) => ({
+  id: `game-2p-theme-${id}`,
+  title: `Game: 2-player, piece theme ${id} (pixels)`,
+  steps: [PLAY, { text: 'Classic', nth: 1 }, { text: '5 min' }],
+  boardKind: 'twoPlayer',
+  pieceTheme: id,
+  pieces: { mode: 'bw', allKinds: true, bothSquares: false },
+}));
+
+/** Screens to run: the master list, the piece-theme screens, plus another branch's extra list when given. */
 export function allScreens(extra = []) {
-  return [...SCREENS, ...extra];
+  return [...SCREENS, ...THEME_SCREENS, ...extra];
 }

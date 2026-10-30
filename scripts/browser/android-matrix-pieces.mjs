@@ -77,11 +77,111 @@ export function judgeCell(marker, png) {
   return null;
 }
 
+// --- an IMAGE theme (Cburnett, Merida, Chess with Checkers: command #27c) -----------------------------------------------------------------------------------------------------------
+// A vector piece has ONE exact ink, so its colour is the commonest colour of its pixels. An image piece has none: in Cburnett and Merida the white queen, bishop and rook are mostly DARK outline
+// pixels (their commonest colour is black), and the black king has white lines. A colour threshold would be wrong in both directions, so an image piece is judged by LOOKING LIKE its own asset:
+// the asset (src/data/pieceSets.json, a PNG) is drawn into the rectangle the page gave the piece, over the square's own colour, and the photographed cell must be nearer to it than to the other
+// eleven assets of the theme - in particular nearer than to the other colour's piece of the same kind.
+
+/** Cells are compared as means over BLOCK x BLOCK pixels: scaling and antialiasing move single pixels, not the shape and tone of a piece. */
+export const IMAGE_BLOCK = 4;
+/** The largest mean difference (0-255, per channel, over the blocks of the cell) an image piece may have from its own asset. Measured on a real run: a correct piece is 0.9 - 3.0 from it (Cburnett, Merida, Checkers), the other colour's piece 10 - 58. */
+export const IMAGE_MAX_DISTANCE = 12;
+
+/** An asset drawn into `rect` ({x, y, w, h}, in the cell's pixels) over `background`: the box-filtered image, composited. Returns {width, height, data} with opaque RGBA. */
+export function expectedCell(asset, background, width, height, rect) {
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const u0 = ((x - rect.x) / rect.w) * asset.width;
+      const u1 = ((x + 1 - rect.x) / rect.w) * asset.width;
+      const v0 = ((y - rect.y) / rect.h) * asset.height;
+      const v1 = ((y + 1 - rect.y) / rect.h) * asset.height;
+      let sum = [0, 0, 0];
+      let alpha = 0;
+      let n = 0;
+      for (let v = Math.max(0, Math.floor(v0)); v < Math.min(asset.height, Math.ceil(v1)); v++) {
+        for (let u = Math.max(0, Math.floor(u0)); u < Math.min(asset.width, Math.ceil(u1)); u++) {
+          const i = (v * asset.width + u) * 4;
+          const a = asset.data[i + 3] / 255;
+          sum[0] += asset.data[i] * a;
+          sum[1] += asset.data[i + 1] * a;
+          sum[2] += asset.data[i + 2] * a;
+          alpha += a;
+          n++;
+        }
+      }
+      // the part of this pixel the image does not cover shows the square
+      const covered = n === 0 ? 0 : n / Math.max(1, (Math.ceil(u1) - Math.floor(u0)) * (Math.ceil(v1) - Math.floor(v0)));
+      const per = n === 0 ? 0 : 1 / n;
+      const a = alpha * per * covered;
+      const out = (y * width + x) * 4;
+      for (let c = 0; c < 3; c++) data[out + c] = Math.round(sum[c] * per * covered + background[c] * (1 - a));
+      data[out + 3] = 255;
+    }
+  }
+  return { width, height, data };
+}
+
+/** The means of an image over IMAGE_BLOCK x IMAGE_BLOCK blocks, RGB. */
+function blockMeans(image) {
+  const bw = Math.ceil(image.width / IMAGE_BLOCK);
+  const bh = Math.ceil(image.height / IMAGE_BLOCK);
+  const out = new Float64Array(bw * bh * 3);
+  for (let by = 0; by < bh; by++) {
+    for (let bx = 0; bx < bw; bx++) {
+      let n = 0;
+      for (let y = by * IMAGE_BLOCK; y < Math.min(image.height, (by + 1) * IMAGE_BLOCK); y++) {
+        for (let x = bx * IMAGE_BLOCK; x < Math.min(image.width, (bx + 1) * IMAGE_BLOCK); x++) {
+          const i = (y * image.width + x) * 4;
+          for (let c = 0; c < 3; c++) out[(by * bw + bx) * 3 + c] += image.data[i + c];
+          n++;
+        }
+      }
+      for (let c = 0; c < 3; c++) out[(by * bw + bx) * 3 + c] /= n;
+    }
+  }
+  return out;
+}
+
+/** The mean absolute per-channel difference of two images of the same size, over their blocks (0 = identical, 255 = black against white). */
+export function imageDistance(a, b) {
+  const x = blockMeans(a);
+  const y = blockMeans(b);
+  let sum = 0;
+  for (let i = 0; i < x.length; i++) sum += Math.abs(x[i] - y[i]);
+  return sum / x.length;
+}
+
+/** The distance of a photographed cell from every asset of the theme drawn into `rect`: { 'wk': 4.1, 'bk': 61.7, ... }. The square's colour is the photograph's top-left pixel. */
+export function imageDistances(png, assets, rect) {
+  const background = [png.data[(1 * png.width + 1) * 4], png.data[(1 * png.width + 1) * 4 + 1], png.data[(1 * png.width + 1) * 4 + 2]];
+  const out = {};
+  for (const [key, asset] of Object.entries(assets)) out[key] = imageDistance(png, expectedCell(asset, background, png.width, png.height, rect));
+  return out;
+}
+
+/** The verdict on one photographed cell of an image theme: an issue text, or null. The piece must be nearest to its own asset and within IMAGE_MAX_DISTANCE of it. */
+export function judgeImageCell(marker, png, assets, rect) {
+  if (!/^[wb][pnbrqk]$/.test(marker)) return `unknown piece marker "${marker}"`;
+  if (!assets[marker]) return `${marker}: the theme has no image for it`;
+  const distances = imageDistances(png, assets, rect);
+  const ranked = Object.entries(distances).sort((a, b) => a[1] - b[1]);
+  const [nearest, nearestDistance] = ranked[0];
+  const own = distances[marker];
+  const swapped = distances[(marker[0] === 'w' ? 'b' : 'w') + marker[1]];
+  if (nearest[0] !== marker[0]) return `${marker}: drawn like ${nearest} (distance ${nearestDistance.toFixed(1)}), not like its own image (${own.toFixed(1)}); the other colour's ${marker[1]} is at ${swapped.toFixed(1)}`;
+  if (own > IMAGE_MAX_DISTANCE) return `${marker}: ${own.toFixed(1)} away from its own image (limit ${IMAGE_MAX_DISTANCE})`;
+  if (nearest !== marker) return `${marker}: drawn like ${nearest} (distance ${nearestDistance.toFixed(1)}), its own image is at ${own.toFixed(1)}`;
+  return null;
+}
+
 /**
- * Runs the check in a page. `mode` is 'bw' (data-piece), 'seat' (data-seat-piece); `bothSquares`: every kind seen must be seen on two different square colours; `allKinds`: the twelve
+ * Runs the check in a page. `mode` is 'bw' (data-piece), 'seat' (data-seat-piece); `assets` ({ wk: {width, height, data}, ... }, the active piece theme's images decoded) switches the
+ * colour judgement to an image theme (judgeImageCell); `bothSquares`: every kind seen must be seen on two different square colours; `allKinds`: the twelve
  * (bw) kinds must all be on screen. Returns a list of {kind: 'piece-colour', el, detail}. `PNG` is pngjs's.
  */
-export async function checkPieceColours(page, PNG, { mode, bothSquares = false, allKinds = false, liveBots = false }) {
+export async function checkPieceColours(page, PNG, { mode, bothSquares = false, allKinds = false, liveBots = false, assets = null }) {
   const attribute = mode === 'seat' ? 'data-seat-piece' : 'data-piece';
   const issues = [];
   // The "rotate the device" layer covers the boards (the window is below the minimum): the person sees no piece, so there is none to judge (the rectangle checks treat it the same way).
@@ -95,11 +195,20 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
         while (cell && !/^[a-n]\d+(,|$)/.test(cell.getAttribute('aria-label') || '')) cell = cell.parentElement;
         const label = (cell && cell.getAttribute('aria-label')) || '';
         const square = /^([a-n])(\d+)/.exec(label);
-        const parity = square ? (square[1].charCodeAt(0) - 97 + Number(square[2])) % 2 : 0;
+        // A board whose cells carry no square name (the 2-player board) is told apart by the colour of the square under the piece: the nearest ancestor with a background of its own.
+        let under = '';
+        for (let node = el; node && !under; node = node.parentElement) {
+          const bg = getComputedStyle(node).backgroundColor;
+          if (bg && !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(bg)) under = bg;
+        }
+        const parity = square ? (square[1].charCodeAt(0) - 97 + Number(square[2])) % 2 : under;
         const r = el.getBoundingClientRect();
+        const c = cell ? cell.getBoundingClientRect() : r;
         // a thumbnail's cells are 12 dp: too small to read a colour from (the thumbnail draws the same PieceIcon as every board)
         const inThumbnail = Boolean(el.closest('[data-testid^="thumb-"]'));
-        return { index, marker: el.getAttribute(attr), parity, visible: r.width > 0 && r.height > 0 && !inThumbnail, board: label.includes('board B') ? 'B' : 'A' };
+        // where the piece sits inside its cell: an image piece is judged against its asset drawn into exactly this rectangle
+        const rect = { x: r.x - c.x, y: r.y - c.y, w: r.width, h: r.height };
+        return { index, marker: el.getAttribute(attr), parity, visible: r.width > 0 && r.height > 0 && !inThumbnail, board: label.includes('board B') ? 'B' : 'A', rect };
       }),
     attribute,
   );
@@ -153,7 +262,9 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
         break;
       }
       png = PNG.sync.read(shot);
-      problem = judgeCell(f.marker, png);
+      // the photograph is at the cell's own pixel size unless the device scale is not 1: the rectangle is scaled with it
+      const scale = png.width / box.width;
+      problem = assets ? judgeImageCell(f.marker, png, assets, { x: f.rect.x * scale, y: f.rect.y * scale, w: f.rect.w * scale, h: f.rect.h * scale }) : judgeCell(f.marker, png);
       if (problem === null) break;
       await page.waitForTimeout(150);
     }

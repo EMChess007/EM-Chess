@@ -11,6 +11,8 @@
  * THE FULL-POCKETS SCREENS ARE PERMANENT. They are the phone's worst case, run by every profile (mini, quick, full): the pockets that the earlier fix was checked with were a temporary patch
  * and the first real game on a phone showed the chips stacked over the board.
  */
+import { PIECE_THEME_IDS } from './android-matrix-screens.mjs';
+
 const PLAY = { text: 'Play' };
 const SETUP = [PLAY, { label: 'Bughouse local' }];
 const startWith = (preset) => [...SETUP, { id: preset }, { id: 'bughouse-start' }, { text: '3 min' }];
@@ -34,4 +36,15 @@ export const EXTRA_SCREENS = [
   { id: 'bughouse-full-pockets-teammates', title: 'Game: Bughouse, full pockets, 2 teammates', steps: startWith('preset-teammates'), fixture: 'fullPockets', boardKind: 'bughouse', pockets: true },
   // --- every kind of piece, in both colours, on both square colours: the pixels are read ---
   { id: 'bughouse-all-pieces-dual', title: 'Game: Bughouse, all twelve pieces on light and dark squares (pixels)', steps: startWith('preset-four'), fixture: 'allPieces', boardKind: 'bughouse', pockets: true, pieces: { mode: 'bw', allKinds: true, bothSquares: true } },
+  // --- the same, under EVERY piece theme the app ships (command #27c): the dual screen with all twelve kinds on light and dark squares, the pixels compared with the theme's own images ---
+  ...PIECE_THEME_IDS.map((id) => ({
+    id: `bughouse-all-pieces-dual-theme-${id}`,
+    title: `Game: Bughouse, all twelve pieces on light and dark squares, piece theme ${id} (pixels)`,
+    steps: startWith('preset-four'),
+    fixture: 'allPieces',
+    boardKind: 'bughouse',
+    pockets: true,
+    pieceTheme: id,
+    pieces: { mode: 'bw', allKinds: true, bothSquares: true },
+  })),
 ];

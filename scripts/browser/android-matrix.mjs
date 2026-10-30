@@ -62,6 +62,23 @@ const ONLY = option('screens', '') ? option('screens', '').split(',') : null;
 mkdirSync(OUT_DIR, { recursive: true });
 
 const NAV_VIEWPORT = { width: 412, height: 915 };
+
+/** The decoded images of a piece theme (src/data/pieceSets.json), or null for the built-in vector theme: what the image judge of the piece-colour check compares a photographed cell with. */
+const pieceSetsCache = { json: null };
+function themeAssets(themeId) {
+  if (!themeId || themeId === 'default') return null;
+  pieceSetsCache.json ??= JSON.parse(readFileSync(path.join(appDir, 'src', 'data', 'pieceSets.json'), 'utf8'));
+  const set = pieceSetsCache.json[themeId];
+  if (!set) throw new Error(`piece theme "${themeId}" is not in src/data/pieceSets.json`);
+  const assets = {};
+  for (const [key, uri] of Object.entries(set)) assets[key] = PNG.sync.read(Buffer.from(uri.replace(/^data:image\/png;base64,/, ''), 'base64'));
+  return assets;
+}
+
+/** A screen that names a `pieceTheme` is about the PIECES, not the layout: a piece's colour does not depend on the window, the text scale, the font or the zoom, so it runs at the base combination only. */
+function isBaseCombo(combo) {
+  return combo.size.id === SCREEN_SIZES[2].id && combo.scale === 1.0 && combo.font.id === 'app' && combo.zoom === 1.0;
+}
 // data-matrix-exempt: a control that is small on purpose (AppPressable `compact`). A native Switch is a platform control: its row is the touch target, the 40 x 20 track is not.
 const exempt = ['[data-matrix-exempt]', 'input[type="checkbox"]', '[data-testid^="thumb-"]'];
 
@@ -188,6 +205,15 @@ async function openContext(browser, scale, theme) {
 
 async function navigate(page, cdp, baseUrl, screen) {
   await cdp.send('Emulation.setDeviceMetricsOverride', { ...NAV_VIEWPORT, deviceScaleFactor: 1, mobile: false });
+  // The piece theme is the app's own persisted setting (the key themeSettings.ts writes; on the web AsyncStorage is localStorage). Every screen sets it - the built-in theme included - because
+  // the page, and so the storage, is reused from one screen to the next and init scripts run in the order they were added: the last one wins.
+  await page.addInitScript((id) => {
+    try {
+      localStorage.setItem('settings:activePieceTheme', id);
+    } catch {
+      /* storage blocked: the built-in theme is drawn and the piece check says so */
+    }
+  }, screen.pieceTheme ?? 'default');
   await page.goto(baseUrl, { waitUntil: 'load' });
   await page.getByText('Play', { exact: true }).first().waitFor({ timeout: 240000 });
   // A screen that needs a fixed position (Bughouse's full pockets, all twelve pieces) names a fixture; the game screen reads it when it opens (src/logic/bughouseFixture.ts: web, dev build only).
@@ -255,11 +281,12 @@ async function runGroup(browser, baseUrl, group, screens, record, sheets) {
         continue;
       }
       for (const combo of group.combos) {
+        if (screen.pieceTheme && !isBaseCombo(combo)) continue;
         const { insets } = await applyCombo(page, cdp, combo);
         const issues = await runChecks(page, screen, insets);
         // The pixels of the pieces, on both square colours (android-matrix-pieces.mjs): only for the screens that declare `pieces`, and only at the app's own font and at zoom 1: a piece's colour does
         // not depend on the system font or the display zoom, and photographing 24 cells in every one of 720 combinations made the full profile take hours (a run of 2.5 h did not finish).
-        if (screen.pieces && combo.font.id === 'app' && combo.zoom === 1.0) issues.push(...(await checkPieceColours(page, PNG, screen.pieces)));
+        if (screen.pieces && combo.font.id === 'app' && combo.zoom === 1.0) issues.push(...(await checkPieceColours(page, PNG, { ...screen.pieces, assets: themeAssets(screen.pieceTheme) })));
         record({ screen: screen.id, combo: comboId(combo), issues });
         if (sheets) {
           const wanted = SHEET.find((s) => s.size.id === combo.size.id && s.scale === combo.scale && s.font.id === combo.font.id && s.zoom === combo.zoom && s.theme === combo.theme && s.insetProfile === combo.insetProfile);

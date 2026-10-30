@@ -23,12 +23,20 @@ const pieceData = (key: string) => ({ dataSet: { piece: key } }) as object;
 export default function Piece({ piece, images, size }: PieceProps) {
   const key = `${piece.color}${piece.type}`;
   const imageUri = images?.[key];
+  const label = `${piece.color === 'w' ? 'white' : 'black'} ${PIECE_WORDS[piece.type]}`;
   if (imageUri) {
-    return <Image source={{ uri: imageUri }} style={styles.pieceImage} resizeMode="contain" />;
+    // An image theme's piece carries the same marker and label as a vector one (command #27c): the device matrix photographs a piece by its marker, and before this an image-themed board had
+    // none, so no check ever looked at the pixels of Cburnett / Merida / Chess with Checkers.
+    // The marker sits on a wrapper (react-native-web's Image does not forward `dataSet`): the wrapper is the old 85 % box and the image fills it, so the picture is where it always was.
+    return (
+      <View style={styles.pieceImage} accessibilityRole="image" accessibilityLabel={label} {...pieceData(key)}>
+        <Image source={{ uri: imageUri }} style={styles.pieceImageFill} resizeMode="contain" />
+      </View>
+    );
   }
   const side = size === undefined ? 36 : Math.floor(size * 0.9);
   return (
-    <View style={{ width: side, height: side }} accessibilityRole="image" accessibilityLabel={`${piece.color === 'w' ? 'white' : 'black'} ${PIECE_WORDS[piece.type]}`} {...pieceData(key)}>
+    <View style={{ width: side, height: side }} accessibilityRole="image" accessibilityLabel={label} {...pieceData(key)}>
       <PieceIcon type={piece.type} ink={pieceInk(piece.color)} size={side} />
     </View>
   );
@@ -40,5 +48,9 @@ const styles = StyleSheet.create({
   pieceImage: {
     width: '85%',
     height: '85%',
+  },
+  pieceImageFill: {
+    width: '100%',
+    height: '100%',
   },
 });
