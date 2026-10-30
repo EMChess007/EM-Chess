@@ -103,6 +103,16 @@ export class Device {
         if (xml) {
           this.last = { xml, nodes: parseHierarchy(xml) };
           if (save) writeFileSync(join(this.outDir, `${save}.xml`), xml);
+          // Android's one-time "Viewing full screen - swipe down to exit" notice (the app hides the navigation bar) sits over the app: "Got it" dismisses it, once.
+          const gotIt = this.last.nodes.find((n) => n.text === 'Got it' && n.bounds && n.pkg !== PACKAGE);
+          if (gotIt && !this.dismissing) {
+            this.dismissing = true;
+            this.tap(gotIt.bounds.cx, gotIt.bounds.cy);
+            await sleep(800);
+            this.dismissing = false;
+            attempt = -1; // read the tree again, now without the notice
+            continue;
+          }
           return this.last.nodes;
         }
         lastError = out.slice(0, 200);

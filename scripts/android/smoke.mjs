@@ -29,5 +29,7 @@ try {
   await dev.dump().then((nodes) => console.error(`smoke: on screen: ${visibleWords(nodes, 40).join(' | ')}`)).catch(() => {});
   await dev.snapshot('FAILED').catch(() => {});
 }
-writeFileSync(join(out, 'logcat.txt'), dev.logcat(1500));
+const logcat = dev.logcat(1500);
+writeFileSync(join(out, 'logcat.txt'), logcat);
+if (!ok) console.error(`smoke: the last lines of the app's log:\n${logcat.split('\n').slice(-60).join('\n')}`);
 process.exit(ok ? 0 : 1);

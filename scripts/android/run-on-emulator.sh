@@ -17,6 +17,7 @@ adb wait-for-device
 adb shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 1; done'
 adb shell input keyevent 82 || true   # wake the screen
 adb shell settings put secure show_ime_with_hard_keyboard 0 || true
+adb shell settings put secure immersive_mode_confirmations confirmed || true   # no "Viewing full screen" notice over the app (the driver also taps "Got it")
 adb install -r -g "$apk"
 adb reverse tcp:8081 tcp:8081
 adb logcat -c || true
