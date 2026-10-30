@@ -15,16 +15,18 @@ const PLAY = { text: 'Play' };
 const SETUP = [PLAY, { label: 'Bughouse local' }];
 const startWith = (preset) => [...SETUP, { id: preset }, { id: 'bughouse-start' }, { text: '3 min' }];
 const BW_PIECES = { mode: 'bw', allKinds: true };
+/** A screen where bots keep playing: a photograph can catch a cell between two renders, so an empty cell is inconclusive there (android-matrix-pieces.mjs `liveBots`); a wrong colour still fails. */
+const BW_PIECES_BOTS = { ...BW_PIECES, liveBots: true };
 
 export const EXTRA_SCREENS = [
   { id: 'bughouse-setup', title: 'Setup: Bughouse (You + 3 bots)', steps: SETUP },
   { id: 'bughouse-setup-four', title: 'Setup: Bughouse (4 players)', steps: [...SETUP, { id: 'preset-four' }] },
   { id: 'bughouse-time', title: 'Time control: Bughouse', steps: [...SETUP, { id: 'preset-four' }, { id: 'bughouse-start' }] },
   { id: 'bughouse-rules', title: 'Rules sheet: Bughouse', steps: [...SETUP, { id: 'how-to-play' }] },
-  { id: 'bughouse-game-single', title: 'Game: Bughouse, You + 3 bots (thumbnail layout)', steps: startWith('preset-solo'), boardKind: 'bughouseStandard', pockets: true, pieces: BW_PIECES },
-  { id: 'bughouse-game-passplay', title: 'Game: Bughouse, 2 opponents (one shared board, pass and play)', steps: startWith('preset-opponents'), boardKind: 'bughouseStandard', pockets: true, pieces: BW_PIECES },
+  { id: 'bughouse-game-single', title: 'Game: Bughouse, You + 3 bots (thumbnail layout)', steps: startWith('preset-solo'), boardKind: 'bughouseStandard', pockets: true, pieces: BW_PIECES_BOTS },
+  { id: 'bughouse-game-passplay', title: 'Game: Bughouse, 2 opponents (one shared board, pass and play)', steps: startWith('preset-opponents'), boardKind: 'bughouseStandard', pockets: true, pieces: BW_PIECES_BOTS },
   { id: 'bughouse-game-dual', title: 'Game: Bughouse, 4 players (two boards)', steps: startWith('preset-four'), boardKind: 'bughouse', pockets: true, pieces: BW_PIECES },
-  { id: 'bughouse-game-dual-teammates', title: 'Game: Bughouse, 2 teammates (two boards)', steps: startWith('preset-teammates'), boardKind: 'bughouse', pockets: true, pieces: BW_PIECES },
+  { id: 'bughouse-game-dual-teammates', title: 'Game: Bughouse, 2 teammates (two boards)', steps: startWith('preset-teammates'), boardKind: 'bughouse', pockets: true, pieces: BW_PIECES_BOTS },
   // --- the worst case: every pocket full (all five kinds, counts up to 16), both colours, both boards, a promoted piece on each ---
   { id: 'bughouse-full-pockets-single', title: 'Game: Bughouse, full pockets, You + 3 bots', steps: startWith('preset-solo'), fixture: 'fullPockets', boardKind: 'bughouseStandard', pockets: true },
   { id: 'bughouse-full-pockets-passplay', title: 'Game: Bughouse, full pockets, 2 opponents (pass and play)', steps: startWith('preset-opponents'), fixture: 'fullPockets', boardKind: 'bughouseStandard', pockets: true },

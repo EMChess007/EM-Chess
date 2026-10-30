@@ -81,7 +81,7 @@ export function judgeCell(marker, png) {
  * Runs the check in a page. `mode` is 'bw' (data-piece), 'seat' (data-seat-piece); `bothSquares`: every kind seen must be seen on two different square colours; `allKinds`: the twelve
  * (bw) kinds must all be on screen. Returns a list of {kind: 'piece-colour', el, detail}. `PNG` is pngjs's.
  */
-export async function checkPieceColours(page, PNG, { mode, bothSquares = false, allKinds = false }) {
+export async function checkPieceColours(page, PNG, { mode, bothSquares = false, allKinds = false, liveBots = false }) {
   const attribute = mode === 'seat' ? 'data-seat-piece' : 'data-piece';
   const issues = [];
   // The "rotate the device" layer covers the boards (the window is below the minimum): the person sees no piece, so there is none to judge (the rectangle checks treat it the same way).
@@ -158,6 +158,9 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
       await page.waitForTimeout(150);
     }
     if (png === null) continue;
+    // On a screen where bots play, a photograph can catch the cell between two renders (an empty cell, never a wrong colour): there "no piece found" is inconclusive. Every screen without bots
+    // (the all-pieces fixture, the four-human game) still treats an empty cell as a failure.
+    if (liveBots && problem !== null && problem.includes('no piece found')) problem = null;
     if (problem !== null) issues.push({ kind: 'piece-colour', el: `${f.marker} on board ${f.board}`, detail: `${problem} [cell ${png.width}x${png.height}, at ${Math.round(box.x)},${Math.round(box.y)}]` });
     const bg = analyseCell(png).background.join(',');
     if (!photographed.has(f.marker)) photographed.set(f.marker, []);
