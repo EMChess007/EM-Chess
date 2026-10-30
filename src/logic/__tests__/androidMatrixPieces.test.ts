@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import pieceSets from '../../data/pieceSets.json';
 import {
   analyseCell,
+  checkPieceColours,
   expectedCell,
   expectedInk,
   IMAGE_BLOCK,
@@ -320,5 +321,21 @@ describe('judgeImageCell: the limit and the other verdicts', () => {
 
   it('the same piece 1 px from where the page said is still judged right (a fractional cell position moves a piece by that much)', () => {
     expect(judgeImageCell('bk', photograph(assets.bk, LIGHT, 40, { ...RECT, x: RECT.x + 1 }), assets, RECT)).toBeNull();
+  });
+});
+
+describe('checkPieceColours on a page that drew fewer pieces than it listed', () => {
+  // The full matrix once died here (TypeError: Cannot read properties of undefined (reading 'evaluateHandle')): the page listed two pieces, then a reflow left no handle for the second.
+  it('judges nothing for a piece without a handle and does not throw', async () => {
+    const listed = [
+      { index: 0, marker: 'bk', parity: 0, visible: true, board: 'A', rect: { x: 0, y: 0, w: 10, h: 10 } },
+      { index: 1, marker: 'br', parity: 1, visible: true, board: 'A', rect: { x: 0, y: 0, w: 10, h: 10 } },
+    ];
+    const page = {
+      locator: () => ({ count: async () => 0 }),
+      $$eval: async () => listed,
+      $$: async () => [],
+    };
+    await expect(checkPieceColours(page as never, { sync: { read: () => ({}) } } as never, { mode: 'bw' })).resolves.toEqual([]);
   });
 });

@@ -234,6 +234,8 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
   const photographed = new Map();
   for (const f of picked.values()) {
     const handle = handles[f.index];
+    // The page may have drawn fewer pieces between the listing and the handles (a bot's capture, a reflow): no handle, nothing to judge.
+    if (!handle) continue;
     // A piece that a bot's move removed from the page is gone for good: its cell is simply not judged.
     const cell = (
       await handle
