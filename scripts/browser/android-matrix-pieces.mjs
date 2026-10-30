@@ -131,8 +131,12 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
     // a clip of the page, not `element.screenshot()`: that waits for the element to be "stable", which a board that bots are playing on never is
     const box = await cell.boundingBox();
     if (box === null) continue;
+    // Bots keep playing on a screen with bots: the piece that was in this cell when the cell was chosen may have moved away before the photograph. The marker is read again after it, and a
+    // cell whose piece changed meanwhile is not judged (a stale photograph, not a wrong colour).
+    const markerNow = () => handle.getAttribute(attribute).catch(() => null);
+    if ((await markerNow()) !== f.marker) continue;
     const shot = await page.screenshot({ clip: box, timeout: 8000 }).catch(() => null);
-    if (shot === null) continue;
+    if (shot === null || (await markerNow()) !== f.marker) continue;
     const png = PNG.sync.read(shot);
     const problem = judgeCell(f.marker, png);
     if (problem !== null) issues.push({ kind: 'piece-colour', el: `${f.marker} on board ${f.board}`, detail: problem });
