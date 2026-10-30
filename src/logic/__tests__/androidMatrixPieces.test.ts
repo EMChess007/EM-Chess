@@ -274,6 +274,23 @@ describe.each(['cburnett', 'merida', 'checkers'])('judgeImageCell on %s, photogr
     expect(judgeImageCell('wq', photograph(assets.wq, yellow, 40, RECT), assets, RECT)).toBeNull();
   });
 
+  it('the square is read from the photograph\'s TOP-LEFT corner, not another: a team badge or a mark in the bottom-right corner does not change the verdict', () => {
+    const photo = photograph(assets.bk, LIGHT, 40, RECT);
+    for (let y = 38; y < 40; y++) for (let x = 38; x < 40; x++) photo.data.set([0xe5, 0x39, 0x35, 255], (y * 40 + x) * 4);
+    expect(judgeImageCell('bk', photo, assets, RECT)).toBeNull();
+    // and the corner that IS read decides: a different colour at (1, 1) is the square the piece is judged over
+    const odd = photograph(assets.bk, LIGHT, 40, RECT);
+    odd.data.set([0x00, 0x80, 0x00, 255], (1 * 40 + 1) * 4);
+    expect(imageDistances(odd, assets, RECT).bk).not.toBe(imageDistances(photograph(assets.bk, LIGHT, 40, RECT), assets, RECT).bk);
+  });
+
+  it('a piece in a rectangle that is not square (wider than tall) is scaled into it on both axes', () => {
+    const wide = { x: 2, y: 8, w: 36, h: 24 };
+    for (const marker of ['bk', 'wq']) expect(judgeImageCell(marker, photograph(assets[marker], LIGHT, 40, wide), assets, wide), marker).toBeNull();
+    const tall = { x: 8, y: 2, w: 24, h: 36 };
+    for (const marker of ['bq', 'wk']) expect(judgeImageCell(marker, photograph(assets[marker], DARK, 40, tall), assets, tall), marker).toBeNull();
+  });
+
   it('an empty cell is reported', () => {
     expect(judgeImageCell('bk', flat(40, 40, [LIGHT[0], LIGHT[1], LIGHT[2], 255]), assets, RECT)).not.toBeNull();
   });
