@@ -25,6 +25,8 @@ export const INK = {
 export const INK_TOLERANCE = 40;
 /** A pixel counts as part of the piece when it differs from the square's colour by more than this. */
 const BACKGROUND_DISTANCE = 48;
+/** The finer threshold a WHITE piece is retried at: the lightest built-in squares are 20-30 from the white fill (Marble #e8e8e8, Ocean #dee3e6). */
+export const FINE_BACKGROUND_DISTANCE = 12;
 /** Fewer piece pixels than this fraction of the cell means the piece is not there (or too small to judge). */
 const MIN_PIECE_FRACTION = 0.1;
 
@@ -34,7 +36,7 @@ const distance = (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])
  * What an image of one cell says: the square's colour (the top-left pixel), the colour of the piece (the commonest 32-step bin among the pixels unlike the square, averaged) and the
  * fraction of the cell the piece covers. `png` is {width, height, data} with RGBA bytes.
  */
-export function analyseCell(png) {
+export function analyseCell(png, backgroundDistance = BACKGROUND_DISTANCE) {
   const { width, height, data } = png;
   const at = (x, y) => [data[(y * width + x) * 4], data[(y * width + x) * 4 + 1], data[(y * width + x) * 4 + 2]];
   const background = at(1, 1);
@@ -43,7 +45,7 @@ export function analyseCell(png) {
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const pixel = at(x, y);
-      if (distance(pixel, background) <= BACKGROUND_DISTANCE) continue;
+      if (distance(pixel, background) <= backgroundDistance) continue;
       candidates++;
       const key = `${pixel[0] >> 5},${pixel[1] >> 5},${pixel[2] >> 5}`;
       const bin = bins.get(key) ?? { n: 0, sum: [0, 0, 0] };
@@ -99,7 +101,13 @@ export const inkMatches = (measured, ink) => measured !== null && distance(measu
 export function judgeCell(marker, png) {
   const ink = expectedInk(marker);
   if (ink === null) return `unknown piece marker "${marker}"`;
-  const { piece, fraction } = analyseCell(png);
+  let { piece, fraction } = analyseCell(png);
+  // A near-white fill on a light square (a white piece on Ocean's #dee3e6, 28 away) is "the square" to the coarse threshold and only its thin outline would be seen (command #28): a white
+  // piece that does not pass at the coarse threshold is looked at again at the fine one, which keeps the fill. A white piece that is NOT drawn differs from the square nowhere, so it still fails.
+  if (/^w[pnbrqk]$/.test(marker) && (piece === null || fraction < MIN_PIECE_FRACTION || !inkMatches(piece, ink))) {
+    const fine = analyseCell(png, FINE_BACKGROUND_DISTANCE);
+    if (fine.piece !== null && fine.fraction >= MIN_PIECE_FRACTION && inkMatches(fine.piece, ink)) ({ piece, fraction } = fine);
+  }
   if (piece === null || fraction < MIN_PIECE_FRACTION) return `${marker}: no piece found in its cell (covers ${(fraction * 100).toFixed(1)} %)`;
   if (!inkMatches(piece, ink)) return `${marker}: drawn rgb(${piece.join(',')}), expected rgb(${ink.join(',')}) +-${INK_TOLERANCE}`;
   return lightBodyIssue(marker, png);

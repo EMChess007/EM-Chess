@@ -96,6 +96,15 @@ describe('judgeCell: the verdict on a photographed piece', () => {
     expect(judgeCell(marker, cell(DARK, ink, outline))).toBeNull();
   });
 
+  it('command #28: a white piece on the LIGHT squares of Ocean and Marble (20-30 from its fill) is judged by its fill, and one that is not drawn still fails', () => {
+    for (const square of [[0xde, 0xe3, 0xe6], [0xe8, 0xe8, 0xe8]] as Rgb[]) {
+      expect(judgeCell('wk', cell(square, [0xfa, 0xfa, 0xfa], [0x1b, 0x1b, 0x1b])), `${square}`).toBeNull();
+      expect(judgeCell('wk', cell(square, square, square)), `${square}`).toContain('no piece found');
+      // a dark piece drawn where a white one belongs is still reported (the fine threshold must not let it through)
+      expect(judgeCell('wk', cell(square, [0x1d, 0x1d, 0x1d], [0x66, 0x66, 0x66])), `${square}`).toContain('wk: drawn');
+    }
+  });
+
   it('command #28: a black piece whose commonest colour is its ink but whose BODY is mostly light bands is reported (Merida\'s old black king), a white piece never is', () => {
     // 200 pixels of the ink (the commonest 32-step bin) and 376 spread over seven lighter bins of ~54 pixels: the commonest colour is right, the median is light
     const size = 40;
