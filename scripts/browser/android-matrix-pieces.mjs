@@ -84,9 +84,12 @@ export function judgeCell(marker, png) {
 // eleven assets of the theme - in particular nearer than to the other colour's piece of the same kind.
 
 /** Cells are compared as means over BLOCK x BLOCK pixels: scaling and antialiasing move single pixels, not the shape and tone of a piece. */
-export const IMAGE_BLOCK = 4;
-/** The largest mean difference (0-255, per channel, over the blocks of the cell) an image piece may have from its own asset. Measured on a real run: a correct piece is 0.9 - 3.0 from it (Cburnett, Merida, Checkers), the other colour's piece 10 - 58. */
-export const IMAGE_MAX_DISTANCE = 12;
+export const IMAGE_BLOCK = 8;
+/**
+ * The largest mean difference (0-255, per channel, over the blocks of the cell) an image piece may have from its own asset. It is the net for a piece that is not there or not where the page said;
+ * the COLOUR verdict does not depend on it (the nearest asset must be of the piece's colour). Real photographs of a correct piece are 1 - 7 from their asset.
+ */
+export const IMAGE_MAX_DISTANCE = 15;
 
 /** An asset drawn into `rect` ({x, y, w, h}, in the cell's pixels) over `background`: the box-filtered image, composited. Returns {width, height, data} with opaque RGBA. */
 export function expectedCell(asset, background, width, height, rect) {
@@ -161,7 +164,11 @@ export function imageDistances(png, assets, rect) {
   return out;
 }
 
-/** The verdict on one photographed cell of an image theme: an issue text, or null. The piece must be nearest to its own asset and within IMAGE_MAX_DISTANCE of it. */
+/**
+ * The verdict on one photographed cell of an image theme: an issue text, or null. The piece must be nearest to an asset of ITS colour (the bug of command #27c is a colour) and within
+ * IMAGE_MAX_DISTANCE of its own. Which KIND of a colour it is nearest to is not a verdict: in a disc theme (Chess with Checkers) the six white pieces are one disc with a small glyph and
+ * a single pixel of scaling decides which is nearest; the key -> asset mapping is pinned by pieceThemes.test.ts and pieceThemes.dom.test.tsx instead.
+ */
 export function judgeImageCell(marker, png, assets, rect) {
   if (!/^[wb][pnbrqk]$/.test(marker)) return `unknown piece marker "${marker}"`;
   if (!assets[marker]) return `${marker}: the theme has no image for it`;
@@ -172,7 +179,6 @@ export function judgeImageCell(marker, png, assets, rect) {
   const swapped = distances[(marker[0] === 'w' ? 'b' : 'w') + marker[1]];
   if (nearest[0] !== marker[0]) return `${marker}: drawn like ${nearest} (distance ${nearestDistance.toFixed(1)}), not like its own image (${own.toFixed(1)}); the other colour's ${marker[1]} is at ${swapped.toFixed(1)}`;
   if (own > IMAGE_MAX_DISTANCE) return `${marker}: ${own.toFixed(1)} away from its own image (limit ${IMAGE_MAX_DISTANCE})`;
-  if (nearest !== marker) return `${marker}: drawn like ${nearest} (distance ${nearestDistance.toFixed(1)}), its own image is at ${own.toFixed(1)}`;
   return null;
 }
 

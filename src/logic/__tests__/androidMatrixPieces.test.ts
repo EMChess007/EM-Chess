@@ -1,5 +1,20 @@
+import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
-import { analyseCell, expectedInk, INK, INK_TOLERANCE, inkMatches, judgeCell } from '../../../scripts/browser/android-matrix-pieces.mjs';
+import pieceSets from '../../data/pieceSets.json';
+import {
+  analyseCell,
+  expectedCell,
+  expectedInk,
+  IMAGE_BLOCK,
+  IMAGE_MAX_DISTANCE,
+  imageDistance,
+  imageDistances,
+  INK,
+  INK_TOLERANCE,
+  inkMatches,
+  judgeCell,
+  judgeImageCell,
+} from '../../../scripts/browser/android-matrix-pieces.mjs';
 
 /**
  * The analysis behind the device matrix's piece-colour check (command #27b), on SYNTHETIC cells: a square of one colour with a disc of the piece's colour in the middle. The browser run
@@ -108,5 +123,184 @@ describe('judgeCell: the verdict on a photographed piece', () => {
 
   it('an unknown marker is reported', () => {
     expect(judgeCell('zz', cell(LIGHT, INK.b as Rgb))).toContain('unknown piece marker');
+  });
+});
+
+// --- an image theme (command #27c) -------------------------------------------------------------------------------------------------------------------------------------------------------------
+type Image = { width: number; height: number; data: Uint8Array };
+const { PNG } = createRequire(import.meta.url)('pngjs') as { PNG: { sync: { read(buffer: Buffer): Image } } };
+
+/** The twelve decoded assets of a shipped theme: { wk: {width, height, data}, ... }. */
+function assetsOf(theme: string): Record<string, Image> {
+  const out: Record<string, Image> = {};
+  for (const [key, uri] of Object.entries((pieceSets as Record<string, Record<string, string>>)[theme])) out[key] = PNG.sync.read(Buffer.from(uri.replace(/^data:image\/png;base64,/, ''), 'base64'));
+  return out;
+}
+
+/** A PHOTOGRAPH of a piece, made without expectedCell (so the test does not grade the function with itself): the asset sampled by nearest neighbour into `rect` over a square colour. */
+function photograph(asset: Image, square: Rgb, size: number, rect: { x: number; y: number; w: number; h: number }): Image {
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const inside = x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
+      const u = Math.min(asset.width - 1, Math.floor(((x - rect.x) / rect.w) * asset.width));
+      const v = Math.min(asset.height - 1, Math.floor(((y - rect.y) / rect.h) * asset.height));
+      const i = (v * asset.width + u) * 4;
+      const a = inside ? asset.data[i + 3] / 255 : 0;
+      for (let c = 0; c < 3; c++) data[(y * size + x) * 4 + c] = Math.round((inside ? asset.data[i + c] : 0) * a + square[c] * (1 - a));
+      data[(y * size + x) * 4 + 3] = 255;
+    }
+  }
+  return { width: size, height: size, data };
+}
+
+const flat = (width: number, height: number, rgba: [number, number, number, number]): Image => {
+  const data = new Uint8Array(width * height * 4);
+  for (let i = 0; i < width * height; i++) data.set(rgba, i * 4);
+  return { width, height, data };
+};
+
+describe('the constants of the image judge, as literals', () => {
+  it('blocks of 8 pixels (a 1 px shift of a piece is about 7 at 4 px blocks, which a fractional cell position produces), a limit of 15 (real photographs of a correct piece are 1 - 7 from their asset)', () => {
+    expect(IMAGE_BLOCK).toBe(8);
+    expect(IMAGE_MAX_DISTANCE).toBe(15);
+  });
+});
+
+describe('expectedCell: an asset drawn into a rectangle over the square', () => {
+  const asset = flat(2, 2, [200, 100, 50, 255]);
+
+  it('inside the rectangle the asset, outside it the square, opaque everywhere', () => {
+    const cellImage = expectedCell(asset, [10, 20, 30], 8, 8, { x: 2, y: 2, w: 4, h: 4 });
+    expect(cellImage.width).toBe(8);
+    expect(cellImage.height).toBe(8);
+    const at = (x: number, y: number) => Array.from(cellImage.data.slice((y * 8 + x) * 4, (y * 8 + x) * 4 + 4));
+    expect(at(3, 3)).toEqual([200, 100, 50, 255]);
+    expect(at(5, 5)).toEqual([200, 100, 50, 255]);
+    expect(at(0, 0)).toEqual([10, 20, 30, 255]);
+    expect(at(6, 6)).toEqual([10, 20, 30, 255]);
+    expect(at(1, 4)).toEqual([10, 20, 30, 255]);
+  });
+
+  it('a transparent asset shows only the square; a half-transparent one blends', () => {
+    const clear = expectedCell(flat(2, 2, [0, 0, 0, 0]), [10, 20, 30], 8, 8, { x: 2, y: 2, w: 4, h: 4 });
+    expect(Array.from(clear.data.slice((3 * 8 + 3) * 4, (3 * 8 + 3) * 4 + 4))).toEqual([10, 20, 30, 255]);
+    const half = expectedCell(flat(2, 2, [0, 0, 0, 128]), [100, 100, 100, 255].slice(0, 3) as Rgb, 8, 8, { x: 2, y: 2, w: 4, h: 4 });
+    expect(Array.from(half.data.slice((3 * 8 + 3) * 4, (3 * 8 + 3) * 4 + 3))).toEqual([50, 50, 50]);
+  });
+
+  it('the image is scaled into the rectangle: a left half and a right half of different colours stay in their halves', () => {
+    const two: Image = { width: 2, height: 1, data: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]) };
+    const out = expectedCell(two, [0, 0, 0], 8, 4, { x: 0, y: 0, w: 8, h: 4 });
+    const at = (x: number, y: number) => Array.from(out.data.slice((y * 8 + x) * 4, (y * 8 + x) * 4 + 3));
+    expect(at(1, 2)).toEqual([255, 0, 0]);
+    expect(at(2, 0)).toEqual([255, 0, 0]);
+    expect(at(5, 2)).toEqual([0, 0, 255]);
+    expect(at(7, 3)).toEqual([0, 0, 255]);
+  });
+});
+
+describe('imageDistance', () => {
+  it('is 0 for the same picture and 255 for black against white', () => {
+    expect(imageDistance(flat(8, 8, [10, 20, 30, 255]), flat(8, 8, [10, 20, 30, 255]))).toBe(0);
+    expect(imageDistance(flat(8, 8, [0, 0, 0, 255]), flat(8, 8, [255, 255, 255, 255]))).toBe(255);
+  });
+
+  it('is the mean over the blocks: one block of 8 x 8 pixels (a quarter of a 16 x 16 picture) differing by 40 makes 10', () => {
+    const a = flat(16, 16, [100, 100, 100, 255]);
+    const b = flat(16, 16, [100, 100, 100, 255]);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) b.data.set([140, 140, 140, 255], (y * 16 + x) * 4);
+    expect(imageDistance(a, b)).toBe(10);
+  });
+
+  it('blocks are 8 x 8: a single pixel of difference 255 in a 16 x 16 picture is 255 / 64 in its block, over 4 blocks', () => {
+    const a = flat(16, 16, [0, 0, 0, 255]);
+    const b = flat(16, 16, [0, 0, 0, 255]);
+    b.data.set([255, 255, 255, 255], 0);
+    expect(imageDistance(a, b)).toBeCloseTo(255 / 64 / 4, 10);
+  });
+
+  it('an edge block that is smaller than 8 x 8 is its own mean (a 12 x 8 picture: blocks of 8 and 4 columns)', () => {
+    const a = flat(12, 8, [0, 0, 0, 255]);
+    const b = flat(12, 8, [0, 0, 0, 255]);
+    for (let y = 0; y < 8; y++) for (let x = 8; x < 12; x++) b.data.set([80, 80, 80, 255], (y * 12 + x) * 4);
+    // two blocks: the left one identical, the right one (4 columns wide) differing by 80 on every pixel: its mean is 80, not 80 * 4 / 8
+    expect(imageDistance(a, b)).toBe(40);
+  });
+});
+
+describe.each(['cburnett', 'merida', 'checkers'])('judgeImageCell on %s, photographed without expectedCell', (theme) => {
+  const assets = assetsOf(theme);
+  const RECT = { x: 3, y: 3, w: 34, h: 34 };
+
+  it.each(['wk', 'wq', 'wr', 'wb', 'wn', 'wp', 'bk', 'bq', 'br', 'bb', 'bn', 'bp'])('%s drawn right is clean on a light and on a dark square', (marker) => {
+    for (const square of [LIGHT, DARK]) expect(judgeImageCell(marker, photograph(assets[marker], square, 40, RECT), assets, RECT), `${marker} on ${square}`).toBeNull();
+  });
+
+  it.each(['k', 'q', 'r', 'b', 'n', 'p'])('THE BUG: a black %s drawn as a white piece is reported, on both squares, saying it looks white', (kind) => {
+    for (const square of [LIGHT, DARK]) {
+      const problem = judgeImageCell('b' + kind, photograph(assets['w' + kind], square, 40, RECT), assets, RECT);
+      expect(problem, `b${kind}`).toMatch(new RegExp(`^b${kind}: drawn like w[pnbrqk] \\(distance [0-9.]+\\), not like its own image \\([0-9.]+\\); the other colour's ${kind} is at [0-9.]+$`));
+    }
+  });
+
+  it.each(['k', 'q', 'r', 'b', 'n', 'p'])('a white %s drawn as a black piece is reported', (kind) => {
+    const problem = judgeImageCell('w' + kind, photograph(assets['b' + kind], LIGHT, 40, RECT), assets, RECT);
+    expect(problem, `w${kind}`).toMatch(new RegExp(`^w${kind}: drawn like b[pnbrqk] \\(distance [0-9.]+\\), not like its own image \\([0-9.]+\\); the other colour's ${kind} is at [0-9.]+$`));
+  });
+
+  it('the verdict text carries the three distances it judged by: what it looks like, its own image, and the other colour of the same kind (read back and compared with imageDistances)', () => {
+    const photo = photograph(assets.wq, DARK, 40, RECT);
+    const distances = imageDistances(photo, assets, RECT) as Record<string, number>;
+    const problem = String(judgeImageCell('bq', photo, assets, RECT));
+    const parsed = /^bq: drawn like (\w\w) \(distance ([0-9.]+)\), not like its own image \(([0-9.]+)\); the other colour's q is at ([0-9.]+)$/.exec(problem);
+    expect(parsed, problem).not.toBeNull();
+    expect(Number(parsed?.[2])).toBeCloseTo(distances[parsed?.[1] as string], 1);
+    expect(Number(parsed?.[3])).toBeCloseTo(distances.bq, 1);
+    expect(Number(parsed?.[4])).toBeCloseTo(distances.wq, 1);
+    expect(distances.wq).toBeLessThan(distances.bq);
+  });
+
+  it('distances: its own asset is within 8 of the photograph, the other colour of the kind at least 10 away', () => {
+    const distances = imageDistances(photograph(assets.bk, DARK, 40, RECT), assets, RECT) as Record<string, number>;
+    expect(distances.bk).toBeLessThan(8);
+    expect(distances.wk).toBeGreaterThanOrEqual(10);
+    expect(Object.keys(distances).sort()).toEqual(['bb', 'bk', 'bn', 'bp', 'bq', 'br', 'wb', 'wk', 'wn', 'wp', 'wq', 'wr']);
+  });
+
+  it('the square is read from the photograph\'s own corner: a piece on a highlighted (yellow) square is still judged right', () => {
+    const yellow: Rgb = [0xf7, 0xec, 0x74];
+    expect(judgeImageCell('bq', photograph(assets.bq, yellow, 40, RECT), assets, RECT)).toBeNull();
+    expect(judgeImageCell('wq', photograph(assets.wq, yellow, 40, RECT), assets, RECT)).toBeNull();
+  });
+
+  it('an empty cell is reported', () => {
+    expect(judgeImageCell('bk', flat(40, 40, [LIGHT[0], LIGHT[1], LIGHT[2], 255]), assets, RECT)).not.toBeNull();
+  });
+
+  it('a piece drawn in the wrong place (the rectangle the page reported is not where it is) is reported', () => {
+    expect(judgeImageCell('bk', photograph(assets.bk, LIGHT, 40, RECT), assets, { x: 15, y: 15, w: 34, h: 34 })).not.toBeNull();
+  });
+});
+
+describe('judgeImageCell: the limit and the other verdicts', () => {
+  const assets = assetsOf('cburnett');
+  const RECT = { x: 3, y: 3, w: 34, h: 34 };
+
+  it('an unknown marker and a missing asset are reported', () => {
+    expect(judgeImageCell('zz', flat(40, 40, [0, 0, 0, 255]), assets, RECT)).toBe('unknown piece marker "zz"');
+    expect(judgeImageCell('2:p', flat(40, 40, [0, 0, 0, 255]), assets, RECT)).toBe('unknown piece marker "2:p"');
+    const partial = { ...assets } as Record<string, Image>;
+    delete partial.bk;
+    expect(judgeImageCell('bk', photograph(assets.bk, LIGHT, 40, RECT), partial, RECT)).toBe('bk: the theme has no image for it');
+  });
+
+  it('the right colour but too far from its own image (the piece is 4 px from where the page said) is reported with its distance and the limit of 15', () => {
+    const shifted = photograph(assets.bk, LIGHT, 40, { ...RECT, x: RECT.x + 4 });
+    expect(String(judgeImageCell('bk', shifted, assets, RECT))).toMatch(/^bk: [0-9.]+ away from its own image \(limit 15\)$/);
+  });
+
+  it('the same piece 1 px from where the page said is still judged right (a fractional cell position moves a piece by that much)', () => {
+    expect(judgeImageCell('bk', photograph(assets.bk, LIGHT, 40, { ...RECT, x: RECT.x + 1 }), assets, RECT)).toBeNull();
   });
 });

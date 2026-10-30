@@ -84,7 +84,9 @@ describe('the piece itself: all twelve kinds', () => {
 
   it('a themed piece (an image set) is still an image: the vector is only the built-in theme', () => {
     const { container } = render(<Piece piece={{ color: 'b', type: 'k' } as never} images={{ bk: 'data:image/png;base64,AAAA' }} size={40} />);
-    expect(container.querySelector('[data-piece]')).toBeNull();
+    // (an image piece carries the marker too since command #27c, so the device matrix can photograph it: what tells it from a vector is that it draws no Svg)
+    expect(container.querySelector('[data-piece="bk"]')).not.toBeNull();
+    expect(container.querySelector('[data-svg]')).toBeNull();
     expect(container.querySelector('img')).not.toBeNull();
   });
 });
