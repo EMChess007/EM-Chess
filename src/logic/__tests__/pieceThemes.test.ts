@@ -83,6 +83,12 @@ describe('the themes the app ships', () => {
     expect(getPieceTheme('custom-test').name).toBe('Mine');
     removeCustomPieceThemeOption('custom-test');
     expect(AVAILABLE_PIECE_THEMES.map((theme) => theme.id)).toEqual(['default', 'cburnett', 'merida', 'checkers']);
+    // removing one theme takes exactly that one: the theme after it stays
+    addCustomPieceThemeOption({ id: 'custom-test', name: 'Mine', images: {}, isCustom: true });
+    addCustomPieceThemeOption({ id: 'custom-test-2', name: 'Mine too', images: {}, isCustom: true });
+    removeCustomPieceThemeOption('custom-test');
+    expect(AVAILABLE_PIECE_THEMES.map((theme) => theme.id)).toEqual(['default', 'cburnett', 'merida', 'checkers', 'custom-test-2']);
+    removeCustomPieceThemeOption('custom-test-2');
     // removing an id that is not there removes nothing (splice(-1, 1) would have taken the last shipped theme)
     removeCustomPieceThemeOption('custom-test');
     expect(AVAILABLE_PIECE_THEMES.map((theme) => theme.id)).toEqual(['default', 'cburnett', 'merida', 'checkers']);
