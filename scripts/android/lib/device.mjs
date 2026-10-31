@@ -141,8 +141,17 @@ export class Device {
 
   /** The tree and a screenshot taken straight after it, decoded. */
   async look() {
-    const nodes = await this.dump();
-    return { nodes, png: this.screenshot() };
+    // The tree, the photograph, the tree again: if the screen moved in between (a list still settling, a bot's move) the two trees differ and the pair is taken again - a photograph and a tree
+    // of different moments would put a cell's bounds over its neighbour's pixels.
+    let nodes = await this.dump();
+    let png = this.screenshot();
+    for (let i = 0; i < 4; i++) {
+      const again = await this.dump();
+      if (fingerprint(again) === fingerprint(nodes)) return { nodes: again, png };
+      nodes = again;
+      png = this.screenshot();
+    }
+    return { nodes, png };
   }
 
   // --- touching -------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -168,7 +177,7 @@ export class Device {
   // slow swipes (700 ms): a quick one leaves the list flinging, and a tap on a moving list lands on whatever passes under the finger
   scrollDown() {
     const { w, h } = this.display;
-    this.swipe(w / 2, h * 0.72, w / 2, h * 0.34, 700);
+    this.swipe(w / 2, h * 0.78, w / 2, h * 0.28, 700);
   }
 
   scrollUp() {
@@ -210,7 +219,7 @@ export class Device {
    * The node a step names, scrolling down when it is not on screen (the Play menu is longer than a phone). `{ text, below: "Local" }` is the first `text` under the heading `below`: on
    * the phone only what is on screen exists, so "the second Classic" of the web matrix (document order) is "the Classic under Local" here.
    */
-  async find(step, { scrolls = 6 } = {}) {
+  async find(step, { scrolls = 14 } = {}) {
     if (step.below !== undefined) {
       await this.find({ text: step.below }, { scrolls });
       for (let i = 0; i <= scrolls; i++) {
@@ -225,15 +234,22 @@ export class Device {
     }
     let nodes = await this.dump();
     let node = findOne(nodes, step);
+    let scrolled = false;
     for (let i = 0; node === null && i < scrolls; i++) {
       const before = fingerprint(nodes);
       this.scrollDown();
-      await sleep(700);
-      nodes = await this.stable();
+      scrolled = true;
+      await sleep(450);
+      nodes = await this.dump();
       node = findOne(nodes, step);
       if (node === null && fingerprint(nodes) === before) break; // nothing moved: the end of the list
     }
     if (node === null) throw new Error(`cannot find ${JSON.stringify(step)}; on screen: ${visibleWords(nodes, 40).join(' | ')}`);
+    if (scrolled) {
+      // found while the list may still have been moving: wait until it stands still, and take the node from that tree
+      nodes = await this.stable();
+      node = findOne(nodes, step) ?? node;
+    }
     return node;
   }
 
@@ -241,6 +257,7 @@ export class Device {
     if (step.wait) return sleep(step.wait);
     if (step.fill) throw new Error('fill steps are not used on the phone');
     const node = await this.find(step);
+    this.log(`  tap ${JSON.stringify(step)} -> ${node.cls.split('.').pop()} "${(node.text || node.desc || node.id).slice(0, 30)}" ${node.bounds.w}x${node.bounds.h} at ${node.bounds.cx},${node.bounds.cy}`);
     this.tap(node.bounds.cx, node.bounds.cy);
     await sleep(settleMs);
   }

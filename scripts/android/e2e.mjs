@@ -25,7 +25,7 @@ const EXTRA_SCREENS = await import('../browser/android-matrix-screens-extra.mjs'
 import { Device, PROFILES, sleep } from './lib/device.mjs';
 import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
 import { crashIssues, judgePieceCell, judgeSelection, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
-import { crop, decodePng, encodePng } from './lib/png.mjs';
+import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -69,6 +69,11 @@ async function scenario(dev, name, body) {
     await body();
   } catch (e) {
     record(name, [`exception: ${e.message}`]);
+    try {
+      log(`PNG64 exception-${name.replace(/\W+/g, '_')} ${encodePng(shrink(dev.screenshot(), 3)).toString('base64')}`);
+    } catch {
+      /* no screenshot */
+    }
     await dev.snapshot(`FAILED-${name.replace(/[^\w.-]+/g, '_')}`).catch(() => {});
   }
   log(`  (${name}: ${Math.round((Date.now() - t0) / 1000)} s)`);
@@ -170,6 +175,8 @@ async function screens(dev) {
         note += `, ${verdict.count} pieces judged`;
       }
       await dev.snapshot(`screen-${s.id}`);
+      // a failed screen is also PRINTED (a third of its size, base64: `base64 -d` makes a PNG) - the log is the one place every reader of a run can reach
+      if (issues.length > 0) log(`PNG64 screen-${s.id} ${encodePng(shrink(dev.screenshot(), 3)).toString('base64')}`);
       record(`screen ${s.id}`, issues, note);
     });
   }
