@@ -1,0 +1,25 @@
+# Dependabot SECURITY updates, grouped (command #31, CHECKLIST.md section 19).
+# - Version updates are OFF (open-pull-requests-limit: 0): an Expo / React Native project upgrades its dependencies together, by SDK (`npx expo install`), never one package at a time.
+# - Security updates stay ON for the repo (Settings > Code security > Dependabot security updates) and all the fixes of one run are ONE pull request (the group below), not one per package.
+# - GitHub Actions are covered the same way.
+# A Dependabot pull request still has to pass the whole CI, `security-audit` and `android-e2e`; nothing here merges by itself.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns: ['*']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      actions-security:
+        applies-to: security-updates
+        patterns: ['*']
