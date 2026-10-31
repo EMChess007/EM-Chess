@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  boardFromScreenshot,
+  startPositionMarkers,
   crashIssues,
   cornerColour,
   judgePieceCell,
@@ -166,6 +168,19 @@ describe('boards and touches', () => {
       const none = boardImage(40, orientation, null);
       expect(judgeSelection(none.image, none.board, orientation, 'e2')).toMatch(/nothing selected/);
     }
+  });
+
+  it('finds the board in a PHOTOGRAPH (the screens whose tree lags the screen) and refuses an image without one', () => {
+    const { board, image } = boardImage(40, 'w', null);
+    expect(boardFromScreenshot(image)).toMatchObject({ x1: board.x1, y1: board.y1, w: board.w, h: board.h });
+    expect(boardFromScreenshot(solid(200, 200, [255, 255, 255]))).toBeNull();
+    // a tan button of the same family as the light squares does not move the board
+    const withButton = boardImage(40, 'w', null).image;
+    for (let y = 365; y < 395; y++) for (let x = 20; x < 200; x++) withButton.data.set([240, 217, 181, 255], (y * withButton.width + x) * 4);
+    expect(boardFromScreenshot(withButton)).toMatchObject({ y1: 40, h: 320 });
+    const markers = startPositionMarkers() as Record<string, string>;
+    expect(Object.keys(markers)).toHaveLength(32);
+    expect([markers.e1, markers.d8, markers.a2, markers.h7]).toEqual(['wk', 'bq', 'wp', 'bp']);
   });
 
   it('reads a corner colour inside the image only', () => {

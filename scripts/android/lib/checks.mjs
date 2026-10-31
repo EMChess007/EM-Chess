@@ -94,6 +94,54 @@ export function squareRect(board, orientation, square) {
   return { x, y, w: cell, h: cell, cx: Math.round(x + cell / 2), cy: Math.round(y + cell / 2) };
 }
 
+/** The Classic board theme's two square colours, as literals (src/logic/boardThemes.ts '#f0d9b5' / '#b58863'). */
+export const CLASSIC_LIGHT = [0xf0, 0xd9, 0xb5];
+export const CLASSIC_DARK = [0xb5, 0x88, 0x63];
+
+/**
+ * The board's grid read from a SCREENSHOT, for the screens whose accessibility tree lags the screen: the bounding box of the Classic dark squares (a1 and h8 are dark, so it is the
+ * whole grid). { x1, y1, w, h } in pixels, or null when no square-shaped region of that colour is there.
+ */
+export function boardFromScreenshot(png, dark = CLASSIC_DARK, tolerance = 4) {
+  let x1 = png.width;
+  let y1 = png.height;
+  let x2 = -1;
+  let y2 = -1;
+  let count = 0;
+  for (let y = 0; y < png.height; y++) {
+    for (let x = 0; x < png.width; x++) {
+      const i = (y * png.width + x) * 4;
+      if (Math.abs(png.data[i] - dark[0]) <= tolerance && Math.abs(png.data[i + 1] - dark[1]) <= tolerance && Math.abs(png.data[i + 2] - dark[2]) <= tolerance) {
+        count++;
+        if (x < x1) x1 = x;
+        if (x > x2) x2 = x;
+        if (y < y1) y1 = y;
+        if (y > y2) y2 = y;
+      }
+    }
+  }
+  if (count < 64) return null;
+  const w = x2 - x1 + 1;
+  const h = y2 - y1 + 1;
+  // the grid is square, and its dark squares are a quarter of its area
+  if (Math.abs(w - h) > 3 || count < w * h * 0.2) return null;
+  return { x1, y1, x2: x2 + 1, y2: y2 + 1, w, h };
+}
+
+/** The pieces of the standard start position by square, as markers ("wk", "bp"): what a fresh game shows. */
+export function startPositionMarkers() {
+  const out = {};
+  const back = 'rnbqkbnr';
+  for (let f = 0; f < 8; f++) {
+    const file = 'abcdefgh'[f];
+    out[`${file}1`] = `w${back[f]}`;
+    out[`${file}2`] = 'wp';
+    out[`${file}7`] = 'bp';
+    out[`${file}8`] = `b${back[f]}`;
+  }
+  return out;
+}
+
 /** Which way a board faces, from where its a1 cell is: 'w' (a1 bottom-left) or 'b' (top-right). */
 export function orientationFromA1(board, a1) {
   return a1.cx < board.x1 + board.w / 2 && a1.cy > board.y1 + board.h / 2 ? 'w' : 'b';

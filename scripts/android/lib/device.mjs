@@ -241,6 +241,18 @@ export class Device {
         await sleep(700);
       }
     }
+    // `blind`: fast swipes WITHOUT a tree between them to get near a target that is known to be deep in a long list (each tree costs several seconds on the CI emulator): `down` swipes, then `up`.
+    if (step.blind) {
+      for (let i = 0; i < (step.blind.down ?? 0); i++) {
+        this.swipe(this.display.w / 2, this.display.h * 0.8, this.display.w / 2, this.display.h * 0.2, 350);
+        await sleep(120);
+      }
+      for (let i = 0; i < (step.blind.up ?? 0); i++) {
+        this.swipe(this.display.w / 2, this.display.h * 0.3, this.display.w / 2, this.display.h * 0.7, 350);
+        await sleep(120);
+      }
+      await sleep(600);
+    }
     let nodes = await this.current();
     let node = findOne(nodes, step);
     let scrolled = false;
@@ -273,9 +285,20 @@ export class Device {
     // A development build fetches a screen's code from Metro the first time it is opened (lazy bundling), which can take many seconds: the next step must not look at the OLD screen (the first
     // run took the time-control screen for the game it was starting). Wait, up to 8 s, until the tree is not the one the tap was made on.
     const t0 = Date.now();
+    let nudged = false;
     for (;;) {
       const nodes = await this.dump();
-      if (fingerprint(nodes) !== before || Date.now() - t0 > 8000) break;
+      if (fingerprint(nodes) !== before) {
+        if (nudged) this.log('  (the tree was stale until the status bar was touched)');
+        break;
+      }
+      if (Date.now() - t0 > 8000) break;
+      // some screens of this app leave uiautomator with the PREVIOUS screen's tree (the photograph shows the new one): a touch on the status bar, which does nothing, is tried once to
+      // make the app send the accessibility events that refresh it
+      if (!nudged && Date.now() - t0 > 2500) {
+        nudged = true;
+        this.tap(this.display.w / 2, 4);
+      }
       await sleep(500);
     }
   }
