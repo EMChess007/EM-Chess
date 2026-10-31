@@ -24,7 +24,7 @@ import { SCREENS } from '../browser/android-matrix-screens.mjs';
 const EXTRA_SCREENS = await import('../browser/android-matrix-screens-extra.mjs').then((m) => m.EXTRA_SCREENS, () => []);
 import { Device, PROFILES, sleep } from './lib/device.mjs';
 import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
-import { boardFromScreenshot, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
+import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -106,15 +106,32 @@ async function toHome(dev) {
 
 // --- the screens ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 /** Screens whose steps need a test-only web fixture or a piece theme set through the page: the Piece gallery covers every theme on the phone itself. */
-const LARGE_SCREENS = new Set(['home', 'play-menu', 'game-2p', 'ffa-setup', 'game-ffa', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-dual']);
 /**
- * The cramped phone (small, font scale 1.3) runs EVERY screen; the large phone runs the ones whose layout differs most (a board, a setup, the tab screens): the whole job has a budget of
- * about 25 minutes and each screen costs 10 - 20 s on the emulator. `--only` overrides both.
+ * THE SCREENS OF A RUN. The job has a budget of about 25 minutes and a screen costs 20 - 60 s on the CI emulator (every screen of the accessibility tree takes several seconds, the Play menu
+ * is a long scroll), so a pull-request run covers the CORE screens - every kind of screen the user named: Home, the Play menu, a setup, a time control, the 2-player, 4-player, Chaturaji and
+ * Bughouse (local) games, Puzzles, Analysis, More, Diagnostics - on the small phone, and the board and tab screens on the large one. `--all` (a manual run of the workflow) adds every other
+ * screen of the web matrix's lists (rules sheets, the More sub-screens, the other setups).
  */
+const CORE_SCREENS = new Set(['home', 'play-menu', 'time-control', 'game-2p', 'ffa-setup', 'game-ffa', 'chaturaji-setup', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-passplay', 'bughouse-game-dual']);
+const LARGE_SCREENS = new Set(['home', 'play-menu', 'game-2p', 'ffa-setup', 'game-ffa', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-dual']);
 /** Screens that cannot be driven through the tree: the accessibility tree of the 2-player game screen lags the screen (the photograph is right), so its Options menu cannot be found; the menu's text is checked by the web matrix. */
 const TREE_LAGS = new Set(['game-2p-options']);
+/**
+ * The two-board setups with four humans are REFUSED on a 360 x 640 dp phone, by design (W3a: "This seat setup needs a larger screen. Turn the device to landscape, or put every human on one
+ * board."): the run checks that the refusal is what the small phone shows, and plays those games on the large one.
+ */
+const SMALL_REFUSES = new Map([['bughouse-game-dual', 'bughouse-start'], ['bughouse-game-dual-teammates', 'bughouse-start']]);
+const REFUSAL_TEXT = 'This seat setup needs a larger screen';
 const phoneScreens = () =>
-  [...SCREENS, ...EXTRA_SCREENS].filter((s) => !s.fixture && !s.pieceTheme && !TREE_LAGS.has(s.id) && (ONLY ? ONLY.has(s.id) : profile.id === 'small' || LARGE_SCREENS.has(s.id)));
+  [...SCREENS, ...EXTRA_SCREENS]
+    .filter((s) => !s.fixture && !s.pieceTheme && !TREE_LAGS.has(s.id))
+    .filter((s) => (ONLY ? ONLY.has(s.id) : flag('all') || (profile.id === 'small' ? CORE_SCREENS.has(s.id) : LARGE_SCREENS.has(s.id))))
+    .map((s) => {
+      const stop = profile.id === 'small' ? SMALL_REFUSES.get(s.id) : undefined;
+      if (!stop) return s;
+      const cut = s.steps.findIndex((step) => step.id === stop);
+      return { ...s, steps: s.steps.slice(0, cut), expectText: REFUSAL_TEXT, pieces: undefined, title: `${s.title} (refused on this window)` };
+    });
 
 /**
  * The web matrix finds "the second Classic" in document order; on the phone only what is on screen exists, so that is "the Classic under the heading Local". The headings of the cards on the
@@ -183,6 +200,7 @@ async function screens(dev) {
       const narrow = narrowestLabel(nodes);
       if (narrow) note += `, narrowest label "${narrow.text}" ${narrow.ratio.toFixed(2)}`;
       note += ` | on screen: ${visibleWords(nodes, 14).join(' / ')}`;
+      if (s.expectText && !nodes.some((n) => n.text.includes(s.expectText))) issues.push(`the screen does not say "${s.expectText}"`);
       if (s.pieces && s.pieces.mode === 'bw') {
         const verdict = await judgeGamePieces(dev, s);
         issues.push(...verdict.issues);
@@ -315,7 +333,7 @@ async function touches2p(dev) {
         source = 'photograph';
       }
     }
-    if (board === null) throw new Error('the 2-player board is neither in the tree nor in the photograph');
+    if (board === null) throw new Error(`the 2-player board is neither in the tree nor in the photograph (dark squares: ${JSON.stringify(darkSquareMeasure(dev.screenshot()))})`);
     const issues = [];
     if (Math.abs(board.w - board.h) > 2) issues.push(`the board is not square: ${board.w}x${board.h}`);
     for (const target of ['e2', 'b1', 'g1', 'a2', 'h2', 'd1', 'a1', 'h1', 'c2', 'f2']) {
@@ -347,6 +365,8 @@ async function touches2p(dev) {
 /** Both Bughouse boards: a tap at the computed middle of e2 on EACH board must select it there (the legal squares are labelled "can move here"), and the other board's selection must stay. */
 async function touchesBughouse(dev) {
   await scenario(dev, 'touch: Bughouse boards', async () => {
+    // four humans on two boards need more than a 360 x 640 dp window (the setup refuses them, checked by the screens above): the two-board touches run on the large phone
+    if (profile.id === 'small') return record('touch: Bughouse boards', [], 'skipped on the small phone: the two-board setup is refused there by design');
     await toHome(dev);
     await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse local' }, { id: 'preset-four' }, { id: 'bughouse-start' }, { text: '3 min' }]);
     await sleep(1500);
@@ -488,7 +508,7 @@ async function online(dev) {
   await scenario(dev, 'online: Bughouse game', async () => {
     await toHome(dev);
     execFileSync('bash', ['scripts/android/backend.sh', 'buddy'], { stdio: 'inherit' }); // the phone's own opponent: one human + one buddy
-    await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse online' }, { text: '1 min' }]);
+    await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse online' }, { text: '5 min' }]);
     const queued = await dev.waitFor('the queue screen', (list) => list.some((n) => n.id === 'bughouse-queue' || n.id.startsWith('bughouse-queue-')), 20_000);
     await dev.snapshot('online-queue');
     const queueIssues = [...crashIssues(queued), ...textIssues(queued, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`)];
@@ -616,10 +636,11 @@ async function offline(dev) {
     await scenario(dev, `offline: ${name}`, async () => {
       if (!signedIn && (name === 'Home' || name === 'Analysis list')) return record(`offline: ${name}`, [], 'not signed in (see the online phase): this section is not shown to a guest, nothing to check');
       if (name !== 'Home') await toHome(dev);
-      const t0 = Date.now();
+      let t0 = Date.now();
       if (name === 'Home') {
         await dev.relaunch();
         await dev.waitFor('the tab bar', onTabs, 90_000, 500);
+        t0 = Date.now(); // Home is up: the 8 s count from here (the first render of a development bundle takes 10 s of its own)
       } else {
         for (const step of steps) await dev.tapStep(step, 150);
       }
