@@ -224,9 +224,9 @@ export class Device {
   }
 
   // slow swipes (700 ms): a quick one leaves the list flinging, and a tap on a moving list lands on whatever passes under the finger
-  scrollDown() {
-    const { w, h } = this.display;
-    this.swipe(w / 2, h * 0.78, w / 2, h * 0.28, 700);
+  scrollDown(x = this.display.w / 2) {
+    const { h } = this.display;
+    this.swipe(x, h * 0.78, x, h * 0.28, 700);
   }
 
   scrollUp() {
@@ -303,7 +303,15 @@ export class Device {
       await sleep(450);
       nodes = await this.dump();
       node = findOne(nodes, step);
-      if (node === null && fingerprint(nodes) === before) break; // nothing moved: the end of the list
+      if (node === null && fingerprint(nodes) === before) {
+        // Nothing moved. The end of the list - or a swipe that a game board's touch layer took (the middle of the screen is a board on a game screen, and a selected piece or a premove makes
+        // the board keep the touch). One more swipe along the left margin, which no board covers, before calling it the end.
+        this.scrollDown(this.display.w * 0.06);
+        await sleep(450);
+        nodes = await this.dump();
+        node = findOne(nodes, step);
+        if (node === null && fingerprint(nodes) === before) break;
+      }
     }
     // a blind run to the bottom can overshoot a card that sits a little above it: look back up, half a screen at a time
     for (let i = 0; node === null && step.blind && i < 5; i++) {

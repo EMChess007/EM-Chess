@@ -421,9 +421,10 @@ async function touches2p(dev) {
     let state = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50, 40_000);
     let board = null;
     let source = 'beacon';
+    let rectNote = '';
     if (state) board = rectOfState(state);
     else {
-      // no beacon (a build without it): the tree, then the photograph
+      // no rectangle from the app (a build without the beacon, or a rectangle that never arrived): the tree, then the photograph
       source = 'tree';
       try {
         board = await boardNode(dev, 'chess-board');
@@ -434,7 +435,14 @@ async function touches2p(dev) {
           source = 'photograph';
         } else throw new Error(`the 2-player board is not reported by the app, nor in the tree, nor in the photograph (dark squares: ${JSON.stringify(darkSquareMeasure(dev.screenshot()))})`);
       }
-      issues.push('the app reported no state for the board (no beacon): the board was found without it');
+      // the app may have reported the position and the selection without a rectangle (the rectangle is only the geometry): the touches are then still judged by what the app says
+      const reportedState = dev.beacon.get('state-board-2p');
+      if (reportedState === null) issues.push('the app reported no state for the board (no beacon): the board was found without it');
+      else {
+        log(`the app's state for the 2-player board came without a rectangle: ${JSON.stringify(reportedState)}; the board was found in the ${source}`);
+        state = reportedState;
+        rectNote = ' (the app reported no rectangle)';
+      }
     }
     if (Math.abs(board.w - board.h) > 2) issues.push(`the board is not square: ${board.w}x${board.h}`);
     const orientation = () => dev.beacon.get('state-board-2p')?.orientation ?? 'w';
@@ -517,7 +525,7 @@ async function touches2p(dev) {
     // the finding about the tap, kept in the log whatever the verdict
     log(`2-player board touches: ${JSON.stringify(verdicts)} (tap = input tap worked, press = only the 90 ms touch worked, neither = not selected at all)`);
     for (const n of notes) log(`  ${n}`);
-    record('touch: 2-player board', issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1} (from the ${source}); ${JSON.stringify(verdicts)}${destinationMissing ? " - FINDING: the last-move highlight is on e2 but not on e4" : ""}${verdicts.press > 0 ? ' - input tap alone was not understood' : ''}`);
+    record('touch: 2-player board', issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1} (from the ${source}${rectNote});${JSON.stringify(verdicts)}${destinationMissing ? " - FINDING: the last-move highlight is on e2 but not on e4" : ""}${verdicts.press > 0 ? ' - input tap alone was not understood' : ''}`);
   });
 }
 

@@ -163,3 +163,17 @@ describe('it exists only in the end-to-end build', () => {
     expect(readFileSync(join(root, 'scripts/android/lib/beacon.mjs'), 'utf8')).toContain('export const BEACON_PORT = 8765;');
   });
 });
+
+describe('the driver keeps the rectangle of a mounted board', () => {
+  it('carries the last rectangle over to a state of the SAME mount that came without one, never to another mount', async () => {
+    const { Beacon } = await import('../../../scripts/android/lib/beacon.mjs');
+    const beacon = new Beacon();
+    const rect = { x: 46, y: 501, w: 987, h: 987 };
+    beacon.channels.set('state-board-2p', { state: { mount: 3, fen: 'a', rect }, seq: 1, at: 0 });
+    expect(beacon.withKnownRect('state-board-2p', { mount: 3, fen: 'b' })).toEqual({ mount: 3, fen: 'b', rect });
+    expect(beacon.withKnownRect('state-board-2p', { mount: 4, fen: 'b' })).toEqual({ mount: 4, fen: 'b' });
+    const moved = { x: 0, y: 0, w: 500, h: 500 };
+    expect(beacon.withKnownRect('state-board-2p', { mount: 3, fen: 'b', rect: moved }).rect).toEqual(moved);
+    expect(beacon.withKnownRect('state-board-other', { mount: 3, fen: 'b' })).toEqual({ mount: 3, fen: 'b' });
+  });
+});

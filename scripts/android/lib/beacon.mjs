@@ -31,7 +31,7 @@ export class Beacon {
         req.on('end', () => {
           try {
             const { channel, state } = JSON.parse(body);
-            if (typeof channel === 'string' && state && typeof state === 'object') this.channels.set(channel, { state, seq: ++this.seq, at: Date.now() });
+            if (typeof channel === 'string' && state && typeof state === 'object') this.channels.set(channel, { state: this.withKnownRect(channel, state), seq: ++this.seq, at: Date.now() });
             res.writeHead(204).end();
           } catch {
             res.writeHead(400).end();
@@ -41,6 +41,16 @@ export class Beacon {
       this.server.once('error', reject);
       this.server.listen(port, '0.0.0.0', () => resolve(this));
     });
+  }
+
+  /**
+   * A state that arrives without the board's rectangle (the probe sends the state at once and the measured rectangle a moment later; two POSTs can also overtake each other) keeps the
+   * rectangle the same mounted board reported last: the rectangle is geometry, and the probe re-measures it every 1.5 s, so a board that moved is corrected by its next report.
+   */
+  withKnownRect(channel, state) {
+    const previous = this.channels.get(channel)?.state;
+    if (state.rect || !previous?.rect || previous.mount !== state.mount) return state;
+    return { ...state, rect: previous.rect };
   }
 
   stop() {
