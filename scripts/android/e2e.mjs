@@ -87,7 +87,7 @@ let relaunches = 0;
 /** Back to the Home tab: the app has no Android back handling, so use its own "‹ Back" / "‹ Menu" links; a dialog or a game in progress is cleared by starting the app afresh. */
 async function toHome(dev) {
   for (let i = 0; i < 6; i++) {
-    const nodes = await dev.dump();
+    const nodes = await dev.current();
     if (onTabs(nodes) && findNodes(nodes, { id: 'button1' }).length === 0) {
       const home = findNodes(nodes, { text: 'Home' }).sort((a, b) => b.bounds.y1 - a.bounds.y1)[0];
       dev.tap(home.bounds.cx, home.bounds.cy);
@@ -162,7 +162,7 @@ async function screens(dev) {
     await scenario(dev, `screen ${s.id}`, async () => {
       await toHome(dev);
       await dev.runSteps(s.steps.map(phoneStep));
-      await sleep(1200);
+      await sleep(600);
       const nodes = await dev.dump();
       const issues = [...crashIssues(nodes), ...textIssues(nodes, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`)];
       let note = `${nodes.length} nodes`;
@@ -243,7 +243,8 @@ async function gallery(dev) {
         const parsed = parseAnyGalleryLabel(n.desc);
         if (!parsed) continue;
         const b = n.bounds;
-        if (b.y1 < viewport.y1 || b.y2 > viewport.y2 || b.x1 < 0 || b.x2 > png.width) continue; // only a cell that is wholly on screen
+        // only a cell that is wholly on screen: a cell the scroll view clips has a short box (the tree reports the visible part), and every cell is square
+        if (b.y1 < viewport.y1 || b.y2 > viewport.y2 || b.x1 < 0 || b.x2 > png.width || Math.abs(b.w - b.h) > 2) continue;
         if (judged.has(n.desc)) continue;
         judged.add(n.desc);
         fresh++;

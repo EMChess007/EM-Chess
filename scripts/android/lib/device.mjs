@@ -102,6 +102,7 @@ export class Device {
         const xml = extractXml(out);
         if (xml) {
           this.last = { xml, nodes: parseHierarchy(xml) };
+          this.fresh = true; // until the next touch
           if (save) writeFileSync(join(this.outDir, `${save}.xml`), xml);
           // Android's one-time "Viewing full screen - swipe down to exit" notice (the app hides the navigation bar) sits over the app: "Got it" dismisses it, once.
           const gotIt = this.last.nodes.find((n) => n.text === 'Got it' && n.bounds && n.pkg !== PACKAGE);
@@ -157,15 +158,23 @@ export class Device {
   // --- touching -------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
   tap(x, y) {
+    this.fresh = false;
     this.sh(`input tap ${Math.round(x)} ${Math.round(y)}`);
   }
 
   swipe(x1, y1, x2, y2, ms = 300) {
+    this.fresh = false;
     this.sh(`input swipe ${Math.round(x1)} ${Math.round(y1)} ${Math.round(x2)} ${Math.round(y2)} ${ms}`);
   }
 
   key(code) {
+    this.fresh = false;
     this.sh(`input keyevent ${code}`);
+  }
+
+  /** The last tree when nothing has touched the phone since (a dump costs several seconds on the CI emulator), else a new one. */
+  async current() {
+    return this.fresh ? this.last.nodes : this.dump();
   }
 
   /** Types text into the focused field. Letters, digits and @ . _ - only: nothing the shell or `input` would reinterpret. */
@@ -232,7 +241,7 @@ export class Device {
         await sleep(700);
       }
     }
-    let nodes = await this.dump();
+    let nodes = await this.current();
     let node = findOne(nodes, step);
     let scrolled = false;
     for (let i = 0; node === null && i < scrolls; i++) {
@@ -258,8 +267,17 @@ export class Device {
     if (step.fill) throw new Error('fill steps are not used on the phone');
     const node = await this.find(step);
     this.log(`  tap ${JSON.stringify(step)} -> ${node.cls.split('.').pop()} "${(node.text || node.desc || node.id).slice(0, 30)}" ${node.bounds.w}x${node.bounds.h} at ${node.bounds.cx},${node.bounds.cy}`);
+    const before = fingerprint(this.last.nodes);
     this.tap(node.bounds.cx, node.bounds.cy);
     await sleep(settleMs);
+    // A development build fetches a screen's code from Metro the first time it is opened (lazy bundling), which can take many seconds: the next step must not look at the OLD screen (the first
+    // run took the time-control screen for the game it was starting). Wait, up to 8 s, until the tree is not the one the tap was made on.
+    const t0 = Date.now();
+    for (;;) {
+      const nodes = await this.dump();
+      if (fingerprint(nodes) !== before || Date.now() - t0 > 8000) break;
+      await sleep(500);
+    }
   }
 
   async runSteps(steps) {
