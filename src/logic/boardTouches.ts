@@ -114,8 +114,9 @@ export type OriginSource = 'rect' | 'measure' | 'none';
  * So the rectangle is trusted on the web only; a phone uses `measure`, and when it has neither there is no origin (the local frame, `gridTapCell`, needs none).
  */
 export function originSource(os: string, hasRect: boolean, hasMeasure: boolean): OriginSource {
-  if (os === 'web') return hasRect ? 'rect' : hasMeasure ? 'measure' : 'none';
-  return hasMeasure ? 'measure' : 'none';
+  // PROOF BRANCH: the command #26 origin fix switched OFF - the rectangle comes first on a phone too (the code before #26)
+  void os;
+  return hasRect ? 'rect' : hasMeasure ? 'measure' : 'none';
 }
 
 // --- The grid: the dead zone and the cell -----------------------------------------------------------------------------------------------------
