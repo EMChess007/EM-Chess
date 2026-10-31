@@ -19,6 +19,11 @@ on:
         description: 'chess-app-backend ref to test against (default: the same branch name, else main)'
         required: false
         default: ''
+      all_screens:
+        description: 'Run EVERY screen of the matrix lists, not only the core ones (a long run)'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: android-e2e-${{ github.ref }}
@@ -32,6 +37,7 @@ jobs:
     env:
       OUT: ${{ github.workspace }}/android-e2e-out
       EXPO_NO_TELEMETRY: '1'
+      ANDROID_E2E_ALL: ${{ github.event.inputs.all_screens == 'true' && '1' || '' }}
     services:
       postgres:
         image: postgres:16

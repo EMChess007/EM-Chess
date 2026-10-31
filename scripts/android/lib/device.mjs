@@ -105,7 +105,8 @@ export class Device {
           this.fresh = true; // until the next touch
           if (save) writeFileSync(join(this.outDir, `${save}.xml`), xml);
           // Android's one-time "Viewing full screen - swipe down to exit" notice (the app hides the navigation bar) sits over the app: "Got it" dismisses it, once.
-          const gotIt = this.last.nodes.find((n) => n.text === 'Got it' && n.bounds && n.pkg !== PACKAGE);
+          // (and a system "<app> isn't responding" box, which a loaded CI emulator shows for its launcher now and then: "Wait" dismisses it)
+          const gotIt = this.last.nodes.find((n) => (n.text === 'Got it' || (n.text === 'Wait' && this.last.nodes.some((m) => /isn't responding/.test(m.text)))) && n.bounds && n.pkg !== PACKAGE);
           if (gotIt && !this.dismissing) {
             this.dismissing = true;
             this.tap(gotIt.bounds.cx, gotIt.bounds.cy);

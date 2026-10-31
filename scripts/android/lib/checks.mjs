@@ -102,7 +102,7 @@ export const CLASSIC_DARK = [0xb5, 0x88, 0x63];
  * The board's grid read from a SCREENSHOT, for the screens whose accessibility tree lags the screen: the bounding box of the Classic dark squares (a1 and h8 are dark, so it is the
  * whole grid). { x1, y1, w, h } in pixels, or null when no square-shaped region of that colour is there.
  */
-export function boardFromScreenshot(png, dark = CLASSIC_DARK, tolerance = 8) {
+export function boardFromScreenshot(png, dark = CLASSIC_DARK, tolerance = 2) {
   const columns = new Int32Array(png.width);
   const rows = new Int32Array(png.height);
   let count = 0;
@@ -138,9 +138,33 @@ export function boardFromScreenshot(png, dark = CLASSIC_DARK, tolerance = 8) {
   const [y1, y2] = down;
   const w = x2 - x1 + 1;
   const h = y2 - y1 + 1;
-  // the grid is square, and its dark squares are about half of its area
-  if (Math.abs(w - h) > 4 || count < w * h * 0.2) return null;
-  return { x1, y1, x2: x2 + 1, y2: y2 + 1, w, h };
+  // the grid is square (to within a cell's anti-aliasing: 1 %), and its dark squares are about half of its area
+  if (Math.abs(w - h) > Math.max(6, w * 0.02) || count < w * h * 0.2) return null;
+  // the rectangle of the grid is a square: its side is the smaller measure, from its top-left corner
+  const side = Math.min(w, h);
+  return { x1, y1, x2: x1 + side, y2: y1 + side, w: side, h: side };
+}
+
+/** What `boardFromScreenshot` measured (for the failure message when it finds no board): the extent of the dark-square colour and how many pixels have it. */
+export function darkSquareMeasure(png, dark = CLASSIC_DARK, tolerance = 2) {
+  let x1 = png.width;
+  let y1 = png.height;
+  let x2 = -1;
+  let y2 = -1;
+  let count = 0;
+  for (let y = 0; y < png.height; y++) {
+    for (let x = 0; x < png.width; x++) {
+      const i = (y * png.width + x) * 4;
+      if (Math.abs(png.data[i] - dark[0]) <= tolerance && Math.abs(png.data[i + 1] - dark[1]) <= tolerance && Math.abs(png.data[i + 2] - dark[2]) <= tolerance) {
+        count++;
+        x1 = Math.min(x1, x);
+        x2 = Math.max(x2, x);
+        y1 = Math.min(y1, y);
+        y2 = Math.max(y2, y);
+      }
+    }
+  }
+  return { count, x1, y1, x2, y2, image: `${png.width}x${png.height}` };
 }
 
 /** The pieces of the standard start position by square, as markers ("wk", "bp"): what a fresh game shows. */

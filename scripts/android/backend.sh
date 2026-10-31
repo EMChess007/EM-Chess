@@ -52,7 +52,7 @@ case "${1:-}" in
     # Two buddies queue now: two humans start a game of their own (with bots) after the fill wait, which gives the Spectate list something to show. The phone's own opponent is a THIRD
     # buddy, started on demand (`buddy`), so that the phone's queue is one human + one buddy.
     for n in 1 2; do
-      BACKEND_URL=http://localhost:3000 TIME_CONTROL=1 nohup $tsx scripts/bughouse-buddy.mjs > "$state/buddy$n.log" 2>&1 &
+      BACKEND_URL=http://localhost:3000 TIME_CONTROL=5 nohup $tsx scripts/bughouse-buddy.mjs > "$state/buddy$n.log" 2>&1 &
       echo $! > "$state/buddy$n.pid"
     done
     sleep 3
@@ -61,9 +61,12 @@ case "${1:-}" in
     ;;
   buddy)
     stop_one "$state/buddy3.pid" # a previous profile's phone opponent: one at a time
-    BACKEND_URL=http://localhost:3000 TIME_CONTROL=1 nohup $tsx scripts/bughouse-buddy.mjs > "$state/buddy3.log" 2>&1 &
+    BACKEND_URL=http://localhost:3000 TIME_CONTROL=5 nohup $tsx scripts/bughouse-buddy.mjs > "$state/buddy3.log" 2>&1 &
     echo $! > "$state/buddy3.pid"
     echo "[backend] a third buddy started (pid $(cat "$state/buddy3.pid"))"
+    sleep 8
+    echo "[backend] its first lines:"
+    head -n 4 "$state/buddy3.log" || true
     ;;
   stop)
     for n in 1 2 3; do stop_one "$state/buddy$n.pid"; done
