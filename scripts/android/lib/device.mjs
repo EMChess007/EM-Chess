@@ -109,7 +109,8 @@ export class Device {
         // (`uiautomator dump /dev/tty` prints only its trailer through `adb shell`, which has no terminal: the tree goes to a file on the phone and is read back.)
         // The file is REMOVED first and uiautomator's own message is kept (command #30): `dump && cat` used to read whatever file was on the phone when the dump FAILED ("ERROR: could not get
         // idle state." on a screen that keeps repainting, exit status 0), i.e. the previous screen's tree - the "stale tree" of the game screens. A failed dump now fails, and says why.
-        const out = this.sh('rm -f /sdcard/e2e-ui.xml; uiautomator dump /sdcard/e2e-ui.xml 2>&1; cat /sdcard/e2e-ui.xml 2>/dev/null', { timeout: 40_000 });
+        // (`; true`: the shell's exit status is that of `cat`, which fails when the dump failed - and then uiautomator's own message, the thing worth reading, would be lost with the exception)
+        const out = this.sh('rm -f /sdcard/e2e-ui.xml; uiautomator dump /sdcard/e2e-ui.xml 2>&1; cat /sdcard/e2e-ui.xml 2>/dev/null; true', { timeout: 40_000 });
         const xml = extractXml(out);
         if (!xml) this.noteDumpFailure(out);
         if (xml) {
@@ -144,6 +145,15 @@ export class Device {
     this.dumpFailures = this.dumpFailures ?? {};
     this.dumpFailures[message] = (this.dumpFailures[message] ?? 0) + 1;
     if (Object.values(this.dumpFailures).reduce((a, b) => a + b, 0) <= 6) this.log(`  [dump failed] ${message}`);
+    // the first failure of a run also says which window the phone thinks is in front (a dialog, the IME, a second window would explain a tree that cannot be read)
+    if (!this.dumpDiagnosed) {
+      this.dumpDiagnosed = true;
+      try {
+        this.log(`  [dump failed] windows: ${this.sh("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp|mInputMethodTarget' | head -5").replace(/\s+/g, ' ').slice(0, 400)}`);
+      } catch {
+        /* no diagnostics */
+      }
+    }
   }
 
   screenshot() {

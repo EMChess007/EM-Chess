@@ -252,18 +252,29 @@ export function parseGalleryLabel(label) {
  * The verdict on one cell of a screenshot: a vector piece by its ink, an image piece by looking like its own asset (`assets`: { wk: image, ... }; the piece fills 85 % of the cell,
  * centred). `cell` is the rectangle of the SQUARE in the screenshot. Returns an issue text or null.
  */
-export function judgePieceCell(screenshot, cell, marker, assets = null, lightMax = undefined) {
+export function judgePieceCell(screenshot, cell, marker, assets = null, lightMax = undefined, hasBadge = false) {
   // The cell is cropped 2 px inside the bounds the tree gives: the judges take the square's colour from the crop's top-left pixel, and a bound off by one pixel (cells that touch, a light row
   // under a dark one) would put a neighbour's colour there (the first emulator run judged every black piece on a light square as "blank" for that reason).
   const inset = CELL_INSET_PX;
   const png = crop(screenshot, { x: cell.x + inset, y: cell.y + inset, w: cell.w - 2 * inset, h: cell.h - 2 * inset });
   if (png.width < 8 || png.height < 8) return `${marker}: the cell is ${png.width}x${png.height} px, too small to judge`;
+  // A king's cell in Bughouse carries a team badge (a blue diamond or a yellow circle) in its top-right corner: it is not part of the piece, and the yellow one is LIGHT (command #30: a black
+  // king read "20 % light" on the small phone). The corner is painted over with the square's own colour before the piece is judged.
+  if (hasBadge) paintCorner(png);
   if (assets === null) return judgeCell(marker, png);
   const rect = { x: cell.w * 0.075 - inset, y: cell.h * 0.075 - inset, w: cell.w * 0.85, h: cell.h * 0.85 };
   return judgeImageCell(marker, png, assets, rect, lightMax);
 }
 
 export const CELL_INSET_PX = 2;
+
+/** Paints the top-right corner (the badge's place: its box starts 4 % in from the corner and is 18 % wide) with the cell's top-left pixel. Changes `png` in place. */
+export function paintCorner(png) {
+  const colour = [png.data[0], png.data[1], png.data[2], 255];
+  for (let y = 0; y < Math.ceil(png.height * 0.3); y++) {
+    for (let x = Math.floor(png.width * 0.7); x < png.width; x++) png.data.set(colour, (y * png.width + x) * 4);
+  }
+}
 
 /** The light share (android-matrix-pieces.mjs `lightShare`) of one cell of a screenshot, cropped as judgePieceCell crops it. */
 export function lightShareOfCell(screenshot, cell) {

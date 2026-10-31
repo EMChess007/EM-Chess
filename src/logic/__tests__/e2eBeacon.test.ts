@@ -141,7 +141,13 @@ describe('it exists only in the end-to-end build', () => {
   });
 
   it('the switch is set on Metro by the run\'s script and never in a workflow, an env file or a deployment config', () => {
-    expect(readFileSync(join(root, 'scripts/android/metro.sh'), 'utf8')).toContain('EXPO_PUBLIC_E2E_BEACON="http://10.0.2.2:8765"');
+    // (a space after the closing quote: the first version of the line ran into the next variable's name and the app never got a valid address)
+    const metro = readFileSync(join(root, 'scripts/android/metro.sh'), 'utf8');
+    expect(metro).toMatch(/ EXPO_PUBLIC_E2E_BEACON="http:\/\/10\.0\.2\.2:8765" EXPO_PUBLIC_/);
+    // every assignment on that command line is its own word, and the beacon value is a valid origin for the app
+    const line = metro.split('\n').find((l) => l.includes('EXPO_PUBLIC_E2E_BEACON=')) ?? '';
+    for (const assignment of line.trim().replace(/\s*\\$/, '').split(/ (?=[A-Z0-9_]+=)/)) expect(assignment, assignment).toMatch(/^[A-Z0-9_]+="?[^"\s]*"?$/);
+    expect(readE2eBeaconUrl(/EXPO_PUBLIC_E2E_BEACON="([^"]*)"/.exec(line)?.[1], true)).toBe('http://10.0.2.2:8765');
     for (const file of ['.github/workflows/android-e2e.yml', '.github/workflows/ci.yml', 'app.json', 'eas.json', 'backend/.env.example', 'backend/render.yaml']) {
       let text = '';
       try {

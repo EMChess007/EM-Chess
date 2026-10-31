@@ -22,7 +22,7 @@ case "${1:-}" in
       echo "[metro] port $port is already served by something else: refusing to start" >&2
       exit 1
     fi
-    EXPO_PUBLIC_API_URL="http://10.0.2.2:3000" EXPO_PUBLIC_E2E=1 EXPO_PUBLIC_E2E_BEACON="http://10.0.2.2:8765"EXPO_PUBLIC_USE_ONLINE_BACKEND=false EXPO_NO_TELEMETRY=1 CI=1 \
+    EXPO_PUBLIC_API_URL="http://10.0.2.2:3000" EXPO_PUBLIC_E2E=1 EXPO_PUBLIC_E2E_BEACON="http://10.0.2.2:8765" EXPO_PUBLIC_USE_ONLINE_BACKEND=false EXPO_NO_TELEMETRY=1 CI=1 \
       nohup npx expo start --port "$port" --offline > "$state/metro.log" 2>&1 &
     echo $! > "$pidfile"
     for _ in $(seq 1 120); do

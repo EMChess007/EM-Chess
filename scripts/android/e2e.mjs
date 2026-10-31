@@ -171,7 +171,7 @@ async function judgeGamePieces(dev, screen) {
     // a Bughouse cell: testID "A-e2", label "e2, board A, White Pawn, ..."
     if (/^[AB]-[a-h][1-8]$/.test(n.id)) {
       const marker = markerFromWords(n.desc);
-      if (marker) cells.push({ marker, rect: { x: n.bounds.x1, y: n.bounds.y1, w: n.bounds.w, h: n.bounds.h }, where: n.id });
+      if (marker) cells.push({ marker, rect: { x: n.bounds.x1, y: n.bounds.y1, w: n.bounds.w, h: n.bounds.h }, where: n.id, badge: marker[1] === "k" });
     }
   }
   if (cells.length === 0) {
@@ -194,7 +194,7 @@ async function judgeGamePieces(dev, screen) {
   if (screen.pieces.allKinds) for (const c of ['w', 'b']) for (const k of 'pnbrqk') if (!seen.has(c + k)) issues.push(`${c + k} is not on the screen`);
   for (const c of cells) {
     if (c.rect.x < 0 || c.rect.y < 0 || c.rect.x + c.rect.w > png.width || c.rect.y + c.rect.h > png.height) continue;
-    const problem = judgePieceCell(png, c.rect, c.marker);
+    const problem = judgePieceCell(png, c.rect, c.marker, null, undefined, c.badge === true);
     // a bot may have moved a piece between the tree and the photograph: an empty cell is inconclusive on a screen with live bots, a wrong colour never is
     if (problem && !(screen.pieces.liveBots && problem.includes('no piece found'))) issues.push(`${c.where}: ${problem}`);
   }
@@ -329,7 +329,7 @@ async function gallery(dev) {
     log(`gallery: the largest light share of a BLACK piece per theme, as photographed: ${JSON.stringify(Object.fromEntries(Object.entries(lightByTheme).map(([k, v]) => [k, Number(v.toFixed(3))])))} (limits ${JSON.stringify(LIGHT_SHARE_BY_THEME)})`);
     if (judged.size < GALLERY_CELLS) issues.push(`only ${judged.size} of ${GALLERY_CELLS} gallery cells were seen and judged`);
     if (Object.keys(failuresBy).length > 0) issues.unshift(`failed cells by group: ${JSON.stringify(failuresBy)}`);
-    record('piece gallery pixels', issues, `${judged.size} cells judged: ${JSON.stringify(perTheme)}`);
+    record('piece gallery pixels', issues, `${judged.size} cells judged: ${JSON.stringify(perTheme)}; largest light share of a black piece per theme ${JSON.stringify(Object.fromEntries(Object.entries(lightByTheme).map(([k, v]) => [k, Number(v.toFixed(3))])))} against the limits ${JSON.stringify(LIGHT_SHARE_BY_THEME)}`);
   });
 }
 
@@ -697,7 +697,9 @@ async function online(dev) {
     log(`premove drawn while waiting: ${premoveSeen} (false only if the opponent had already answered)`);
 
     // the team bar: the Quick grid (ten buttons) and the team-chat panel with its "only your partner sees this" header
-    const bar = await dev.waitFor('the Quick / Team chat bar', (list) => list.some((n) => n.id === 'bughouse-quick'), 15_000);
+    // (the bar sits under the boards: on the cramped phone it is below the fold, so the finder scrolls to it)
+    await dev.find({ id: 'bughouse-quick' });
+    const bar = await dev.dump();
     issues.push(...textIssues(bar, dev.display).map((i) => `team bar ${i.kind}: "${i.text}" - ${i.detail}`));
     await dev.runSteps([{ id: 'bughouse-quick' }]);
     const grid = await dev.dump();

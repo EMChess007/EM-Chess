@@ -9,6 +9,9 @@ describe('isClockReading', () => {
   it('accepts the readings of the clocks', () => {
     for (const reading of ['5:00', '0:59', '12:34', '1:00:00', '0:05.3', '59.9', ' 4:59 ']) expect(isClockReading(reading), reading).toBe(true);
     expect(isClockReading(['4', ':', '09'])).toBe(true);
+    // the local screens write the player and the clock in one Text ("White: 4:59"): the label counts, a number elsewhere in a sentence does not
+    for (const label of ['White: 4:59', 'Black: 0:05.3', 'Black - 1:00:00', ['White', ': 5:00'], 'Guest 12:00']) expect(isClockReading(label), JSON.stringify(label)).toBe(true);
+    expect(isClockReading('10:30 pm tomorrow')).toBe(false);
     expect(isClockReading(459)).toBe(false); // a bare number is a score or a count, not a clock
   });
 

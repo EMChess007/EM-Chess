@@ -50,7 +50,8 @@ function emulatedScale(): number {
  * can run; nothing else about the text changes.
  */
 const E2E_QUIET_CLOCKS = typeof __DEV__ !== 'undefined' && __DEV__ && process.env.EXPO_PUBLIC_E2E === '1';
-const CLOCK_READING = /^\s*(\d{1,2}:)?\d{1,2}:\d{2}(\.\d)?\s*$|^\s*\d{1,2}\.\d\s*$/;
+// a reading alone ("4:59", "0:05.3", "59.9") or at the END of a label ("White: 4:59", "Black - 1:00:00"): the local screens write the name and the clock in ONE Text
+const CLOCK_READING = /(?:^|[\s:])(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d)?\s*$|^\s*\d{1,2}\.\d\s*$/;
 export function isClockReading(children: unknown): boolean {
   const text = Array.isArray(children) ? children.map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : '\u0000')).join('') : typeof children === 'string' || typeof children === 'number' ? String(children) : '';
   return CLOCK_READING.test(text);

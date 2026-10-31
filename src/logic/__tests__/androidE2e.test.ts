@@ -225,6 +225,34 @@ describe('pieces', () => {
   });
 });
 
+describe('a king\'s team badge (command #30)', () => {
+  // a 60 x 60 "screenshot" of one Bughouse cell: a light square, a black king (dark disc, grey ring) and the yellow Team 2 badge in the top-right corner
+  const withBadge = () => {
+    const size = 60;
+    const data = new Uint8Array(size * size * 4);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const d = Math.hypot(x - 29.5, y - 31.5);
+        const c = d <= 12 ? [0x1d, 0x1d, 0x1d] : d <= 14 ? [0x66, 0x66, 0x66] : [0xf0, 0xd9, 0xb5];
+        data.set([c[0], c[1], c[2], 255], (y * size + x) * 4);
+      }
+    }
+    for (let y = 3; y < 14; y++) for (let x = 46; x < 57; x++) data.set([0xf9, 0xa8, 0x25, 255], (y * size + x) * 4);
+    return { width: size, height: size, data };
+  };
+
+  it('the badge is not part of the piece: with it a black king judged "light", masked it is clean', () => {
+    const shot = withBadge();
+    const cell = { x: 0, y: 0, w: 60, h: 60 };
+    expect(judgePieceCell(shot, cell, 'bk')).toContain('of the piece is light');
+    expect(judgePieceCell(shot, cell, 'bk', null, undefined, true)).toBeNull();
+    // the mask does not hide a king that really is wrong: a WHITE disc in the same cell is still reported
+    const white = withBadge();
+    for (let i = 0; i < white.data.length; i += 4) if (white.data[i] === 0x1d) white.data.set([0xfa, 0xfa, 0xfa], i);
+    expect(judgePieceCell(white, cell, 'bk', null, undefined, true)).toContain('bk: drawn rgb');
+  });
+});
+
 describe('profiles, workflow and the test-only switch', () => {
   it('the two phones are the ones the command names', () => {
     expect(PROFILES.small).toMatchObject({ size: '720x1280', density: 320, fontScale: 1.3 }); // 360 x 640 dp
