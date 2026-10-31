@@ -19,7 +19,7 @@ const StockfishBridge = forwardRef<StockfishBridgeHandle, StockfishBridgeProps>(
   { onLine, html },
   ref
 ) {
-  const webviewRef = useRef<WebView>(null);
+  const webviewRef = useRef<WebView<object>>(null);
 
   // Empty deps: the handle's behavior never changes (it always forwards through the ref), so
   // without this array React would recreate it — and re-invoke the parent's ref callback with
@@ -40,7 +40,8 @@ const StockfishBridge = forwardRef<StockfishBridgeHandle, StockfishBridgeProps>(
 
   return (
     <View style={styles.hidden} pointerEvents="none">
-      <WebView
+      {/* react-native-webview 14 declares `class WebView<P = undefined>` whose props are `WebViewProps & undefined` (= never): name the extra props `object`. */}
+      <WebView<object>
         ref={webviewRef}
         originWhitelist={['*']}
         source={{ html: html ?? buildStockfishHtml() }}

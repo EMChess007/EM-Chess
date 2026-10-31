@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 import { Pressable } from './AppPressable';
 import { Text, TextInput } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
@@ -31,7 +31,7 @@ export default function BughouseTeamBar({ partnerName, chat, quick, onQuick, onC
   const [draft, setDraft] = useState('');
   const [toast, setToast] = useState<QuickNotice | null>(null);
   const [unread, setUnread] = useState(0);
-  const scroller = useRef<ScrollView | null>(null);
+  const scroller = useRef<ScrollViewInstance | null>(null);
   const seenChat = useRef(chat.length);
 
   useEffect(() => {

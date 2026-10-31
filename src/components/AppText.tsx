@@ -1,5 +1,5 @@
 import { createContext, forwardRef, useContext } from 'react';
-import { Platform, StyleSheet, Text as RNText, TextInput as RNTextInput, type TextInputProps, type TextProps, type TextStyle } from 'react-native';
+import { Platform, StyleSheet, Text as RNText, TextInput as RNTextInput, type TextInputInstance, type TextInputProps, type TextInstance, type TextProps, type TextStyle } from 'react-native';
 import {
   areBundledFontsUsable,
   BODY_MAX_FONT_SIZE_MULTIPLIER,
@@ -43,7 +43,7 @@ function emulatedScale(): number {
   return readEmulatedFontScale(dev, platformOS(), (globalThis as Record<string, unknown>)[EMULATED_TEXT_SCALE_GLOBAL]);
 }
 
-export const Text = forwardRef<RNText, TextProps>(function Text({ style, maxFontSizeMultiplier, children, ...rest }, ref) {
+export const Text = forwardRef<TextInstance, TextProps>(function Text({ style, maxFontSizeMultiplier, children, ...rest }, ref) {
   const nested = useContext(InsideText);
   const flat = (StyleSheet.flatten(style) ?? {}) as TextStyle;
   const cap = maxFontSizeMultiplier ?? BODY_MAX_FONT_SIZE_MULTIPLIER;
@@ -65,12 +65,12 @@ export const Text = forwardRef<RNText, TextProps>(function Text({ style, maxFont
 });
 
 /** `Text` for dense controls (a seat strip, a clock row, a chip): grows at most DENSE_MAX_FONT_SIZE_MULTIPLIER x with the system font scale. A caller's own `maxFontSizeMultiplier` wins. */
-export const DenseText = forwardRef<RNText, TextProps>(function DenseText({ maxFontSizeMultiplier, ...rest }, ref) {
+export const DenseText = forwardRef<TextInstance, TextProps>(function DenseText({ maxFontSizeMultiplier, ...rest }, ref) {
   return <Text ref={ref} maxFontSizeMultiplier={maxFontSizeMultiplier ?? DENSE_MAX_FONT_SIZE_MULTIPLIER} {...rest} />;
 });
 
 /** Input text takes the bundled font and the cap; its line height is left to the platform (a fixed line height shifts the text inside an Android TextInput). */
-export const TextInput = forwardRef<RNTextInput, TextInputProps>(function TextInput({ style, maxFontSizeMultiplier, ...rest }, ref) {
+export const TextInput = forwardRef<TextInputInstance, TextInputProps>(function TextInput({ style, maxFontSizeMultiplier, ...rest }, ref) {
   const flat = (StyleSheet.flatten(style) ?? {}) as TextStyle;
   const family = flat.fontFamily ?? resolveFontFamily(flat.fontWeight, flat.fontStyle, areBundledFontsUsable());
   const fit: TextStyle = family && flat.fontFamily === undefined ? { fontFamily: family, fontWeight: 'normal', fontStyle: 'normal' } : {};

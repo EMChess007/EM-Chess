@@ -68,7 +68,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: steps.changes.outputs.code == 'true'
         with:
-          node-version: 20
+          node-version: 22
 
       - uses: actions/setup-java@v4
         if: steps.changes.outputs.code == 'true'

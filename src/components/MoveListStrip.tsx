@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 import { Pressable } from './AppPressable';
 import { Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
@@ -21,7 +21,7 @@ interface MoveListStripProps {
  * doesn't own any state itself — it just reports the tapped index back to the screen, which
  * drives its own (already-existing) position-review state. */
 export default function MoveListStrip({ moves, selectedIndex, autoScroll, onSelectMove }: MoveListStripProps) {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const colors = useAppColors();
   const styles = createStyles(colors);
 

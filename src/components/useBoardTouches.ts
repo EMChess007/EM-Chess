@@ -1,5 +1,5 @@
 import { useRef, type RefObject } from 'react';
-import { Platform, type GestureResponderEvent, type PointerEvent as RNPointerEvent, type View } from 'react-native';
+import { Platform, type GestureResponderEvent, type PointerEvent as RNPointerEvent, type ViewInstance } from 'react-native';
 import type { Cell } from '../logic/boardGestures';
 import { EMPTY_TOUCH_BOOK, fingerCell as fingerCellOf, gridTapCell, localOfTouch, originSource, stepTouches, type Point, type Tap, type TouchBook, type TouchEventIn, type TouchTarget } from '../logic/boardTouches';
 import type { PromotionPiece } from '../logic/bughouse';
@@ -69,9 +69,9 @@ type RawTouch = GestureResponderEvent['nativeEvent']['changedTouches'][number];
 
 export interface BoardTouches {
   /** Attach to the grid's container View. */
-  gridRef: RefObject<View | null>;
+  gridRef: RefObject<ViewInstance | null>;
   /** Attach to the transparent overlay View that covers the grid on a phone (rendered by the board): the touches of the overlay carry the grid's own frame. */
-  surfaceRef: RefObject<View | null>;
+  surfaceRef: RefObject<ViewInstance | null>;
   /** The touch props of the grid on the web: page coordinates against the grid's rectangle. */
   gridProps: TouchProps;
   /** The touch props of the overlay on a phone: locationX / locationY are the position in the grid's own frame (the overlay is the touch's target by construction). */
@@ -89,8 +89,8 @@ export function useBoardTouches(options: BoardTouchOptions): BoardTouches {
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const bookRef = useRef<TouchBook>(EMPTY_TOUCH_BOOK);
-  const gridRef = useRef<View>(null);
-  const surfaceRef = useRef<View>(null);
+  const gridRef = useRef<ViewInstance>(null);
+  const surfaceRef = useRef<ViewInstance>(null);
   const originRef = useRef<Point>({ x: 0, y: 0 });
   const pendingRef = useRef<Promise<void> | null>(null);
   const fingersRef = useRef<Record<string, DebugFinger>>({});

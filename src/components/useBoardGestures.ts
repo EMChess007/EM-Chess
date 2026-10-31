@@ -1,5 +1,5 @@
 import { useRef, useState, type RefObject } from 'react';
-import { PanResponder, type View } from 'react-native';
+import { PanResponder, type ViewInstance } from 'react-native';
 import { LONG_PRESS_MS, MOVE_THRESHOLD_PX, decideRelease, pixelToCell } from '../logic/boardGestures';
 import type { GridPoint } from './BoardAnnotations';
 
@@ -25,7 +25,7 @@ export interface BoardGestureOptions {
 
 export interface BoardGestures {
   /** Attach to the board's container View (and spread `panHandlers` onto the same View). */
-  containerRef: RefObject<View | null>;
+  containerRef: RefObject<ViewInstance | null>;
   /** Pass as the container's `onLayout`. */
   onLayout: () => void;
   panHandlers: ReturnType<typeof PanResponder.create>['panHandlers'];
@@ -66,7 +66,7 @@ export function useBoardGestures(options: BoardGestureOptions): BoardGestures {
     longPressTimer: ReturnType<typeof setTimeout> | null;
     armed: boolean;
   } | null>(null);
-  const containerRef = useRef<View>(null);
+  const containerRef = useRef<ViewInstance>(null);
   const boardOffsetRef = useRef({ x: 0, y: 0 });
   // The most recent not-yet-resolved remeasureBoardOffset() call, if any — see that function's
   // own doc comment for why onPanResponderRelease needs to be able to wait on this instead of
