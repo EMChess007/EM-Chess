@@ -780,6 +780,22 @@ async function online(dev) {
     if (moves === 0) issues.push('no move of mine reached the server and back');
     log(`premove drawn while waiting: ${premoveSeen} (false only if the opponent had already answered)`);
 
+    // the Resign control opens its dialog (appAlert: a native dialog with Cancel / Resign), Cancel keeps the game. Checked HERE, while the game is certainly running: a 5 minute game can end
+    // on time (the human's clock runs while the run is busy) before the final Resign step at the end of this scenario.
+    const isResignDialog = (list) => (findNodes(list, { text: 'cancel', ci: true, button: true }).length > 0 && findNodes(list, { text: 'resign', ci: true, button: true }).length > 0) || list.some((n) => n.id === 'button1');
+    try {
+      await dev.runSteps([{ id: 'bughouse-resign' }]);
+      const early = await dev.waitFor('the Resign dialog', isResignDialog, 12_000);
+      const cancel = findNodes(early, { text: 'cancel', ci: true, button: true })[0] ?? early.find((n) => n.id === 'button2');
+      if (cancel) dev.tap(cancel.bounds.cx, cancel.bounds.cy);
+      else dev.key(4);
+      await sleep(1200);
+      const after = await dev.dump().catch(() => []);
+      if (isResignDialog(after)) issues.push('the Resign dialog did not close on Cancel');
+    } catch (e) {
+      issues.push('the Resign control did not open its dialog: ' + String(e.message).slice(0, 220));
+    }
+
     // the team bar: the Quick grid (ten buttons) and the team-chat panel with its "only your partner sees this" header
     // (the bar sits under the boards: on the cramped phone it is below the fold, so the finder scrolls to it)
     await dev.find({ id: 'bughouse-quick' });
@@ -817,13 +833,17 @@ async function online(dev) {
     }
     // resign: the control asks "Resign?" (appAlert: a native dialog with Cancel / Resign), the dialog's button sends it, the server's snapshot ends the match. The result is any sign of a finished game:
     // a node whose id starts with game-over, or words like won / lost / resigned (the card sits UNDER the boards, below the fold on the small phone: the finder scrolls to it).
-    // (right after the restart the screen is up but the game may not be "live" yet - the app ignores the control until its first snapshot is back - so the tap is repeated until the dialog opens)
+    // (a 5 minute game can END ON TIME before this point - the human's clock runs while the run is busy elsewhere: then the control is disabled and the result is already on the screen)
+    const finished = (list) => list.find((n) => /^game-over/.test(n.id) || /\b(won|wins|lost|resigned|game over)\b/i.test(n.text));
     let confirmed = false;
     let lastError = '';
-    for (let attempt = 1; attempt <= 4 && !confirmed; attempt++) {
+    const alreadyOver = (await dev.dump().catch(() => [])).find((n) => /^game-over/.test(n.id));
+    if (alreadyOver) log('the game had already ended before the final Resign step (' + (alreadyOver.text || alreadyOver.id) + '): the Resign dialog was checked earlier, with Cancel');
+    // (right after the restart the screen is up but the game may not be "live" yet - the app ignores the control until its first snapshot is back - so the tap is repeated until the dialog opens)
+    for (let attempt = 1; attempt <= 4 && !confirmed && !alreadyOver; attempt++) {
       try {
         await dev.runSteps([{ id: 'bughouse-resign' }]);
-        const dialog = await dev.waitFor('the Resign dialog', (list) => findNodes(list, { text: 'resign', ci: true, button: true }).length > 1 || list.some((n) => n.id === 'button1'), 8_000);
+        const dialog = await dev.waitFor('the Resign dialog', isResignDialog, 8_000);
         const confirm = findNodes(dialog, { text: 'resign', ci: true, button: true }).sort((a, b) => b.bounds.y1 - a.bounds.y1)[0];
         dev.tap(confirm.bounds.cx, confirm.bounds.cy);
         confirmed = true;
@@ -833,10 +853,9 @@ async function online(dev) {
         await sleep(3000);
       }
     }
-    if (!confirmed) issues.push('the Resign dialog did not open after 4 taps: ' + lastError);
-    if (confirmed) {
-      const finished = (list) => list.find((n) => /^game-over/.test(n.id) || /\b(won|wins|lost|resigned|game over)\b/i.test(n.text));
-      let found = null;
+    if (!confirmed && !alreadyOver) issues.push('the Resign dialog did not open after 4 taps: ' + lastError);
+    if (confirmed || alreadyOver) {
+      let found = alreadyOver ?? null;
       try {
         found = await dev.waitFor('the result', finished, 30_000, 1000);
       } catch {
