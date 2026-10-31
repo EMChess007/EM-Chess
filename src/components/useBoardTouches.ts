@@ -5,6 +5,7 @@ import { EMPTY_TOUCH_BOOK, fingerCell as fingerCellOf, gridTapCell, localOfTouch
 import type { PromotionPiece } from '../logic/bughouse';
 import type { ReservePieceType } from '../logic/crazyhouse';
 import type { BoardId } from '../logic/bughouse/types';
+import { getE2eGestureCounter } from './devOverlayRegistry';
 
 /**
  * Bughouse W3b (BUGHOUSE_SPEC.md HP12): the raw-touch input of ONE board, used ONLY by the dual-board Local layout, where two people (or one person with two fingers) play both boards at the
@@ -135,6 +136,8 @@ export function useBoardTouches(options: BoardTouchOptions): BoardTouches {
     const resolve = () => {
       const { board, cell, onTapCell } = optionsRef.current;
       const hit = gridTapCell(tap, originRef.current, cell, 8, 8);
+      // DEV ONLY (the Android end-to-end build): what the tap resolved to, so a run can tell "the touch never arrived" from "it arrived and landed in another cell"
+      getE2eGestureCounter()?.(`touch-${board}`, hit === null ? 'tapDead' : 'tapCell', { lastTap: { cell: hit ? [hit.row, hit.col] : null, origin: [Math.round(originRef.current.x), Math.round(originRef.current.y)] } });
       if (hit !== null) onTapCell(board, hit);
     };
     // A tap that carries the grid's own frame starts no measurement, so with none pending it resolves at once; behind an earlier tap that IS waiting for its measurement it keeps its place in line.
@@ -161,6 +164,9 @@ export function useBoardTouches(options: BoardTouchOptions): BoardTouches {
   };
 
   const feed = (event: TouchEventIn, onGrid: boolean): void => {
+    if (onGrid) {
+      getE2eGestureCounter()?.(`touch-${optionsRef.current.board}`, `${event.kind}Event`, { lastEvent: { kind: event.kind, page: 'at' in event ? [Math.round(event.at.x), Math.round(event.at.y)] : null, local: 'local' in event && event.local ? [Math.round(event.local.x), Math.round(event.local.y)] : null } });
+    }
     // Read when the finger LIFTS (the position that counts is the board's now; a start-time read would be overwritten by this one) - and not at all when the lift carries the grid's own frame.
     if (onGrid && event.kind === 'end' && event.local === undefined) refreshOrigin();
     if (onGrid) debug(event);

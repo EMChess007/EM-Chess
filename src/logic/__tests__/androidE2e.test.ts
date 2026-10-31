@@ -111,6 +111,10 @@ describe('text on the screen', () => {
     expect(textIssues([node({ text: 'Filter', bounds: box(10, 100, 118, 160) })], screen)).toEqual([]); // 0.30 per letter
     expect(textIssues([node({ text: 'Play against bots', bounds: box(10, 100, 100, 400) })], screen)).toEqual([]); // spaces: it may wrap
     expect(textIssues([node({ text: 'Email', cls: 'android.widget.EditText', bounds: box(10, 100, 20, 160) })], screen)).toEqual([]);
+    // command #30: a clock reading is narrow by its colon, not clipped (the online game's "0:00" in a 38 x 48 px box was reported at 0.198) - and a word of the same box is still reported
+    expect(textIssues([node({ text: '0:00', bounds: box(10, 100, 48, 148) })], screen)).toEqual([]);
+    expect(textIssues([node({ text: '12:34', bounds: box(10, 100, 48, 148) })], screen)).toEqual([]);
+    expect(textIssues([node({ text: 'Home', bounds: box(10, 100, 48, 148) })], screen).map((i) => i.kind)).toEqual(['narrow']);
     expect(MIN_WIDTH_PER_LETTER).toBe(0.2);
   });
 

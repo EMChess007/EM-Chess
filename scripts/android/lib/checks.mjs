@@ -34,7 +34,8 @@ export function textIssues(nodes, screen) {
     const letters = n.text.length;
     // a label is one line: a box taller than a line (36 dp) is a container around it, not the label's own box
     const oneLine = h / (screen.scale ?? 1) <= MAX_LABEL_HEIGHT_DP;
-    if (oneLine && /^\S+$/.test(n.text) && letters >= 4 && letters <= 16 && w / (letters * h) < MIN_WIDTH_PER_LETTER) {
+    // (a clock reading - "5:00", "0:59" - is narrow by its colon and its digits, not clipped: the first run that could read the online game's tree flagged "0:00" at 0.198)
+    if (oneLine && /^\S+$/.test(n.text) && !/\d:\d/.test(n.text) && letters >= 4 && letters <= 16 && w / (letters * h) < MIN_WIDTH_PER_LETTER) {
       issues.push({ kind: 'narrow', text: n.text, detail: `${w}x${h} px for ${letters} letters (${(w / (letters * h)).toFixed(2)} per letter, minimum ${MIN_WIDTH_PER_LETTER})` });
     }
   }

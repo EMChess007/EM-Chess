@@ -165,6 +165,31 @@ function phoneStep(step) {
   return blind ? { ...positioned, blind } : positioned;
 }
 
+/** Every piece of the boards the app reports (the beacon: the position as a FEN, the board's rectangle in screen pixels, its orientation) as a cell to judge. */
+function cellsFromBeacon(dev) {
+  const cells = [];
+  for (const channel of ['state-board-2p', 'state-board-A', 'state-board-B']) {
+    const s = dev.beacon.get(channel);
+    if (!s || !s.rect || typeof s.fen !== 'string') continue;
+    const board = rectOfState(s);
+    const rows = s.fen.split(' ')[0].replace(/\[.*\]/, '').split('/');
+    rows.forEach((row, r) => {
+      let file = 0;
+      for (const ch of row) {
+        if (/\d/.test(ch)) file += Number(ch);
+        else if (/[a-zA-Z]/.test(ch)) {
+          const square = 'abcdefgh'[file] + (8 - r);
+          const marker = (ch === ch.toUpperCase() ? 'w' : 'b') + ch.toLowerCase();
+          const rr = squareRect(board, s.orientation ?? 'w', square);
+          cells.push({ marker, rect: { x: rr.x, y: rr.y, w: rr.w, h: rr.h }, where: `${channel.replace('state-board-', 'board ')} ${marker} on ${square} (from the app's position)`, badge: channel !== 'state-board-2p' && marker[1] === 'k' });
+          file++;
+        }
+      }
+    });
+  }
+  return cells;
+}
+
 async function judgeGamePieces(dev, screen) {
   const { nodes, png } = await dev.look();
   const cells = [];
@@ -185,6 +210,8 @@ async function judgeGamePieces(dev, screen) {
       cells.push({ marker: markerFromWords(n.desc), rect: { x: n.bounds.cx - side / 2, y: n.bounds.cy - side / 2, w: side, h: side }, where: `${n.desc} at ${n.bounds.x1},${n.bounds.y1}` });
     }
   }
+  // The board is a group for the accessibility service (it takes touches), so its pieces are not in the tree: the APP says where they are (its position and the board's rectangle, the beacon)
+  if (cells.length === 0) cells.push(...cellsFromBeacon(dev));
   if (cells.length === 0 && ['game-2p', 'bughouse-game-single', 'bughouse-game-passplay'].includes(screen.id)) {
     // the tree of this screen can lag the screen: read the board from the PHOTOGRAPH and judge the pieces of the start position where they stand
     const grid = boardFromScreenshot(png);
@@ -196,6 +223,8 @@ async function judgeGamePieces(dev, screen) {
   if (screen.pieces.allKinds) for (const c of ['w', 'b']) for (const k of 'pnbrqk') if (!seen.has(c + k)) issues.push(`${c + k} is not on the screen`);
   for (const c of cells) {
     if (c.rect.x < 0 || c.rect.y < 0 || c.rect.x + c.rect.w > png.width || c.rect.y + c.rect.h > png.height) continue;
+    // a cell the scroll view clips has a sliver of a box (20 x 0 px): it is not on the screen, there is nothing to judge
+    if (c.rect.w < 10 || c.rect.h < 10) continue;
     const problem = judgePieceCell(png, c.rect, c.marker, null, undefined, c.badge === true);
     // a bot may have moved a piece between the tree and the photograph: an empty cell is inconclusive on a screen with live bots, a wrong colour never is
     if (problem && !(screen.pieces.liveBots && problem.includes('no piece found'))) issues.push(`${c.where}: ${problem}`);
@@ -207,6 +236,7 @@ async function screens(dev) {
   for (const s of phoneScreens()) {
     await scenario(dev, `screen ${s.id}`, async () => {
       await toHome(dev);
+      dev.beacon.forgetAll(); // what the boards report from here on is this screen's
       await dev.runSteps(s.steps.map(phoneStep));
       await sleep(600);
       const nodes = await dev.dump();
@@ -452,10 +482,19 @@ async function touches2p(dev) {
       if (!moved) issues.push(`after e2 then e4 the app's position is "${dev.beacon.get('state-board-2p')?.fen}", not a pawn on e4 with Black to move`);
     }
     await sleep(900);
-    const after = dev.screenshot();
-    const colour = (rect) => cornerColour(after, rect);
+    let after = dev.screenshot();
+    let colour = (rect) => cornerColour(after, rect);
     const yellow = (c) => c && Math.abs(c[0] - 0xf7) < 16 && Math.abs(c[1] - 0xec) < 16 && Math.abs(c[2] - 0x74) < 24;
     const lastMoveShown = (o) => yellow(colour(squareRect(board, o, 'e2'))) && yellow(colour(squareRect(board, o, 'e4')));
+    // The piece slides for a moment (and the emulator is slow): look again for up to 4 s before calling the highlight missing, and say how long it took.
+    let waitedMs = 0;
+    while (!lastMoveShown('w') && !lastMoveShown('b') && waitedMs < 4000) {
+      await sleep(500);
+      waitedMs += 500;
+      after = dev.screenshot();
+      colour = (rect) => cornerColour(after, rect);
+    }
+    if (waitedMs > 0) log(`2-player last-move highlight: ${lastMoveShown('w') || lastMoveShown('b') ? 'shown' : 'NOT shown'} after ${900 + waitedMs} ms`);
     if (!lastMoveShown('w') && !lastMoveShown('b')) {
       const hex = (c) => (c ? `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}` : 'none');
       const seen = ['w', 'b'].map((o) => `${o}: e2 ${hex(colour(squareRect(board, o, 'e2')))} e4 ${hex(colour(squareRect(board, o, 'e4')))}`).join('; ');
@@ -537,6 +576,12 @@ async function touchesBughouseBody(dev, name, inset) {
       for (const b of ['A', 'B']) if (!(offsets[b] >= 24)) issues.push(`board ${b}: the app's root view is ${offsets[b]} px below the window's top: the run is NOT in the phone's frame (the inset did not take effect)`);
     }
     await dev.snapshot(inset ? 'touch-bughouse-inset' : 'touch-bughouse');
+    // what each board's touch layer SAW (the app's counters): touches that never arrived, or arrived and resolved to another cell
+    const layer = Object.fromEntries(['A', 'B'].map((b) => {
+      const g = dev.beacon.get(`gestures-touch-${b}`) ?? {};
+      return [b, { start: g.startEvent ?? 0, end: g.endEvent ?? 0, tapCell: g.tapCell ?? 0, tapDead: g.tapDead ?? 0, lastEvent: g.lastEvent ?? null, lastTap: g.lastTap ?? null }];
+    }));
+    if (issues.length > 0) issues.push(`touch layer: ${JSON.stringify(layer)}`);
     record(name, issues, `${inset ? 'root view below the status bar' : 'edge-to-edge'}: root offset ${JSON.stringify(offsets)} px; orientations ${JSON.stringify(orientation)}, picked ${JSON.stringify(picked)}, rectangles ${JSON.stringify(Object.fromEntries(Object.entries(boards).map(([k, v]) => [k, `${v.w}x${v.h} at ${v.x1},${v.y1}`])))}`);
   }
 }
