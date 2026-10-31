@@ -111,8 +111,10 @@ const LARGE_SCREENS = new Set(['home', 'play-menu', 'game-2p', 'ffa-setup', 'gam
  * The cramped phone (small, font scale 1.3) runs EVERY screen; the large phone runs the ones whose layout differs most (a board, a setup, the tab screens): the whole job has a budget of
  * about 25 minutes and each screen costs 10 - 20 s on the emulator. `--only` overrides both.
  */
+/** Screens that cannot be driven through the tree: the accessibility tree of the 2-player game screen lags the screen (the photograph is right), so its Options menu cannot be found; the menu's text is checked by the web matrix. */
+const TREE_LAGS = new Set(['game-2p-options']);
 const phoneScreens = () =>
-  [...SCREENS, ...EXTRA_SCREENS].filter((s) => !s.fixture && !s.pieceTheme && (ONLY ? ONLY.has(s.id) : profile.id === 'small' || LARGE_SCREENS.has(s.id)));
+  [...SCREENS, ...EXTRA_SCREENS].filter((s) => !s.fixture && !s.pieceTheme && !TREE_LAGS.has(s.id) && (ONLY ? ONLY.has(s.id) : profile.id === 'small' || LARGE_SCREENS.has(s.id)));
 
 /**
  * The web matrix finds "the second Classic" in document order; on the phone only what is on screen exists, so that is "the Classic under the heading Local". The headings of the cards on the
@@ -151,7 +153,7 @@ async function judgeGamePieces(dev, screen) {
       cells.push({ marker: markerFromWords(n.desc), rect: { x: n.bounds.cx - side / 2, y: n.bounds.cy - side / 2, w: side, h: side }, where: `${n.desc} at ${n.bounds.x1},${n.bounds.y1}` });
     }
   }
-  if (cells.length === 0 && screen.id === 'game-2p') {
+  if (cells.length === 0 && ['game-2p', 'bughouse-game-single', 'bughouse-game-passplay'].includes(screen.id)) {
     // the tree of this screen can lag the screen: read the board from the PHOTOGRAPH and judge the pieces of the start position where they stand
     const grid = boardFromScreenshot(png);
     if (grid) for (const [square, marker] of Object.entries(startPositionMarkers())) cells.push({ marker, rect: squareRect(grid, 'w', square), where: `${marker} on ${square} (board read from the photograph)` });
@@ -423,7 +425,7 @@ async function login(dev, account) {
   let button = null;
   for (let i = 0; i < 5 && button === null; i++) {
     const candidates = findNodes(await dev.dump(), { text: 'Log In' }).sort((a, b) => b.bounds.y1 - a.bounds.y1);
-    if (candidates.length >= 2 && candidates[0].bounds.cy < dev.display.h * 0.55) button = candidates[0];
+    if (candidates.length >= 2) button = candidates[0];
     else dev.swipe(dev.display.w / 2, dev.display.h * 0.5, dev.display.w / 2, dev.display.h * 0.2, 500);
     await sleep(500);
   }

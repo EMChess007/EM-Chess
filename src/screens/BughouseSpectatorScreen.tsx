@@ -1,9 +1,11 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { needsRotateOverlay } from '../logic/bughouseLayout';
 import ScreenHeader from '../components/ScreenHeader';
 import { Text } from '../components/AppText';
 import { Pressable } from '../components/AppPressable';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
-import { spectatorSeatConfig } from '../logic/bughouseOnlineUi';
+import { spectatorSeatConfig, spectatorStandardSeatConfig } from '../logic/bughouseOnlineUi';
 import { useBughouseOnlineGame } from '../logic/useBughouseOnlineGame';
 import BughouseGameScreen from './BughouseGameScreen';
 
@@ -26,6 +28,12 @@ export default function BughouseSpectatorScreen({ authToken, roomId, onExit }: B
   const styles = createStyles(colors);
   const game = useBughouseOnlineGame(authToken, { spectate: { roomId } });
   const { view, connection, problem, now, retry, leave } = game;
+  // Two equal boards when the window has the room for them; on a small phone (360 x 640 dp) Board A large and Board B as a thumbnail - the "rotate the device" layer would otherwise cover the
+  // game (the Android run found it, and its accessibility tree hides everything under such a layer).
+  const win = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const dualSeats = spectatorSeatConfig();
+  const seats = needsRotateOverlay(dualSeats, win.width - insets.left - insets.right, win.height - insets.top - insets.bottom) ? spectatorStandardSeatConfig() : dualSeats;
   const leaveNow = () => {
     leave();
     onExit();
@@ -48,7 +56,7 @@ export default function BughouseSpectatorScreen({ authToken, roomId, onExit }: B
   return (
     <View style={styles.container} testID="bughouse-spectator">
       <BughouseGameScreen
-        seats={spectatorSeatConfig()}
+        seats={seats}
         timeControl={view.match.timeControl}
         onExit={leaveNow}
         online={{ view, now, connection, problem, onAction: NOTHING, onResign: NOTHING, onRetry: retry, onPlayAgain: leaveNow, resignError: null }}

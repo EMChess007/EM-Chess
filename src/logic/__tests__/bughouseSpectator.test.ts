@@ -4,9 +4,9 @@ import type { BugSeats, BugSpectateState, BugStatePayload } from '../bughouse/wi
 import { SOCKET_ACK_DEADLINE_MS } from '../../api/socketAck';
 import { BughouseOnlineSession, type BughouseSessionEffects } from '../bughouseOnlineSession';
 import { viewFromSpectate } from '../bughouseOnline';
-import { matchIntroLine, seatDisplayName, spectatorSeatConfig } from '../bughouseOnlineUi';
+import { matchIntroLine, seatDisplayName, spectatorSeatConfig, spectatorStandardSeatConfig } from '../bughouseOnlineUi';
 import { buildSpectateRows, describeBughouseGame } from '../fourPlayerOnlineUi';
-import { deriveBughouseLayout } from '../bughouseLayout';
+import { deriveBughouseLayout, needsRotateOverlay } from '../bughouseLayout';
 import { FakeBugSocket } from '../../test/fakeBugSocket';
 
 /**
@@ -116,6 +116,10 @@ describe('a spectator can send nothing', () => {
     expect(matchIntroLine(view)).toBe('Watching: Ann + Di (Team 1) vs Bob + Cy (Team 2)');
     expect([0, 1, 2, 3].map((seat) => seatDisplayName(view, seat as 0 | 1 | 2 | 3, 1))).toEqual(['Ann', 'Bob', 'Cy', 'Di']);
     expect(deriveBughouseLayout(spectatorSeatConfig())).toEqual({ kind: 'dual' });
+    // a window too small for two equal boards: Board A large and Board B as a thumbnail (never the "rotate the device" layer over a game nobody plays)
+    expect(deriveBughouseLayout(spectatorStandardSeatConfig())).toEqual({ kind: 'standard', seat: 0 });
+    expect(needsRotateOverlay(spectatorSeatConfig(), 360, 568)).toBe(true);
+    expect(needsRotateOverlay(spectatorSeatConfig(), 412, 915)).toBe(false);
     expect(viewFromSpectate({ ...roomState(), seats: [] as never }, 1)).toBeNull();
   });
 });

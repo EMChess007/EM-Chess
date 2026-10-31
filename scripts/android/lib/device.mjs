@@ -265,6 +265,14 @@ export class Device {
       node = findOne(nodes, step);
       if (node === null && fingerprint(nodes) === before) break; // nothing moved: the end of the list
     }
+    // a blind run to the bottom can overshoot a card that sits a little above it: look back up, half a screen at a time
+    for (let i = 0; node === null && step.blind && i < 5; i++) {
+      this.scrollUp();
+      scrolled = true;
+      await sleep(450);
+      nodes = await this.dump();
+      node = findOne(nodes, step);
+    }
     if (node === null) throw new Error(`cannot find ${JSON.stringify(step)}; on screen: ${visibleWords(nodes, 40).join(' | ')}`);
     if (scrolled) {
       // found while the list may still have been moving: wait until it stands still, and take the node from that tree

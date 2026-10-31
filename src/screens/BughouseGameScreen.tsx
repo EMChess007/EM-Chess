@@ -544,7 +544,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
             <Text style={ctlText}>{keepTogether(`Resign ${team === 1 ? '◆' : '●'} Team ${team}`)}</Text>
           </Pressable>
         ))
-      ) : (
+      ) : spectator ? null : (
         <Pressable accessibilityRole="button" accessibilityLabel="Resign" testID="bughouse-resign" style={ctl} onPress={resign} disabled={over} {...slim}>
           <Text style={ctlText}>Resign</Text>
         </Pressable>

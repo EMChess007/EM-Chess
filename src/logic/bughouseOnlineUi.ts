@@ -48,6 +48,14 @@ export function spectatorSeatConfig(): SeatConfig {
   return [human, bot, human, bot] as unknown as SeatConfig;
 }
 
+/**
+ * The seat map for a spectator whose window is too small for two equal boards (the "rotate the device" layer would cover them: below 360 x 640 dp-ish, `needsRotateOverlay`): ONE seat
+ * drawn as the human's, so the screen shows Board A large and Board B as a thumbnail to tap. Input is switched off by the view's `spectator` flag either way.
+ */
+export function spectatorStandardSeatConfig(): SeatConfig {
+  return onlineSeatConfig(0);
+}
+
 /** The line shown above the boards: where I sit and who my partner is (a spectator: whose game it is). */
 export function matchIntroLine(view: Pick<BughouseOnlineView, 'seats' | 'mySeat' | 'spectator'>): string {
   if (view.spectator) return `Watching: ${view.seats[0].name} + ${view.seats[3].name} (Team 1) vs ${view.seats[1].name} + ${view.seats[2].name} (Team 2)`;
