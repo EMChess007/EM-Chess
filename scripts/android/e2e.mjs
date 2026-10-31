@@ -98,7 +98,9 @@ let relaunches = 0;
 /** Back to the Home tab: the app has no Android back handling, so use its own "‹ Back" / "‹ Menu" links; a dialog or a game in progress is cleared by starting the app afresh. */
 async function toHome(dev) {
   for (let i = 0; i < 6; i++) {
-    const nodes = await dev.current();
+    // (a screen whose tree cannot be read - a game that keeps repainting - is left by starting the app afresh)
+    const nodes = await dev.current().catch(() => null);
+    if (nodes === null) break;
     if (onTabs(nodes) && findNodes(nodes, { id: 'button1' }).length === 0) {
       const home = findNodes(nodes, { text: 'Home' }).sort((a, b) => b.bounds.y1 - a.bounds.y1)[0];
       dev.tap(home.bounds.cx, home.bounds.cy);
@@ -454,7 +456,11 @@ async function touches2p(dev) {
     const colour = (rect) => cornerColour(after, rect);
     const yellow = (c) => c && Math.abs(c[0] - 0xf7) < 16 && Math.abs(c[1] - 0xec) < 16 && Math.abs(c[2] - 0x74) < 24;
     const lastMoveShown = (o) => yellow(colour(squareRect(board, o, 'e2'))) && yellow(colour(squareRect(board, o, 'e4')));
-    if (!lastMoveShown('w') && !lastMoveShown('b')) issues.push(`after e2-e4 the last-move highlight is not on e2 and e4 (selected now: ${selectedSquares(after, board, 'w').join(',') || 'none'})`);
+    if (!lastMoveShown('w') && !lastMoveShown('b')) {
+      const hex = (c) => (c ? `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}` : 'none');
+      const seen = ['w', 'b'].map((o) => `${o}: e2 ${hex(colour(squareRect(board, o, 'e2')))} e4 ${hex(colour(squareRect(board, o, 'e4')))}`).join('; ');
+      issues.push(`after e2-e4 the last-move highlight (#f7ec74) is not on e2 and e4: corner colours ${seen}; the app says lastMove ${JSON.stringify(dev.beacon.get('state-board-2p')?.lastMove ?? null)}, orientation ${orientation()}, selected now: ${selectedSquares(after, board, 'w').join(',') || 'none'}`);
+    }
     await dev.snapshot('touch-2p');
     // the finding about the tap, kept in the log whatever the verdict
     log(`2-player board touches: ${JSON.stringify(verdicts)} (tap = input tap worked, press = only the 90 ms touch worked, neither = not selected at all)`);

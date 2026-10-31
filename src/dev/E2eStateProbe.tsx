@@ -28,8 +28,13 @@ export default function E2eStateProbe({ channel, state, rectOf }: E2eStateProbeP
           // Where the app's ROOT view sits in the window = the board in the window frame minus the board in the root frame (`measure`: what pageX / pageY are relative to). Zero when the app
           // is edge-to-edge; the height of the status bar on the phone of command #26, where the two frames differ. The run checks it, so "the emulator reproduces the phone's frame" is a fact.
           const measure = (node as { measure?: (cb: (x: number, y: number, w: number, h: number, pageX: number, pageY: number) => void) => void }).measure;
-          if (typeof measure !== 'function') return report(rect);
-          measure.call(node, (_x, _y, _w, _h, pageX, pageY) => report({ ...rect, rootOffsetX: rect.x - Math.round(pageX * ratio), rootOffsetY: rect.y - Math.round(pageY * ratio) }));
+          // (the raw numbers are reported too: the first run with this probe printed "null" for the offset, i.e. a NaN, and a reader needs to see why)
+          if (typeof measure !== 'function') return report({ ...rect, measureIsFunction: 0 });
+          measure.call(node, (mx, my, mw, mh, pageX, pageY) => {
+            const offsetX = rect.x - Math.round(pageX * ratio);
+            const offsetY = rect.y - Math.round(pageY * ratio);
+            report({ ...rect, ...(Number.isFinite(offsetX) && Number.isFinite(offsetY) ? { rootOffsetX: offsetX, rootOffsetY: offsetY } : { measureNaN: 1 }), pageX: Number(pageX) || 0, pageY: Number(pageY) || 0, measureY: Number(my) || 0, measureH: Number(mh) || 0, ratio });
+          });
         });
       } else report(null);
     };

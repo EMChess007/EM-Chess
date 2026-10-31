@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { isClockReading } from '../AppText';
+import { freezeClockText, isClockReading } from '../AppText';
 
 /**
- * In the Android end-to-end build a text that is only a clock reading is hidden from the accessibility event stream (AppText.tsx, command #30), so `uiautomator dump` can reach an idle UI on a
+ * In the Android end-to-end build the digits of a clock reading are frozen at 0:00 (AppText.tsx, command #30), so the text never changes and `uiautomator dump` can reach an idle UI on a
  * game screen. This pins what counts as a clock reading: every clock the app draws, and nothing a user reads.
  */
 describe('isClockReading', () => {
@@ -20,5 +20,21 @@ describe('isClockReading', () => {
     expect(isClockReading(undefined)).toBe(false);
     expect(isClockReading(['4', { a: 1 }, '09'])).toBe(false);
     expect(isClockReading(null)).toBe(false);
+  });
+});
+
+describe('freezeClockText', () => {
+  it('replaces the digits of a clock at the end of a label with 0:00 and touches nothing else', () => {
+    expect(freezeClockText('White: 4:59')).toBe('White: 0:00');
+    expect(freezeClockText('4:59.8')).toBe('0:00');
+    expect(freezeClockText('Black - 1:00:00 ')).toBe('Black - 0:00 ');
+    expect(freezeClockText('59.9')).toBe('0:00');
+    expect(freezeClockText(['White', ': 12:07'])).toEqual(['White', ': 0:00']);
+    expect(freezeClockText('Resign')).toBe('Resign');
+    expect(freezeClockText(['Move ', 12])).toEqual(['Move ', 12]);
+    expect(freezeClockText(undefined)).toBeUndefined();
+    // a frozen reading is still a reading, and is stable: freezing it again changes nothing
+    expect(isClockReading(freezeClockText('White: 4:59'))).toBe(true);
+    expect(freezeClockText(freezeClockText('White: 4:59'))).toBe('White: 0:00');
   });
 });

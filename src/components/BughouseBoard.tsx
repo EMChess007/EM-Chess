@@ -1,5 +1,5 @@
-import { memo, useMemo } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { memo, useMemo, useRef } from 'react';
+import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import { Text } from './AppText';
 import { openBoard } from '../logic/bughouse';
 import type { BoardId, BughouseColor } from '../logic/bughouse/types';
@@ -80,11 +80,13 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
   const size = cell * 8;
   const DebugOverlay = getTouchDebugOverlay();
   const E2eProbe = getE2eStateProbe();
+  // A board nobody may touch (a spectator's) has no gesture container; the end-to-end build still has to measure it, so the grid carries a ref of its own then.
+  const measuredRef = useRef<ViewInstance>(null);
   // On a phone the grid's touches come through the overlay (below) and carry the grid's own frame; in the browser the grid itself listens.
   const surface = touches !== undefined && Platform.OS !== 'web';
   return (
     <View
-      ref={touches ? touches.gridRef : interactive ? gestures.containerRef : undefined}
+      ref={touches ? touches.gridRef : interactive ? gestures.containerRef : measuredRef}
       onLayout={touches ? undefined : interactive ? gestures.onLayout : undefined}
       {...(touches ? (surface ? {} : touches.gridProps) : interactive ? gestures.panHandlers : {})}
       style={[styles.board, { width: size, height: size }, touches && styles.rawTouch, outlined && styles.outlined]}
@@ -145,7 +147,7 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
       {/* DEV ONLY: the square under each finger. The overlay is registered only in a development build (devOverlayRegistry.ts); in a release build there is none. */}
       {touches && debugFingers && DebugOverlay ? <DebugOverlay board={board} orientation={orientation} cell={cell} fingers={debugFingers} /> : null}
       {/* DEV ONLY, the Android end-to-end build: the board's state for the driver (src/dev/E2eStateProbe.tsx). Null everywhere else. */}
-      {E2eProbe ? <E2eProbe channel={`board-${board}`} rectOf={touches ? touches.gridRef : gestures.containerRef} state={{ fen, selected, orientation, interactive, targets: moveTargets.length }} /> : null}
+      {E2eProbe ? <E2eProbe channel={`board-${board}`} rectOf={touches ? touches.gridRef : interactive ? gestures.containerRef : measuredRef} state={{ fen, selected, orientation, interactive, targets: moveTargets.length }} /> : null}
     </View>
   );
 }

@@ -24,7 +24,7 @@ if (!existsSync(dir)) {
     slowest = Math.max(slowest, run.seconds);
     total += run.seconds;
     lines.push(`- **${name}** (${run.profile}/${run.phase}): ${run.results.length - bad.length} passed, ${bad.length} failed, ${(run.seconds / 60).toFixed(1)} min, ${run.relaunches} relaunches`);
-    for (const r of bad) lines.push(`  - FAILED \`${r.name}\`: ${r.issues.slice(0, 3).join(' | ').slice(0, 600)}`);
+    for (const r of bad) lines.push(`  - FAILED \`${r.name}\`: ${r.issues.slice(0, 3).join(' | ').slice(0, 700)}${r.note && NOTED.test(r.name) ? ` || note: ${r.note.slice(0, 500)}` : ''}`);
     for (const r of run.results.filter((x) => x.ok && NOTED.test(x.name) && x.note)) lines.push(`  - ok \`${r.name}\`: ${r.note.slice(0, 400)}`);
     if (run.dumpFailures && Object.keys(run.dumpFailures).length > 0) lines.push(`  - accessibility dumps that failed: ${JSON.stringify(run.dumpFailures).slice(0, 300)}`);
   }

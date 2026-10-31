@@ -756,7 +756,7 @@ function ChessBoard({
         )}
 
         {/* DEV ONLY, the Android end-to-end build: the board's state for the driver (src/dev/E2eStateProbe.tsx). Null everywhere else. */}
-        {E2eProbe && <E2eProbe channel="board-2p" rectOf={boardContainerRef} state={{ fen, turn, selected: selectedSquare, orientation, legal: legalTargets.length }} />}
+        {E2eProbe && <E2eProbe channel="board-2p" rectOf={boardContainerRef} state={{ fen, turn, selected: selectedSquare, orientation, legal: legalTargets.length, lastMove: lastMove ? [lastMove.from, lastMove.to] : null }} />}
 
         {explosionCells.map(({ square, piece }) => {
           const { row, col } = squareToRowCol(square, orientation);
