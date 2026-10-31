@@ -715,7 +715,14 @@ async function online(dev) {
     dev.dumpAttempts = 8; // a live game screen is "not idle" for seconds at a time: read it patiently (restored below, whatever happens)
     dev.dumpGapMs = 1500;
     try {
-      await onlineGame(dev, account);
+      const progress = { issues: [] };
+      try {
+        await onlineGame(dev, account, progress);
+      } catch (e) {
+        // an exception hides what the check had already found: say it first
+        if (progress.issues.length > 0) e.message = `already found: ${progress.issues.join(' ; ').slice(0, 900)} || ${e.message}`;
+        throw e;
+      }
     } finally {
       dev.dumpAttempts = undefined;
       dev.dumpGapMs = undefined;
@@ -724,7 +731,7 @@ async function online(dev) {
   return account;
 }
 
-async function onlineGame(dev, account) {
+async function onlineGame(dev, account, progress = { issues: [] }) {
   {
     await toHome(dev);
     dev.beacon.forgetAll(); // (the spectated game above also had boards: what arrives from here on is this game's)
@@ -743,7 +750,8 @@ async function onlineGame(dev, account) {
     await sleep(1500);
     const intro = (await dev.dump()).find((n) => n.id === 'bughouse-online-intro')?.text ?? '';
     const seat = /Board ([AB]) · (White|Black) · Team (\d)/.exec(intro);
-    const issues = [...crashIssues(game)];
+    const issues = progress.issues;
+    issues.push(...crashIssues(game));
     if (!seat) {
       issues.push(`no seat line ("You: Board A · White · Team 1 ...") on the screen: "${intro}"`);
       return record('online: Bughouse game', issues);
@@ -815,23 +823,35 @@ async function onlineGame(dev, account) {
     await dev.find({ id: 'bughouse-quick' });
     const bar = await dev.dump();
     issues.push(...textIssues(bar, dev.display).map((i) => `team bar ${i.kind}: "${i.text}" - ${i.detail}`));
-    await dev.runSteps([{ id: 'bughouse-quick' }]);
-    const grid = await dev.dump();
+    // (the grid is looked at after the tap, and the control is tapped again if it is not open: the tap is a toggle, so it is only repeated when the tree says the grid is closed. The nodes are
+    // tapped where the tree has them - no scrolling search with a game that keeps repainting.)
+    let grid = [];
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      await dev.runSteps([{ id: 'bughouse-quick' }]);
+      grid = await dev.dump().catch(() => []);
+      if (grid.some((n) => n.id === 'bughouse-quick-8')) break;
+      log(`the Quick grid was not open after tap ${attempt}; words on screen: ${visibleWords(grid, 25).join(' | ')}`);
+    }
     for (let code = 0; code < 10; code++) if (!grid.some((n) => n.id === `bughouse-quick-${code}`)) issues.push(`the Quick grid has no button ${code}`);
     issues.push(...textIssues(grid, dev.display).map((i) => `Quick grid ${i.kind}: "${i.text}" - ${i.detail}`));
     await dev.snapshot('online-quick-grid');
-    await dev.runSteps([{ id: 'bughouse-quick-8' }]);
+    const quick8 = grid.find((n) => n.id === 'bughouse-quick-8' && n.bounds);
+    if (quick8) dev.tap(quick8.bounds.cx, quick8.bounds.cy);
     await sleep(1200);
-    const afterQuick = await dev.dump();
+    const afterQuick = await dev.dump().catch(() => []);
     // sent (nothing to show the sender), or refused in words (the buddy's partner may be a bot): either way the grid is closed and no error screen is up
     if (afterQuick.some((n) => n.id === 'bughouse-quick-grid')) issues.push('the Quick grid did not close after a message');
-    await dev.runSteps([{ id: 'bughouse-chat' }]);
-    const chat = await dev.dump();
+    const chatButton = await dev.find({ id: 'bughouse-chat' }, { scrolls: 4 }).catch((e) => {
+      issues.push('the Team chat control was not found: ' + String(e.message).slice(0, 160));
+      return null;
+    });
+    if (chatButton) dev.tap(chatButton.bounds.cx, chatButton.bounds.cy);
+    const chat = await dev.dump().catch(() => []);
     const header = chat.find((n) => n.id === 'bughouse-team-chat-header')?.text ?? '';
     if (header !== 'Team chat - only your partner sees this') issues.push(`the team-chat header says "${header}"`);
     issues.push(...textIssues(chat, dev.display).map((i) => `team chat ${i.kind}: "${i.text}" - ${i.detail}`));
     await dev.snapshot('online-team-chat');
-    await dev.runSteps([{ id: 'bughouse-chat' }]);
+    await dev.runSteps([{ id: 'bughouse-chat' }]).catch(() => {}); // (closes the panel; the restart below does not need it)
 
     // an app restart in the middle of the game: the app walks back into the seat by itself (the persisted rejoin)
     dev.stop();
