@@ -4,7 +4,7 @@
 #   bash scripts/cloud-setup.sh            (idempotent: a second run only starts what is not running; ~10 s when everything is in place)
 #
 # What it does, in order (TESTING.md, "Cloud sessions"):
-#   1. Node 20 (the version CI runs on) from /opt/node20, put first on PATH for this run and for every later login shell.
+#   1. Node 22 (the version CI runs on) from /opt/node22, put first on PATH for this run and for every later login shell.
 #   2. The repo layout the scripts expect: the backend lives INSIDE the app checkout as <app>/backend (the app's .gitignore lists /backend), because
 #      the backend's test scripts import ../../src/... of the app. It is moved there (with a symlink left at the old path) or cloned.
 #   3. PostgreSQL 16 (the major of backend/docker-compose.yml), native: Docker Hub is rate limited from the cloud (HTTP 429), so docker compose cannot pull it.
@@ -19,7 +19,7 @@
 #   CLOUD_APP_DIR        the app checkout (default: the folder above this script; set it when running a copy of the script from elsewhere)
 #   CLOUD_BACKEND_REPO   git URL of the backend      (default https://github.com/EMChess007/chess-app-backend.git)
 #   CLOUD_BACKEND_REF    branch a FRESH clone checks out (default: the app's branch when it is paired/<x> and the backend has it, else the default branch)
-#   CLOUD_NODE_MAJOR     Node major to use            (default 20, as .github/workflows/ci.yml)
+#   CLOUD_NODE_MAJOR     Node major to use            (default 22, as .github/workflows/ci.yml; Expo SDK 58 / React Native 0.88 need Node >= 22.13)
 #   CLOUD_SKIP_NPM=1     skip npm ci (layout / database only)
 #   CLOUD_SKIP_DB=1      skip PostgreSQL, .env and Prisma
 
@@ -32,7 +32,7 @@ die() { printf '[cloud-setup] FAILED: %s\n' "$*" >&2; exit 1; }
 APP_DIR="$(cd "${CLOUD_APP_DIR:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd -P)"
 BACKEND_DIR="$APP_DIR/backend"
 BACKEND_REPO="${CLOUD_BACKEND_REPO:-https://github.com/EMChess007/chess-app-backend.git}"
-NODE_MAJOR="${CLOUD_NODE_MAJOR:-20}"
+NODE_MAJOR="${CLOUD_NODE_MAJOR:-22}"
 PG_MAJOR=16
 DB_USER=chess
 DB_PASSWORD=chess
@@ -58,7 +58,7 @@ if [ ! -x "$NODE_DIR/bin/node" ]; then
   rm -rf "$tmp"
 fi
 export PATH="$NODE_DIR/bin:$PATH"
-# Every later login shell (the session's shell) gets the same Node (the VM's default is 22, CI runs 20), the browser the end-to-end suite uses (Playwright's Chromium, there is no
+# Every later login shell (the session's shell) gets the same Node (the VM's default is 22, CI runs 22), the browser the end-to-end suite uses (Playwright's Chromium, there is no
 # system Chrome: backend scripts/e2e-browser reads E2E_BROWSER_PATH) and no Expo telemetry (the cloud proxy refuses cdp.expo.dev and the export only complains). None of it is secret.
 profile=/etc/profile.d/zz-em-chess.sh
 want="export PATH=\"$NODE_DIR/bin:\$PATH\"

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 import { Pressable } from './AppPressable';
 import { Text, TextInput } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
@@ -21,7 +21,7 @@ export default function FourPlayerChatPanel({ messages, onSend }: FourPlayerChat
   const colors = useAppColors();
   const styles = createStyles(colors);
   const [draft, setDraft] = useState('');
-  const scroller = useRef<ScrollView | null>(null);
+  const scroller = useRef<ScrollViewInstance | null>(null);
 
   useEffect(() => {
     scroller.current?.scrollToEnd({ animated: false });
