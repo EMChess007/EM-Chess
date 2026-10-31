@@ -840,7 +840,7 @@ if (dev.dumpFailures) log(`accessibility dumps that failed: ${JSON.stringify(dev
 writeFileSync(join(OUT, 'logcat.txt'), dev.logcat(800));
 writeFileSync(join(OUT, 'run.log'), logLines.join('\n'));
 const failed = results.filter((r) => !r.ok);
-writeFileSync(join(OUT, 'results.json'), JSON.stringify({ profile: profile.id, phase, seconds: Math.round((Date.now() - started) / 1000), relaunches, results }, null, 1));
+writeFileSync(join(OUT, 'results.json'), JSON.stringify({ profile: profile.id, phase, seconds: Math.round((Date.now() - started) / 1000), relaunches, dumpFailures: dev.dumpFailures ?? {}, results }, null, 1));
 log(`android-e2e ${profile.id}/${phase}: ${results.length - failed.length} passed, ${failed.length} failed in ${Math.round((Date.now() - started) / 1000)} s (${relaunches} relaunches)`);
 for (const f of failed) log(`  FAILED: ${f.name}`);
 process.exit(failed.length > 0 ? 1 : 0);
