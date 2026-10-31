@@ -73,6 +73,7 @@ export function findNodes(nodes, step) {
   let found;
   if (step.id !== undefined) found = nodes.filter((n) => n.id === step.id || n.desc === step.id);
   else if (step.label !== undefined) found = nodes.filter((n) => n.desc === step.label || n.text === step.label);
+  else if (step.startsWith !== undefined) found = nodes.filter((n) => n.text.startsWith(step.startsWith));
   else found = nodes.filter((n) => norm(n.text) === norm(step.text) || norm(n.desc) === norm(step.text));
   if (step.button) found = found.filter((n) => n.cls.endsWith('Button'));
   found = found.filter(sized);

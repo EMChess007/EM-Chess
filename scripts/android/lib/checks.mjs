@@ -102,7 +102,7 @@ export const CLASSIC_DARK = [0xb5, 0x88, 0x63];
  * The board's grid read from a SCREENSHOT, for the screens whose accessibility tree lags the screen: the bounding box of the Classic dark squares (a1 and h8 are dark, so it is the
  * whole grid). { x1, y1, w, h } in pixels, or null when no square-shaped region of that colour is there.
  */
-export function boardFromScreenshot(png, dark = CLASSIC_DARK, tolerance = 8) {
+export function boardFromScreenshot(png, dark = CLASSIC_DARK, tolerance = 2) {
   const columns = new Int32Array(png.width);
   const rows = new Int32Array(png.height);
   let count = 0;
@@ -146,7 +146,7 @@ export function boardFromScreenshot(png, dark = CLASSIC_DARK, tolerance = 8) {
 }
 
 /** What `boardFromScreenshot` measured (for the failure message when it finds no board): the extent of the dark-square colour and how many pixels have it. */
-export function darkSquareMeasure(png, dark = CLASSIC_DARK, tolerance = 8) {
+export function darkSquareMeasure(png, dark = CLASSIC_DARK, tolerance = 2) {
   let x1 = png.width;
   let y1 = png.height;
   let x2 = -1;

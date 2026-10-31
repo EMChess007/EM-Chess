@@ -64,6 +64,9 @@ case "${1:-}" in
     BACKEND_URL=http://localhost:3000 TIME_CONTROL=5 nohup $tsx scripts/bughouse-buddy.mjs > "$state/buddy3.log" 2>&1 &
     echo $! > "$state/buddy3.pid"
     echo "[backend] a third buddy started (pid $(cat "$state/buddy3.pid"))"
+    sleep 8
+    echo "[backend] its first lines:"
+    head -n 4 "$state/buddy3.log" || true
     ;;
   stop)
     for n in 1 2 3; do stop_one "$state/buddy$n.pid"; done
