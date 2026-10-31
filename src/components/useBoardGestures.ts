@@ -2,6 +2,7 @@ import { useRef, useState, type RefObject } from 'react';
 import { PanResponder, type ViewInstance } from 'react-native';
 import { LONG_PRESS_MS, MOVE_THRESHOLD_PX, decideRelease, pixelToCell } from '../logic/boardGestures';
 import type { GridPoint } from './BoardAnnotations';
+import { getE2eGestureCounter } from './devOverlayRegistry';
 
 export { LONG_PRESS_MS, MOVE_THRESHOLD_PX };
 
@@ -139,6 +140,7 @@ export function useBoardGestures(options: BoardGestureOptions): BoardGestures {
     // ScrollView asks for it.
     onPanResponderTerminationRequest: () => !gestureRef.current?.armed,
     onPanResponderGrant: (evt) => {
+      getE2eGestureCounter()?.(optionsRef.current.seamKey ?? 'board', 'grant', { lastGrantPage: [Math.round(evt.nativeEvent.pageX), Math.round(evt.nativeEvent.pageY)] });
       // Fired here (in addition to onLayout) so this gesture's own later events — chiefly
       // onPanResponderRelease, where a tap actually resolves to a square — use a freshly
       // re-measured offset instead of a possibly-stale one (see remeasureBoardOffset).
@@ -217,6 +219,7 @@ export function useBoardGestures(options: BoardGestureOptions): BoardGestures {
 
         // What the touch MEANS is decided by decideRelease (logic/boardGestures.ts, unit-tested): distance first, never the long-press timer.
         const decision = decideRelease({ armed, distance: Math.hypot(dx, dy), startCell, endCell: cell });
+        getE2eGestureCounter()?.(optionsRef.current.seamKey ?? 'board', decision.kind, { lastRelease: { page: [Math.round(pageX), Math.round(pageY)], offset: [Math.round(offset.x), Math.round(offset.y)], cell: [cell.row, cell.col], distance: Math.round(Math.hypot(dx, dy)) } });
         const { onTap, onArrow, onHighlight } = optionsRef.current; // the CURRENT handlers, even if the release was resolved after a re-render
         if (decision.kind === 'tap') onTap(decision.cell);
         else if (decision.kind === 'arrow') onArrow(decision.from, decision.to);
@@ -234,7 +237,10 @@ export function useBoardGestures(options: BoardGestureOptions): BoardGestures {
       }
       clearGesture();
     },
-    onPanResponderTerminate: clearGesture,
+    onPanResponderTerminate: () => {
+      getE2eGestureCounter()?.(optionsRef.current.seamKey ?? 'board', 'terminate');
+      clearGesture();
+    },
     })
   );
 

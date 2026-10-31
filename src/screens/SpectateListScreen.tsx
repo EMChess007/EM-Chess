@@ -44,13 +44,27 @@ export default function SpectateListScreen({ authToken, onWatch, onWatchFour, on
     let twoError: string | null = null;
     let fourGames: FourActiveGameSummary[] | null = null;
     let bughouseGames: BugActiveGameSummary[] | null = null;
-    const finish = () => {
-      pending -= 1;
-      if (pending > 0 || request !== requestRef.current) return;
+    let settled = false;
+    const settle = () => {
+      if (settled || request !== requestRef.current) return;
+      settled = true;
+      socket.off('connect_error', onConnectError);
       if (twoGames === null && (fourGames === null || fourGames.length === 0) && (bughouseGames === null || bughouseGames.length === 0)) setError(twoError ?? 'Could not load games.');
       else setRows(buildSpectateRows(twoGames ?? [], fourGames, bughouseGames));
       setLoading(false);
     };
+    const finish = () => {
+      pending -= 1;
+      if (pending > 0) return;
+      settle();
+    };
+    // A server that REFUSES the connection (it is stopped, the address is wrong) says so at once; waiting out the three deadlines (5, 5 and 6 s) before saying it only made the screen slow
+    // (found by the Android end-to-end run: 14 s from the tap to "Can't reach the server"). The deadlines stay for a server that accepts and never answers.
+    function onConnectError() {
+      twoError = twoError ?? SERVER_UNREACHABLE_MESSAGE;
+      settle();
+    }
+    socket.on('connect_error', onConnectError);
     // With a deadline (emitWithin): an emit on a socket that never connects waits for ever, and the spinner with it. The 2-player list has no "older server" excuse: if it does not
     // answer in time the server cannot be reached, and the screen says so with a Retry.
     emitWithin<Ack<{ games: ActiveGameSummary[] }>>(socket, 'list_active_games', {}, (result) => {

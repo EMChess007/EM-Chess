@@ -84,6 +84,15 @@ export class Device {
     this.sh(`am start -W -n ${PACKAGE}/.MainActivity`, { timeout: 90_000 });
   }
 
+  /**
+   * Switches the end-to-end APK between edge-to-edge and the frame of the phone of command #26 (the app below the status bar; scripts/android/patch-main-activity.mjs). Takes effect
+   * when the app is started, so it is restarted here.
+   */
+  async setFitSystemWindows(on) {
+    this.sh(`settings put global em_e2e_fit_system_windows ${on ? 1 : 0}`);
+    await this.relaunch();
+  }
+
   async relaunch() {
     this.stop();
     await sleep(500);
@@ -95,11 +104,14 @@ export class Device {
   /** The accessibility tree. uiautomator sometimes cannot reach an idle state on a screen that animates: it is retried, then asked again without waiting. */
   async dump({ save } = {}) {
     let lastError = '';
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
         // (`uiautomator dump /dev/tty` prints only its trailer through `adb shell`, which has no terminal: the tree goes to a file on the phone and is read back.)
-        const out = this.sh('uiautomator dump /sdcard/e2e-ui.xml > /dev/null && cat /sdcard/e2e-ui.xml', { timeout: 40_000 });
+        // The file is REMOVED first and uiautomator's own message is kept (command #30): `dump && cat` used to read whatever file was on the phone when the dump FAILED ("ERROR: could not get
+        // idle state." on a screen that keeps repainting, exit status 0), i.e. the previous screen's tree - the "stale tree" of the game screens. A failed dump now fails, and says why.
+        const out = this.sh('rm -f /sdcard/e2e-ui.xml; uiautomator dump /sdcard/e2e-ui.xml 2>&1; cat /sdcard/e2e-ui.xml 2>/dev/null', { timeout: 40_000 });
         const xml = extractXml(out);
+        if (!xml) this.noteDumpFailure(out);
         if (xml) {
           this.last = { xml, nodes: parseHierarchy(xml) };
           this.fresh = true; // until the next touch
@@ -124,6 +136,14 @@ export class Device {
       await sleep(700);
     }
     throw new Error(`uiautomator dump failed: ${lastError}`);
+  }
+
+  /** Counts the dumps that failed, by uiautomator's own message ("could not get idle state" = the screen never stood still), and prints the first few. */
+  noteDumpFailure(output) {
+    const message = (output.split('\n').find((l) => /ERROR|Exception|could not/i.test(l)) ?? output).trim().slice(0, 120) || '(no output)';
+    this.dumpFailures = this.dumpFailures ?? {};
+    this.dumpFailures[message] = (this.dumpFailures[message] ?? 0) + 1;
+    if (Object.values(this.dumpFailures).reduce((a, b) => a + b, 0) <= 6) this.log(`  [dump failed] ${message}`);
   }
 
   screenshot() {
@@ -161,6 +181,15 @@ export class Device {
   tap(x, y) {
     this.fresh = false;
     this.sh(`input tap ${Math.round(x)} ${Math.round(y)}`);
+  }
+
+  /**
+   * A touch that LASTS: down, hold, up at the same point (`input swipe x y x y <ms>`). `input tap` sends the up event in the same millisecond as the down; a finger never does (about 50 - 150 ms).
+   * The 2-player board is read with both (command #30), because the first run found that it took no `input tap`.
+   */
+  press(x, y, ms = 90) {
+    this.fresh = false;
+    this.sh(`input swipe ${Math.round(x)} ${Math.round(y)} ${Math.round(x)} ${Math.round(y)} ${ms}`);
   }
 
   swipe(x1, y1, x2, y2, ms = 300) {
@@ -296,8 +325,9 @@ export class Device {
     const t0 = Date.now();
     let nudged = false;
     for (;;) {
-      const nodes = await this.dump();
-      if (fingerprint(nodes) !== before) {
+      // a dump that fails (a screen that never stands still) is not the end of the step: the next screen may still be coming up
+      const nodes = await this.dump().catch(() => null);
+      if (nodes !== null && fingerprint(nodes) !== before) {
         if (nudged) this.log('  (the tree was stale until the status bar was touched)');
         break;
       }

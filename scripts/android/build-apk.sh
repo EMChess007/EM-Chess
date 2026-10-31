@@ -19,6 +19,9 @@ export CI=1
 echo "[build-apk] expo prebuild"
 npx expo prebuild --platform android --no-install --clean
 
+# the run can switch the window between edge-to-edge and the frame of the phone of command #26 (a Settings.Global flag, this APK only)
+node scripts/android/patch-main-activity.mjs android/app/src/main/java/com/emchess/app/MainActivity.kt
+
 echo "[build-apk] gradle assembleDebug (x86_64)"
 (cd android && ./gradlew assembleDebug -PreactNativeArchitectures=x86_64 --console=plain --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g")
 

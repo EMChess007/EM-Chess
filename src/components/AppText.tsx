@@ -43,8 +43,22 @@ function emulatedScale(): number {
   return readEmulatedFontScale(dev, platformOS(), (globalThis as Record<string, unknown>)[EMULATED_TEXT_SCALE_GLOBAL]);
 }
 
+/**
+ * The Android end-to-end build only (command #30; `__DEV__` and EXPO_PUBLIC_E2E, both folded to false in a release bundle): a running clock rewrites its text every second (Bughouse every 200 ms),
+ * and every rewrite is an accessibility event. `uiautomator dump` waits for a quiet stream of those events and gives up with "could not get idle state" on a screen that never has one, which
+ * is why the driver kept reading the previous screen's tree on the game screens. A text that is only a clock reading is marked not important for accessibility in that build, so the dump
+ * can run; nothing else about the text changes.
+ */
+const E2E_QUIET_CLOCKS = typeof __DEV__ !== 'undefined' && __DEV__ && process.env.EXPO_PUBLIC_E2E === '1';
+const CLOCK_READING = /^\s*(\d{1,2}:)?\d{1,2}:\d{2}(\.\d)?\s*$|^\s*\d{1,2}\.\d\s*$/;
+export function isClockReading(children: unknown): boolean {
+  const text = Array.isArray(children) ? children.map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : '\u0000')).join('') : typeof children === 'string' || typeof children === 'number' ? String(children) : '';
+  return CLOCK_READING.test(text);
+}
+
 export const Text = forwardRef<TextInstance, TextProps>(function Text({ style, maxFontSizeMultiplier, children, ...rest }, ref) {
   const nested = useContext(InsideText);
+  const quiet = E2E_QUIET_CLOCKS && isClockReading(children) ? ({ importantForAccessibility: 'no' } as const) : null;
   const flat = (StyleSheet.flatten(style) ?? {}) as TextStyle;
   const cap = maxFontSizeMultiplier ?? BODY_MAX_FONT_SIZE_MULTIPLIER;
   const fit = fitTextStyle(
@@ -58,7 +72,7 @@ export const Text = forwardRef<TextInstance, TextProps>(function Text({ style, m
     if (flat.fontSize === undefined) delete fit.fontSize;
   }
   return (
-    <RNText ref={ref} {...rest} maxFontSizeMultiplier={cap} style={[platformOS() === 'web' ? WEB_BREAK_LONG_WORDS : null, style, fit as TextStyle]}>
+    <RNText ref={ref} {...rest} {...quiet} maxFontSizeMultiplier={cap} style={[platformOS() === 'web' ? WEB_BREAK_LONG_WORDS : null, style, fit as TextStyle]}>
       <InsideText.Provider value>{children}</InsideText.Provider>
     </RNText>
   );

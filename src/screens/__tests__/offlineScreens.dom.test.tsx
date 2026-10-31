@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import GameHistoryScreen from '../GameHistoryScreen';
 import HomeScreen from '../HomeScreen';
@@ -78,5 +80,15 @@ describe('the Spectate list (a socket.io request) against a server that never an
     console.info(`[offline-timing] spectate list (socket), blackhole: error state after ${ms} ms`);
     expect(ms).toBeLessThan(BOUND_MS);
     expect(screen.getByTestId('load-failed-retry')).toBeTruthy();
+  });
+
+  it('says it from the refused connection itself, not from the end of the three deadlines (command #30: 14 s on the emulator)', async () => {
+    await server.setMode('refused');
+    render(<SpectateListScreen authToken="token" onWatch={() => {}} onWatchFour={() => {}} onBack={() => {}} />);
+    expect(screen.getAllByRole('progressbar').length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getByText("Can't reach the server")).toBeTruthy(), { timeout: BOUND_MS });
+    expect(screen.getByTestId('load-failed-retry')).toBeTruthy();
+    // the screen settled on the connection error: the source says so, and a later answer cannot undo it
+    expect(readFileSync(join(__dirname, '../SpectateListScreen.tsx'), 'utf8')).toContain("socket.on('connect_error', onConnectError);");
   });
 });

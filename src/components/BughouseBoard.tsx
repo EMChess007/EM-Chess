@@ -8,7 +8,7 @@ import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { PieceImageMap } from '../types/theme';
 import Piece from './Piece';
 import { useBoardGestures } from './useBoardGestures';
-import { getTouchDebugOverlay } from './devOverlayRegistry';
+import { getE2eStateProbe, getTouchDebugOverlay } from './devOverlayRegistry';
 import type { BoardTouches, DebugFinger } from './useBoardTouches';
 
 const PIECE_NAMES: Record<string, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
@@ -79,6 +79,7 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
 
   const size = cell * 8;
   const DebugOverlay = getTouchDebugOverlay();
+  const E2eProbe = getE2eStateProbe();
   // On a phone the grid's touches come through the overlay (below) and carry the grid's own frame; in the browser the grid itself listens.
   const surface = touches !== undefined && Platform.OS !== 'web';
   return (
@@ -143,6 +144,8 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
       {touches && surface && <View ref={touches.surfaceRef} testID={`board-${board}-surface`} style={StyleSheet.absoluteFill} {...touches.surfaceProps} />}
       {/* DEV ONLY: the square under each finger. The overlay is registered only in a development build (devOverlayRegistry.ts); in a release build there is none. */}
       {touches && debugFingers && DebugOverlay ? <DebugOverlay board={board} orientation={orientation} cell={cell} fingers={debugFingers} /> : null}
+      {/* DEV ONLY, the Android end-to-end build: the board's state for the driver (src/dev/E2eStateProbe.tsx). Null everywhere else. */}
+      {E2eProbe ? <E2eProbe channel={`board-${board}`} rectOf={touches ? touches.gridRef : gestures.containerRef} state={{ fen, selected, orientation, interactive, targets: moveTargets.length }} /> : null}
     </View>
   );
 }

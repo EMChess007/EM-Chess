@@ -2,7 +2,7 @@
  * The judgements of the Android end-to-end driver (command #29), all PURE (a tree, a screenshot in, an issue text out) so `androidE2e.test.ts` proves with synthetic inputs that each one
  * reports what it claims - the old Android-only bugs among them (a clipped label, a black king drawn white, a touch one rank low).
  */
-import { analyseCell, bodyLuminance, BLACK_BODY_MAX, judgeCell, judgeImageCell } from '../../browser/android-matrix-pieces.mjs';
+import { analyseCell, bodyLuminance, BLACK_BODY_MAX, LIGHT_SHARE_BY_THEME, lightShare, judgeCell, judgeImageCell } from '../../browser/android-matrix-pieces.mjs';
 import { crop } from './png.mjs';
 
 export const PACKAGE = 'com.emchess.app';
@@ -252,7 +252,7 @@ export function parseGalleryLabel(label) {
  * The verdict on one cell of a screenshot: a vector piece by its ink, an image piece by looking like its own asset (`assets`: { wk: image, ... }; the piece fills 85 % of the cell,
  * centred). `cell` is the rectangle of the SQUARE in the screenshot. Returns an issue text or null.
  */
-export function judgePieceCell(screenshot, cell, marker, assets = null) {
+export function judgePieceCell(screenshot, cell, marker, assets = null, lightMax = undefined) {
   // The cell is cropped 2 px inside the bounds the tree gives: the judges take the square's colour from the crop's top-left pixel, and a bound off by one pixel (cells that touch, a light row
   // under a dark one) would put a neighbour's colour there (the first emulator run judged every black piece on a light square as "blank" for that reason).
   const inset = CELL_INSET_PX;
@@ -260,9 +260,15 @@ export function judgePieceCell(screenshot, cell, marker, assets = null) {
   if (png.width < 8 || png.height < 8) return `${marker}: the cell is ${png.width}x${png.height} px, too small to judge`;
   if (assets === null) return judgeCell(marker, png);
   const rect = { x: cell.w * 0.075 - inset, y: cell.h * 0.075 - inset, w: cell.w * 0.85, h: cell.h * 0.85 };
-  return judgeImageCell(marker, png, assets, rect);
+  return judgeImageCell(marker, png, assets, rect, lightMax);
 }
 
 export const CELL_INSET_PX = 2;
 
-export { analyseCell, bodyLuminance, BLACK_BODY_MAX };
+/** The light share (android-matrix-pieces.mjs `lightShare`) of one cell of a screenshot, cropped as judgePieceCell crops it. */
+export function lightShareOfCell(screenshot, cell) {
+  const inset = CELL_INSET_PX;
+  return lightShare(crop(screenshot, { x: cell.x + inset, y: cell.y + inset, w: cell.w - 2 * inset, h: cell.h - 2 * inset }));
+}
+
+export { analyseCell, bodyLuminance, BLACK_BODY_MAX, LIGHT_SHARE_BY_THEME, lightShare };

@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import pieceSets from '../../data/pieceSets.json';
+import { decodePng } from '../../../scripts/android/lib/png.mjs';
 import {
   analyseCell,
   checkPieceColours,
@@ -15,6 +18,10 @@ import {
   inkMatches,
   judgeCell,
   judgeImageCell,
+  LIGHT_PIXEL_MIN,
+  LIGHT_SHARE_BY_THEME,
+  LIGHT_SHARE_MAX,
+  lightShare,
 } from '../../../scripts/browser/android-matrix-pieces.mjs';
 
 /**
@@ -33,6 +40,20 @@ function cell(square: Rgb, ink: Rgb, outline: Rgb = ink, radius = 14) {
     for (let x = 0; x < size; x++) {
       const d = Math.hypot(x - 19.5, y - 19.5);
       const colour = d <= radius ? ink : d <= radius + 1.5 ? outline : square;
+      data.set([colour[0], colour[1], colour[2], 255], (y * size + x) * 4);
+    }
+  }
+  return { width: size, height: size, data };
+}
+
+/** A 40 x 40 cell of `square` with a disc of `ink` (radius `radius`) inside a ring of `outline` that is `width` px wide. */
+function ring(square: Rgb, ink: Rgb, outline: Rgb, radius: number, width: number) {
+  const size = 40;
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const d = Math.hypot(x - 19.5, y - 19.5);
+      const colour = d <= radius ? ink : d <= radius + width ? outline : square;
       data.set([colour[0], colour[1], colour[2], 255], (y * size + x) * 4);
     }
   }
@@ -86,8 +107,8 @@ describe('analyseCell', () => {
 describe('judgeCell: the verdict on a photographed piece', () => {
   it.each([
     ['wk', [0xfa, 0xfa, 0xfa], [0x1b, 0x1b, 0x1b]],
-    ['bk', [0x1d, 0x1d, 0x1d], [0xf1, 0xf1, 0xf1]],
-    ['bq', [0x1d, 0x1d, 0x1d], [0xf1, 0xf1, 0xf1]],
+    ['bk', [0x1d, 0x1d, 0x1d], [0x66, 0x66, 0x66]],
+    ['bq', [0x1d, 0x1d, 0x1d], [0x66, 0x66, 0x66]],
     ['wp', [0xfa, 0xfa, 0xfa], [0x1b, 0x1b, 0x1b]],
     ['0:p', [0xd3, 0x2f, 0x2f], [0, 0, 0]],
     ['2:n', [0xf9, 0xa8, 0x25], [0, 0, 0]],
@@ -124,6 +145,47 @@ describe('judgeCell: the verdict on a photographed piece', () => {
     expect(problem).toContain('bk: the body reads light');
     // the same picture as a white king has no such rule
     expect(judgeCell('wk', { width: size, height: size, data })).not.toContain('reads light');
+  });
+
+  it('command #30: a black piece with a THICK LIGHT OUTLINE (the vector art of 4cf8c46) is reported although its ink is right and its median is dark', () => {
+    // the old art: fill #1d1d1d, outline #f1f1f1 about 1.5 px wide around a 14 px disc: the ring is 40 % of the piece, the median luminance is still the fill's
+    const old = (square: Rgb) => ring(square, [0x1d, 0x1d, 0x1d], [0xf1, 0xf1, 0xf1], 14, 4);
+    for (const square of [LIGHT, DARK]) {
+      const problem = judgeCell('bk', old(square));
+      expect(problem, `${square}`).toContain('bk: ');
+      expect(problem, `${square}`).toContain('of the piece is light (limit 15 %)');
+      expect(problem).toContain('a light outline or light bands');
+      // the same picture as a white piece is not judged by this rule
+      expect(judgeCell('wk', old(square)) ?? '').not.toContain('of the piece is light');
+    }
+    // today's art (dark-grey outline) is clean on both squares
+    for (const square of [LIGHT, DARK]) expect(judgeCell('bk', ring(square, [0x1d, 0x1d, 0x1d], [0x66, 0x66, 0x66], 14, 2))).toBeNull();
+  });
+
+  it('command #30: the OLD Merida black king and rook (4cf8c46, light bands) are reported by the image judge with the Merida limit, the art of today is not', () => {
+    const fixtures = join(__dirname, 'fixtures', 'oldArt');
+    const rect = { x: 54 * 0.075, y: 54 * 0.075, w: 54 * 0.85, h: 54 * 0.85 };
+    const today = (key: string) => decodePng(readFileSync(join(__dirname, '../../../assets/pieces/merida', `${key}.png`)));
+    for (const [key, square] of [['bk', [0xb5, 0x88, 0x63]], ['bk', [0xf0, 0xd9, 0xb5]], ['br', [0xb5, 0x88, 0x63]]] as Array<[string, Rgb]>) {
+      const old = decodePng(readFileSync(join(fixtures, `merida-${key}-4cf8c46.png`)));
+      const photographed = expectedCell(old, square, 54, 54, rect); // what the emulator draws for that art
+      // against its OWN image the cell is a perfect match (the judge of command #29 passed it), and the light share is what reports it
+      expect(judgeImageCell(key, photographed, { [key]: old, w: old }, rect), `${key} old, no limit`).toBeNull();
+      expect(judgeImageCell(key, photographed, { [key]: old, w: old }, rect, LIGHT_SHARE_BY_THEME.merida), `${key} old on ${square}`).toContain('of the piece is light (limit 15 %)');
+      const fresh = expectedCell(today(key), square, 54, 54, rect);
+      expect(judgeImageCell(key, fresh, { [key]: today(key), w: today(key) }, rect, LIGHT_SHARE_BY_THEME.merida), `${key} today on ${square}`).toBeNull();
+    }
+  });
+
+  it('lightShare: the share of the piece\'s own pixels above luminance 150; 0 for an empty cell; the limits are the calibrated literals', () => {
+    expect(lightShare(cell(LIGHT, LIGHT, LIGHT))).toBe(0);
+    expect(lightShare(cell(LIGHT, [0x1d, 0x1d, 0x1d], [0x1d, 0x1d, 0x1d]))).toBe(0);
+    expect(lightShare(cell(DARK, [0xfa, 0xfa, 0xfa], [0xfa, 0xfa, 0xfa]))).toBe(1);
+    const half = lightShare(ring(LIGHT, [0x1d, 0x1d, 0x1d], [0xf1, 0xf1, 0xf1], 8, 6));
+    expect(half).toBeGreaterThan(0.4);
+    expect(LIGHT_PIXEL_MIN).toBe(150);
+    expect(LIGHT_SHARE_MAX).toBe(0.15);
+    expect(LIGHT_SHARE_BY_THEME).toEqual({ default: 0.15, merida: 0.15, cburnett: 0.3, checkers: 0.22 });
   });
 
   it('THE BUG: a black king drawn white is reported, on both square colours', () => {

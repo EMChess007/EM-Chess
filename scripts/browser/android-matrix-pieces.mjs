@@ -81,12 +81,45 @@ export function bodyLuminance(png) {
   return values[Math.floor(values.length / 2)];
 }
 
+/** A pixel of a piece counts as LIGHT when its luminance (0-255) is above this. */
+export const LIGHT_PIXEL_MIN = 150;
+
+/**
+ * The share (0-1) of a piece's pixels that are light (command #30). The median above is moved by what most of the piece is; a black piece whose OUTLINE is light (the thick #f1f1f1 edge of
+ * 4cf8c46 on every black vector piece) or whose body has light bands (Merida's black king) is still half dark by the median, and the first emulator run passed it. This number moves with the
+ * light pixels themselves. 0 when nothing but the square is there.
+ */
+export function lightShare(png) {
+  const { width, height, data } = png;
+  const background = [data[(1 * width + 1) * 4], data[(1 * width + 1) * 4 + 1], data[(1 * width + 1) * 4 + 2]];
+  let pieceCount = 0;
+  let light = 0;
+  for (let i = 0; i < width * height; i++) {
+    const pixel = [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]];
+    if (distance(pixel, background) <= BACKGROUND_DISTANCE) continue;
+    pieceCount++;
+    if (0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2] > LIGHT_PIXEL_MIN) light++;
+  }
+  return pieceCount === 0 ? 0 : light / pieceCount;
+}
+
 /** The issue text for a black piece whose body reads light, or null. */
-function lightBodyIssue(marker, png) {
+function lightBodyIssue(marker, png, lightMax = LIGHT_SHARE_MAX) {
   if (marker[0] !== 'b' || !/^b[pnbrqk]$/.test(marker)) return null;
   const body = bodyLuminance(png);
-  return body !== null && body > BLACK_BODY_MAX ? `${marker}: the body reads light (median luminance ${Math.round(body)}, limit ${BLACK_BODY_MAX})` : null;
+  if (body !== null && body > BLACK_BODY_MAX) return `${marker}: the body reads light (median luminance ${Math.round(body)}, limit ${BLACK_BODY_MAX})`;
+  const share = lightShare(png);
+  return share > lightMax ? `${marker}: ${(share * 100).toFixed(1)} % of the piece is light (limit ${(lightMax * 100).toFixed(0)} %): a light outline or light bands on a black piece` : null;
 }
+
+/**
+ * The most light pixels (share of the piece, `lightShare`) a BLACK piece may have, command #30. Calibrated by scripts/android/calibrate-pieces.mjs on the art of today and of 4cf8c46 at cells of
+ * 36 - 96 px on five square colours: the built-in vector pieces 0.00 - 0.06 now against 0.43 - 0.45 then (a thick #f1f1f1 outline), Merida 0.00 - 0.09 against 0.26 - 0.29 (light bands); Cburnett's black
+ * pieces carry white detail lines by design (up to 0.22, the same in both versions) and Chess with Checkers' a glyph (up to 0.14), so those two have their own, wider, limits. Literals on purpose
+ * (a test that reads the limit from the module cannot kill a mutant of it).
+ */
+export const LIGHT_SHARE_MAX = 0.15;
+export const LIGHT_SHARE_BY_THEME = { default: 0.15, merida: 0.15, cburnett: 0.3, checkers: 0.22 };
 
 /** The ink a piece must have, from its marker: "wk" / "bq" (colour + type) or "2:n" (seat + type). Null for a marker nobody knows. */
 export function expectedInk(marker) {
@@ -205,7 +238,7 @@ export function imageDistances(png, assets, rect) {
  * IMAGE_MAX_DISTANCE of its own. Which KIND of a colour it is nearest to is not a verdict: in a disc theme (Chess with Checkers) the six white pieces are one disc with a small glyph and
  * a single pixel of scaling decides which is nearest; the key -> asset mapping is pinned by pieceThemes.test.ts and pieceThemes.dom.test.tsx instead.
  */
-export function judgeImageCell(marker, png, assets, rect) {
+export function judgeImageCell(marker, png, assets, rect, lightMax = Infinity) {
   if (!/^[wb][pnbrqk]$/.test(marker)) return `unknown piece marker "${marker}"`;
   if (!assets[marker]) return `${marker}: the theme has no image for it`;
   const distances = imageDistances(png, assets, rect);
@@ -215,7 +248,7 @@ export function judgeImageCell(marker, png, assets, rect) {
   const swapped = distances[(marker[0] === 'w' ? 'b' : 'w') + marker[1]];
   if (nearest[0] !== marker[0]) return `${marker}: drawn like ${nearest} (distance ${nearestDistance.toFixed(1)}), not like its own image (${own.toFixed(1)}); the other colour's ${marker[1]} is at ${swapped.toFixed(1)}`;
   if (own > IMAGE_MAX_DISTANCE) return `${marker}: ${own.toFixed(1)} away from its own image (limit ${IMAGE_MAX_DISTANCE})`;
-  return lightBodyIssue(marker, png);
+  return lightBodyIssue(marker, png, lightMax);
 }
 
 /**

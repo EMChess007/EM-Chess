@@ -1,12 +1,14 @@
 name: android-e2e
 
-# THE ANDROID END-TO-END RUN (command #29, TESTING.md section 45). Every Android-only bug of the last weeks (clipped text, touches one rank low, endless spinners, pockets over the board, piece
-# colours) passed every check because every check ran in Chromium. This job builds the real app for Android, boots a real emulator (KVM, API 34) and drives it with real touches, on two
-# phones (360 x 640 dp at font scale 1.3, and a large phone at 1.0): every main screen, the on-device text-fit probe, the Piece gallery pixels, taps on the 2-player board and on both Bughouse
-# boards, an online Bughouse game against the run's own backend, and "Can't reach the server" with the backend stopped. It is meant to be a REQUIRED status check (the job name below is the
-# check's name): the steps are in TESTING.md section 45.
+# THE ANDROID END-TO-END RUN (command #29, TESTING.md section 45; split into parallel jobs by command #30). Every Android-only bug of the last weeks (clipped text, touches one rank low,
+# endless spinners, pockets over the board, piece colours) passed every check because every check ran in Chromium. This workflow builds the real app for Android, boots real emulators
+# (KVM, API 34) and drives them with real touches, on two phones (360 x 640 dp at font scale 1.3, and a large phone at 1.0): every main screen, the on-device text-fit probe, the Piece
+# gallery pixels, touches on the 2-player board and on both Bughouse boards (edge-to-edge AND in the frame of the phone that showed the bug of command #26), an online Bughouse game against
+# the run's own backend, and "Can't reach the server" with the backend stopped.
 #
-# A docs-only change skips the heavy steps INSIDE this one job (the job still reports "success", so a required check never hangs on "expected" the way a path-filtered workflow does).
+# SHAPE: `changes` (is there anything but documentation?) -> `apk` (build, or restore, the debug APK once) -> `emulator` (seven jobs side by side, one slice each:
+# scripts/android/run-on-emulator.sh) -> `android-e2e` (the aggregate: THE REQUIRED STATUS CHECK, its name is the check's name; it is green only when every slice is).
+# A docs-only change skips `apk` and `emulator`, and the aggregate still reports "success", so a required check never hangs on "expected" the way a path-filtered workflow does.
 # No secret is used anywhere: the APK is built with `expo prebuild` + Gradle (no EAS), the database is a throw-away service container, the backend is the public chess-app-backend checkout.
 on:
   push:
@@ -29,14 +31,111 @@ concurrency:
   group: android-e2e-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  EXPO_NO_TELEMETRY: '1'
+
 jobs:
-  android-e2e:
-    name: android-e2e
+  changes:
+    name: changes
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Is there anything but documentation in this change?
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then base="${{ github.event.pull_request.base.sha }}"; else base="${{ github.event.before }}"; fi
+          code="$(bash scripts/android/changed-code.sh "$base" "${{ github.sha }}")"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "code changed: $code"
+
+  # --- the APK: only rebuilt when the NATIVE side changes (the JavaScript comes from Metro at run time) --------------------------------------------------------------------------------
+  apk:
+    name: apk
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore the APK
+        id: apk
+        uses: actions/cache/restore@v4
+        with:
+          path: apk-cache
+          key: apk-v2-${{ hashFiles('package-lock.json', 'app.json', 'app.config.js', 'assets/icon.png', 'assets/android-icon-*.png', 'scripts/android/build-apk.sh', 'scripts/android/patch-main-activity.mjs') }}
+
+      - uses: actions/setup-node@v4
+        if: steps.apk.outputs.cache-hit != 'true'
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        if: steps.apk.outputs.cache-hit != 'true'
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install the app's dependencies
+        if: steps.apk.outputs.cache-hit != 'true'
+        run: npm ci --no-audit --no-fund
+
+      # (restore + explicit save steps, not the combined action: the combined one saves only when the WHOLE job is green, and a red run - the case where a rerun matters most - would throw away
+      # a 10 minute build every time)
+      - name: Restore Gradle
+        if: steps.apk.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-v1-${{ hashFiles('package-lock.json') }}
+          restore-keys: gradle-v1-
+
+      - name: Build the debug APK (expo prebuild + Gradle, x86_64)
+        if: steps.apk.outputs.cache-hit != 'true'
+        run: bash scripts/android/build-apk.sh apk-cache
+
+      - name: Save the APK
+        if: steps.apk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: apk-cache
+          key: ${{ steps.apk.outputs.cache-primary-key }}
+
+      - name: Save Gradle
+        if: steps.apk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-v1-${{ hashFiles('package-lock.json') }}
+
+      - name: Hand the APK to the emulator jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: apk-cache/app-debug.apk
+          retention-days: 1
+
+  # --- seven slices, side by side ---------------------------------------------------------------------------------------------------------------------------------------------------------
+  emulator:
+    name: emulator (${{ matrix.job }})
+    needs: [changes, apk]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [small-screens-1, small-screens-2, small-gallery, large-screens-1, large-screens-2, large-touch, online]
     env:
-      OUT: ${{ github.workspace }}/android-e2e-out
-      EXPO_NO_TELEMETRY: '1'
       ANDROID_E2E_ALL: ${{ github.event.inputs.all_screens == 'true' && '1' || '' }}
     services:
       postgres:
@@ -54,34 +153,16 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Is there anything but documentation in this change?
-        id: changes
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then base="${{ github.event.pull_request.base.sha }}"; else base="${{ github.event.before }}"; fi
-          code="$(bash scripts/android/changed-code.sh "$base" "${{ github.sha }}")"
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          echo "code changed: $code"
 
       - uses: actions/setup-node@v4
-        if: steps.changes.outputs.code == 'true'
         with:
           node-version: 22
 
-      - uses: actions/setup-java@v4
-        if: steps.changes.outputs.code == 'true'
-        with:
-          distribution: temurin
-          java-version: 17
-
       - name: Install the app's dependencies
-        if: steps.changes.outputs.code == 'true'
         run: npm ci --no-audit --no-fund
 
       - name: Check out the backend
-        if: steps.changes.outputs.code == 'true'
+        if: matrix.job == 'online'
         run: |
           branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
           ref="${{ github.event.inputs.backend_ref }}"
@@ -94,61 +175,22 @@ jobs:
           git -C backend log -1 --oneline
           (cd backend && npm ci --no-audit --no-fund)
 
-      # --- the APK: only rebuilt when the NATIVE side changes (the JavaScript comes from Metro at run time) -----------------------------------------------------------------
-      - name: Restore the APK
-        if: steps.changes.outputs.code == 'true'
-        id: apk
-        uses: actions/cache/restore@v4
+      - name: Get the APK
+        uses: actions/download-artifact@v4
         with:
+          name: apk
           path: apk-cache
-          key: apk-v1-${{ hashFiles('package-lock.json', 'app.json', 'app.config.js', 'assets/icon.png', 'assets/android-icon-*.png', 'scripts/android/build-apk.sh') }}
 
-      # (restore + explicit save steps, not the combined action: the combined one saves only when the WHOLE job is green, and a red run - the case where a rerun matters most - would throw away
-      # a 10 minute build every time)
-      - name: Restore Gradle
-        if: steps.changes.outputs.code == 'true' && steps.apk.outputs.cache-hit != 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-v1-${{ hashFiles('package-lock.json') }}
-          restore-keys: gradle-v1-
-
-      - name: Build the debug APK (expo prebuild + Gradle, x86_64)
-        if: steps.changes.outputs.code == 'true' && steps.apk.outputs.cache-hit != 'true'
-        run: bash scripts/android/build-apk.sh apk-cache
-
-      - name: Save the APK
-        if: steps.changes.outputs.code == 'true' && steps.apk.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: apk-cache
-          key: ${{ steps.apk.outputs.cache-primary-key }}
-
-      - name: Save Gradle
-        if: steps.changes.outputs.code == 'true' && steps.apk.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-v1-${{ hashFiles('package-lock.json') }}
-
-      # --- Metro (development mode, pointed at the run's backend) and the emulator ---------------------------------------------------------------------------------------------
       - name: Start Metro
-        if: steps.changes.outputs.code == 'true'
         run: bash scripts/android/metro.sh start
 
       - name: Enable KVM
-        if: steps.changes.outputs.code == 'true'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
       - name: Restore the emulator image
-        if: steps.changes.outputs.code == 'true'
         id: avd
         uses: actions/cache/restore@v4
         with:
@@ -158,7 +200,7 @@ jobs:
           key: avd-v1-api34-x86_64-pixel_6
 
       - name: Create the emulator and its snapshot (first run only)
-        if: steps.changes.outputs.code == 'true' && steps.avd.outputs.cache-hit != 'true'
+        if: steps.avd.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -173,7 +215,8 @@ jobs:
           script: echo "Generated the emulator snapshot for caching."
 
       - name: Save the emulator image
-        if: steps.changes.outputs.code == 'true' && steps.avd.outputs.cache-hit != 'true'
+        if: steps.avd.outputs.cache-hit != 'true' && matrix.job == 'small-screens-1'
+        continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: |
@@ -181,8 +224,7 @@ jobs:
             ~/.android/adb*
           key: ${{ steps.avd.outputs.cache-primary-key }}
 
-      - name: Android end-to-end run
-        if: steps.changes.outputs.code == 'true'
+      - name: Android end-to-end run (${{ matrix.job }})
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -194,23 +236,57 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: bash scripts/android/run-on-emulator.sh apk-cache/app-debug.apk android-e2e-out
+          script: bash scripts/android/run-on-emulator.sh apk-cache/app-debug.apk android-e2e-out ${{ matrix.job }}
 
       - name: Keep the screenshots, trees and logs
-        if: always() && steps.changes.outputs.code == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-e2e
-          path: |
-            android-e2e-out
-            ${{ runner.temp }}/android-e2e-state/*.log
+          name: android-e2e-${{ matrix.job }}
+          path: android-e2e-out
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Summary
-        if: always() && steps.changes.outputs.code == 'true'
-        run: node scripts/android/summary.mjs android-e2e-out >> "$GITHUB_STEP_SUMMARY"
-
       - name: Stop Metro
-        if: always() && steps.changes.outputs.code == 'true'
+        if: always()
         run: bash scripts/android/metro.sh stop
+
+  # --- THE REQUIRED CHECK: green only when every slice is green (or when there was nothing but documentation) ---------------------------------------------------------------------------
+  android-e2e:
+    name: android-e2e
+    needs: [changes, apk, emulator]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        if: needs.changes.outputs.code == 'true'
+        with:
+          node-version: 22
+
+      - name: Collect the results of every slice
+        if: needs.changes.outputs.code == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: android-e2e-*
+          merge-multiple: true
+          path: android-e2e-all
+
+      - name: Summary
+        if: needs.changes.outputs.code == 'true'
+        run: node scripts/android/summary.mjs android-e2e-all >> "$GITHUB_STEP_SUMMARY"
+
+      - name: The verdict
+        env:
+          CODE: ${{ needs.changes.outputs.code }}
+          CHANGES: ${{ needs.changes.result }}
+          APK: ${{ needs.apk.result }}
+          EMULATOR: ${{ needs.emulator.result }}
+        run: |
+          echo "changes=$CHANGES code=$CODE apk=$APK emulator=$EMULATOR"
+          if [ "$CHANGES" != "success" ]; then echo "the change detection failed"; exit 1; fi
+          if [ "$CODE" != "true" ]; then echo "documentation only: nothing to run"; exit 0; fi
+          if [ "$APK" != "success" ] || [ "$EMULATOR" != "success" ]; then echo "android-e2e is RED: a slice or the APK build failed (see the jobs above and the summary)"; exit 1; fi
+          echo "android-e2e is green: every slice passed"

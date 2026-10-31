@@ -21,6 +21,7 @@ import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { ExplodedPiece, Move, PieceColor, Piece as PieceModel, SpellCast } from '../types/chess';
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
 import { getBoardSize } from './boardSize';
+import { getE2eStateProbe } from './devOverlayRegistry';
 import PromotionPicker from './PromotionPicker';
 import { useBoardGestures } from './useBoardGestures';
 import { useClearAnnotationsOnMove } from './useClearAnnotationsOnMove';
@@ -704,6 +705,8 @@ function ChessBoard({
       ),
   });
 
+  const E2eProbe = getE2eStateProbe();
+
   // Atomic explosion overlay values (see the animation effect): one cell per square the blast cleared.
   const explosionCells = explosion ? [...new Map(explosion.map((e) => [e.square, e])).values()] : [];
   const flashOpacity = explosionProgress.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.9, 0] });
@@ -751,6 +754,9 @@ function ChessBoard({
         {enableAnnotations && (
           <BoardAnnotations squareSize={squareSize} arrows={arrows} highlights={highlights} liveArrow={liveArrow} />
         )}
+
+        {/* DEV ONLY, the Android end-to-end build: the board's state for the driver (src/dev/E2eStateProbe.tsx). Null everywhere else. */}
+        {E2eProbe && <E2eProbe channel="board-2p" rectOf={boardContainerRef} state={{ fen, turn, selected: selectedSquare, orientation, legal: legalTargets.length }} />}
 
         {explosionCells.map(({ square, piece }) => {
           const { row, col } = squareToRowCol(square, orientation);

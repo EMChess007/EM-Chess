@@ -5,7 +5,7 @@
  * Every Android-only bug of the last weeks (clipped text, touches one rank low, endless spinners, pockets over the board, piece colours) passed every check because every check ran in Chromium.
  * This run exists so the next one cannot: it is a required status check (TESTING.md section 45).
  *
- *   node scripts/android/e2e.mjs --profile small|large --phase static|online|offline --out DIR [--api http://localhost:3000] [--only id,id] [--skip-gallery]
+ *   node scripts/android/e2e.mjs --profile small|large --phase static|online|offline --out DIR [--api http://localhost:3000] [--only id,id] [--skip-gallery] [--parts a,b] [--shard i/n] [--tag name]
  *
  *   phase static   (no backend running): every main screen, the on-device text-fit probe, the Piece gallery pixel check, real taps on the 2-player board and on both Bughouse boards
  *   phase online   (backend + the Bughouse buddy running): register, log in through the keyboard, queue for an online Bughouse game, play moves, resign, see the result
@@ -23,8 +23,9 @@ import { SCREENS } from '../browser/android-matrix-screens.mjs';
 // Bughouse's screens live in an optional file (a branch without Bughouse has none): the run then covers the screens it has.
 const EXTRA_SCREENS = await import('../browser/android-matrix-screens-extra.mjs').then((m) => m.EXTRA_SCREENS, () => []);
 import { Device, PROFILES, sleep } from './lib/device.mjs';
+import { Beacon } from './lib/beacon.mjs';
 import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
-import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
+import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -40,10 +41,20 @@ const flag = (name) => args.includes(`--${name}`);
 const profile = PROFILES[arg('profile', '')];
 const phase = arg('phase', '');
 if (!profile || !['static', 'online', 'offline'].includes(phase)) {
-  console.error('usage: e2e.mjs --profile small|large --phase static|online|offline --out DIR [--api URL] [--only id,id] [--skip-gallery]');
+  console.error('usage: e2e.mjs --profile small|large --phase static|online|offline --out DIR [--api URL] [--only id,id] [--skip-gallery] [--parts a,b] [--shard i/n] [--tag name]');
   process.exit(2);
 }
-const OUT = join(arg('out', 'android-e2e-out'), `${profile.id}-${phase}`);
+// --parts: which checks of the static phase this run does (the workflow runs them in parallel jobs); --shard i/n: this run's share of the screens; --tag: a suffix for the output folder
+const PARTS = new Set(arg('parts', 'screens,textfit,gallery,touch2p,touchbug,touchinset').split(','));
+const SHARD = (() => {
+  const m = /^(\d+)\/(\d+)$/.exec(arg('shard', '1/1'));
+  if (!m || Number(m[1]) < 1 || Number(m[1]) > Number(m[2])) {
+    console.error('--shard takes i/n with 1 <= i <= n');
+    process.exit(2);
+  }
+  return { index: Number(m[1]) - 1, count: Number(m[2]) };
+})();
+const OUT = join(arg('out', 'android-e2e-out'), `${profile.id}-${phase}${arg('tag') ? `-${arg('tag')}` : ''}`);
 const API = arg('api', 'http://localhost:3000');
 const ONLY = arg('only') ? new Set(arg('only').split(',')) : null;
 mkdirSync(OUT, { recursive: true });
@@ -131,7 +142,9 @@ const phoneScreens = () =>
       if (!stop) return s;
       const cut = s.steps.findIndex((step) => step.id === stop);
       return { ...s, steps: s.steps.slice(0, cut), expectText: REFUSAL_TEXT, pieces: undefined, title: `${s.title} (refused on this window)` };
-    });
+    })
+    // `--shard 1/2`: every n-th screen of the list, so the screens of one profile can run in parallel jobs (the same order everywhere)
+    .filter((_, index) => index % SHARD.count === SHARD.index);
 
 /**
  * The web matrix finds "the second Classic" in document order; on the phone only what is on screen exists, so that is "the Classic under the heading Local". The headings of the cards on the
@@ -269,6 +282,7 @@ async function gallery(dev) {
     const issues = [];
     const perTheme = {};
     const failuresBy = {};
+    const lightByTheme = {};
     let stuck = 0;
     for (let page = 0; page < 120 && stuck < 3; page++) {
       const { nodes, png } = await dev.look();
@@ -289,7 +303,12 @@ async function gallery(dev) {
           issues.push(`unknown piece theme "${parsed.theme}" in the gallery`);
           continue;
         }
-        const problem = judgePieceCell(png, { x: b.x1, y: b.y1, w: b.w, h: b.h }, parsed.marker, themeAssets(id));
+        const problem = judgePieceCell(png, { x: b.x1, y: b.y1, w: b.w, h: b.h }, parsed.marker, themeAssets(id), LIGHT_SHARE_BY_THEME[id]);
+        // the light share of every black cell is recorded (the first run of a new judge is read from these numbers): worst per theme, printed at the end of the gallery
+        if (parsed.marker[0] === 'b') {
+          const measured = lightShareOfCell(png, { x: b.x1, y: b.y1, w: b.w, h: b.h });
+          lightByTheme[id] = Math.max(lightByTheme[id] ?? 0, measured);
+        }
         perTheme[id] = (perTheme[id] ?? 0) + 1;
         if (problem) {
           issues.push(`${n.desc}: ${problem}`);
@@ -306,6 +325,8 @@ async function gallery(dev) {
       dev.swipe(dev.display.w / 2, viewport.y1 + span * 0.8, dev.display.w / 2, viewport.y1 + span * 0.25, 900);
       await sleep(500);
     }
+    // (the measured numbers are kept in the log whatever the verdict: a judge is calibrated against them - TESTING.md section 45)
+    log(`gallery: the largest light share of a BLACK piece per theme, as photographed: ${JSON.stringify(Object.fromEntries(Object.entries(lightByTheme).map(([k, v]) => [k, Number(v.toFixed(3))])))} (limits ${JSON.stringify(LIGHT_SHARE_BY_THEME)})`);
     if (judged.size < GALLERY_CELLS) issues.push(`only ${judged.size} of ${GALLERY_CELLS} gallery cells were seen and judged`);
     if (Object.keys(failuresBy).length > 0) issues.unshift(`failed cells by group: ${JSON.stringify(failuresBy)}`);
     record('piece gallery pixels', issues, `${judged.size} cells judged: ${JSON.stringify(perTheme)}`);
@@ -319,106 +340,199 @@ async function boardNode(dev, id) {
   return node.bounds;
 }
 
-/** Real taps at the computed middle of squares of the 2-player board: each must leave exactly that square selected (the bug of command #26 was a tap one rank low). */
+/** A board's rectangle as the beacon reports it (screen pixels, `measureInWindow` x the density) in the shape the judges take. */
+function rectOfState(state) {
+  const { x, y, w, h } = state.rect;
+  return { x1: x, y1: y, x2: x + w, y2: y + h, w, h, cx: Math.round(x + w / 2), cy: Math.round(y + h / 2) };
+}
+
+/** The piece on a square of a FEN ("P", "n", ... or null). */
+function pieceOnSquare(fen, square) {
+  const rows = fen.split(' ')[0].split('/');
+  const row = rows[8 - Number(square[1])];
+  let col = 0;
+  for (const ch of row) {
+    if (/\d/.test(ch)) col += Number(ch);
+    else {
+      if (col === square.charCodeAt(0) - 97) return ch;
+      col++;
+    }
+  }
+  return null;
+}
+
+/** Waits (bounded) for the board's channel to say `selected` is `target`; returns the state it said it in, or null. */
+const waitSelected = (dev, channel, target, ms) => dev.beacon.waitFor(channel, (s) => s.selected === target, ms);
+
+/**
+ * Real touches at the computed middle of squares of the 2-player board: each must leave exactly that square selected (the bug of command #26 was a tap one rank low). The app SAYS what it
+ * selected (the beacon: `selected` of `state-board-2p`) and the photograph shows it; the two must agree.
+ *
+ * The first run (command #29) found that the board took not one of seven `adb input tap`s. Each square is therefore touched first with `input tap` (down and up in the same millisecond) and,
+ * when the app does not answer, again with a touch that LASTS 90 ms (`input swipe x y x y 90`, what a finger does), and the app's gesture counters (grant / release / tap, `gestures-board`)
+ * say what reached it: nothing at all (the touch never arrived), a grant without a release, or a tap that resolved to another cell. The verdict is in the note of the check; the check fails when
+ * even the lasting touch is not understood. A lasting touch is what the rest of the run uses on this board.
+ */
 async function touches2p(dev) {
   await scenario(dev, 'touch: 2-player board', async () => {
     await toHome(dev);
+    dev.beacon.forget('state-board-2p');
     await dev.runSteps([{ text: 'Play' }, { text: 'Classic', below: 'Local' }, { text: '5 min' }]);
-    await sleep(1200);
-    // the board's rectangle: from the tree, or - when the tree of this screen lags the screen - from the photograph
-    let board = null;
-    let source = 'tree';
-    try {
-      board = await boardNode(dev, 'chess-board');
-    } catch {
-      const found = boardFromScreenshot(dev.screenshot());
-      if (found) {
-        board = found;
-        source = 'photograph';
-      }
-    }
-    if (board === null) throw new Error(`the 2-player board is neither in the tree nor in the photograph (dark squares: ${JSON.stringify(darkSquareMeasure(dev.screenshot()))})`);
     const issues = [];
-    if (Math.abs(board.w - board.h) > 2) issues.push(`the board is not square: ${board.w}x${board.h}`);
-    for (const target of ['e2', 'b1', 'g1', 'a2', 'h2', 'd1', 'a1', 'h1', 'c2', 'f2']) {
-      const r = squareRect(board, 'w', target);
-      dev.tap(r.cx, r.cy);
-      await sleep(450);
-      const problem = judgeSelection(dev.screenshot(), board, 'w', target);
-      if (problem) issues.push(problem);
-      dev.tap(r.cx, r.cy); // the same square again clears the selection
-      await sleep(350);
+    let state = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50, 40_000);
+    let board = null;
+    let source = 'beacon';
+    if (state) board = rectOfState(state);
+    else {
+      // no beacon (a build without it): the tree, then the photograph
+      source = 'tree';
+      try {
+        board = await boardNode(dev, 'chess-board');
+      } catch {
+        const found = boardFromScreenshot(dev.screenshot());
+        if (found) {
+          board = found;
+          source = 'photograph';
+        } else throw new Error(`the 2-player board is not reported by the app, nor in the tree, nor in the photograph (dark squares: ${JSON.stringify(darkSquareMeasure(dev.screenshot()))})`);
+      }
+      issues.push('the app reported no state for the board (no beacon): the board was found without it');
     }
-    // a whole move: e2 then e4, and both squares carry the last-move highlight
-    const e2 = squareRect(board, 'w', 'e2');
-    const e4 = squareRect(board, 'w', 'e4');
-    dev.tap(e2.cx, e2.cy);
-    await sleep(400);
-    dev.tap(e4.cx, e4.cy);
+    if (Math.abs(board.w - board.h) > 2) issues.push(`the board is not square: ${board.w}x${board.h}`);
+    const orientation = () => dev.beacon.get('state-board-2p')?.orientation ?? 'w';
+    const counters = () => ({ grant: 0, tap: 0, release: 0, arrow: 0, highlight: 0, ignore: 0, terminate: 0, ...(dev.beacon.get('gestures-board') ?? {}) });
+    const verdicts = { tap: 0, press: 0, neither: 0 };
+    const notes = [];
+    for (const target of ['e2', 'b1', 'g1', 'a2', 'h2', 'd1', 'a1', 'h1', 'c2', 'f2']) {
+      const r = squareRect(board, orientation(), target);
+      const before = counters();
+      let worked = null;
+      for (const method of ['tap', 'press']) {
+        if (method === 'tap') dev.tap(r.cx, r.cy);
+        else dev.press(r.cx, r.cy, 90);
+        if (state && (await waitSelected(dev, 'state-board-2p', target, 1800))) {
+          worked = method;
+          break;
+        }
+        if (!state) {
+          await sleep(450);
+          if (!judgeSelection(dev.screenshot(), board, orientation(), target)) {
+            worked = method;
+            break;
+          }
+        }
+      }
+      const after = counters();
+      const delta = Object.fromEntries(Object.keys(after).map((k) => [k, after[k] - before[k]]).filter(([, v]) => v !== 0));
+      verdicts[worked ?? 'neither']++;
+      if (worked !== 'tap') notes.push(`${target}: ${worked === null ? 'NOT selected by tap or press' : 'only the lasting touch worked'}; the app saw ${JSON.stringify(delta)}, last release ${JSON.stringify(dev.beacon.get('gestures-board')?.lastRelease ?? null)}`);
+      if (worked === null) {
+        issues.push(`touched ${target} (tap, then a 90 ms press): the app selected ${JSON.stringify(dev.beacon.get('state-board-2p')?.selected ?? null)}; its gesture counters moved by ${JSON.stringify(delta)}`);
+        continue;
+      }
+      // the app says it is selected: the photograph must show the same square (the cell the app draws and the cell computed from the rectangle agree)
+      await sleep(350);
+      const problem = judgeSelection(dev.screenshot(), board, orientation(), target);
+      if (problem) issues.push(`${problem} (the app said ${target} is selected)`);
+      dev.press(r.cx, r.cy, 90); // the same square again clears the selection
+      if (state) await dev.beacon.waitFor('state-board-2p', (s) => s.selected === null, 1800);
+      else await sleep(350);
+    }
+    // a whole move: e2 then e4 (lasting touches); the app's position must have the pawn on e4 and Black to move, and both squares carry the last-move highlight
+    const e2 = squareRect(board, orientation(), 'e2');
+    dev.press(e2.cx, e2.cy, 90);
+    if (state) await waitSelected(dev, 'state-board-2p', 'e2', 2500);
+    else await sleep(400);
+    const e4 = squareRect(board, orientation(), 'e4');
+    dev.press(e4.cx, e4.cy, 90);
+    let moved = null;
+    if (state) {
+      moved = await dev.beacon.waitFor('state-board-2p', (s) => pieceOnSquare(s.fen, 'e4') === 'P' && s.turn === 'b', 4000);
+      if (!moved) issues.push(`after e2 then e4 the app's position is "${dev.beacon.get('state-board-2p')?.fen}", not a pawn on e4 with Black to move`);
+    }
     await sleep(900);
     const after = dev.screenshot();
     const colour = (rect) => cornerColour(after, rect);
     const yellow = (c) => c && Math.abs(c[0] - 0xf7) < 16 && Math.abs(c[1] - 0xec) < 16 && Math.abs(c[2] - 0x74) < 24;
-    const lastMoveShown = (orientation) => yellow(colour(squareRect(board, orientation, 'e2'))) && yellow(colour(squareRect(board, orientation, 'e4')));
+    const lastMoveShown = (o) => yellow(colour(squareRect(board, o, 'e2'))) && yellow(colour(squareRect(board, o, 'e4')));
     if (!lastMoveShown('w') && !lastMoveShown('b')) issues.push(`after e2-e4 the last-move highlight is not on e2 and e4 (selected now: ${selectedSquares(after, board, 'w').join(',') || 'none'})`);
     await dev.snapshot('touch-2p');
-    record('touch: 2-player board', issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1} (read from the ${source})`);
+    // the finding about the tap, kept in the log whatever the verdict
+    log(`2-player board touches: ${JSON.stringify(verdicts)} (tap = input tap worked, press = only the 90 ms touch worked, neither = not selected at all)`);
+    for (const n of notes) log(`  ${n}`);
+    record('touch: 2-player board', issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1} (from the ${source}); ${JSON.stringify(verdicts)}${verdicts.press > 0 ? ' - input tap alone was not understood' : ''}`);
   });
 }
 
-/** Both Bughouse boards: a tap at the computed middle of e2 on EACH board must select it there (the legal squares are labelled "can move here"), and the other board's selection must stay. */
-async function touchesBughouse(dev) {
-  await scenario(dev, 'touch: Bughouse boards', async () => {
+/** Both Bughouse boards: a touch at the computed middle of e2 on EACH board must select it there, the app must say the same, and the other board's selection must stay. */
+async function touchesBughouse(dev, inset = false) {
+  const name = inset ? 'touch: Bughouse boards (status bar inset)' : 'touch: Bughouse boards';
+  await scenario(dev, name, async () => {
     // four humans on two boards need more than a 360 x 640 dp window (the setup refuses them, checked by the screens above): the two-board touches run on the large phone
-    if (profile.id === 'small') return record('touch: Bughouse boards', [], 'skipped on the small phone: the two-board setup is refused there by design');
-    await toHome(dev);
-    await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse local' }, { id: 'preset-four' }, { id: 'bughouse-start' }, { text: '3 min' }]);
-    await sleep(1500);
-    const boards = {};
-    for (const b of ['A', 'B']) boards[b] = await boardNode(dev, `board-${b}`);
-    const issues = [];
-    const nodes = await dev.dump();
-    const orientation = {};
-    for (const b of ['A', 'B']) {
-      const a1 = nodes.find((n) => n.id === `${b}-a1`)?.bounds;
-      if (!a1) {
-        issues.push(`board ${b}: the a1 cell is not in the tree`);
-        continue;
-      }
-      orientation[b] = orientationFromA1(boards[b], a1);
-      // the cell the app drew and the cell computed from the board's rectangle must be the same place
-      const computed = squareRect(boards[b], orientation[b], 'a1');
-      if (Math.abs(computed.cx - a1.cx) > 3 || Math.abs(computed.cy - a1.cy) > 3) issues.push(`board ${b}: a1 is drawn at ${a1.cx},${a1.cy} but the grid puts it at ${computed.cx},${computed.cy}`);
+    if (profile.id === 'small') return record(name, [], 'skipped on the small phone: the two-board setup is refused there by design');
+    // THE PHONE'S FRAME (command #30): the emulator is edge-to-edge, so the window frame and the app's root frame coincide and the reverted fix of #26 (a touch origin read in the window
+    // frame) still passed. With the inset the APK runs with its root view BELOW the status bar, like the phone that showed the bug, and the app itself reports the offset (checked below).
+    if (inset) {
+      await dev.setFitSystemWindows(true);
+      await dev.waitHome(180_000);
     }
-    const picked = {};
-    const hintCounts = {};
+    try {
+      await touchesBughouseBody(dev, name, inset);
+    } finally {
+      if (inset) await dev.setFitSystemWindows(false);
+    }
+  });
+}
+
+async function touchesBughouseBody(dev, name, inset) {
+  {
+    await toHome(dev);
+    dev.beacon.forget('state-board-A');
+    dev.beacon.forget('state-board-B');
+    await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse local' }, { id: 'preset-four' }, { id: 'bughouse-start' }, { text: '3 min' }]);
+    const issues = [];
+    const states = {};
+    const boards = {};
     for (const b of ['A', 'B']) {
-      if (!orientation[b]) continue;
-      // the square of a pawn that may move now: e2 for White to move, e7 for Black
-      const mover = (await dev.dump()).find((n) => n.id === `status-${b}`)?.text ?? '';
-      const square = mover.startsWith('Black') ? 'e7' : 'e2';
+      states[b] = await dev.beacon.waitFor(`state-board-${b}`, (s) => s.rect && s.rect.w > 50, 40_000);
+      if (states[b]) boards[b] = rectOfState(states[b]);
+      else {
+        boards[b] = await boardNode(dev, `board-${b}`);
+        issues.push(`board ${b}: the app reported no state (no beacon): found in the tree`);
+      }
+    }
+    const orientation = {};
+    for (const b of ['A', 'B']) orientation[b] = dev.beacon.get(`state-board-${b}`)?.orientation ?? 'w';
+    const picked = {};
+    for (const b of ['A', 'B']) {
+      // the square of a pawn that may move now: e2 for White to move, e7 for Black (the app's own fen says who is to move)
+      const fen = dev.beacon.get(`state-board-${b}`)?.fen ?? '';
+      const square = fen.split(' ')[1] === 'b' ? 'e7' : 'e2';
       picked[b] = square;
       const r = squareRect(boards[b], orientation[b], square);
-      dev.tap(r.cx, r.cy);
-      await sleep(600);
-      const { nodes: after, png } = await dev.look();
-      const problem = judgeSelection(png, boards[b], orientation[b], square);
+      dev.press(r.cx, r.cy, 90);
+      if (states[b]) {
+        const said = await waitSelected(dev, `state-board-${b}`, square, 2500);
+        if (!said) issues.push(`board ${b}: touched ${square}, the app selected ${JSON.stringify(dev.beacon.get(`state-board-${b}`)?.selected ?? null)}`);
+      } else await sleep(600);
+      const problem = judgeSelection(dev.screenshot(), boards[b], orientation[b], square);
       if (problem) issues.push(`board ${b}: ${problem}`);
-      // (the legal squares' labels come from the accessibility tree, which on some screens lags the screen: the SELECTED square, read from the pixels, is the verdict; the labels are noted)
-      const hints = after.filter((n) => n.id.startsWith(`${b}-`) && n.desc.includes('can move here')).length;
-      hintCounts[b] = hints;
     }
-    // both selections are alive together
-    if (orientation.A && orientation.B) {
-      const png = dev.screenshot();
-      for (const b of ['A', 'B']) {
-        const now = selectedSquares(png, boards[b], orientation[b]);
-        if (now.length !== 1 || now[0] !== picked[b]) issues.push(`board ${b}: with both boards touched the selection is ${now.join(',') || 'empty'}, expected ${picked[b]}`);
-      }
+    // both selections are alive together, in the app and on the screen
+    const png = dev.screenshot();
+    for (const b of ['A', 'B']) {
+      const now = selectedSquares(png, boards[b], orientation[b]);
+      if (now.length !== 1 || now[0] !== picked[b]) issues.push(`board ${b}: with both boards touched the selection is ${now.join(',') || 'empty'}, expected ${picked[b]}`);
+      const said = dev.beacon.get(`state-board-${b}`)?.selected;
+      if (states[b] && said !== picked[b]) issues.push(`board ${b}: with both boards touched the app says ${JSON.stringify(said ?? null)} is selected, expected ${picked[b]}`);
     }
-    await dev.snapshot('touch-bughouse');
-    record('touch: Bughouse boards', issues, `orientations ${JSON.stringify(orientation)}, picked ${JSON.stringify(picked)}, legal-square labels ${JSON.stringify(hintCounts)}`);
-  });
+    // the frame the run was in: the app's root view in the window (0 = edge-to-edge). With the inset it must be a status bar's height, or the run is not in the phone's frame at all.
+    const offsets = Object.fromEntries(['A', 'B'].map((b) => [b, dev.beacon.get(`state-board-${b}`)?.rect?.rootOffsetY ?? null]));
+    if (inset) {
+      for (const b of ['A', 'B']) if (!(offsets[b] >= 24)) issues.push(`board ${b}: the app's root view is ${offsets[b]} px below the window's top: the run is NOT in the phone's frame (the inset did not take effect)`);
+    }
+    await dev.snapshot(inset ? 'touch-bughouse-inset' : 'touch-bughouse');
+    record(name, issues, `${inset ? 'root view below the status bar' : 'edge-to-edge'}: root offset ${JSON.stringify(offsets)} px; orientations ${JSON.stringify(orientation)}, picked ${JSON.stringify(picked)}, rectangles ${JSON.stringify(Object.fromEntries(Object.entries(boards).map(([k, v]) => [k, `${v.w}x${v.h} at ${v.x1},${v.y1}`])))}`);
+  }
 }
 
 // --- online --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -485,24 +599,29 @@ async function online(dev) {
     }
     if (row === null) return record('online: spectate a Bughouse game', ['no Bughouse game in the Spectate list after 80 s']);
     await dev.snapshot('spectate-list');
+    dev.beacon.forget('state-board-A');
     dev.tap(row.bounds.cx, row.bounds.cy);
-    // The accessibility tree of the Bughouse game screen lags the screen on this emulator (it kept showing the Spectate list under a photograph of the game), so this scenario reads the
-    // PHOTOGRAPH: the board must be on it (a "rotate the device" layer would dim it, and the board's exact square colours would not be found), a tap on it selects nothing, and the
-    // Resign control and the team bar are not drawn (the strip of controls has only Rules).
-    let board = null;
+    // The board is read from the app's own report (the beacon: its rectangle in screen pixels), then the PHOTOGRAPH confirms it: the board must be on it (a "rotate the device" layer would dim
+    // it, and the board's exact square colours would not be found), a tap on it selects nothing - the app says so too - and the Resign control and the team bar are not drawn.
+    const reported = await dev.beacon.waitFor('state-board-A', (s) => s.rect && s.rect.w > 50, 40_000);
+    let board = reported ? rectOfState(reported) : null;
     for (let i = 0; i < 20 && board === null; i++) {
       await sleep(2000);
       board = boardFromScreenshot(dev.screenshot());
     }
     const issues = [];
+    if (!reported) issues.push('the spectator screen reported no board state (no beacon)');
     if (board === null) issues.push('the spectator screen never showed a board (dimmed by a layer, or not opened)');
     else {
+      const spectatorOrientation = reported?.orientation ?? 'w';
       for (const square of ['e2', 'e7', 'd2', 'd7']) {
-        const r = squareRect(board, 'w', square);
-        dev.tap(r.cx, r.cy);
+        const r = squareRect(board, spectatorOrientation, square);
+        dev.press(r.cx, r.cy, 90);
         await sleep(350);
       }
       await sleep(500);
+      const spectatorSelected = dev.beacon.get('state-board-A')?.selected;
+      if (reported && spectatorSelected) issues.push(`a spectator's touch made the app select ${spectatorSelected}`);
       const after = dev.screenshot();
       if (selectedSquares(after, board, 'w').length > 0) issues.push(`a spectator's tap selected ${selectedSquares(after, board, 'w').join(',')}`);
     }
@@ -513,6 +632,7 @@ async function online(dev) {
 
   await scenario(dev, 'online: Bughouse game', async () => {
     await toHome(dev);
+    dev.beacon.forgetAll(); // (the spectated game above also had boards: what arrives from here on is this game's)
     execFileSync('bash', ['scripts/android/backend.sh', 'buddy'], { stdio: 'inherit' }); // the phone's own opponent: one human + one buddy
     await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse online' }, { text: '5 min' }]);
     const queued = await dev.waitFor('the queue screen', (list) => list.some((n) => n.id === 'bughouse-queue' || n.id.startsWith('bughouse-queue-')), 20_000);
@@ -520,7 +640,9 @@ async function online(dev) {
     const queueIssues = [...crashIssues(queued), ...textIssues(queued, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`)];
     record('online: queue screen', queueIssues);
     // the buddy (a second human) is already queued: bots fill the other seats after the fill timer
-    const game = await dev.waitFor('the match to start', (list) => list.some((n) => n.id === 'board-A') && list.some((n) => n.id === 'board-B'), 150_000, 1500);
+    // (the match starts when the app's boards say so; the tree then gives the seat line)
+    const started = await dev.beacon.waitFor('state-board-B', (s) => typeof s.fen === 'string', 150_000);
+    const game = await dev.waitFor('the match to start', (list) => list.some((n) => n.id === 'board-A') && list.some((n) => n.id === 'board-B'), started ? 60_000 : 150_000, 1500);
     await sleep(1500);
     const intro = (await dev.dump()).find((n) => n.id === 'bughouse-online-intro')?.text ?? '';
     const seat = /Board ([AB]) · (White|Black) · Team (\d)/.exec(intro);
@@ -530,10 +652,17 @@ async function online(dev) {
       return record('online: Bughouse game', issues);
     }
     const [, board, colour] = seat;
-    const boards = { A: await boardNode(dev, 'board-A'), B: await boardNode(dev, 'board-B') };
-    const nodes = await dev.dump();
-    const a1 = nodes.find((n) => n.id === `${board}-a1`)?.bounds;
-    const orientation = a1 ? orientationFromA1(boards[board], a1) : colour === 'White' ? 'w' : 'b';
+    // the boards' rectangles and positions come from the app (the beacon); the tree is the fallback
+    const myChannel = `state-board-${board}`;
+    const mine = await dev.beacon.waitFor(myChannel, (s) => s.rect && s.rect.w > 50, 30_000);
+    const boards = {};
+    for (const b of ['A', 'B']) {
+      const s = b === board ? mine : await dev.beacon.waitFor(`state-board-${b}`, (st) => st.rect && st.rect.w > 50, 15_000);
+      boards[b] = s ? rectOfState(s) : await boardNode(dev, `board-${b}`);
+    }
+    if (!mine) issues.push('the app reported no state for my board (no beacon)');
+    const orientation = mine?.orientation ?? (colour === 'White' ? 'w' : 'b');
+    const myTurn = colour === 'White' ? 'w' : 'b';
     const plan = colour === 'White' ? [['e2', 'e4'], ['d2', 'd4'], ['g1', 'f3']] : [['e7', 'e5'], ['d7', 'd5'], ['g8', 'f6']];
     let moves = 0;
     let premoveSeen = false;
@@ -541,31 +670,27 @@ async function online(dev) {
       // the SECOND move is made as a PREMOVE: right after the first one, while the opponent is to move (W5). If the opponent has already answered, it is just an ordinary move.
       const premoving = index === 1;
       if (!premoving) {
-        try {
-          await dev.waitFor(`my turn on board ${board}`, (list) => (list.find((n) => n.id === `status-${board}`)?.text ?? '').startsWith(colour) || list.some((n) => n.id === 'game-over'), 90_000, 1200);
-        } catch (e) {
-          issues.push(`never my turn on board ${board}: ${e.message.slice(0, 160)}`);
+        // the app's own position says whose move it is (the side to move of the FEN of my board)
+        const turn = await dev.beacon.waitFor(myChannel, (s) => s.fen.split(' ')[1] === myTurn, 90_000);
+        if (!turn) {
+          issues.push(`never my turn on board ${board}: the app's position stayed "${dev.beacon.get(myChannel)?.fen}"`);
           break;
         }
       }
-      if ((await dev.dump()).some((n) => n.id === 'game-over')) break;
       const f = squareRect(boards[board], orientation, from);
       const t = squareRect(boards[board], orientation, to);
-      dev.tap(f.cx, f.cy);
-      await sleep(500);
-      dev.tap(t.cx, t.cy);
+      dev.press(f.cx, f.cy, 90);
+      if (!(await waitSelected(dev, myChannel, from, 2500))) issues.push(`touched ${from}: the app selected ${JSON.stringify(dev.beacon.get(myChannel)?.selected ?? null)}`);
+      dev.press(t.cx, t.cy, 90);
       if (premoving) {
         await sleep(500);
-        const marked = (await dev.dump()).find((n) => n.id === `${board}-${to}`)?.desc ?? '';
+        const marked = await dev.dump().then((list) => list.find((n) => n.id === `${board}-${to}`)?.desc ?? '', () => '');
         premoveSeen = marked.includes('premove to');
       }
-      // the server decides: the piece appears on `to` when its snapshot arrives
-      try {
-        await dev.waitFor(`${from}-${to} to show on board ${board}`, (list) => /(White|Black) (Pawn|Knight)/.test(list.find((n) => n.id === `${board}-${to}`)?.desc ?? ''), 12_000, 700);
-        moves++;
-      } catch (e) {
-        issues.push(`my move ${from}-${to} never showed: ${e.message.slice(0, 160)}`);
-      }
+      // the server decides: the piece appears on `to` when its snapshot arrives (the app's position shows it)
+      const shown = await dev.beacon.waitFor(myChannel, (s) => ['P', 'N', 'p', 'n'].includes(pieceOnSquare(s.fen, to) ?? ''), 12_000);
+      if (shown) moves++;
+      else issues.push(`my move ${from}-${to} never showed: the app's position is "${dev.beacon.get(myChannel)?.fen}"`);
     }
     await dev.snapshot('online-game');
     if (moves === 0) issues.push('no move of mine reached the server and back');
@@ -649,7 +774,11 @@ async function offline(dev) {
         await dev.waitFor('the tab bar', onTabs, 90_000, 500);
         t0 = Date.now(); // Home is up: the 8 s count from here (the first render of a development bundle takes 10 s of its own)
       } else {
-        for (const step of steps) await dev.tapStep(step, 150);
+        // the clock starts at the LAST tap: the steps before it (finding a button in a long list, a dump or two) are not the screen's time
+        for (const step of steps.slice(0, -1)) await dev.tapStep(step, 150);
+        const last = await dev.find(steps[steps.length - 1]);
+        t0 = Date.now();
+        dev.tap(last.bounds.cx, last.bounds.cy);
       }
       const nodes = await dev.waitFor(`"${UNREACHABLE}"`, (list) => findNodes(list, { text: UNREACHABLE }).length > 0, OFFLINE_BOUND_MS + DUMP_SLACK_MS, 400);
       const ms = Date.now() - t0;
@@ -666,6 +795,8 @@ async function offline(dev) {
 
 // --- main -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 const dev = new Device({ outDir: OUT, log });
+// the app's own account of its boards (src/dev/e2eBeacon.ts): the screens whose accessibility tree cannot be trusted are read from it
+dev.beacon = await new Beacon().start();
 const started = Date.now();
 try {
   log(`android-e2e: profile ${profile.id} (${profile.title}), phase ${phase}, output ${OUT}`);
@@ -674,12 +805,14 @@ try {
     dev.clearData();
     dev.launch();
     await dev.waitHome(300_000);
-    await screens(dev);
-    await textFit(dev);
+    if (PARTS.has('screens')) await screens(dev);
+    if (PARTS.has('textfit')) await textFit(dev);
     // the gallery's pixels do not depend on the window: the cramped phone runs it, the large phone's budget goes to the screens
-    if (!flag('skip-gallery') && profile.id === 'small') await gallery(dev);
-    await touches2p(dev);
-    await touchesBughouse(dev);
+    if (PARTS.has('gallery') && !flag('skip-gallery') && profile.id === 'small') await gallery(dev);
+    if (PARTS.has('touch2p')) await touches2p(dev);
+    if (PARTS.has('touchbug')) await touchesBughouse(dev, false);
+    // the same two boards in the frame of the phone of command #26 (root view below the status bar): where the reverted fix fails
+    if (PARTS.has('touchinset')) await touchesBughouse(dev, true);
   } else if (phase === 'online') {
     const account = await online(dev);
     // Straight on to the offline states, in the same run: a fresh app (the game of the scenario above, still saved for a rejoin, would otherwise open at launch), signed in with the same
@@ -702,6 +835,8 @@ try {
   record('run', [`the run itself failed: ${e.stack || e.message}`]);
   await dev.snapshot('FAILED-run').catch(() => {});
 }
+dev.beacon.stop();
+if (dev.dumpFailures) log(`accessibility dumps that failed: ${JSON.stringify(dev.dumpFailures)}`);
 writeFileSync(join(OUT, 'logcat.txt'), dev.logcat(800));
 writeFileSync(join(OUT, 'run.log'), logLines.join('\n'));
 const failed = results.filter((r) => !r.ok);
