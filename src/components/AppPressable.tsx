@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { Pressable as RNPressable, type PressableProps, type StyleProp, type View, type ViewStyle } from 'react-native';
+import { Pressable as RNPressable, type PressableProps, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native';
 
 /** The smallest touch target, in dp, Android's accessibility guidance asks for (48 dp) and the app's own floor (44 dp, the Android device matrix checks it). */
 export const MIN_TOUCH_TARGET = 44;
@@ -16,7 +16,7 @@ interface AppPressableProps extends PressableProps {
   compact?: boolean;
 }
 
-export const Pressable = forwardRef<View, AppPressableProps>(function Pressable({ style, compact = false, ...rest }, ref) {
+export const Pressable = forwardRef<ViewInstance, AppPressableProps>(function Pressable({ style, compact = false, ...rest }, ref) {
   if (compact) return <RNPressable ref={ref} style={style} {...rest} {...matrixExempt} />;
   const withFloor: PressableProps['style'] =
     typeof style === 'function' ? (state) => [MIN_SIZE, style(state)] as StyleProp<ViewStyle> : ([MIN_SIZE, style] as StyleProp<ViewStyle>);
