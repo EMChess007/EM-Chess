@@ -83,7 +83,7 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
   // A board nobody may touch (a spectator's) has no gesture container; the end-to-end build still has to measure it, so the grid carries a ref of its own then.
   const measuredRef = useRef<ViewInstance>(null);
   // On a phone the grid's touches come through the overlay (below) and carry the grid's own frame; in the browser the grid itself listens.
-  const surface = touches !== undefined && Platform.OS !== 'web';
+  const surface = false && touches !== undefined && Platform.OS !== 'web'; // PROOF BRANCH: the command #26 overlay fix switched OFF
   return (
     <View
       ref={touches ? touches.gridRef : interactive ? gestures.containerRef : measuredRef}
