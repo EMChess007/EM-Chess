@@ -30,17 +30,13 @@ phase() {
   local profile="$1" name="$2"
   local t0=$SECONDS
   echo "::group::android-e2e $profile $name"
-  node scripts/android/e2e.mjs --profile "$profile" --phase "$name" --out "$out" ${ANDROID_E2E_ALL:+--all} || rc=1
+  node scripts/android/e2e.mjs --profile "$profile" --phase "$name" --out "$out" ${ANDROID_E2E_ALL:+--all} ${ANDROID_E2E_ONLY:+--only $ANDROID_E2E_ONLY} || rc=1
   echo "::endgroup::"
   echo "[run] $profile/$name took $((SECONDS - t0)) s"
 }
 
-for p in small large; do phase "$p" static; done
-
-# The online game and the offline states run on the cramped phone only (the budget of the job is about 25 minutes; the layouts they exercise are the ones the static phase checks on both).
-bash scripts/android/backend.sh start || { echo "[run] the backend could not start"; rc=1; }
-phase small online   # (this phase stops the backend itself after signing in again, then checks the offline states)
-bash scripts/android/backend.sh stop || true
+# PROOF BRANCH: only the two-board touches of the large phone (the check the reverted fix must fail), so the answer comes in minutes, not after the whole run
+ANDROID_E2E_ONLY="bughouse-setup" phase large static
 
 cp "${ANDROID_E2E_STATE:-${RUNNER_TEMP:-/tmp}/android-e2e-state}"/*.log "$out"/ 2>/dev/null || true
 exit $rc
