@@ -138,6 +138,26 @@ export function crop(png, rect) {
   return { width, height, data };
 }
 
+/** The image at 1/factor of its size (box average): a screenshot small enough to be printed in a job log as base64 (the run's artifacts cannot be read from every machine). */
+export function shrink(png, factor) {
+  const width = Math.floor(png.width / factor);
+  const height = Math.floor(png.height / factor);
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const sum = [0, 0, 0, 0];
+      for (let dy = 0; dy < factor; dy++) {
+        for (let dx = 0; dx < factor; dx++) {
+          const i = ((y * factor + dy) * png.width + x * factor + dx) * 4;
+          for (let c = 0; c < 4; c++) sum[c] += png.data[i + c];
+        }
+      }
+      for (let c = 0; c < 4; c++) data[(y * width + x) * 4 + c] = Math.round(sum[c] / (factor * factor));
+    }
+  }
+  return { width, height, data };
+}
+
 /** A solid image, for tests. */
 export function solid(width, height, [r, g, b, a = 255]) {
   const data = new Uint8Array(width * height * 4);

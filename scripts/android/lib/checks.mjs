@@ -16,23 +16,25 @@ export const PACKAGE = 'com.emchess.app';
  * is deliberately low (a narrow word like "Filter" is 0.29 and must not fail); the on-device text-fit probe (below) is the sharp instrument, this is the net for every other label.
  */
 export const MIN_WIDTH_PER_LETTER = 0.2;
+/** The tallest a one-line label's box may be for the narrowness check (dp); the first emulator run met a 41 dp seat badge whose "Yellow" box was square. */
+export const MAX_LABEL_HEIGHT_DP = 36;
 
 /**
  * Problems with the TEXT on a screen, from its tree: a text box with no size, a text that runs out of the window sideways, a one-word label far too narrow for its letters.
- * `screen` is { w, h } in pixels. Returns [{ kind, text, detail }].
+ * `screen` is { w, h, scale? } in pixels (scale = density / 160). Returns [{ kind, text, detail }].
  */
 export function textIssues(nodes, screen) {
   const issues = [];
   for (const n of nodes) {
     if (!n.text || n.cls.endsWith('EditText') || n.bounds === null) continue;
     const { w, h, x1, x2 } = n.bounds;
-    if (w <= 0 || h <= 0) {
-      issues.push({ kind: 'zero-size', text: n.text, detail: `text box ${w}x${h}` });
-      continue;
-    }
+    // A box with no positive size is a text the scroll view has moved out of sight (uiautomator reports its bounds clipped to nothing, even negative): not on the screen, nothing to judge.
+    if (w <= 0 || h <= 0) continue;
     if (x1 < -1 || x2 > screen.w + 1) issues.push({ kind: 'outside', text: n.text, detail: `box x ${x1}..${x2} in a window ${screen.w} px wide` });
     const letters = n.text.length;
-    if (/^\S+$/.test(n.text) && letters >= 4 && letters <= 16 && w / (letters * h) < MIN_WIDTH_PER_LETTER) {
+    // a label is one line: a box taller than a line (36 dp) is a container around it, not the label's own box
+    const oneLine = h / (screen.scale ?? 1) <= MAX_LABEL_HEIGHT_DP;
+    if (oneLine && /^\S+$/.test(n.text) && letters >= 4 && letters <= 16 && w / (letters * h) < MIN_WIDTH_PER_LETTER) {
       issues.push({ kind: 'narrow', text: n.text, detail: `${w}x${h} px for ${letters} letters (${(w / (letters * h)).toFixed(2)} per letter, minimum ${MIN_WIDTH_PER_LETTER})` });
     }
   }
@@ -90,6 +92,69 @@ export function squareRect(board, orientation, square) {
   const x = board.x1 + col * cell;
   const y = board.y1 + row * cell;
   return { x, y, w: cell, h: cell, cx: Math.round(x + cell / 2), cy: Math.round(y + cell / 2) };
+}
+
+/** The Classic board theme's two square colours, as literals (src/logic/boardThemes.ts '#f0d9b5' / '#b58863'). */
+export const CLASSIC_LIGHT = [0xf0, 0xd9, 0xb5];
+export const CLASSIC_DARK = [0xb5, 0x88, 0x63];
+
+/**
+ * The board's grid read from a SCREENSHOT, for the screens whose accessibility tree lags the screen: the bounding box of the Classic dark squares (a1 and h8 are dark, so it is the
+ * whole grid). { x1, y1, w, h } in pixels, or null when no square-shaped region of that colour is there.
+ */
+export function boardFromScreenshot(png, dark = CLASSIC_DARK, tolerance = 8) {
+  const columns = new Int32Array(png.width);
+  const rows = new Int32Array(png.height);
+  let count = 0;
+  for (let y = 0; y < png.height; y++) {
+    for (let x = 0; x < png.width; x++) {
+      const i = (y * png.width + x) * 4;
+      if (Math.abs(png.data[i] - dark[0]) <= tolerance && Math.abs(png.data[i + 1] - dark[1]) <= tolerance && Math.abs(png.data[i + 2] - dark[2]) <= tolerance) {
+        count++;
+        columns[x]++;
+        rows[y]++;
+      }
+    }
+  }
+  if (count < 64) return null;
+  // A column / row of the grid holds the dark squares of a whole line (at least 3 cells' worth of pixels); a stray pixel of the same colour in the text or an icon does not count.
+  const extent = (counts) => {
+    const peak = Math.max(...counts);
+    const limit = Math.max(8, peak * 0.4);
+    let first = -1;
+    let last = -1;
+    for (let i = 0; i < counts.length; i++) {
+      if (counts[i] >= limit) {
+        if (first < 0) first = i;
+        last = i;
+      }
+    }
+    return first < 0 ? null : [first, last];
+  };
+  const across = extent(columns);
+  const down = extent(rows);
+  if (across === null || down === null) return null;
+  const [x1, x2] = across;
+  const [y1, y2] = down;
+  const w = x2 - x1 + 1;
+  const h = y2 - y1 + 1;
+  // the grid is square, and its dark squares are about half of its area
+  if (Math.abs(w - h) > 4 || count < w * h * 0.2) return null;
+  return { x1, y1, x2: x2 + 1, y2: y2 + 1, w, h };
+}
+
+/** The pieces of the standard start position by square, as markers ("wk", "bp"): what a fresh game shows. */
+export function startPositionMarkers() {
+  const out = {};
+  const back = 'rnbqkbnr';
+  for (let f = 0; f < 8; f++) {
+    const file = 'abcdefgh'[f];
+    out[`${file}1`] = `w${back[f]}`;
+    out[`${file}2`] = 'wp';
+    out[`${file}7`] = 'bp';
+    out[`${file}8`] = `b${back[f]}`;
+  }
+  return out;
 }
 
 /** Which way a board faces, from where its a1 cell is: 'w' (a1 bottom-left) or 'b' (top-right). */
@@ -164,11 +229,16 @@ export function parseGalleryLabel(label) {
  * centred). `cell` is the rectangle of the SQUARE in the screenshot. Returns an issue text or null.
  */
 export function judgePieceCell(screenshot, cell, marker, assets = null) {
-  const png = crop(screenshot, cell);
+  // The cell is cropped 2 px inside the bounds the tree gives: the judges take the square's colour from the crop's top-left pixel, and a bound off by one pixel (cells that touch, a light row
+  // under a dark one) would put a neighbour's colour there (the first emulator run judged every black piece on a light square as "blank" for that reason).
+  const inset = CELL_INSET_PX;
+  const png = crop(screenshot, { x: cell.x + inset, y: cell.y + inset, w: cell.w - 2 * inset, h: cell.h - 2 * inset });
   if (png.width < 8 || png.height < 8) return `${marker}: the cell is ${png.width}x${png.height} px, too small to judge`;
   if (assets === null) return judgeCell(marker, png);
-  const rect = { x: png.width * 0.075, y: png.height * 0.075, w: png.width * 0.85, h: png.height * 0.85 };
+  const rect = { x: cell.w * 0.075 - inset, y: cell.h * 0.075 - inset, w: cell.w * 0.85, h: cell.h * 0.85 };
   return judgeImageCell(marker, png, assets, rect);
 }
+
+export const CELL_INSET_PX = 2;
 
 export { analyseCell, bodyLuminance, BLACK_BODY_MAX };

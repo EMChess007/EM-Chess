@@ -102,7 +102,18 @@ export class Device {
         const xml = extractXml(out);
         if (xml) {
           this.last = { xml, nodes: parseHierarchy(xml) };
+          this.fresh = true; // until the next touch
           if (save) writeFileSync(join(this.outDir, `${save}.xml`), xml);
+          // Android's one-time "Viewing full screen - swipe down to exit" notice (the app hides the navigation bar) sits over the app: "Got it" dismisses it, once.
+          const gotIt = this.last.nodes.find((n) => n.text === 'Got it' && n.bounds && n.pkg !== PACKAGE);
+          if (gotIt && !this.dismissing) {
+            this.dismissing = true;
+            this.tap(gotIt.bounds.cx, gotIt.bounds.cy);
+            await sleep(800);
+            this.dismissing = false;
+            attempt = -1; // read the tree again, now without the notice
+            continue;
+          }
           return this.last.nodes;
         }
         lastError = out.slice(0, 200);
@@ -131,22 +142,39 @@ export class Device {
 
   /** The tree and a screenshot taken straight after it, decoded. */
   async look() {
-    const nodes = await this.dump();
-    return { nodes, png: this.screenshot() };
+    // The tree, the photograph, the tree again: if the screen moved in between (a list still settling, a bot's move) the two trees differ and the pair is taken again - a photograph and a tree
+    // of different moments would put a cell's bounds over its neighbour's pixels.
+    let nodes = await this.dump();
+    let png = this.screenshot();
+    for (let i = 0; i < 4; i++) {
+      const again = await this.dump();
+      if (fingerprint(again) === fingerprint(nodes)) return { nodes: again, png };
+      nodes = again;
+      png = this.screenshot();
+    }
+    return { nodes, png };
   }
 
   // --- touching -------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
   tap(x, y) {
+    this.fresh = false;
     this.sh(`input tap ${Math.round(x)} ${Math.round(y)}`);
   }
 
   swipe(x1, y1, x2, y2, ms = 300) {
+    this.fresh = false;
     this.sh(`input swipe ${Math.round(x1)} ${Math.round(y1)} ${Math.round(x2)} ${Math.round(y2)} ${ms}`);
   }
 
   key(code) {
+    this.fresh = false;
     this.sh(`input keyevent ${code}`);
+  }
+
+  /** The last tree when nothing has touched the phone since (a dump costs several seconds on the CI emulator), else a new one. */
+  async current() {
+    return this.fresh ? this.last.nodes : this.dump();
   }
 
   /** Types text into the focused field. Letters, digits and @ . _ - only: nothing the shell or `input` would reinterpret. */
@@ -155,14 +183,15 @@ export class Device {
     this.sh(`input text ${text}`);
   }
 
+  // slow swipes (700 ms): a quick one leaves the list flinging, and a tap on a moving list lands on whatever passes under the finger
   scrollDown() {
     const { w, h } = this.display;
-    this.swipe(w / 2, h * 0.72, w / 2, h * 0.34);
+    this.swipe(w / 2, h * 0.78, w / 2, h * 0.28, 700);
   }
 
   scrollUp() {
     const { w, h } = this.display;
-    this.swipe(w / 2, h * 0.34, w / 2, h * 0.72);
+    this.swipe(w / 2, h * 0.34, w / 2, h * 0.72, 700);
   }
 
   // --- waiting and finding --------------------------------------------------------------------------------------------------------------------------------------------------
@@ -175,7 +204,7 @@ export class Device {
       try {
         nodes = await this.dump();
         const answer = test(nodes);
-        if (answer) return answer;
+        if (answer) return answer === true ? nodes : answer; // `true` = "the screen is as wanted": hand back the tree it was judged on
       } catch (e) {
         if (Date.now() - t0 > timeoutMs) throw e;
       }
@@ -184,28 +213,102 @@ export class Device {
     }
   }
 
-  /** The node a step names, scrolling down when it is not on screen (the Play menu is longer than a phone). */
-  async find(step, { scrolls = 8 } = {}) {
+  /** The tree once it stands still: two trees in a row that are the same (a scroll's fling, an animation, a list that is still laying out). */
+  async stable() {
     let nodes = await this.dump();
+    for (let i = 0; i < 4; i++) {
+      const again = await this.dump();
+      if (fingerprint(again) === fingerprint(nodes)) return again;
+      nodes = again;
+    }
+    return nodes;
+  }
+
+  /**
+   * The node a step names, scrolling down when it is not on screen (the Play menu is longer than a phone). `{ text, below: "Local" }` is the first `text` under the heading `below`: on
+   * the phone only what is on screen exists, so "the second Classic" of the web matrix (document order) is "the Classic under Local" here.
+   */
+  async find(step, { scrolls = 14 } = {}) {
+    if (step.below !== undefined) {
+      await this.find({ text: step.below }, { scrolls });
+      for (let i = 0; i <= scrolls; i++) {
+        const nodes = await this.stable();
+        const heading = findOne(nodes, { text: step.below });
+        const hit = heading ? findNodes(nodes, { text: step.text }).find((n) => n.bounds.y1 >= heading.bounds.y2 - 2) : null;
+        if (hit) return hit;
+        if (i === scrolls) throw new Error(`cannot find ${JSON.stringify(step)}; on screen: ${visibleWords(nodes, 40).join(' | ')}`);
+        this.scrollDown();
+        await sleep(700);
+      }
+    }
+    // `blind`: fast swipes WITHOUT a tree between them to get near a target that is known to be deep in a long list (each tree costs several seconds on the CI emulator): `down` swipes, then `up`.
+    if (step.blind) {
+      for (let i = 0; i < (step.blind.down ?? 0); i++) {
+        this.swipe(this.display.w / 2, this.display.h * 0.8, this.display.w / 2, this.display.h * 0.2, 350);
+        await sleep(120);
+      }
+      for (let i = 0; i < (step.blind.up ?? 0); i++) {
+        this.swipe(this.display.w / 2, this.display.h * 0.3, this.display.w / 2, this.display.h * 0.7, 350);
+        await sleep(120);
+      }
+      await sleep(600);
+    }
+    let nodes = await this.current();
     let node = findOne(nodes, step);
+    let scrolled = false;
     for (let i = 0; node === null && i < scrolls; i++) {
       const before = fingerprint(nodes);
       this.scrollDown();
-      await sleep(500);
+      scrolled = true;
+      await sleep(450);
       nodes = await this.dump();
       node = findOne(nodes, step);
       if (node === null && fingerprint(nodes) === before) break; // nothing moved: the end of the list
     }
+    // a blind run to the bottom can overshoot a card that sits a little above it: look back up, half a screen at a time
+    for (let i = 0; node === null && step.blind && i < 5; i++) {
+      this.scrollUp();
+      scrolled = true;
+      await sleep(450);
+      nodes = await this.dump();
+      node = findOne(nodes, step);
+    }
     if (node === null) throw new Error(`cannot find ${JSON.stringify(step)}; on screen: ${visibleWords(nodes, 40).join(' | ')}`);
+    if (scrolled) {
+      // found while the list may still have been moving: wait until it stands still, and take the node from that tree
+      nodes = await this.stable();
+      node = findOne(nodes, step) ?? node;
+    }
     return node;
   }
 
-  async tapStep(step, settleMs = 900) {
+  async tapStep(step, settleMs = 700) {
     if (step.wait) return sleep(step.wait);
     if (step.fill) throw new Error('fill steps are not used on the phone');
     const node = await this.find(step);
+    this.log(`  tap ${JSON.stringify(step)} -> ${node.cls.split('.').pop()} "${(node.text || node.desc || node.id).slice(0, 30)}" ${node.bounds.w}x${node.bounds.h} at ${node.bounds.cx},${node.bounds.cy}`);
+    const before = fingerprint(this.last.nodes);
     this.tap(node.bounds.cx, node.bounds.cy);
     await sleep(settleMs);
+    // A development build fetches a screen's code from Metro the first time it is opened (lazy bundling), which can take many seconds: the next step must not look at the OLD screen (the first
+    // run took the time-control screen for the game it was starting). Wait, up to 8 s, until the tree is not the one the tap was made on.
+    const t0 = Date.now();
+    let nudged = false;
+    for (;;) {
+      const nodes = await this.dump();
+      if (fingerprint(nodes) !== before) {
+        if (nudged) this.log('  (the tree was stale until the status bar was touched)');
+        break;
+      }
+      if (Date.now() - t0 > 8000) break;
+      // some screens of this app leave uiautomator with the PREVIOUS screen's tree (the photograph shows the new one): a touch on the status bar, which does nothing, is tried once to
+      // make the app send the accessibility events that refresh it
+      if (!nudged && Date.now() - t0 > 2500) {
+        nudged = true;
+        this.tap(this.display.w / 2, 4);
+      }
+      await sleep(500);
+    }
   }
 
   async runSteps(steps) {
@@ -214,7 +317,7 @@ export class Device {
 
   /** Is the app's first screen up (the tab bar's Play)? */
   async waitHome(timeoutMs = 240_000) {
-    return this.waitFor('the Home screen', (nodes) => findNodes(nodes, { text: 'Play' }).length > 0 && findNodes(nodes, { text: 'More' }).length > 0, timeoutMs, 1500);
+    return this.waitFor('the Home screen', (nodes) => (findNodes(nodes, { text: 'Play' }).length > 0 && findNodes(nodes, { text: 'More' }).length > 0 ? nodes : false), timeoutMs, 1500);
   }
 
   logcat(lines = 400) {

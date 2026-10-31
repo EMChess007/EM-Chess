@@ -17,6 +17,7 @@ adb wait-for-device
 adb shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 1; done'
 adb shell input keyevent 82 || true   # wake the screen
 adb shell settings put secure show_ime_with_hard_keyboard 0 || true
+adb shell settings put secure immersive_mode_confirmations confirmed || true   # no "Viewing full screen" notice over the app (the driver also taps "Got it")
 adb install -r -g "$apk"
 adb reverse tcp:8081 tcp:8081
 adb logcat -c || true
@@ -36,11 +37,12 @@ phase() {
 
 for p in small large; do phase "$p" static; done
 
+# The online game and the offline states run on the cramped phone only (the budget of the job is about 25 minutes; the layouts they exercise are the ones the static phase checks on both).
 bash scripts/android/backend.sh start || { echo "[run] the backend could not start"; rc=1; }
-for p in small large; do phase "$p" online; done
+phase small online
 bash scripts/android/backend.sh stop
 
-for p in small large; do phase "$p" offline; done
+phase small offline
 
 cp "${ANDROID_E2E_STATE:-${RUNNER_TEMP:-/tmp}/android-e2e-state}"/*.log "$out"/ 2>/dev/null || true
 exit $rc

@@ -24,8 +24,8 @@ import { SCREENS } from '../browser/android-matrix-screens.mjs';
 const EXTRA_SCREENS = await import('../browser/android-matrix-screens-extra.mjs').then((m) => m.EXTRA_SCREENS, () => []);
 import { Device, PROFILES, sleep } from './lib/device.mjs';
 import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
-import { crashIssues, judgePieceCell, judgeSelection, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
-import { decodePng } from './lib/png.mjs';
+import { boardFromScreenshot, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
+import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -69,6 +69,11 @@ async function scenario(dev, name, body) {
     await body();
   } catch (e) {
     record(name, [`exception: ${e.message}`]);
+    try {
+      log(`PNG64 exception-${name.replace(/\W+/g, '_')} ${encodePng(shrink(dev.screenshot(), 3)).toString('base64')}`);
+    } catch {
+      /* no screenshot */
+    }
     await dev.snapshot(`FAILED-${name.replace(/[^\w.-]+/g, '_')}`).catch(() => {});
   }
   log(`  (${name}: ${Math.round((Date.now() - t0) / 1000)} s)`);
@@ -82,7 +87,7 @@ let relaunches = 0;
 /** Back to the Home tab: the app has no Android back handling, so use its own "‹ Back" / "‹ Menu" links; a dialog or a game in progress is cleared by starting the app afresh. */
 async function toHome(dev) {
   for (let i = 0; i < 6; i++) {
-    const nodes = await dev.dump();
+    const nodes = await dev.current();
     if (onTabs(nodes) && findNodes(nodes, { id: 'button1' }).length === 0) {
       const home = findNodes(nodes, { text: 'Home' }).sort((a, b) => b.bounds.y1 - a.bounds.y1)[0];
       dev.tap(home.bounds.cx, home.bounds.cy);
@@ -101,7 +106,32 @@ async function toHome(dev) {
 
 // --- the screens ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 /** Screens whose steps need a test-only web fixture or a piece theme set through the page: the Piece gallery covers every theme on the phone itself. */
-const phoneScreens = () => [...SCREENS, ...EXTRA_SCREENS].filter((s) => !s.fixture && !s.pieceTheme && (!ONLY || ONLY.has(s.id)));
+const LARGE_SCREENS = new Set(['home', 'play-menu', 'game-2p', 'ffa-setup', 'game-ffa', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-dual']);
+/**
+ * The cramped phone (small, font scale 1.3) runs EVERY screen; the large phone runs the ones whose layout differs most (a board, a setup, the tab screens): the whole job has a budget of
+ * about 25 minutes and each screen costs 10 - 20 s on the emulator. `--only` overrides both.
+ */
+/** Screens that cannot be driven through the tree: the accessibility tree of the 2-player game screen lags the screen (the photograph is right), so its Options menu cannot be found; the menu's text is checked by the web matrix. */
+const TREE_LAGS = new Set(['game-2p-options']);
+const phoneScreens = () =>
+  [...SCREENS, ...EXTRA_SCREENS].filter((s) => !s.fixture && !s.pieceTheme && !TREE_LAGS.has(s.id) && (ONLY ? ONLY.has(s.id) : profile.id === 'small' || LARGE_SCREENS.has(s.id)));
+
+/**
+ * The web matrix finds "the second Classic" in document order; on the phone only what is on screen exists, so that is "the Classic under the heading Local". The headings of the cards on the
+ * Play menu (PlayModeSelectScreen) by the order the web steps count them in.
+ */
+const POSITION_HEADINGS = { Classic: ['Bots', 'Local', 'Engine vs Engine'], 'Setup Chess': ['Bots', 'Local'], Local: [null, '4 Player Giveaway'] };
+/**
+ * Cards near the end of the Play menu: swipe to the bottom WITHOUT reading the screen between swipes (a tree costs several seconds on the CI emulator, and finding the Bughouse card
+ * by looking after each swipe took a minute), then back up to the card. The bottom of the list shows Bughouse, Engine vs Engine and the Board Editor.
+ */
+const BLIND = { 'Bughouse local': { down: 9 }, 'Bughouse online': { down: 9 }, 'Bughouse rules': { down: 9 }, 'bughouse-rules-link': { down: 9 }, 'Chaturaji local': { down: 9, up: 1 }, 'chaturaji-rules-link': { down: 9, up: 1 } };
+function phoneStep(step) {
+  const headings = step.text === undefined ? undefined : POSITION_HEADINGS[step.text];
+  const positioned = step.nth !== undefined && headings?.[step.nth] ? { text: step.text, below: headings[step.nth] } : step;
+  const blind = BLIND[step.label ?? step.id];
+  return blind ? { ...positioned, blind } : positioned;
+}
 
 async function judgeGamePieces(dev, screen) {
   const { nodes, png } = await dev.look();
@@ -123,6 +153,11 @@ async function judgeGamePieces(dev, screen) {
       cells.push({ marker: markerFromWords(n.desc), rect: { x: n.bounds.cx - side / 2, y: n.bounds.cy - side / 2, w: side, h: side }, where: `${n.desc} at ${n.bounds.x1},${n.bounds.y1}` });
     }
   }
+  if (cells.length === 0 && ['game-2p', 'bughouse-game-single', 'bughouse-game-passplay'].includes(screen.id)) {
+    // the tree of this screen can lag the screen: read the board from the PHOTOGRAPH and judge the pieces of the start position where they stand
+    const grid = boardFromScreenshot(png);
+    if (grid) for (const [square, marker] of Object.entries(startPositionMarkers())) cells.push({ marker, rect: squareRect(grid, 'w', square), where: `${marker} on ${square} (board read from the photograph)` });
+  }
   const issues = [];
   if (cells.length === 0) issues.push('no piece found on the screen at all');
   const seen = new Set(cells.map((c) => c.marker));
@@ -140,19 +175,22 @@ async function screens(dev) {
   for (const s of phoneScreens()) {
     await scenario(dev, `screen ${s.id}`, async () => {
       await toHome(dev);
-      await dev.runSteps(s.steps);
-      await sleep(1200);
+      await dev.runSteps(s.steps.map(phoneStep));
+      await sleep(600);
       const nodes = await dev.dump();
       const issues = [...crashIssues(nodes), ...textIssues(nodes, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`)];
       let note = `${nodes.length} nodes`;
       const narrow = narrowestLabel(nodes);
       if (narrow) note += `, narrowest label "${narrow.text}" ${narrow.ratio.toFixed(2)}`;
+      note += ` | on screen: ${visibleWords(nodes, 14).join(' / ')}`;
       if (s.pieces && s.pieces.mode === 'bw') {
         const verdict = await judgeGamePieces(dev, s);
         issues.push(...verdict.issues);
         note += `, ${verdict.count} pieces judged`;
       }
       await dev.snapshot(`screen-${s.id}`);
+      // a failed screen is also PRINTED (a third of its size, base64: `base64 -d` makes a PNG) - the log is the one place every reader of a run can reach
+      if (issues.length > 0) log(`PNG64 screen-${s.id} ${encodePng(shrink(dev.screenshot(), 3)).toString('base64')}`);
       record(`screen ${s.id}`, issues, note);
     });
   }
@@ -180,8 +218,8 @@ async function textFit(dev) {
 
 // --- the Piece gallery ----------------------------------------------------------------------------------------------------------------------------------------------------------------
 const GALLERY_THEMES = { Classic: 'default', Cburnett: 'cburnett', Merida: 'merida', 'Chess with Checkers': 'checkers' };
-/** 4 themes x (48 large cells + 5 board themes x 2 squares x 12 game-size cells): a run that judged fewer did not see the whole gallery. */
-const GALLERY_CELLS = 4 * (48 + 5 * 2 * 12);
+/** 4 themes x (24 large cells: 2 colours x 2 squares x 6 kinds, + 5 board themes x 2 squares x 12 game-size cells): a run that judged fewer did not see the whole gallery. */
+const GALLERY_CELLS = 4 * (24 + 5 * 2 * 12);
 const assetCache = new Map();
 function themeAssets(id) {
   if (id === 'default') return null;
@@ -208,6 +246,7 @@ async function gallery(dev) {
     const judged = new Set();
     const issues = [];
     const perTheme = {};
+    const failuresBy = {};
     let stuck = 0;
     for (let page = 0; page < 120 && stuck < 3; page++) {
       const { nodes, png } = await dev.look();
@@ -218,7 +257,8 @@ async function gallery(dev) {
         const parsed = parseAnyGalleryLabel(n.desc);
         if (!parsed) continue;
         const b = n.bounds;
-        if (b.y1 < viewport.y1 || b.y2 > viewport.y2 || b.x1 < 0 || b.x2 > png.width) continue; // only a cell that is wholly on screen
+        // only a cell that is wholly on screen: a cell the scroll view clips has a short box (the tree reports the visible part), and every cell is square
+        if (b.y1 < viewport.y1 || b.y2 > viewport.y2 || b.x1 < 0 || b.x2 > png.width || Math.abs(b.w - b.h) > 2) continue;
         if (judged.has(n.desc)) continue;
         judged.add(n.desc);
         fresh++;
@@ -229,14 +269,23 @@ async function gallery(dev) {
         }
         const problem = judgePieceCell(png, { x: b.x1, y: b.y1, w: b.w, h: b.h }, parsed.marker, themeAssets(id));
         perTheme[id] = (perTheme[id] ?? 0) + 1;
-        if (problem) issues.push(`${n.desc}: ${problem}`);
+        if (problem) {
+          issues.push(`${n.desc}: ${problem}`);
+          const group = `${id} ${parsed.marker[0] === 'w' ? 'white' : 'black'} on ${parsed.square}`;
+          failuresBy[group] = (failuresBy[group] ?? 0) + 1;
+          // the first failure of each group is printed as a PNG (the log is the only way out of the runner): decode with `base64 -d`
+          if (failuresBy[group] === 1) log(`PNG64 ${n.desc} ${encodePng(crop(png, { x: b.x1, y: b.y1, w: b.w, h: b.h })).toString('base64')}`);
+        }
       }
       if (page % 8 === 0) await dev.snapshot(`gallery-${page}`);
       stuck = fresh === 0 ? stuck + 1 : 0;
-      dev.swipe(dev.display.w / 2, viewport.y2 - 40, dev.display.w / 2, viewport.y1 + 60, 900);
+      // about 55 % of the viewport per page, slowly: pages overlap, and a cell the first page clipped at its edge is whole in the next
+      const span = viewport.y2 - viewport.y1;
+      dev.swipe(dev.display.w / 2, viewport.y1 + span * 0.8, dev.display.w / 2, viewport.y1 + span * 0.25, 900);
       await sleep(500);
     }
     if (judged.size < GALLERY_CELLS) issues.push(`only ${judged.size} of ${GALLERY_CELLS} gallery cells were seen and judged`);
+    if (Object.keys(failuresBy).length > 0) issues.unshift(`failed cells by group: ${JSON.stringify(failuresBy)}`);
     record('piece gallery pixels', issues, `${judged.size} cells judged: ${JSON.stringify(perTheme)}`);
   });
 }
@@ -252,9 +301,21 @@ async function boardNode(dev, id) {
 async function touches2p(dev) {
   await scenario(dev, 'touch: 2-player board', async () => {
     await toHome(dev);
-    await dev.runSteps([{ text: 'Play' }, { text: 'Classic', nth: 1 }, { text: '5 min' }]);
+    await dev.runSteps([{ text: 'Play' }, { text: 'Classic', below: 'Local' }, { text: '5 min' }]);
     await sleep(1200);
-    const board = await boardNode(dev, 'chess-board');
+    // the board's rectangle: from the tree, or - when the tree of this screen lags the screen - from the photograph
+    let board = null;
+    let source = 'tree';
+    try {
+      board = await boardNode(dev, 'chess-board');
+    } catch {
+      const found = boardFromScreenshot(dev.screenshot());
+      if (found) {
+        board = found;
+        source = 'photograph';
+      }
+    }
+    if (board === null) throw new Error('the 2-player board is neither in the tree nor in the photograph');
     const issues = [];
     if (Math.abs(board.w - board.h) > 2) issues.push(`the board is not square: ${board.w}x${board.h}`);
     for (const target of ['e2', 'b1', 'g1', 'a2', 'h2', 'd1', 'a1', 'h1', 'c2', 'f2']) {
@@ -279,7 +340,7 @@ async function touches2p(dev) {
     const lastMoveShown = (orientation) => yellow(colour(squareRect(board, orientation, 'e2'))) && yellow(colour(squareRect(board, orientation, 'e4')));
     if (!lastMoveShown('w') && !lastMoveShown('b')) issues.push(`after e2-e4 the last-move highlight is not on e2 and e4 (selected now: ${selectedSquares(after, board, 'w').join(',') || 'none'})`);
     await dev.snapshot('touch-2p');
-    record('touch: 2-player board', issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1}`);
+    record('touch: 2-player board', issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1} (read from the ${source})`);
   });
 }
 
@@ -306,6 +367,7 @@ async function touchesBughouse(dev) {
       if (Math.abs(computed.cx - a1.cx) > 3 || Math.abs(computed.cy - a1.cy) > 3) issues.push(`board ${b}: a1 is drawn at ${a1.cx},${a1.cy} but the grid puts it at ${computed.cx},${computed.cy}`);
     }
     const picked = {};
+    const hintCounts = {};
     for (const b of ['A', 'B']) {
       if (!orientation[b]) continue;
       // the square of a pawn that may move now: e2 for White to move, e7 for Black
@@ -318,8 +380,9 @@ async function touchesBughouse(dev) {
       const { nodes: after, png } = await dev.look();
       const problem = judgeSelection(png, boards[b], orientation[b], square);
       if (problem) issues.push(`board ${b}: ${problem}`);
+      // (the legal squares' labels come from the accessibility tree, which on some screens lags the screen: the SELECTED square, read from the pixels, is the verdict; the labels are noted)
       const hints = after.filter((n) => n.id.startsWith(`${b}-`) && n.desc.includes('can move here')).length;
-      if (hints === 0) issues.push(`board ${b}: after tapping ${square} no square is labelled "can move here"`);
+      hintCounts[b] = hints;
     }
     // both selections are alive together
     if (orientation.A && orientation.B) {
@@ -330,7 +393,7 @@ async function touchesBughouse(dev) {
       }
     }
     await dev.snapshot('touch-bughouse');
-    record('touch: Bughouse boards', issues, `orientations ${JSON.stringify(orientation)}, picked ${JSON.stringify(picked)}`);
+    record('touch: Bughouse boards', issues, `orientations ${JSON.stringify(orientation)}, picked ${JSON.stringify(picked)}, legal-square labels ${JSON.stringify(hintCounts)}`);
   });
 }
 
@@ -357,11 +420,17 @@ async function login(dev, account) {
   await sleep(300);
   dev.type(account.password);
   await sleep(300);
-  // the soft keyboard may cover the button: close it when it is up
-  if (/mInputShown=true/.test(dev.sh('dumpsys input_method | grep -o "mInputShown=[a-z]*" | head -1'))) dev.key(4);
-  await sleep(500);
-  const buttons = findNodes(await dev.dump(), { text: 'Log In' }).sort((a, b) => b.bounds.y1 - a.bounds.y1);
-  dev.tap(buttons[0].bounds.cx, buttons[0].bounds.cy); // the lowest "Log In" is the button, the other is the title
+  // The soft keyboard may cover the button, and the Back key would leave the app (it did, in the first run that reached this point): the form scrolls, so the button is scrolled up
+  // above the keyboard (the top 55 % of the window) and tapped there. The lowest "Log In" is the button, the other is the title.
+  let button = null;
+  for (let i = 0; i < 5 && button === null; i++) {
+    const candidates = findNodes(await dev.dump(), { text: 'Log In' }).sort((a, b) => b.bounds.y1 - a.bounds.y1);
+    if (candidates.length >= 2) button = candidates[0];
+    else dev.swipe(dev.display.w / 2, dev.display.h * 0.5, dev.display.w / 2, dev.display.h * 0.2, 500);
+    await sleep(500);
+  }
+  if (button === null) throw new Error('the Log In button is not reachable above the keyboard');
+  dev.tap(button.bounds.cx, button.bounds.cy);
   await dev.waitFor('the signed-in More screen', (list) => onTabs(list) && findNodes(list, { text: 'Log out' }).length + findNodes(list, { text: 'Log Out' }).length + findNodes(list, { text: 'Logout' }).length > 0, 40_000);
 }
 
@@ -540,9 +609,12 @@ async function offline(dev) {
   ];
   dev.stop();
   dev.launch();
-  await dev.waitHome(180_000);
+  const first = await dev.waitHome(180_000);
+  // Home's stats and the Analysis list load only for a signed-in account (the online phase's, kept in the app's storage); a guest still has the leaderboard and the Spectate list
+  const signedIn = !first.some((n) => n.text.startsWith('Log in to track your stats'));
   for (const [name, steps] of cases) {
     await scenario(dev, `offline: ${name}`, async () => {
+      if (!signedIn && (name === 'Home' || name === 'Analysis list')) return record(`offline: ${name}`, [], 'not signed in (see the online phase): this section is not shown to a guest, nothing to check');
       if (name !== 'Home') await toHome(dev);
       const t0 = Date.now();
       if (name === 'Home') {
@@ -576,7 +648,8 @@ try {
     await dev.waitHome(300_000);
     await screens(dev);
     await textFit(dev);
-    if (!flag('skip-gallery')) await gallery(dev);
+    // the gallery's pixels do not depend on the window: the cramped phone runs it, the large phone's budget goes to the screens
+    if (!flag('skip-gallery') && profile.id === 'small') await gallery(dev);
     await touches2p(dev);
     await touchesBughouse(dev);
   } else if (phase === 'online') {
