@@ -6,8 +6,8 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@sentry/react-native": "~8.28.0",
     "chess.js": "^1.4.0",
-    "expo": "~58.0.21",
-    "expo-audio": "~58.0.10",
+    "expo": "~58.0.22",
+    "expo-audio": "~58.0.11",
     "expo-clipboard": "~58.0.4",
     "expo-constants": "~58.0.14",
     "expo-document-picker": "~58.0.4",
@@ -48,6 +48,14 @@
     "test": "vitest run",
     "check:workflows": "node scripts/check-workflows.mjs",
     "prepare": "node scripts/install-hooks.mjs"
+  },
+  "overrides": {
+    "glob": "^14.0.3",
+    "minimatch": "^11.0.3",
+    "@sentry/cli": "3.8.0"
+  },
+  "allowScripts": {
+    "@sentry/cli": false
   },
   "private": true
 }
