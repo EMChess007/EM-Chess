@@ -804,11 +804,19 @@ async function onlineGame(dev, account, progress = { issues: [] }) {
 
     // the Resign control opens its dialog (appAlert: a native dialog with Cancel / Resign), Cancel keeps the game. Checked HERE, while the game is certainly running: a 5 minute game can end
     // on time (the human's clock runs while the run is busy) before the final Resign step at the end of this scenario.
-    const isResignDialog = (list) => (findNodes(list, { text: 'cancel', ci: true, button: true }).length > 0 && findNodes(list, { text: 'resign', ci: true, button: true }).length > 0) || list.some((n) => n.id === 'button1');
+    // The question is the app's OWN overlay (src/components/AppAlert.tsx), not a system dialog: its message is a TextView, and its buttons are plain pressables with a TextView inside (no Button
+    // class, no testID) - the first runs of this check looked for a "Button" and never saw the dialog. Found by the message, the buttons by their words below it.
+    const RESIGN_MESSAGE = 'Your team loses the game.';
+    const isResignDialog = (list) => list.some((n) => n.text === RESIGN_MESSAGE && n.bounds);
+    const dialogButton = (list, word) => {
+      const message = list.find((n) => n.text === RESIGN_MESSAGE && n.bounds);
+      return message ? findNodes(list, { text: word }).filter((n) => n.bounds.y1 >= message.bounds.y2 - 2).sort((a, b) => a.bounds.y1 - b.bounds.y1)[0] ?? null : null;
+    };
     try {
       await dev.runSteps([{ id: 'bughouse-resign' }]);
-      const early = await dev.waitFor('the Resign dialog', isResignDialog, 12_000);
-      const cancel = findNodes(early, { text: 'cancel', ci: true, button: true })[0] ?? early.find((n) => n.id === 'button2');
+      const early = await dev.waitFor('the Resign dialog', isResignDialog, 40_000);
+      const cancel = dialogButton(early, 'Cancel');
+      if (!cancel) issues.push('the Resign dialog has no Cancel button below its question');
       if (cancel) dev.tap(cancel.bounds.cx, cancel.bounds.cy);
       else dev.key(4);
       await sleep(1200);
@@ -877,8 +885,9 @@ async function onlineGame(dev, account, progress = { issues: [] }) {
     for (let attempt = 1; attempt <= 4 && !confirmed && !alreadyOver; attempt++) {
       try {
         await dev.runSteps([{ id: 'bughouse-resign' }]);
-        const dialog = await dev.waitFor('the Resign dialog', isResignDialog, 8_000);
-        const confirm = findNodes(dialog, { text: 'resign', ci: true, button: true }).sort((a, b) => b.bounds.y1 - a.bounds.y1)[0];
+        const dialog = await dev.waitFor('the Resign dialog', isResignDialog, 40_000);
+        const confirm = dialogButton(dialog, 'Resign');
+        if (!confirm) throw new Error('the Resign dialog has no Resign button below its question');
         dev.tap(confirm.bounds.cx, confirm.bounds.cy);
         confirmed = true;
         if (attempt > 1) log(`the Resign dialog opened at the ${attempt}th tap`);
