@@ -709,10 +709,12 @@ async function online(dev) {
     dev.beacon.forgetAll(); // (the spectated game above also had boards: what arrives from here on is this game's)
     execFileSync('bash', ['scripts/android/backend.sh', 'buddy'], { stdio: 'inherit' }); // the phone's own opponent: one human + one buddy
     await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse online' }, { text: '5 min' }]);
-    const queued = await dev.waitFor('the queue screen', (list) => list.some((n) => n.id === 'bughouse-queue' || n.id.startsWith('bughouse-queue-')), 20_000);
-    await dev.snapshot('online-queue');
+    // (the buddy is already waiting: the match can start before the first tree after the tap is read, so a game screen is as good an answer as the queue screen)
+    const queued = await dev.waitFor('the queue screen or the game', (list) => list.some((n) => n.id === 'bughouse-queue' || n.id.startsWith('bughouse-queue-') || n.id === 'board-A' || n.id === 'bughouse-online-intro'), 30_000);
+    const onQueue = queued.some((n) => n.id === 'bughouse-queue' || n.id.startsWith('bughouse-queue-'));
+    await dev.snapshot(onQueue ? 'online-queue' : 'online-queue-skipped');
     const queueIssues = [...crashIssues(queued), ...textIssues(queued, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`)];
-    record('online: queue screen', queueIssues);
+    record('online: queue screen', queueIssues, onQueue ? '' : 'the match had already started when the screen was read (the buddy was waiting): the text checks ran on the game screen');
     // the buddy (a second human) is already queued: bots fill the other seats after the fill timer
     // (the match starts when the app's boards say so; the tree then gives the seat line)
     const started = await dev.beacon.waitFor('state-board-B', (s) => typeof s.fen === 'string', 150_000);
