@@ -566,10 +566,17 @@ async function touchesBughouseBody(dev, name, inset) {
         issues.push(`board ${b}: the app reported no state (no beacon): found in the tree`);
       }
     }
+    // the layout of a game screen settles for a few seconds after the first report (the boards can shrink when the bars arrive): touch only boards that have been quiet, at their last rectangle
+    if (states.A && states.B) {
+      const quiet = await dev.beacon.settled(['state-board-A', 'state-board-B']);
+      if (!quiet) log('the boards were still reporting a new rectangle 30 s after the game started: touching at the last one');
+    }
     const orientation = {};
     for (const b of ['A', 'B']) orientation[b] = dev.beacon.get(`state-board-${b}`)?.orientation ?? 'w';
     const picked = {};
     for (const b of ['A', 'B']) {
+      const latest = dev.beacon.get(`state-board-${b}`);
+      if (states[b] && latest?.rect?.w > 50) boards[b] = rectOfState(latest);
       // the square of a pawn that may move now: e2 for White to move, e7 for Black (the app's own fen says who is to move)
       const fen = dev.beacon.get(`state-board-${b}`)?.fen ?? '';
       const square = fen.split(' ')[1] === 'b' ? 'e7' : 'e2';
@@ -810,16 +817,23 @@ async function online(dev) {
     }
     // resign: the control asks "Resign?" (appAlert: a native dialog with Cancel / Resign), the dialog's button sends it, the server's snapshot ends the match. The result is any sign of a finished game:
     // a node whose id starts with game-over, or words like won / lost / resigned (the card sits UNDER the boards, below the fold on the small phone: the finder scrolls to it).
-    await dev.runSteps([{ id: 'bughouse-resign' }]);
+    // (right after the restart the screen is up but the game may not be "live" yet - the app ignores the control until its first snapshot is back - so the tap is repeated until the dialog opens)
     let confirmed = false;
-    try {
-      const dialog = await dev.waitFor('the Resign dialog', (list) => findNodes(list, { text: 'resign', ci: true, button: true }).length > 1 || list.some((n) => n.id === 'button1'), 10_000);
-      const confirm = findNodes(dialog, { text: 'resign', ci: true, button: true }).sort((a, b) => b.bounds.y1 - a.bounds.y1)[0];
-      dev.tap(confirm.bounds.cx, confirm.bounds.cy);
-      confirmed = true;
-    } catch (e) {
-      issues.push('the Resign dialog did not open: ' + String(e.message).slice(0, 220));
+    let lastError = '';
+    for (let attempt = 1; attempt <= 4 && !confirmed; attempt++) {
+      try {
+        await dev.runSteps([{ id: 'bughouse-resign' }]);
+        const dialog = await dev.waitFor('the Resign dialog', (list) => findNodes(list, { text: 'resign', ci: true, button: true }).length > 1 || list.some((n) => n.id === 'button1'), 8_000);
+        const confirm = findNodes(dialog, { text: 'resign', ci: true, button: true }).sort((a, b) => b.bounds.y1 - a.bounds.y1)[0];
+        dev.tap(confirm.bounds.cx, confirm.bounds.cy);
+        confirmed = true;
+        if (attempt > 1) log(`the Resign dialog opened at the ${attempt}th tap`);
+      } catch (e) {
+        lastError = String(e.message).slice(0, 220);
+        await sleep(3000);
+      }
     }
+    if (!confirmed) issues.push('the Resign dialog did not open after 4 taps: ' + lastError);
     if (confirmed) {
       const finished = (list) => list.find((n) => /^game-over/.test(n.id) || /\b(won|wins|lost|resigned|game over)\b/i.test(n.text));
       let found = null;

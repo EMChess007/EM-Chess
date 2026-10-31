@@ -72,6 +72,21 @@ export class Beacon {
     this.channels.clear();
   }
 
+  /**
+   * Waits until none of the channels has reported anything for `quietMs`. The probe re-measures a board every 1.5 s and reports only a CHANGED rectangle, so a board whose layout is still
+   * settling (the first run that touched the second board of the phone frame tapped a rank low: the board had shrunk from 819 to 777 px after its rectangle was read) keeps reporting,
+   * and a board that has been quiet for several seconds stands where its last rectangle says. Returns false when a channel never reported or the bound ran out.
+   */
+  async settled(channels, quietMs = 4000, timeoutMs = 30_000) {
+    const t0 = Date.now();
+    for (;;) {
+      const ages = channels.map((c) => (this.channels.has(c) ? Date.now() - this.channels.get(c).at : -1));
+      if (ages.every((a) => a >= quietMs)) return true;
+      if (Date.now() - t0 > timeoutMs) return false;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+
   /** Waits until `test(state)` is truthy for the channel's latest state; returns that state. The bound only turns a hang into a failure (null). */
   async waitFor(channel, test = () => true, timeoutMs = 20_000) {
     const t0 = Date.now();

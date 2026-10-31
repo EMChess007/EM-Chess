@@ -176,4 +176,15 @@ describe('the driver keeps the rectangle of a mounted board', () => {
     expect(beacon.withKnownRect('state-board-2p', { mount: 3, fen: 'b', rect: moved }).rect).toEqual(moved);
     expect(beacon.withKnownRect('state-board-other', { mount: 3, fen: 'b' })).toEqual({ mount: 3, fen: 'b' });
   });
+
+  it('settled() is true only for channels that have all reported and been quiet for the given time', async () => {
+    const { Beacon } = await import('../../../scripts/android/lib/beacon.mjs');
+    const beacon = new Beacon();
+    beacon.channels.set('a', { state: {}, seq: 1, at: Date.now() - 5000 });
+    beacon.channels.set('b', { state: {}, seq: 2, at: Date.now() - 5000 });
+    expect(await beacon.settled(['a', 'b'], 4000, 500)).toBe(true);
+    expect(await beacon.settled(['a', 'never-reported'], 4000, 300)).toBe(false);
+    beacon.channels.set('b', { state: {}, seq: 3, at: Date.now() });
+    expect(await beacon.settled(['a', 'b'], 4000, 300)).toBe(false);
+  });
 });
