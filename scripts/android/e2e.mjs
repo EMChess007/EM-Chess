@@ -712,6 +712,20 @@ async function online(dev) {
   });
 
   await scenario(dev, 'online: Bughouse game', async () => {
+    dev.dumpAttempts = 8; // a live game screen is "not idle" for seconds at a time: read it patiently (restored below, whatever happens)
+    dev.dumpGapMs = 1500;
+    try {
+      await onlineGame(dev, account);
+    } finally {
+      dev.dumpAttempts = undefined;
+      dev.dumpGapMs = undefined;
+    }
+  });
+  return account;
+}
+
+async function onlineGame(dev, account) {
+  {
     await toHome(dev);
     dev.beacon.forgetAll(); // (the spectated game above also had boards: what arrives from here on is this game's)
     execFileSync('bash', ['scripts/android/backend.sh', 'buddy'], { stdio: 'inherit' }); // the phone's own opponent: one human + one buddy
@@ -866,8 +880,7 @@ async function online(dev) {
     }
     await dev.snapshot('online-result');
     record('online: Bughouse game', issues, `${moves} moves played as ${colour} on board ${board}`);
-  });
-  return account;
+  }
 }
 
 // --- offline --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

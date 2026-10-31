@@ -104,7 +104,8 @@ export class Device {
   /** The accessibility tree. uiautomator sometimes cannot reach an idle state on a screen that animates: it is retried, then asked again without waiting. */
   async dump({ save } = {}) {
     let lastError = '';
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // (a live game screen - bots moving, pockets changing - can stay "not idle" for several seconds: the online scenario raises `dumpAttempts` / `dumpGapMs`)
+    for (let attempt = 0; attempt < (this.dumpAttempts ?? 3); attempt++) {
       try {
         // (`uiautomator dump /dev/tty` prints only its trailer through `adb shell`, which has no terminal: the tree goes to a file on the phone and is read back.)
         // The file is REMOVED first and uiautomator's own message is kept (command #30): `dump && cat` used to read whatever file was on the phone when the dump FAILED ("ERROR: could not get
@@ -134,7 +135,7 @@ export class Device {
       } catch (e) {
         lastError = String(e.stderr || e.message).slice(0, 200);
       }
-      await sleep(700);
+      await sleep(this.dumpGapMs ?? 700);
     }
     throw new Error(`uiautomator dump failed: ${lastError}`);
   }
