@@ -104,7 +104,7 @@ export function lightShare(png) {
 }
 
 /** The issue text for a black piece whose body reads light, or null. */
-function lightBodyIssue(marker, png, lightMax = LIGHT_SHARE_MAX) {
+function lightBodyIssue(marker, png, lightMax = Infinity) {
   if (marker[0] !== 'b' || !/^b[pnbrqk]$/.test(marker)) return null;
   const body = bodyLuminance(png);
   if (body !== null && body > BLACK_BODY_MAX) return `${marker}: the body reads light (median luminance ${Math.round(body)}, limit ${BLACK_BODY_MAX})`;
@@ -131,7 +131,8 @@ export function expectedInk(marker) {
 export const inkMatches = (measured, ink) => measured !== null && distance(measured, ink) <= INK_TOLERANCE;
 
 /** The verdict on one photographed cell: an issue text, or null. */
-export function judgeCell(marker, png) {
+/** `lightMax` is the Android run's limit (LIGHT_SHARE_MAX); the web matrix leaves it off: its cells can be 28 px, where the antialiased edge of a thin outline alone is "light". */
+export function judgeCell(marker, png, lightMax = Infinity) {
   const ink = expectedInk(marker);
   if (ink === null) return `unknown piece marker "${marker}"`;
   let { piece, fraction } = analyseCell(png);
@@ -143,7 +144,7 @@ export function judgeCell(marker, png) {
   }
   if (piece === null || fraction < MIN_PIECE_FRACTION) return `${marker}: no piece found in its cell (covers ${(fraction * 100).toFixed(1)} %)`;
   if (!inkMatches(piece, ink)) return `${marker}: drawn rgb(${piece.join(',')}), expected rgb(${ink.join(',')}) +-${INK_TOLERANCE}`;
-  return lightBodyIssue(marker, png);
+  return lightBodyIssue(marker, png, lightMax);
 }
 
 // --- an IMAGE theme (Cburnett, Merida, Chess with Checkers: command #27c) -----------------------------------------------------------------------------------------------------------

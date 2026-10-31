@@ -41,7 +41,13 @@ export default function E2eStateProbe({ channel, state, rectOf }: E2eStateProbeP
     // the state at once, then the rectangle once the layout has settled (a rectangle measured in the first frame can be 0 x 0 or one the screen is about to move)
     report(null);
     const timers = [setTimeout(measure, 0), setTimeout(measure, 600)];
-    return () => timers.forEach(clearTimeout);
+    // and every 1.5 s while the board is mounted: a layout that settles later (an online game's bars and pockets arrive after the first frame, a keyboard, a rotation) must still be reported
+    // (the beacon sends only a CHANGED rectangle, so a board that does not move costs nothing)
+    const every = setInterval(measure, 1500);
+    return () => {
+      timers.forEach(clearTimeout);
+      clearInterval(every);
+    };
   }, [channel, json, rectOf, mount]);
   return <View pointerEvents="none" testID={`e2e-state-${channel}`} accessible accessibilityLabel={json} style={{ position: 'absolute', left: 0, top: 0, width: 2, height: 2, opacity: 0.02 }} />;
 }

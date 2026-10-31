@@ -797,19 +797,23 @@ async function online(dev) {
       await dev.snapshot('FAILED-restart');
       await dev.waitHome(120_000).catch(() => {});
     }
-    // resign: the app has no confirmation (online.onResign sends it at once); the result card follows from the server's snapshot. A tap that the restart or a reconnect swallowed is tried again.
+    // resign: the control asks "Resign?" (appAlert: a native dialog with Cancel / Resign), the dialog's button sends it, the server's snapshot ends the match and the result card appears UNDER the boards
+    // (below the fold on the small phone, and uiautomator lists only what is visible: the finder scrolls to it)
     let resultText = null;
-    for (let attempt = 1; attempt <= 3 && resultText === null; attempt++) {
+    for (let attempt = 1; attempt <= 2 && resultText === null; attempt++) {
       await dev.runSteps([{ id: 'bughouse-resign' }]);
       try {
-        resultText = await dev.waitFor('the result', (list) => list.find((n) => n.id === 'game-over-headline')?.text, 15_000, 1000);
-        if (attempt > 1) issues.push(`the Resign control needed ${attempt} taps before the result came`);
+        const dialog = await dev.waitFor('the Resign dialog', (list) => findNodes(list, { text: 'resign', ci: true, button: true }).length > 1 || list.some((n) => n.id === 'button1'), 10_000);
+        const confirm = findNodes(dialog, { text: 'resign', ci: true, button: true }).sort((a, b) => b.bounds.y1 - a.bounds.y1)[0];
+        dev.tap(confirm.bounds.cx, confirm.bounds.cy);
+        const headline = await dev.find({ id: 'game-over-headline' });
+        resultText = headline.text || 'game over';
       } catch (e) {
-        log(`  resign attempt ${attempt}: no result card after 15 s`);
-        if (attempt === 3) issues.push(`no result after resigning (3 taps): ${e.message.slice(0, 200)}`);
+        log('  resign attempt ' + attempt + ': ' + String(e.message).slice(0, 120));
+        if (attempt === 2) issues.push('no result after resigning (2 attempts): ' + String(e.message).slice(0, 200));
       }
     }
-    if (resultText !== null) log(`result: ${resultText}`);
+    if (resultText !== null) log('result: ' + resultText);
     await dev.snapshot('online-result');
     record('online: Bughouse game', issues, `${moves} moves played as ${colour} on board ${board}`);
   });

@@ -262,7 +262,7 @@ export function judgePieceCell(screenshot, cell, marker, assets = null, lightMax
   // A king's cell in Bughouse carries a team badge (a blue diamond or a yellow circle) in its top-right corner: it is not part of the piece, and the yellow one is LIGHT (command #30: a black
   // king read "20 % light" on the small phone). The corner is painted over with the square's own colour before the piece is judged.
   if (hasBadge) paintCorner(png);
-  if (assets === null) return judgeCell(marker, png);
+  if (assets === null) return judgeCell(marker, png, lightMax ?? LIGHT_SHARE_BY_THEME.default);
   const rect = { x: cell.w * 0.075 - inset, y: cell.h * 0.075 - inset, w: cell.w * 0.85, h: cell.h * 0.85 };
   return judgeImageCell(marker, png, assets, rect, lightMax);
 }

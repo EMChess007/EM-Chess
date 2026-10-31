@@ -151,15 +151,17 @@ describe('judgeCell: the verdict on a photographed piece', () => {
     // the old art: fill #1d1d1d, outline #f1f1f1 about 1.5 px wide around a 14 px disc: the ring is 40 % of the piece, the median luminance is still the fill's
     const old = (square: Rgb) => ring(square, [0x1d, 0x1d, 0x1d], [0xf1, 0xf1, 0xf1], 14, 4);
     for (const square of [LIGHT, DARK]) {
-      const problem = judgeCell('bk', old(square));
+      const problem = judgeCell('bk', old(square), LIGHT_SHARE_MAX);
       expect(problem, `${square}`).toContain('bk: ');
       expect(problem, `${square}`).toContain('of the piece is light (limit 15 %)');
       expect(problem).toContain('a light outline or light bands');
       // the same picture as a white piece is not judged by this rule
-      expect(judgeCell('wk', old(square)) ?? '').not.toContain('of the piece is light');
+      expect(judgeCell('wk', old(square), LIGHT_SHARE_MAX) ?? '').not.toContain('of the piece is light');
+      // and the web matrix, which passes no limit, does not judge it at all
+      expect(judgeCell('bk', old(square)) ?? '').not.toContain('of the piece is light');
     }
     // today's art (dark-grey outline) is clean on both squares
-    for (const square of [LIGHT, DARK]) expect(judgeCell('bk', ring(square, [0x1d, 0x1d, 0x1d], [0x66, 0x66, 0x66], 14, 2))).toBeNull();
+    for (const square of [LIGHT, DARK]) expect(judgeCell('bk', ring(square, [0x1d, 0x1d, 0x1d], [0x66, 0x66, 0x66], 14, 2), LIGHT_SHARE_MAX)).toBeNull();
   });
 
   it('command #30: the OLD Merida black king and rook (4cf8c46, light bands) are reported by the image judge with the Merida limit, the art of today is not', () => {
