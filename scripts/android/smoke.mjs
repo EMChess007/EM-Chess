@@ -16,9 +16,25 @@ let ok = false;
 try {
   dev.applyProfile(PROFILES.large);
   dev.clearData();
-  dev.launch();
   const t0 = Date.now();
-  const nodes = await dev.waitHome(360_000);
+  // Up to three starts, 150 s each: a start that ends on the launcher (the run of command #30 that sat 6 minutes on "Wallpaper & style | Widgets | Home settings": the app process was gone and
+  // nothing started it again) is a failed start, not a slow one - the second one finds the bundle already built by the first.
+  let nodes = null;
+  let lastError = null;
+  for (let start = 1; start <= 3 && nodes === null; start++) {
+    if (start > 1) {
+      console.error(`smoke: start ${start - 1} did not reach Home (${lastError.message.slice(0, 160)}): starting the app again`);
+      dev.stop();
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    dev.launch();
+    try {
+      nodes = await dev.waitHome(150_000);
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  if (nodes === null) throw lastError;
   console.log(`smoke: Home is up after ${Math.round((Date.now() - t0) / 1000)} s with ${nodes.length} nodes: ${visibleWords(nodes, 25).join(' | ')}`);
   const issues = crashIssues(nodes);
   if (issues.length > 0) throw new Error(issues.join('; '));
