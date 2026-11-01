@@ -30,6 +30,7 @@ import {
 import BughouseBoard from './BughouseBoard';
 import { PIECE_CHIP_BACKGROUND, PIECE_CHIP_BORDER, pieceInk } from './pieceArt';
 import PieceIcon from './PieceIcon';
+import type { BoardMarks } from './useBoardMarks';
 import { useBoardTouches, type BoardTouches, type DebugFinger } from './useBoardTouches';
 
 const PIECE_NAMES: Record<ReservePieceType, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen' };
@@ -74,6 +75,8 @@ export interface BughouseBoardBlockProps {
   premoveSeat?: BughouseSeat | null;
   /** W5: the queued premove drawn on this board (the squares in the premove colour and the ghost piece). */
   premove?: BoardPremoveMarks | null;
+  /** Command #32: this board's finger-drawn arrows (see BughouseBoard `marks`): the standard layout draws them with the PanResponder, the dual layout with this board's own raw touches. */
+  marks?: BoardMarks;
 }
 
 type BoardPremoveMarks = NonNullable<React.ComponentProps<typeof BughouseBoard>['premove']>;
@@ -103,6 +106,9 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
     onTapChip: props.onPickPocket,
     onTapPromotion: (promotingBoard, choice) => props.onPromotionChoice?.(promotingBoard, choice),
     onDebug: props.touchDebug ? setDebugFingers : undefined,
+    // (the dual layout only: these touches are wired to the grid there; the standard layout's PanResponder draws its own)
+    onArrow: props.rawTouch && props.marks ? (arrowBoard, from, to) => props.marks?.drawArrow(boardCellToSquare(arrowBoard, orientation, from.row, from.col).square, boardCellToSquare(arrowBoard, orientation, to.row, to.col).square) : undefined,
+    onHighlight: props.rawTouch && props.marks ? (markBoard, at) => props.marks?.toggleHighlight(boardCellToSquare(markBoard, orientation, at.row, at.col).square) : undefined,
   });
   const choices = props.rawTouch ? props.promotionChoices ?? [] : [];
   return (
@@ -125,6 +131,7 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
         badgeOf={badgeOf}
         interactive={actor !== null || (props.premoveSeat ?? null) !== null}
         premove={props.premove}
+        marks={props.marks}
         onTapSquare={onTapSquare}
         outlined={outlined}
         touches={props.rawTouch ? touches : undefined}

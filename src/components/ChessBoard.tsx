@@ -51,8 +51,10 @@ interface ChessBoardProps {
    * freshly-set-up board with no "last move" to show. */
   lastMove?: Move | null;
   /** Lets the player long-press-drag to draw arrows and tap-and-hold to highlight squares (see
-   * BoardAnnotations) — cleared automatically whenever `fen` changes. Off by default; only
-   * Analysis/Local/Bot screens turn it on today. */
+   * BoardAnnotations) — cleared automatically whenever `fen` changes. Off by default; every game screen that shows a
+   * 2-player board turns it on (Local, Bot, Online, Spectator, Engine vs Engine, Analysis; command #32: Online, Spectator and
+   * Engine vs Engine were missing), and it works on ANY turn - `disabled` gates moves, never the gesture. Puzzles keep it off
+   * (an arrow would be a hint). */
   enableAnnotations?: boolean;
   /** When set (to the local player's own color) and it isn't currently that color's turn, lets
    * the player select one of their own pieces and a destination anyway — instead of attempting a
@@ -756,7 +758,7 @@ function ChessBoard({
         )}
 
         {/* DEV ONLY, the Android end-to-end build: the board's state for the driver (src/dev/E2eStateProbe.tsx). Null everywhere else. */}
-        {E2eProbe && <E2eProbe channel="board-2p" rectOf={boardContainerRef} state={{ fen, turn, selected: selectedSquare, orientation, legal: legalTargets.length, lastMove: lastMove ? [lastMove.from, lastMove.to] : null }} />}
+        {E2eProbe && <E2eProbe channel="board-2p" rectOf={boardContainerRef} state={{ fen, turn, selected: selectedSquare, orientation, legal: legalTargets.length, lastMove: lastMove ? [lastMove.from, lastMove.to] : null, arrows: arrows.length, marked: highlights.length }} />}
 
         {explosionCells.map(({ square, piece }) => {
           const { row, col } = squareToRowCol(square, orientation);

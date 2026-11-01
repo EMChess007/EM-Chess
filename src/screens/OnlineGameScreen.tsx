@@ -1036,6 +1036,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           fen={displayFen}
           onMove={handleMove}
           disabled={!!gameOver || connectionState !== 'connected' || isReviewing}
+          enableAnnotations
           chess960={match.isChess960}
           initialFen={match.fen}
           orientation={myColor}

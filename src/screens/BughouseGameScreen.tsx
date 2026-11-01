@@ -7,6 +7,7 @@ import BughouseBoard from '../components/BughouseBoard';
 import BughouseBoardBlock from '../components/BughouseBoardBlock';
 import BughouseRulesSheet from '../components/BughouseRulesSheet';
 import { getTouchDebugOverlay } from '../components/devOverlayRegistry';
+import { useBoardMarks } from '../components/useBoardMarks';
 import { pieceInk } from '../components/pieceArt';
 import PieceIcon from '../components/PieceIcon';
 import PromotionPicker from '../components/PromotionPicker';
@@ -146,6 +147,10 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   const [rawPicked, setPicked] = useState<{ board: BoardId; piece: ReservePieceType; fen: string } | null>(null);
   const [rawPromotion, setPromotion] = useState<{ board: BoardId; from: string; to: string; choices: PromotionPiece[]; fen: string } | null>(null);
   const match = state.match;
+  // Command #32: the finger-drawn arrows of each board, kept HERE (the board component is remounted when the large board and the thumbnail swap) and cleared by a move on THAT board only
+  // (its FEN: a move or a drop changes it, a pocket change caused by the other board, a clock or a turn passing do not). Local, online and spectator share this screen.
+  const marksA = useBoardMarks(match.boards.A.fen);
+  const marksB = useBoardMarks(match.boards.B.fen);
   const stillHere = <T extends { board: BoardId; fen: string }>(held: T | null): T | null => (held !== null && match.result === null && held.fen === match.boards[held.board].fen ? held : null);
   const selected = stillHere(rawSelected);
   const picked = stillHere(rawPicked);
@@ -435,6 +440,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         pickedPiece={own ? own.picked : preHalf?.kind === 'pick' ? preHalf.piece : picked && picked.board === board ? picked.piece : null}
         premoveSeat={preHere ? premoveSeat : null}
         premove={preMarks}
+        marks={board === 'A' ? marksA : marksB}
         bank={state.bank}
         statusYou={layout.kind === 'standard' ? seatAt(board, match.verdicts[board].turn) === layout.seat : actors[board] !== null}
         onTapSquare={dual ? (tapped, square) => dualInput(tapped, { kind: 'tapSquare', square }) : onTapSquare}

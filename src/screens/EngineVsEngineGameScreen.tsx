@@ -383,6 +383,7 @@ export default function EngineVsEngineGameScreen({
           fen={displayFen}
           onMove={noopMove}
           disabled
+          enableAnnotations
           chess960={chess960}
           initialFen={initialFen}
           orientation={flipped ? 'b' : 'w'}

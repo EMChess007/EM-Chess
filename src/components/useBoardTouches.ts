@@ -1,6 +1,7 @@
-import { useRef, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Platform, type GestureResponderEvent, type PointerEvent as RNPointerEvent, type ViewInstance } from 'react-native';
-import type { Cell } from '../logic/boardGestures';
+import { EMPTY_ARROW_BOOK, stepArrowTouches, type ArrowBook, type ArrowEvent } from '../logic/boardArrows';
+import { LONG_PRESS_MS, pixelToCell, type Cell } from '../logic/boardGestures';
 import { EMPTY_TOUCH_BOOK, fingerCell as fingerCellOf, gridTapCell, localOfTouch, originSource, stepTouches, type Point, type Tap, type TouchBook, type TouchEventIn, type TouchTarget } from '../logic/boardTouches';
 import type { PromotionPiece } from '../logic/bughouse';
 import type { ReservePieceType } from '../logic/crazyhouse';
@@ -50,6 +51,20 @@ export interface BoardTouchOptions {
   onTapPromotion: (board: BoardId, choice: PromotionPiece | 'cancel') => void;
   /** DEV ONLY (the touch-debug overlay): told about every finger on the grid after each event. Absent in a release build. */
   onDebug?: (fingers: DebugFinger[]) => void;
+  /**
+   * Finger-drawn marks (command #32; logic/boardArrows.ts has the one rule for every board): a finger HELD still on a cell for LONG_PRESS_MS and then dragged to another cell draws an arrow, lifted
+   * on the cell it began on it marks that cell. Each finger is tracked by its identifier, so two people can draw on two boards at once. Neither handler given: no arming, taps only. Drawing never
+   * reaches `onTapCell` (a drag past the tap's drift is never a tap), and a quick tap never draws.
+   */
+  onArrow?: (board: BoardId, from: Cell, to: Cell) => void;
+  onHighlight?: (board: BoardId, cell: Cell) => void;
+}
+
+/** The arrow being drawn right now (a finger is armed and still down): from a cell to the finger's raw position in the grid's frame. */
+export interface LiveArrow {
+  from: Cell;
+  toX: number;
+  toY: number;
 }
 
 /** The touch props a view takes (a subset of the View's props that both react-native and react-native-web accept). */
@@ -59,6 +74,7 @@ export interface TouchProps {
   onTouchEnd: (event: TouchLikeEvent) => void;
   onTouchCancel: (event: TouchLikeEvent) => void;
   onPointerDown: (event: PointerLikeEvent) => void;
+  onPointerMove: (event: PointerLikeEvent) => void;
   onPointerUp: (event: PointerLikeEvent) => void;
   onPointerCancel: (event: PointerLikeEvent) => void;
 }
@@ -81,6 +97,8 @@ export interface BoardTouches {
   chipProps: (piece: ReservePieceType) => TouchProps;
   /** Touch props for a button of this board's promotion bar. */
   promotionProps: (choice: PromotionPiece | 'cancel') => TouchProps;
+  /** The arrow a finger is drawing right now, or null. */
+  liveArrow: LiveArrow | null;
 }
 
 const GRID: TouchTarget = { kind: 'grid' };
@@ -95,6 +113,17 @@ export function useBoardTouches(options: BoardTouchOptions): BoardTouches {
   const originRef = useRef<Point>({ x: 0, y: 0 });
   const pendingRef = useRef<Promise<void> | null>(null);
   const fingersRef = useRef<Record<string, DebugFinger>>({});
+  // The finger-drawn marks: each finger's arming (logic/boardArrows.ts), the hold timers, and the arrow being drawn (one preview per board: the latest armed finger).
+  const arrowBookRef = useRef<ArrowBook>(EMPTY_ARROW_BOOK);
+  const holdTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [liveArrow, setLiveArrow] = useState<LiveArrow | null>(null);
+  useEffect(
+    () => () => {
+      for (const timer of Object.values(holdTimersRef.current)) clearTimeout(timer);
+      holdTimersRef.current = {};
+    },
+    []
+  );
 
   type OriginNode = { getBoundingClientRect?: () => { left: number; top: number }; measure?: (cb: (x: number, y: number, w: number, h: number, pageX: number, pageY: number) => void) => void };
 
@@ -163,7 +192,71 @@ export function useBoardTouches(options: BoardTouchOptions): BoardTouches {
     report(Object.values(fingersRef.current));
   };
 
+  const stopHold = (id: string): void => {
+    const timer = holdTimersRef.current[id];
+    if (timer !== undefined) clearTimeout(timer);
+    delete holdTimersRef.current[id];
+  };
+
+  /** The finger's position in the grid's own frame: the phone gives it (the overlay's locationX / locationY); the web is the page point against a freshly read origin. */
+  const localOf = (event: { at: Point; local?: Point }): Point => {
+    if (event.local) return event.local;
+    refreshOrigin();
+    return { x: event.at.x - originRef.current.x, y: event.at.y - originRef.current.y };
+  };
+
+  /**
+   * The finger-drawn marks (command #32): the same touches the tap layer sees, read a second way. A finger that begins on a cell starts a hold timer; held still for LONG_PRESS_MS it is ARMED
+   * (a preview arrow follows it); lifted on another cell it draws an arrow, on its own cell it marks it. The tap layer is untouched: a drag past TAP_MAX_DRIFT_PX is never a tap there, and a
+   * quick tap is never armed here (its timer is stopped at the lift).
+   */
+  const annotate = (event: TouchEventIn): void => {
+    const { onArrow, onHighlight, cell, board } = optionsRef.current;
+    if (!onArrow && !onHighlight) return;
+    const step = (arrowEvent: ArrowEvent) => {
+      const result = stepArrowTouches(arrowBookRef.current, arrowEvent);
+      arrowBookRef.current = result.book;
+      return result.outcome;
+    };
+    if (event.kind === 'start') {
+      const at = localOf(event);
+      const start = fingerCellOf(at, cell, 8, 8);
+      if (start === null) return; // began in the margin: nothing to draw from
+      step({ kind: 'start', id: event.id, at, cell: start });
+      stopHold(event.id);
+      holdTimersRef.current[event.id] = setTimeout(() => {
+        delete holdTimersRef.current[event.id];
+        step({ kind: 'arm', id: event.id });
+        const tracked = arrowBookRef.current[event.id];
+        if (tracked?.armed) setLiveArrow({ from: tracked.startCell, toX: at.x, toY: at.y });
+      }, LONG_PRESS_MS);
+      return;
+    }
+    if (event.kind === 'cancel') {
+      stopHold(event.id);
+      step({ kind: 'cancel', id: event.id });
+      if (Object.values(arrowBookRef.current).every((t) => !t.armed)) setLiveArrow(null);
+      return;
+    }
+    const tracked = arrowBookRef.current[event.id];
+    if (tracked === undefined) return;
+    const at = localOf(event);
+    if (event.kind === 'move') {
+      step({ kind: 'move', id: event.id, at });
+      const now = arrowBookRef.current[event.id];
+      if (now?.drifted) stopHold(event.id); // moved before the hold was over: a slide, never an arrow
+      if (now?.armed) setLiveArrow({ from: now.startCell, toX: at.x, toY: at.y });
+      return;
+    }
+    stopHold(event.id);
+    const outcome = step({ kind: 'end', id: event.id, at, cell: pixelToCell(at.x, at.y, cell, 8, 8) });
+    if (Object.values(arrowBookRef.current).every((t) => !t.armed)) setLiveArrow(null);
+    if (outcome?.kind === 'arrow') onArrow?.(board, outcome.from, outcome.to);
+    else if (outcome?.kind === 'highlight') onHighlight?.(board, outcome.cell);
+  };
+
   const feed = (event: TouchEventIn, onGrid: boolean): void => {
+    if (onGrid) annotate(event);
     if (onGrid) {
       getE2eGestureCounter()?.(`touch-${optionsRef.current.board}`, `${event.kind}Event`, { lastEvent: { kind: event.kind, page: 'at' in event ? [Math.round(event.at.x), Math.round(event.at.y)] : null, local: 'local' in event && event.local ? [Math.round(event.local.x), Math.round(event.local.y)] : null } });
     }
@@ -193,6 +286,10 @@ export function useBoardTouches(options: BoardTouchOptions): BoardTouches {
       onPointerDown: (event) => {
         if (isMouse(event) && event.nativeEvent.button === 0) feed({ kind: 'start', id: MOUSE_ID, at: pointAt(event), target }, onGrid);
       },
+      onPointerMove: (event) => {
+        // (a mouse moves without a button all the time: only a held one is a drag)
+        if (isMouse(event) && (event.nativeEvent.buttons ?? 0) !== 0) feed({ kind: 'move', id: MOUSE_ID, at: pointAt(event) }, onGrid);
+      },
       onPointerUp: (event) => {
         if (isMouse(event)) feed({ kind: 'end', id: MOUSE_ID, at: pointAt(event) }, onGrid);
       },
@@ -203,5 +300,5 @@ export function useBoardTouches(options: BoardTouchOptions): BoardTouches {
   };
 
   // The grid's props are made once per render but only read the refs, so a stale closure cannot matter.
-  return { gridRef, surfaceRef, gridProps: propsFor(GRID), surfaceProps: propsFor(GRID, 'grid'), chipProps: (piece) => propsFor({ kind: 'chip', piece }), promotionProps: (choice) => propsFor({ kind: 'promotion', choice }) };
+  return { gridRef, surfaceRef, gridProps: propsFor(GRID), surfaceProps: propsFor(GRID, 'grid'), chipProps: (piece) => propsFor({ kind: 'chip', piece }), promotionProps: (choice) => propsFor({ kind: 'promotion', choice }), liveArrow };
 }

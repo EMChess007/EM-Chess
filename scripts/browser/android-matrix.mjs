@@ -182,7 +182,7 @@ async function applyCombo(page, cdp, combo) {
 }
 
 function checkOptions(screen, insets) {
-  return { insets, minTarget: CRITERIA.minTouchTarget, minGlyphContrast: CRITERIA.minGlyphContrast, expectGlyphs: screen.glyphs ?? 0, clipTolerance: CRITERIA.clipTolerance, minBoardCell: CRITERIA.minBoardCell, boardKind: screen.boardKind ?? null, pockets: Boolean(screen.pockets), exempt };
+  return { insets, minTarget: CRITERIA.minTouchTarget, minGlyphContrast: CRITERIA.minGlyphContrast, expectGlyphs: screen.glyphs ?? 0, clipTolerance: CRITERIA.clipTolerance, minBoardCell: CRITERIA.minBoardCell, boardKind: screen.boardKind ?? null, pockets: Boolean(screen.pockets), moveList: Boolean(screen.moveList), exempt };
 }
 
 async function runChecks(page, screen, insets) {
@@ -234,7 +234,14 @@ async function navigate(page, cdp, baseUrl, screen) {
     if (step.text) await page.getByText(step.text, { exact: true }).nth(step.nth ?? 0).click({ timeout: 15000 });
     else if (step.label) await page.locator(`[aria-label="${step.label}"]`).first().click({ timeout: 15000 });
     else if (step.id) await page.locator(`[data-testid="${step.id}"]`).first().click({ timeout: 15000 });
-    else if (step.wait) await page.waitForTimeout(step.wait);
+    else if (step.board) {
+      // a tap on a square of the 2-player board (White at the bottom), at the centre of its cell: the board's own rectangle, 8 x 8 cells
+      const box = await page.locator('[data-testid="chess-board"]').first().boundingBox();
+      if (!box) throw new Error('step board: no chess board on the page');
+      const file = step.board.charCodeAt(0) - 97;
+      const rank = Number(step.board[1]);
+      await page.mouse.click(box.x + ((file + 0.5) * box.width) / 8, box.y + ((8 - rank + 0.5) * box.height) / 8);
+    } else if (step.wait) await page.waitForTimeout(step.wait);
     await page.waitForTimeout(450);
   }
 }
@@ -488,6 +495,14 @@ async function selfTest() {
     expect('a board cell inside an exempt thumbnail is not judged', !kinds(await run('<div data-testid="thumb-B"><div aria-label="a1" style="width:12px;height:12px">.</div></div>', { boardKind: 'twoPlayer' })).has('board-cell'));
     expect('a board cell under its minimum is reported', kinds(await run('<div aria-label="a1" style="width:12px;height:12px">.</div>', { boardKind: 'twoPlayer' })).has('board-cell'));
     expect('a board cell at its minimum is fine', !kinds(await run('<div aria-label="a1" style="width:24px;height:24px">.</div>', { boardKind: 'twoPlayer' })).has('board-cell'));
+
+    // the move list check (command #32): a number and its move share one line
+    const listItem = (numberStyle, moveStyle) => `<div style="display:flex;align-items:center;min-height:36px"><span data-testid="movelist-number-0" style="${numberStyle}">1.</span><div data-testid="movelist-san-0" style="${moveStyle}"><span>e4</span></div></div>`;
+    expect('a move list whose number and move share one line is clean', !kinds(await run(listItem('line-height:18px', 'line-height:18px'), { moveList: true })).has('movelist'));
+    expect('a number 12 dp below its move (the phone of command #32) is reported', kinds(await run(listItem('line-height:18px;position:relative;top:12px', 'line-height:18px'), { moveList: true })).has('movelist'));
+    expect('a move at the top of a tall button while the number is centred is reported', kinds(await run(listItem('line-height:18px', 'min-height:44px;line-height:18px'), { moveList: true })).has('movelist'));
+    expect('a screen that declares a move list and shows none is reported', kinds(await run('<div>no list</div>', { moveList: true })).has('movelist'));
+    expect('a screen that does not declare a move list is not judged', !kinds(await run(listItem('position:relative;top:12px', 'line-height:18px'))).has('movelist'));
 
     // the pocket check (command #27b): one row inside its strip, reaching no board, clock or status line
     const chip = (piece, extra = '') => `<div data-testid="pocket-A-white-${piece}" style="width:24px;height:24px;flex-shrink:0;${extra}">1</div>`;

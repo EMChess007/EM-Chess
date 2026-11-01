@@ -196,6 +196,20 @@ describe('the wiring', () => {
     expect(e2e).toContain('the phone shows both squares');
   });
 
+  it('the phone run draws arrows with a HELD finger on the 2-player board and on a Bughouse board and reads the count from the app (command #32)', () => {
+    const e2e = read('scripts/android/e2e.mjs');
+    expect(e2e).toContain('async function arrows2p(dev)');
+    expect(e2e).toContain('await arrows2p(dev);');
+    expect(e2e).toContain('s.arrows === 2');
+    expect(e2e).toContain('s.arrows === 0 && s.fen !== fen');
+    expect(e2e).toContain("arrows: after a move on board A its arrows were not cleared");
+    const device = read('scripts/android/lib/device.mjs');
+    expect(device).toContain('drawArrow(x1, y1, x2, y2, holdMs = 700)');
+    expect(device).toContain('input motionevent DOWN'); // a held finger: `input swipe` would start moving at once, which is a slide
+    expect(read('src/components/BughouseBoard.tsx')).toContain('arrows: markState ? markState.arrows.length : 0');
+    expect(read('src/components/ChessBoard.tsx')).toContain('arrows: arrows.length');
+  });
+
   it('EXIT_RUNNER in the shell and in the module are the same number', () => {
     expect(Number(/EXIT_RUNNER=(\d+)/.exec(read('scripts/android/run-on-emulator.sh'))![1])).toBe(EXIT_RUNNER);
   });

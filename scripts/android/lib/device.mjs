@@ -208,6 +208,20 @@ export class Device {
     this.sh(`input swipe ${Math.round(x1)} ${Math.round(y1)} ${Math.round(x2)} ${Math.round(y2)} ${ms}`);
   }
 
+  /**
+   * A finger-drawn arrow (command #32): a finger HELD on (x1, y1) for `holdMs`, dragged to (x2, y2) and lifted - the gesture of every board (src/logic/boardArrows.ts: 400 ms hold, then drag).
+   * `input swipe` cannot do it (it starts moving at once, which is a slide); `input motionevent` (API 30+) sends the events one by one, and each `input` process takes its own time to start, so the
+   * finger really stays down. One shell call, so the timing is the phone's and not adb's round trips.
+   */
+  drawArrow(x1, y1, x2, y2, holdMs = 700) {
+    this.fresh = false;
+    const r = Math.round;
+    this.sh(
+      `input motionevent DOWN ${r(x1)} ${r(y1)}; sleep ${(holdMs / 1000).toFixed(1)}; input motionevent MOVE ${r((x1 + x2) / 2)} ${r((y1 + y2) / 2)}; input motionevent MOVE ${r(x2)} ${r(y2)}; input motionevent UP ${r(x2)} ${r(y2)}`,
+      { timeout: 60_000 }
+    );
+  }
+
   key(code) {
     this.fresh = false;
     this.sh(`input keyevent ${code}`);

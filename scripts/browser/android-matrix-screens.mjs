@@ -15,6 +15,9 @@ export const SCREENS = [
   { id: 'play-menu', title: 'Play menu (full scroll)', steps: [PLAY] },
   { id: 'time-control', title: 'Time control (2-player)', steps: [PLAY, { text: 'Classic', nth: 1 }] },
   { id: 'game-2p', title: 'Game: 2-player (Local classic)', steps: [PLAY, { text: 'Classic', nth: 1 }, { text: '5 min' }], boardKind: 'twoPlayer', pieces: { mode: 'bw', allKinds: true } },
+  // The move list above the board (command #32): three moves are played by clicking the board (`board` steps), then the strip's numbers and moves must share one line (the `movelist` check).
+  // Web only: the phone's run reads the strip from its accessibility tree in the 2-player touch check instead (scripts/android/e2e.mjs).
+  { id: 'game-2p-moves', title: 'Game: 2-player with a move list (number and move on one line)', steps: [PLAY, { text: 'Classic', nth: 1 }, { text: '5 min' }, { board: 'e2' }, { board: 'e4' }, { board: 'e7' }, { board: 'e5' }, { board: 'g1' }, { board: 'f3' }], boardKind: 'twoPlayer', moveList: true, webOnly: true },
   { id: 'game-2p-options', title: 'Game: 2-player, Options menu', steps: [PLAY, { text: 'Classic', nth: 1 }, { text: '5 min' }, { text: 'Options' }] },
   { id: 'bot-select', title: 'Setup: 2-player vs a bot', steps: [PLAY, { text: 'Classic', nth: 0 }] },
   { id: 'setup-chess', title: 'Setup: Setup Chess (Local)', steps: [PLAY, { text: 'Setup Chess', nth: 1 }] },

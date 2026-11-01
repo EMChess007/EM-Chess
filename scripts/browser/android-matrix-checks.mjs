@@ -13,6 +13,7 @@
  *   board-cell   a board cell smaller than the board's minimum (the size gate / scrolling must have applied);
  *   inset        text or a control inside a system bar / display cutout (the insets are emulated with CDP, see android-matrix-def.mjs);
  *   contrast     an icon marked data-matrix-glyph (the tab bar's) whose ink has less than CRITERIA.minGlyphContrast : 1 against what is behind it, or is not drawn as a vector path.
+ *   movelist     (a screen that declares `moveList`) a move number whose text is not on the same line as its move: the vertical centres of the two texts differ by more than 1 dp.
  */
 export function pageChecks(opts) {
   const { insets, minTarget, clipTolerance, minBoardCell, boardKind, exempt, minGlyphContrast, expectGlyphs } = opts;
@@ -289,6 +290,31 @@ export function pageChecks(opts) {
       }
     }
     if (pockets.length === 0 && !blockingLayer) add('pocket', document.body, 'no pocket on a screen that declares pockets');
+  }
+
+  // ---- the move list (command #32) ----------------------------------------------------------------------------------------------------------------
+  // In the strip above the board every move number sits on the SAME line as its move: the vertical centre of the number's text and of the move's text (the rectangle of the text itself, not of
+  // its box) agree within 1 dp. On the phone the moves sat at the top of the strip and the numbers lower (the move's button had a 44 dp floor inside a 36 dp strip).
+  if (opts.moveList) {
+    const textCentre = (el) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const node = walker.nextNode();
+      if (!node) return null;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const box = range.getBoundingClientRect();
+      return box.width > 0 || box.height > 0 ? (box.top + box.bottom) / 2 : null;
+    };
+    const numbers = Array.from(document.querySelectorAll('[data-testid^="movelist-number-"]')).filter((el) => !isHidden(el));
+    if (numbers.length === 0 && !blockingLayer) add('movelist', document.body, 'no move number on a screen that declares a move list');
+    for (const number of numbers) {
+      const ply = (number.getAttribute('data-testid') || '').slice('movelist-number-'.length);
+      const san = document.querySelector('[data-testid="movelist-san-' + ply + '"]');
+      const a = textCentre(number);
+      const b = san ? textCentre(san) : null;
+      if (a === null || b === null) add('movelist', number, 'the move number or its move has no text box');
+      else if (Math.abs(a - b) > 1) add('movelist', number, 'the number and the move are not on one line: centres ' + a.toFixed(1) + ' and ' + b.toFixed(1) + ' (' + Math.abs(a - b).toFixed(1) + ' dp apart)');
+    }
   }
 
   // ---- icon / glyph contrast ----------------------------------------------------------------------------------------------------------------------

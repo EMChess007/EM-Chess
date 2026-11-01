@@ -140,7 +140,7 @@ const SMALL_REFUSES = new Map([['bughouse-game-dual', 'bughouse-start'], ['bugho
 const REFUSAL_TEXT = 'This seat setup needs a larger screen';
 const phoneScreens = () =>
   [...SCREENS, ...EXTRA_SCREENS]
-    .filter((s) => !s.fixture && !s.pieceTheme && !TREE_LAGS.has(s.id))
+    .filter((s) => !s.fixture && !s.pieceTheme && !s.webOnly && !TREE_LAGS.has(s.id))
     .filter((s) => (ONLY ? ONLY.has(s.id) : flag('all') || (profile.id === 'small' ? CORE_SCREENS.has(s.id) : LARGE_SCREENS.has(s.id))))
     .map((s) => {
       const stop = profile.id === 'small' ? SMALL_REFUSES.get(s.id) : undefined;
@@ -534,6 +534,44 @@ async function touches2p(dev) {
   });
 }
 
+/**
+ * FINGER-DRAWN ARROWS on the 2-player board (command #32), straight after the e2-e4 of the touch check: Black is to move, and two arrows are drawn - one from a Black piece, one from a White
+ * piece (ANY turn, several at once) - by a finger held and dragged (`drawArrow`). The app reports the number of arrows on the board (beacon `arrows`): 2 after the drawing, the position and the
+ * selection unchanged (drawing never moves or selects), and 0 after a move is played (e7-e5) - the arrows stay until a move.
+ */
+async function arrows2p(dev) {
+  const name = 'touch: 2-player arrows';
+  await scenario(dev, name, async () => {
+    const issues = [];
+    const state0 = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50 && s.turn === 'b', 8000);
+    if (!state0) return record(name, ['the 2-player board is not at the position after e2-e4 (the touch check before it did not leave it there)']);
+    await sleep(2500); // the strip of moves appeared with the first move and the board moved down: wait for its last rectangle
+    const latest = dev.beacon.get('state-board-2p');
+    const board = rectOfState(latest);
+    const o = latest.orientation ?? 'w';
+    const at = (square) => squareRect(board, o, square);
+    const draw = (from, to) => dev.drawArrow(at(from).cx, at(from).cy, at(to).cx, at(to).cy);
+    const fen = latest.fen;
+    draw('b8', 'c6'); // Black's idea, on Black's own turn
+    draw('g1', 'f3'); // White's idea, on the opponent's turn: ANY turn
+    const two = await dev.beacon.waitFor('state-board-2p', (s) => s.arrows === 2, 6000);
+    const after = dev.beacon.get('state-board-2p');
+    if (!two) issues.push(`two arrows were drawn by held-and-dragged fingers: the app counts ${after?.arrows ?? 'none'}`);
+    if (after?.fen !== fen) issues.push(`drawing arrows changed the position: "${fen}" -> "${after?.fen}"`);
+    if (after?.selected) issues.push(`drawing arrows selected ${after.selected}`);
+    if (two) {
+      // a move clears them (and the move still works after drawing): e7 then e5
+      dev.press(at('e7').cx, at('e7').cy, 90);
+      await waitSelected(dev, 'state-board-2p', 'e7', 2500);
+      dev.press(at('e5').cx, at('e5').cy, 90);
+      const cleared = await dev.beacon.waitFor('state-board-2p', (s) => s.arrows === 0 && s.fen !== fen, 5000);
+      if (!cleared) issues.push(`after the move e7-e5 the arrows were not cleared (arrows ${dev.beacon.get('state-board-2p')?.arrows}, position "${dev.beacon.get('state-board-2p')?.fen}")`);
+    }
+    await dev.snapshot('touch-2p-arrows');
+    record(name, issues, `arrows ${after?.arrows ?? 'none'} after two drawings, cleared by a move: ${issues.length === 0}`);
+  });
+}
+
 /** Both Bughouse boards: a touch at the computed middle of e2 on EACH board must select it there, the app must say the same, and the other board's selection must stay. */
 async function touchesBughouse(dev, inset = false) {
   const name = inset ? 'touch: Bughouse boards (status bar inset)' : 'touch: Bughouse boards';
@@ -602,6 +640,35 @@ async function touchesBughouseBody(dev, name, inset) {
       if (now.length !== 1 || now[0] !== picked[b]) issues.push(`board ${b}: with both boards touched the selection is ${now.join(',') || 'empty'}, expected ${picked[b]}`);
       const said = dev.beacon.get(`state-board-${b}`)?.selected;
       if (states[b] && said !== picked[b]) issues.push(`board ${b}: with both boards touched the app says ${JSON.stringify(said ?? null)} is selected, expected ${picked[b]}`);
+    }
+    // FINGER-DRAWN ARROWS on the two Bughouse boards (command #32; edge-to-edge run only): a held-and-dragged finger draws an arrow on a board on ANY turn, the arrows are per board, drawing
+    // changes no selection and no position, and a move on a board clears THAT board's arrows only. Board B gets one arrow, board A two; then a move is played on A (its picked pawn goes two
+    // squares): A must report 0 arrows, B still 1 and still its selection.
+    if (!inset && states.A && states.B) {
+      const latest = (b) => dev.beacon.get(`state-board-${b}`);
+      for (const b of ['A', 'B']) if (latest(b)?.rect?.w > 50) boards[b] = rectOfState(latest(b));
+      const rect = (b, square) => squareRect(boards[b], orientation[b], square);
+      const drawOn = (b, from, to) => dev.drawArrow(rect(b, from).cx, rect(b, from).cy, rect(b, to).cx, rect(b, to).cy);
+      const white = (b) => latest(b)?.fen?.split(' ')[1] !== 'b';
+      const pair = (b, n) => (white(b) ? [['g1', 'f3'], ['b1', 'c3']] : [['g8', 'f6'], ['b8', 'c6']])[n];
+      const fenA = latest('A')?.fen;
+      const fenB = latest('B')?.fen;
+      drawOn('B', ...pair('B', 0));
+      drawOn('A', ...pair('A', 0));
+      drawOn('A', ...pair('A', 1));
+      const drawn = await dev.beacon.waitFor('state-board-A', (s) => s.arrows === 2, 8000);
+      const drawnB = await dev.beacon.waitFor('state-board-B', (s) => s.arrows === 1, 4000);
+      if (!drawn || !drawnB) issues.push(`arrows: two were drawn on board A and one on board B, the app counts A ${latest('A')?.arrows ?? 'none'} and B ${latest('B')?.arrows ?? 'none'}`);
+      for (const b of ['A', 'B']) if (latest(b)?.selected !== picked[b]) issues.push(`board ${b}: drawing arrows changed the selection ${picked[b]} -> ${JSON.stringify(latest(b)?.selected ?? null)}`);
+      if (latest('A')?.fen !== fenA || latest('B')?.fen !== fenB) issues.push('drawing arrows changed a position');
+      if (drawn && drawnB) {
+        // the move: the picked pawn of A two squares forward (e2-e4 or e7-e5)
+        const target = white('A') ? 'e4' : 'e5';
+        dev.press(rect('A', target).cx, rect('A', target).cy, 90);
+        const cleared = await dev.beacon.waitFor('state-board-A', (s) => s.arrows === 0 && s.fen !== fenA, 5000);
+        if (!cleared) issues.push(`arrows: after a move on board A its arrows were not cleared (A ${latest('A')?.arrows}, position "${latest('A')?.fen}")`);
+        else if (latest('B')?.arrows !== 1) issues.push(`arrows: a move on board A changed board B's arrows (${latest('B')?.arrows}, expected 1)`);
+      }
     }
     // the frame the run was in: the app's root view in the window (0 = edge-to-edge). With the inset it must be a status bar's height, or the run is not in the phone's frame at all.
     const offsets = Object.fromEntries(['A', 'B'].map((b) => [b, dev.beacon.get(`state-board-${b}`)?.rect?.rootOffsetY ?? null]));
@@ -984,7 +1051,10 @@ try {
     if (PARTS.has('textfit')) await textFit(dev);
     // the gallery's pixels do not depend on the window: the cramped phone runs it, the large phone's budget goes to the screens
     if (PARTS.has('gallery') && !flag('skip-gallery') && profile.id === 'small') await gallery(dev);
-    if (PARTS.has('touch2p')) await touches2p(dev);
+    if (PARTS.has('touch2p')) {
+      await touches2p(dev);
+      await arrows2p(dev); // the same game screen, after e2-e4 (command #32)
+    }
     if (PARTS.has('touchbug')) await touchesBughouse(dev, false);
     // the same two boards in the frame of the phone of command #26 (root view below the status bar): where the reverted fix fails
     if (PARTS.has('touchinset')) await touchesBughouse(dev, true);

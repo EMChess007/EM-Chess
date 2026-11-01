@@ -41,8 +41,20 @@ export default function MoveListStrip({ moves, selectedIndex, autoScroll, onSele
     >
       {moves.map((m, i) => (
         <View key={i} style={styles.moveWrap}>
-          {i % 2 === 0 && <Text style={styles.moveNumber}>{i / 2 + 1}.</Text>}
-          <Pressable onPress={() => onSelectMove(i)} style={[styles.moveButton, i === selectedIndex && styles.moveButtonSelected]}>
+          {i % 2 === 0 && (
+            <Text testID={`movelist-number-${i}`} style={styles.moveNumber}>
+              {i / 2 + 1}.
+            </Text>
+          )}
+          {/* compact: the strip is a thin scroll row, so the move is NOT given the 44 dp floor (that floor made every button 44 tall inside a 36 strip, with the move text at its TOP and the
+              number, centred in the row, below it - the misalignment of command #32); the tap area is the full height of the strip plus hitSlop. */}
+          <Pressable
+            compact
+            testID={`movelist-san-${i}`}
+            hitSlop={MOVE_HIT_SLOP}
+            onPress={() => onSelectMove(i)}
+            style={[styles.moveButton, i === selectedIndex && styles.moveButtonSelected]}
+          >
             <Text style={[styles.moveText, i === selectedIndex && styles.moveTextSelected]}>{m.san}</Text>
           </Pressable>
         </View>
@@ -51,16 +63,25 @@ export default function MoveListStrip({ moves, selectedIndex, autoScroll, onSele
   );
 }
 
+/** The strip's height at font scale 1; it grows with the text (a `minHeight`, never a fixed height: CHECKLIST 6b). */
+export const MOVE_STRIP_MIN_HEIGHT = 36;
+/** One line height for the number AND the move: two texts of one size with one line height, centred on one line, share a vertical centre. */
+export const MOVE_LINE_HEIGHT = 18;
+const MOVE_HIT_SLOP = { top: 8, bottom: 8, left: 2, right: 2 };
+
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
     container: {
-      maxHeight: 36,
+      // (flexGrow 0: a horizontal ScrollView grows to fill its column by default; it is as tall as its content, at least the strip height)
+      flexGrow: 0,
+      flexShrink: 0,
       backgroundColor: colors.mode === 'dark' ? '#1a1712' : '#faf6ee',
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
     content: {
       alignItems: 'center',
+      minHeight: MOVE_STRIP_MIN_HEIGHT,
       paddingHorizontal: 10,
       paddingVertical: 4,
       gap: 2,
@@ -71,11 +92,13 @@ function createStyles(colors: AppColors) {
     },
     moveNumber: {
       fontSize: 13,
+      lineHeight: MOVE_LINE_HEIGHT,
       color: colors.textSecondary,
       marginLeft: 6,
       marginRight: 2,
     },
     moveButton: {
+      justifyContent: 'center',
       paddingVertical: 2,
       paddingHorizontal: 5,
       borderRadius: 4,
@@ -85,6 +108,7 @@ function createStyles(colors: AppColors) {
     },
     moveText: {
       fontSize: 13,
+      lineHeight: MOVE_LINE_HEIGHT,
       color: colors.text,
     },
     moveTextSelected: {

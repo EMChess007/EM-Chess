@@ -127,9 +127,11 @@ export function fireTouch(type: 'touchstart' | 'touchmove' | 'touchend' | 'touch
 }
 
 /** A mouse press or release (a pointer event of type "mouse") at page coordinates. */
-export function fireMouse(type: 'pointerdown' | 'pointerup' | 'pointercancel', element: Element, point: { x: number; y: number }, button = 0, pointerType = 'mouse'): void {
+export function fireMouse(type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel', element: Element, point: { x: number; y: number }, button = 0, pointerType = 'mouse'): void {
   const event = new Event(type, { bubbles: true, cancelable: true });
-  for (const [key, value] of Object.entries({ pointerType, pageX: point.x, pageY: point.y, clientX: point.x, clientY: point.y, button, pointerId: 1 })) Object.defineProperty(event, key, { value });
+  // (`buttons`: the bit mask of the buttons held while the event fires - a move with the primary button down is a drag; command #32)
+  const buttons = type === 'pointerdown' || type === 'pointermove' ? 1 : 0;
+  for (const [key, value] of Object.entries({ pointerType, pageX: point.x, pageY: point.y, clientX: point.x, clientY: point.y, button, buttons, pointerId: 1 })) Object.defineProperty(event, key, { value });
   act(() => {
     element.dispatchEvent(event);
   });

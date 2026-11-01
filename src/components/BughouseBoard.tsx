@@ -3,11 +3,13 @@ import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import { Text } from './AppText';
 import { openBoard } from '../logic/bughouse';
 import type { BoardId, BughouseColor } from '../logic/bughouse/types';
-import { boardCellToSquare, type KingBadge } from '../logic/bughouseView';
+import { boardCellToSquare, boardSquareToCell, type KingBadge } from '../logic/bughouseView';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { PieceImageMap } from '../types/theme';
+import BoardAnnotations from './BoardAnnotations';
 import Piece from './Piece';
 import { useBoardGestures } from './useBoardGestures';
+import type { BoardMarks } from './useBoardMarks';
 import { getE2eStateProbe, getTouchDebugOverlay } from './devOverlayRegistry';
 import type { BoardTouches, DebugFinger } from './useBoardTouches';
 
@@ -45,6 +47,12 @@ export interface BughouseBoardProps {
   debugFingers?: readonly DebugFinger[];
   /** W5: the queued premove of the human at this device on this board - the squares in the premove colour and a ghost of the piece on the target. */
   premove?: { from: string | null; to: string; ghost: { color: BughouseColor; type: string } } | null;
+  /**
+   * Command #32: this board's finger-drawn arrows and marked squares (hold a finger, drag to another square; logic/boardArrows.ts has the one rule for every board). Given, the board draws them
+   * and takes the gesture ON ANY TURN, interactive or not (a spectator's board, the opponent's turn); a board without it (the thumbnail, which is a button) takes none. The state is the screen's
+   * (useBoardMarks), so it survives the swap of the large board and the thumbnail and is cleared by a move on THIS board only.
+   */
+  marks?: BoardMarks;
 }
 
 /** The premove colour: a blue the other highlights (green selection, yellow last move, red check) are not. A literal on purpose. */
@@ -54,7 +62,7 @@ export const PREMOVE_COLOR = '#7fa8e0';
  * One Bughouse board. Pieces and squares come from the engine's FEN; this component only DRAWS and reports a tap as (board, square) - the screen decides what a tap means. The board is the
  * unit the spec's HP9 is about: every cell is board-qualified ("e4, board A, White knight"), and a tap carries its board.
  */
-function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, checkedSquare, selected, moveTargets, dropTargets, badgeOf, interactive, onTapSquare, outlined, touches, debugFingers, premove }: BughouseBoardProps) {
+function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, checkedSquare, selected, moveTargets, dropTargets, badgeOf, interactive, onTapSquare, outlined, touches, debugFingers, premove, marks }: BughouseBoardProps) {
   const theme = useActiveBoardTheme();
   const pieceTheme = useActivePieceTheme();
   const grid = useMemo(() => openBoard(fen)?.board() ?? [], [fen]);
@@ -62,20 +70,35 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
   const moveSet = useMemo(() => new Set(moveTargets), [moveTargets]);
   const dropSet = useMemo(() => new Set(dropTargets), [dropTargets]);
 
+  const annotate = marks !== undefined;
   const gestures = useBoardGestures({
     squareSize: cell,
     rows: 8,
     cols: 8,
-    enableAnnotations: false,
+    enableAnnotations: annotate,
     seamKey: board,
     onTap: ({ row, col }) => {
       if (!interactive || !onTapSquare) return;
       const tapped = boardCellToSquare(board, orientation, row, col);
       onTapSquare(tapped.board, tapped.square);
     },
-    onArrow: () => {},
-    onHighlight: () => {},
+    onArrow: (from, to) => marks?.drawArrow(boardCellToSquare(board, orientation, from.row, from.col).square, boardCellToSquare(board, orientation, to.row, to.col).square),
+    onHighlight: (at) => marks?.toggleHighlight(boardCellToSquare(board, orientation, at.row, at.col).square),
   });
+  // The marks as display cells of the orientation in force (they are stored as squares, so a board turned over keeps pointing at the same squares).
+  const markState = marks?.marks;
+  const markCells = useMemo(
+    () =>
+      markState === undefined
+        ? null
+        : {
+            arrows: markState.arrows.map((a) => ({ from: boardSquareToCell(board, orientation, a.from), to: boardSquareToCell(board, orientation, a.to) })),
+            highlights: markState.highlights.map((sq) => boardSquareToCell(board, orientation, sq)),
+          },
+    [markState, board, orientation]
+  );
+  const liveArrow = touches ? touches.liveArrow : gestures.liveArrow;
+  const gridTouched = interactive || annotate;
 
   const size = cell * 8;
   const DebugOverlay = getTouchDebugOverlay();
@@ -86,9 +109,9 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
   const surface = touches !== undefined && Platform.OS !== 'web';
   return (
     <View
-      ref={touches ? touches.gridRef : interactive ? gestures.containerRef : measuredRef}
-      onLayout={touches ? undefined : interactive ? gestures.onLayout : undefined}
-      {...(touches ? (surface ? {} : touches.gridProps) : interactive ? gestures.panHandlers : {})}
+      ref={touches ? touches.gridRef : gridTouched ? gestures.containerRef : measuredRef}
+      onLayout={touches ? undefined : gridTouched ? gestures.onLayout : undefined}
+      {...(touches ? (surface ? {} : touches.gridProps) : gridTouched ? gestures.panHandlers : {})}
       style={[styles.board, { width: size, height: size }, touches && styles.rawTouch, outlined && styles.outlined]}
       testID={`board-${board}`}
       accessibilityLabel={outlined ? `Board ${board}, deciding board` : `Board ${board}`}
@@ -143,11 +166,13 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
         (useBoardTouches), which needs no origin - no window, status-bar, navigation-bar, header or scroll offset can enter the cell (command #26: on Android every tap landed one rank too low).
         On web the browser reports page coordinates against the grid's rectangle and the cells stay the hit targets.
       */}
+      {/* Command #32: the finger-drawn arrows and marked squares of this board (a transparent SVG, no touch of its own), under the touch surface. */}
+      {markCells && <BoardAnnotations squareSize={cell} arrows={markCells.arrows} highlights={markCells.highlights} liveArrow={liveArrow} />}
       {touches && surface && <View ref={touches.surfaceRef} testID={`board-${board}-surface`} style={StyleSheet.absoluteFill} {...touches.surfaceProps} />}
       {/* DEV ONLY: the square under each finger. The overlay is registered only in a development build (devOverlayRegistry.ts); in a release build there is none. */}
       {touches && debugFingers && DebugOverlay ? <DebugOverlay board={board} orientation={orientation} cell={cell} fingers={debugFingers} /> : null}
       {/* DEV ONLY, the Android end-to-end build: the board's state for the driver (src/dev/E2eStateProbe.tsx). Null everywhere else. */}
-      {E2eProbe ? <E2eProbe channel={`board-${board}`} rectOf={touches ? touches.gridRef : interactive ? gestures.containerRef : measuredRef} state={{ fen, selected, orientation, interactive, targets: moveTargets.length }} /> : null}
+      {E2eProbe ? <E2eProbe channel={`board-${board}`} rectOf={touches ? touches.gridRef : gridTouched ? gestures.containerRef : measuredRef} state={{ fen, selected, orientation, interactive, targets: moveTargets.length, arrows: markState ? markState.arrows.length : 0, marked: markState ? markState.highlights.length : 0 }} /> : null}
     </View>
   );
 }

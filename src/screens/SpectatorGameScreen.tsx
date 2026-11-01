@@ -194,6 +194,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
           fen={state.fen}
           onMove={noopMove}
           disabled
+          enableAnnotations
           chess960={state.isChess960}
           kingOfTheHill={state.isKingOfTheHill}
           fogOfWar={state.isFogOfWar}
