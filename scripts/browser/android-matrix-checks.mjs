@@ -211,7 +211,9 @@ export function pageChecks(opts) {
       if (isExempt(el)) continue;
       const w = Math.min(r.right, zone.right) - Math.max(r.left, zone.left);
       const h = Math.min(r.bottom, zone.bottom) - Math.max(r.top, zone.top);
-      if (w > 2 && h > 2) add('gear', el, 'reaches into the floating gear button zone (' + Math.round(zone.left) + '..' + Math.round(zone.right) + ' x 0..' + Math.round(zone.bottom) + '): control ' + Math.round(r.left) + '..' + Math.round(r.right) + ' x ' + Math.round(r.top) + '..' + Math.round(r.bottom));
+      // (a corner of a WIDE control is not hidden: reported only when the zone covers more than a quarter of the control or its centre - same rule as scripts/android/lib/checks.mjs)
+      const centreIn = r.left + r.width / 2 >= zone.left && r.left + r.width / 2 <= zone.right && r.top + r.height / 2 >= zone.top && r.top + r.height / 2 <= zone.bottom;
+      if (w > 2 && h > 2 && ((w * h) / (r.width * r.height) > 0.25 || centreIn)) add('gear', el, 'reaches into the floating gear button zone (' + Math.round(zone.left) + '..' + Math.round(zone.right) + ' x 0..' + Math.round(zone.bottom) + '): control ' + Math.round(r.left) + '..' + Math.round(r.right) + ' x ' + Math.round(r.top) + '..' + Math.round(r.bottom));
     }
   }
   const overlapArea = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));

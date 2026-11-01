@@ -50,6 +50,8 @@ export function textIssues(nodes, screen) {
  * backdrop that dismisses on tap) are not buttons. Returns [{ text, detail }] for the nodes of the app's own package that are clickable and enabled.
  */
 export const STATUS_BAR_DP = 24;
+/** The share of a control's area the gear zone may cover before the control counts as hidden (a corner of a wide card is fine, a chip under the button is not). */
+export const GEAR_MAX_COVERED = 0.25;
 export function gearIssues(nodes, screen) {
   const scale = screen.scale ?? 1;
   const zone = { x1: screen.w - GEAR_ZONE.width * scale, y1: 0, x2: screen.w, y2: (STATUS_BAR_DP + GEAR_ZONE.below) * scale };
@@ -61,7 +63,11 @@ export function gearIssues(nodes, screen) {
     if (w >= screen.w * 0.9 && h >= screen.h * 0.9) continue;
     const overlapW = Math.min(x2, zone.x2) - Math.max(x1, zone.x1);
     const overlapH = Math.min(y2, zone.y2) - Math.max(y1, zone.y1);
-    if (overlapW > 2 * scale && overlapH > 2 * scale) {
+    // A WIDE control (a menu card) whose zone overlap is only a corner of it is not hidden: the gear covers a quarter of it at most and its middle stays tappable. A control is
+    // reported when the zone covers more than GEAR_MAX_COVERED of its area, or its centre lies inside the zone (the first phone run: the Play menu's cards clipped the corner by 5-25 %).
+    const covered = (overlapW * overlapH) / (w * h);
+    const centreIn = n.bounds.cx >= zone.x1 && n.bounds.cx <= zone.x2 && n.bounds.cy >= zone.y1 && n.bounds.cy <= zone.y2;
+    if (overlapW > 2 * scale && overlapH > 2 * scale && (covered > GEAR_MAX_COVERED || centreIn)) {
       const name = n.desc || n.text || n.id || n.cls;
       issues.push({ text: name, detail: `box ${x1}..${x2} x ${y1}..${y2} px reaches into the gear zone ${Math.round(zone.x1)}..${zone.x2} x 0..${Math.round(zone.y2)} px` });
     }

@@ -117,6 +117,14 @@ describe('the floating gear button (command #34)', () => {
     expect(gearIssues([button(560, 100, 700, 160, { bounds: null })], screen)).toEqual([]);
   });
 
+  it('a WIDE card whose corner only dips into the zone is not reported (the phone run: the Play menu cards, 4 - 16 % covered), a narrow chip with a quarter or more under it is', () => {
+    expect(gearIssues([button(106, 221, 700, 276)], screen)).toEqual([]); // starts below the zone (y 221 > 176): no overlap at all
+    expect(gearIssues([button(60, 100, 700, 200)], screen)).toEqual([]); // 640 x 100: the zone covers 124 x 76 = 15 %
+    expect(gearIssues([button(500, 100, 700, 200)], screen)).toHaveLength(1); // 200 x 100: 124 x 76 = 47 %
+    expect(gearIssues([button(300, 100, 700, 200)], screen)).toEqual([]); // 400 x 100: 24 % covered, centre x 500 outside the zone (576..720)
+    expect(gearIssues([button(520, 20, 700, 60)], screen)).toHaveLength(1); // a chip: centre 610 in the zone
+  });
+
   it('the zone is in dp: the same node is clean at scale 1 where the zone is 72 x 88 px', () => {
     expect(gearIssues([button(560, 100, 700, 160)], { w: 360, h: 640, scale: 1 })).toEqual([]); // 100 px is below 88
     expect(gearIssues([button(300, 40, 340, 80)], { w: 360, h: 640, scale: 1 })).toHaveLength(1);

@@ -10,6 +10,7 @@ import { ChessEngine } from '../logic/ChessEngine';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getDailyPuzzle, getDailyPuzzleDateKey } from '../logic/puzzles';
 import { isTodayPuzzleSolved, markTodayPuzzleSolved } from '../logic/puzzleStorage';
+import { GEAR_RESERVE } from '../components/gearReserve';
 import { parseUciMove } from '../logic/uciMove';
 import type { Move, PieceColor } from '../types/chess';
 
@@ -276,6 +277,8 @@ function createStyles(colors: AppColors) {
       alignItems: 'center',
       width: '100%',
       maxWidth: 340,
+      // the links stay clear of the host's floating gear button in the top right corner (components/gearReserve.ts)
+      paddingRight: GEAR_RESERVE,
     },
     rushLinkRow: {
       flexDirection: 'row',
