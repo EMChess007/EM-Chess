@@ -34,21 +34,46 @@ echo "[run] job $job on: $(adb shell getprop ro.product.model | tr -d '\r') Andr
 node scripts/android/smoke.mjs "$out" || { echo "[run] the app did not reach its Home screen: stopping here"; exit 1; }
 
 rc=0
+# THE RUNNER HEALTH RETRY (command #32, scripts/android/lib/health.mjs): the driver times the phone's input path and one dump at the start and the end of a slice; a slice that FAILS while the
+# runner was SLOW exits with 3 and is run ONCE more (its own folder, `-retry`; the digest shows both attempts and labels them RUNNER / APP). A failure on a healthy runner (exit 1) is an APP
+# finding and is never retried; the slice's verdict is its LAST attempt, so a slow runner that fails twice is red.
+EXIT_RUNNER=3
+PREPARE=:   # a function the slice needs before EACH attempt (the online slice starts its backend)
+CLEANUP=:   # ... and after each attempt
 phase() {
   local profile="$1" name="$2" tag="$3"
   shift 3
-  local t0=$SECONDS
-  echo "::group::android-e2e $profile $name $tag"
-  node scripts/android/e2e.mjs --profile "$profile" --phase "$name" --tag "$tag" --out "$out" ${ANDROID_E2E_ALL:+--all} "$@" || rc=1
-  echo "::endgroup::"
-  echo "[run] $profile/$name/$tag took $((SECONDS - t0)) s"
+  local t0=$SECONDS attempt code
+  for attempt in 1 2; do
+    echo "::group::android-e2e $profile $name $tag (attempt $attempt)"
+    $PREPARE
+    node scripts/android/e2e.mjs --profile "$profile" --phase "$name" --tag "$tag" --out "$out" --attempt "$attempt" ${ANDROID_E2E_ALL:+--all} "$@"
+    code=$?
+    $CLEANUP
+    echo "::endgroup::"
+    if [ "$code" -eq "$EXIT_RUNNER" ] && [ "$attempt" -eq 1 ]; then
+      echo "[run] $profile/$name/$tag FAILED on a SLOW runner (label RUNNER): running the slice once more"
+      continue
+    fi
+    break
+  done
+  [ "$code" -eq 0 ] || rc=1
+  echo "[run] $profile/$name/$tag took $((SECONDS - t0)) s (exit $code, attempt $attempt)"
 }
 
-online() {
+online_prepare() {
   # the backend and the buddy; the phase stops the backend itself after signing in again, then checks the offline states
+  bash scripts/android/backend.sh stop >/dev/null 2>&1 || true
   bash scripts/android/backend.sh start || { echo "[run] the backend could not start"; rc=1; }
+}
+online_cleanup() { bash scripts/android/backend.sh stop || true; }
+
+online() {
+  PREPARE=online_prepare
+  CLEANUP=online_cleanup
   phase small online online
-  bash scripts/android/backend.sh stop || true
+  PREPARE=:
+  CLEANUP=:
 }
 
 case "$job" in

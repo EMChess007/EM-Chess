@@ -24,6 +24,7 @@ import { SCREENS } from '../browser/android-matrix-screens.mjs';
 const EXTRA_SCREENS = await import('../browser/android-matrix-screens-extra.mjs').then((m) => m.EXTRA_SCREENS, () => []);
 import { Device, PROFILES, sleep } from './lib/device.mjs';
 import { Beacon } from './lib/beacon.mjs';
+import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
 import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
@@ -54,7 +55,9 @@ const SHARD = (() => {
   }
   return { index: Number(m[1]) - 1, count: Number(m[2]) };
 })();
-const OUT = join(arg('out', 'android-e2e-out'), `${profile.id}-${phase}${arg('tag') ? `-${arg('tag')}` : ''}`);
+// --attempt 2: the second run of a slice whose first run failed on a SLOW runner (run-on-emulator.sh, scripts/android/lib/health.mjs); it writes to its own folder so the digest shows both
+const ATTEMPT = Number(arg('attempt', '1')) === 2 ? 2 : 1;
+const OUT = join(arg('out', 'android-e2e-out'), `${profile.id}-${phase}${arg('tag') ? `-${arg('tag')}` : ''}${ATTEMPT === 2 ? '-retry' : ''}`);
 const API = arg('api', 'http://localhost:3000');
 const ONLY = arg('only') ? new Set(arg('only').split(',')) : null;
 mkdirSync(OUT, { recursive: true });
@@ -501,8 +504,10 @@ async function touches2p(dev) {
     let colour = (rect) => cornerColour(after, rect);
     const yellow = (c) => c && Math.abs(c[0] - 0xf7) < 16 && Math.abs(c[1] - 0xec) < 16 && Math.abs(c[2] - 0x74) < 24;
     const lastMoveShown = (o) => yellow(colour(squareRect(board, o, 'e2'))) && yellow(colour(squareRect(board, o, 'e4')));
-    // Open finding (command #30): on the emulator the ORIGIN square of the last move is drawn yellow and the DESTINATION is not, although the app's own state says lastMove = e2, e4 (ChessBoard passes
-    // both to Square). The check therefore fails only when the app's state is wrong or NEITHER square is drawn; a destination without the highlight is printed as a finding below.
+    // Command #30 saw, on the EMULATOR only, the ORIGIN square of the last move drawn yellow and the DESTINATION not, although the app's own state says lastMove = e2, e4. Command #32: on the
+    // real phone (Blackview Fort 200, Android 36) BOTH squares are highlighted, so it is not an app bug and is no longer reported as a finding; it stays UNPROVEN as an emulator artefact
+    // (TESTING.md section 48: the photograph can precede the repaint of the destination square on the software renderer). The check therefore fails only when the app's state is wrong or
+    // NEITHER square is drawn - the app's state is what it judges, the phone is what proves the drawing.
     const originShown = (o) => yellow(colour(squareRect(board, o, 'e2')));
     // The piece slides for a moment (and the emulator is slow): look again for up to 4 s before calling the highlight missing, and say how long it took.
     let waitedMs = 0;
@@ -515,7 +520,7 @@ async function touches2p(dev) {
     if (waitedMs > 0) log(`2-player last-move highlight: ${lastMoveShown('w') || lastMoveShown('b') ? 'shown' : 'NOT shown'} after ${900 + waitedMs} ms`);
     const appLastMove = dev.beacon.get('state-board-2p')?.lastMove;
     const destinationMissing = !lastMoveShown('w') && !lastMoveShown('b') && (originShown('w') || originShown('b'));
-    if (destinationMissing) log('FINDING: after e2-e4 the origin e2 is drawn yellow and the destination e4 is not (the app says lastMove ' + JSON.stringify(appLastMove) + ')');
+    if (destinationMissing) log('emulator rendering note (not an app finding, the phone shows both squares): the origin e2 is drawn yellow and the destination e4 is not yet (the app says lastMove ' + JSON.stringify(appLastMove) + ')');
     if (!lastMoveShown('w') && !lastMoveShown('b') && !(destinationMissing && JSON.stringify(appLastMove) === '["e2","e4"]')) {
       const hex = (c) => (c ? `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}` : 'none');
       const seen = ['w', 'b'].map((o) => `${o}: e2 ${hex(colour(squareRect(board, o, 'e2')))} e4 ${hex(colour(squareRect(board, o, 'e4')))}`).join('; ');
@@ -525,7 +530,7 @@ async function touches2p(dev) {
     // the finding about the tap, kept in the log whatever the verdict
     log(`2-player board touches: ${JSON.stringify(verdicts)} (tap = input tap worked, press = only the 90 ms touch worked, neither = not selected at all)`);
     for (const n of notes) log(`  ${n}`);
-    record('touch: 2-player board', issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1} (from the ${source}${rectNote});${JSON.stringify(verdicts)}${destinationMissing ? " - FINDING: the last-move highlight is on e2 but not on e4" : ""}${verdicts.press > 0 ? ' - input tap alone was not understood' : ''}`);
+    record('touch: 2-player board', issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1} (from the ${source}${rectNote});${JSON.stringify(verdicts)}${destinationMissing ? ' - emulator rendering note: the destination highlight was not drawn (the phone draws both)' : ''}${verdicts.press > 0 ? ' - input tap alone was not understood' : ''}`);
   });
 }
 
@@ -964,9 +969,13 @@ const dev = new Device({ outDir: OUT, log });
 // the app's own account of its boards (src/dev/e2eBeacon.ts): the screens whose accessibility tree cannot be trusted are read from it
 dev.beacon = await new Beacon().start();
 const started = Date.now();
+const health = { start: null, end: null };
 try {
   log(`android-e2e: profile ${profile.id} (${profile.title}), phase ${phase}, output ${OUT}`);
   dev.applyProfile(profile);
+  // the runner's health at the start of the slice (command #32): the input path and one dump of the idle screen the slice starts from
+  health.start = { inputMs: measureInput(dev), dumpMs: await measureDump(dev) };
+  log(`runner health at the start: input ${health.start.inputMs} ms, dump ${health.start.dumpMs} ms -> ${judgeHealth(health.start).slow ? `SLOW (${judgeHealth(health.start).reasons.join('; ')})` : 'ok'}`);
   if (phase === 'static') {
     dev.clearData();
     dev.launch();
@@ -1002,11 +1011,20 @@ try {
   await dev.snapshot('FAILED-run').catch(() => {});
 }
 dev.beacon.stop();
+// ... and at the end (the input path only: a dump of a live game screen is slow by nature)
+try {
+  health.end = { inputMs: measureInput(dev) };
+} catch {
+  /* the phone is gone: the start reading stands */
+}
 if (dev.dumpFailures) log(`accessibility dumps that failed: ${JSON.stringify(dev.dumpFailures)}`);
+const failed = results.filter((r) => !r.ok);
+const label = labelAttempt({ failed: failed.length > 0, health });
+log(`runner health at the end: input ${health.end?.inputMs ?? 'n/a'} ms -> ${label === '' ? 'passed' : `FAILED, labelled ${label}${label === 'RUNNER' ? ' (the first attempt is repeated once by run-on-emulator.sh)' : ''}`}`);
 writeFileSync(join(OUT, 'logcat.txt'), dev.logcat(800));
 writeFileSync(join(OUT, 'run.log'), logLines.join('\n'));
-const failed = results.filter((r) => !r.ok);
-writeFileSync(join(OUT, 'results.json'), JSON.stringify({ profile: profile.id, phase, seconds: Math.round((Date.now() - started) / 1000), relaunches, dumpFailures: dev.dumpFailures ?? {}, results }, null, 1));
+writeFileSync(join(OUT, 'results.json'), JSON.stringify({ profile: profile.id, phase, attempt: ATTEMPT, label, health, seconds: Math.round((Date.now() - started) / 1000), relaunches, dumpFailures: dev.dumpFailures ?? {}, results }, null, 1));
 log(`android-e2e ${profile.id}/${phase}: ${results.length - failed.length} passed, ${failed.length} failed in ${Math.round((Date.now() - started) / 1000)} s (${relaunches} relaunches)`);
 for (const f of failed) log(`  FAILED: ${f.name}`);
-process.exit(failed.length > 0 ? 1 : 0);
+// 0 = passed, 3 = failed on a slow runner (retried once by the shell), 1 = failed on a healthy runner (an APP finding, never retried)
+process.exit(exitStatus({ failed: failed.length > 0, health }));

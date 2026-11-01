@@ -278,6 +278,19 @@ jobs:
         if: needs.changes.outputs.code == 'true'
         run: node scripts/android/summary.mjs android-e2e-all | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # On a failure only (command #32): the failing slices' downscaled screenshots as base64, in the job summary AND in the job's log (collapsed), so a session can read them
+      # without downloading an artifact. A slice that passed on its repeat shows nothing here (its first attempt is in the digest above).
+      - name: The failing screenshots
+        if: needs.changes.outputs.code == 'true' && needs.emulator.result != 'success'
+        run: |
+          node scripts/android/summary.mjs android-e2e-all --images > failing-screenshots.md
+          if [ -s failing-screenshots.md ]; then
+            cat failing-screenshots.md >> "$GITHUB_STEP_SUMMARY"
+            echo "::group::failing screenshots (base64, downscaled)"
+            cat failing-screenshots.md
+            echo "::endgroup::"
+          fi
+
       - name: The verdict
         env:
           CODE: ${{ needs.changes.outputs.code }}
