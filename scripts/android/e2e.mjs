@@ -813,7 +813,10 @@ async function perf(dev) {
     for (const n of notes) log(`  note: ${n}`);
     writeFileSync(join(OUT, 'perf.json'), JSON.stringify({ budget, samples, windows, notes }, null, 1));
     await dev.snapshot('perf');
-    record(name, [...issues, ...notes.filter((n) => /did not select|did not answer/.test(n)).map((n) => `input: ${n}`)], numbers.join(' | '));
+    const found = [...issues, ...notes.filter((n) => /did not select|did not answer/.test(n)).map((n) => `input: ${n}`)];
+    // (the digest prints a passing check's note and a failing check's issues: a failure carries the numbers too, so one short log has everything the budget was judged on)
+    if (found.length > 0) found.push(`numbers: ${numbers.join(' | ')}`);
+    record(name, found, numbers.join(' | '));
   });
 }
 
@@ -1111,6 +1114,31 @@ async function onlineGame(dev, account, progress = { issues: [] }) {
       await dev.snapshot('FAILED-restart');
       await dev.waitHome(120_000).catch(() => {});
     }
+    // THE CONNECTION LOST IN THE MIDDLE OF THE GAME AND BACK (Bughouse W7, command #33): airplane mode on for a few seconds, then off. The app must say it is reconnecting (noted, not required: an
+    // emulator may keep the old socket alive for a while), and once the network is back the board must be there again WITHOUT the banner; the Resign step below then proves the connection is
+    // live again (it needs the server's answer and the server's result). Only a screen that never recovers is a finding.
+    try {
+      dev.sh('cmd connectivity airplane-mode enable');
+      let sawBanner = false;
+      for (let i = 0; i < 8 && !sawBanner; i++) {
+        await sleep(1500);
+        const tree = await dev.dump().catch(() => []);
+        sawBanner = tree.some((n) => n.id === 'bughouse-online-reconnecting' || /trying to reconnect/i.test(n.text));
+      }
+      dev.sh('cmd connectivity airplane-mode disable');
+      const t0 = Date.now();
+      await dev.waitFor('the game after the connection is back', (list) => list.some((n) => n.id === 'board-A') && !list.some((n) => n.id === 'bughouse-online-reconnecting' || /trying to reconnect/i.test(n.text)), 150_000, 3000);
+      log(`connection lost mid-game and back: the app ${sawBanner ? 'SAID it was reconnecting' : 'did not show the reconnecting line (the emulator kept the socket)'}; the board was back without the banner ${Math.round((Date.now() - t0) / 1000)} s after the network returned`);
+    } catch (e) {
+      issues.push(`after the connection was lost in the middle of the game and came back, the game did not recover: ${String(e.message).slice(0, 200)}`);
+      await dev.snapshot('FAILED-reconnect');
+    } finally {
+      try {
+        dev.sh('cmd connectivity airplane-mode disable');
+      } catch {
+        /* the phone is gone: the run reports it */
+      }
+    }
     // resign: the control asks "Resign?" (appAlert: a native dialog with Cancel / Resign), the dialog's button sends it, the server's snapshot ends the match. The result is any sign of a finished game:
     // a node whose id starts with game-over, or words like won / lost / resigned (the card sits UNDER the boards, below the fold on the small phone: the finder scrolls to it).
     // (a 5 minute game can END ON TIME before this point - the human's clock runs while the run is busy elsewhere: then the control is disabled and the result is already on the screen)
@@ -1140,10 +1168,23 @@ async function onlineGame(dev, account, progress = { issues: [] }) {
       try {
         found = await dev.waitFor('the result', finished, 30_000, 1000);
       } catch {
+        // (the result was not on the screen for 30 s: the finder scrolled to it - which is itself the finding of command #33)
         found = await dev.find({ id: 'game-over-headline' }).catch(() => null);
+        issues.push('the result card was below the visible screen: it was only found by scrolling');
       }
       if (found) log('result: ' + (found.text || found.id));
       else issues.push('no sign of a finished game 30 s after the dialog was confirmed (no game-over node, no won / lost / resigned text, even after scrolling)');
+      // THE RESULT CARD MUST BE ON SCREEN WITHOUT SCROLLING (command #33): the phone showed "Team 2 wins" below the visible screen and the player had to scroll to find it. The screen scrolls to the
+      // card by itself when a result arrives; the finder above may have scrolled too, so wait, look at the tree as it is NOW, and require the headline and both buttons fully inside the window.
+      if (found) {
+        await sleep(1500);
+        const tree = await dev.dump().catch(() => []);
+        for (const id of ['game-over-headline', 'bughouse-rematch', 'bughouse-menu']) {
+          const node = tree.find((n) => n.id === id && n.bounds);
+          if (!node) issues.push(`the result card's "${id}" is not on the screen (the tree has no such visible node: the card is below the fold)`);
+          else if (node.bounds.y1 < 0 || node.bounds.y2 > dev.display.h || node.bounds.x1 < 0 || node.bounds.x2 > dev.display.w) issues.push(`the result card's "${id}" is cut off: bounds y ${node.bounds.y1}-${node.bounds.y2} in a window of ${dev.display.h} px`);
+        }
+      }
     }
     await dev.snapshot('online-result');
     record('online: Bughouse game', issues, `${moves} moves played as ${colour} on board ${board}`);
