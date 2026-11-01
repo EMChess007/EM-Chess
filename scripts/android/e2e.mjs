@@ -757,7 +757,7 @@ async function perf(dev) {
       const i0 = await nextPerf(dev, a1);
       await sleep(6000);
       const i1 = await nextPerf(dev, i0);
-      if (i0 && i1) windows.push({ name: '2-player: six idle seconds (clocks running)', stats: windowStats(i0, i1) });
+      if (i0 && i1) windows.push({ name: '2-player: six idle seconds (clocks running)', idle: true, stats: windowStats(i0, i1) });
     }
     const end2p = await nextPerf(dev);
     if (end2p) pushSamples(end2p, start2p.now);
@@ -778,7 +778,7 @@ async function perf(dev) {
       const b0 = await nextPerf(dev);
       await sleep(8000);
       const b1 = await nextPerf(dev, b0);
-      if (b0 && b1) windows.push({ name: 'Bughouse (4 humans): eight idle seconds, both clocks running', stats: windowStats(b0, b1) });
+      if (b0 && b1) windows.push({ name: 'Bughouse (4 humans): eight idle seconds, both clocks running', idle: true, stats: windowStats(b0, b1) });
       const plies = ['e2e4', 'e7e5', 'g1f3', 'b8c6'];
       const t0 = await nextPerf(dev, b1);
       for (const b of ['A', 'B']) {
@@ -869,9 +869,14 @@ async function online(dev) {
 
   // The two first buddies play a game of their own (backend.sh): it is in the Spectate list under "Bughouse"; the phone watches it, can touch nothing, and leaves.
   await scenario(dev, 'online: spectate a Bughouse game', async () => {
+    // (the buddies' game is random play between bots: it can END between the list and the tap - the screen then says "The game was not found or has already ended" (a run of command #33 saw it):
+    // that is a game that is gone, not an app finding, so the list is opened again, up to three times)
+    let row = null;
+    let reported = null;
+    for (let spectateTry = 0; spectateTry < 3 && reported === null; spectateTry++) {
     await toHome(dev);
     await dev.runSteps([{ text: 'Play' }, { text: 'Spectate a live game ›' }]);
-    let row = null;
+    row = null;
     for (let attempt = 0; attempt < 14 && row === null; attempt++) {
       const nodes = await dev.waitFor('the Spectate list', (list) => list.some((n) => n.text === 'Refresh' || n.text.startsWith('No games')), 20_000);
       row = nodes.find((n) => n.id.startsWith('spectate-bughouse-') && n.bounds) ?? null;
@@ -888,7 +893,13 @@ async function online(dev) {
     dev.tap(row.bounds.cx, row.bounds.cy);
     // The board is read from the app's own report (the beacon: its rectangle in screen pixels), then the PHOTOGRAPH confirms it: the board must be on it (a "rotate the device" layer would dim
     // it, and the board's exact square colours would not be found), a tap on it selects nothing - the app says so too - and the Resign control and the team bar are not drawn.
-    const reported = await dev.beacon.waitFor('state-board-A', (s) => s.rect && s.rect.w > 50, 40_000);
+    reported = await dev.beacon.waitFor('state-board-A', (s) => s.rect && s.rect.w > 50, 40_000);
+    if (reported === null) {
+      const shown = await dev.dump().catch(() => []);
+      if (!shown.some((n) => /not found or has already ended/.test(n.text))) break; // some other reason: judged below
+      log(`the watched game had already ended when it was opened (try ${spectateTry + 1} of 3): looking for another`);
+    }
+    }
     let board = reported ? rectOfState(reported) : null;
     for (let i = 0; i < 20 && board === null; i++) {
       await sleep(2000);
