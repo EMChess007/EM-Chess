@@ -11,6 +11,7 @@
     "bughouse/snapshot.ts",
     "bughouse/premove.ts",
     "bughouse/bot.ts",
-    "bughouse/wire.ts"
+    "bughouse/wire.ts",
+    "bughouse/roomWire.ts"
   ]
 }
