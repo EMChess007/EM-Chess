@@ -813,7 +813,10 @@ async function perf(dev) {
     for (const n of notes) log(`  note: ${n}`);
     writeFileSync(join(OUT, 'perf.json'), JSON.stringify({ budget, samples, windows, notes }, null, 1));
     await dev.snapshot('perf');
-    record(name, [...issues, ...notes.filter((n) => /did not select|did not answer/.test(n)).map((n) => `input: ${n}`)], numbers.join(' | '));
+    const found = [...issues, ...notes.filter((n) => /did not select|did not answer/.test(n)).map((n) => `input: ${n}`)];
+    // (the digest prints a passing check's note and a failing check's issues: a failure carries the numbers too, so one short log has everything the budget was judged on)
+    if (found.length > 0) found.push(`numbers: ${numbers.join(' | ')}`);
+    record(name, found, numbers.join(' | '));
   });
 }
 
@@ -1110,6 +1113,31 @@ async function onlineGame(dev, account, progress = { issues: [] }) {
       issues.push(`after an app restart the game did not come back: ${e.message.slice(0, 200)}`);
       await dev.snapshot('FAILED-restart');
       await dev.waitHome(120_000).catch(() => {});
+    }
+    // THE CONNECTION LOST IN THE MIDDLE OF THE GAME AND BACK (Bughouse W7, command #33): airplane mode on for a few seconds, then off. The app must say it is reconnecting (noted, not required: an
+    // emulator may keep the old socket alive for a while), and once the network is back the board must be there again WITHOUT the banner; the Resign step below then proves the connection is
+    // live again (it needs the server's answer and the server's result). Only a screen that never recovers is a finding.
+    try {
+      dev.sh('cmd connectivity airplane-mode enable');
+      let sawBanner = false;
+      for (let i = 0; i < 8 && !sawBanner; i++) {
+        await sleep(1500);
+        const tree = await dev.dump().catch(() => []);
+        sawBanner = tree.some((n) => n.id === 'bughouse-online-reconnecting' || /trying to reconnect/i.test(n.text));
+      }
+      dev.sh('cmd connectivity airplane-mode disable');
+      const t0 = Date.now();
+      await dev.waitFor('the game after the connection is back', (list) => list.some((n) => n.id === 'board-A') && !list.some((n) => n.id === 'bughouse-online-reconnecting' || /trying to reconnect/i.test(n.text)), 150_000, 3000);
+      log(`connection lost mid-game and back: the app ${sawBanner ? 'SAID it was reconnecting' : 'did not show the reconnecting line (the emulator kept the socket)'}; the board was back without the banner ${Math.round((Date.now() - t0) / 1000)} s after the network returned`);
+    } catch (e) {
+      issues.push(`after the connection was lost in the middle of the game and came back, the game did not recover: ${String(e.message).slice(0, 200)}`);
+      await dev.snapshot('FAILED-reconnect');
+    } finally {
+      try {
+        dev.sh('cmd connectivity airplane-mode disable');
+      } catch {
+        /* the phone is gone: the run reports it */
+      }
     }
     // resign: the control asks "Resign?" (appAlert: a native dialog with Cancel / Resign), the dialog's button sends it, the server's snapshot ends the match. The result is any sign of a finished game:
     // a node whose id starts with game-over, or words like won / lost / resigned (the card sits UNDER the boards, below the fold on the small phone: the finder scrolls to it).
