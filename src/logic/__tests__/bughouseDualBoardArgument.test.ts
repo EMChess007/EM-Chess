@@ -151,7 +151,7 @@ describe('no screen-level touch handling (HP12 rules 1 and 5)', () => {
   it('a board that takes raw touches wires them INSTEAD of the PanResponder handlers, never next to them', () => {
     const board = readFileSync(`${ROOT}/components/BughouseBoard.tsx`, 'utf8');
     // the grid listens itself in the browser; on a phone its transparent overlay carries the same touch props (so the touches arrive in the grid's own frame) and the grid none
-    expect(board).toMatch(/\{\.\.\.\(touches \? \(surface \? \{\} : touches\.gridProps\) : interactive \? gestures\.panHandlers : \{\}\)\}/);
+    expect(board).toMatch(/\{\.\.\.\(touches \? \(surface \? \{\} : touches\.gridProps\) : gridTouched \? gestures\.panHandlers : \{\}\)\}/);
     expect(board).toContain('{...touches.surfaceProps}');
   });
 

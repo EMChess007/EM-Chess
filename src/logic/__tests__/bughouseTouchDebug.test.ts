@@ -62,7 +62,9 @@ describe('the touch-debug overlay is development-only', () => {
 describe('the single-human layouts keep the PanResponder path (the one that measures in the touch\'s own frame)', () => {
   it('BughouseBoard listens through useBoardGestures unless the dual layout gives it raw touches', () => {
     const board = code(join(root, 'src/components/BughouseBoard.tsx'));
-    expect(board).toContain('touches ? (surface ? {} : touches.gridProps) : interactive ? gestures.panHandlers : {}');
+    // (command #32: the PanResponder also serves a board that only DRAWS - a spectator's, the opponent's turn: `gridTouched = interactive || annotate`)
+    expect(board).toContain('touches ? (surface ? {} : touches.gridProps) : gridTouched ? gestures.panHandlers : {}');
+    expect(board).toContain('const gridTouched = interactive || annotate;');
     // useBoardGestures reads the origin with measure() (pageX / pageY of the root frame) and never with getBoundingClientRect
     const gestures = code(join(root, 'src/components/useBoardGestures.ts'));
     expect(gestures).toContain('node.measure(');
