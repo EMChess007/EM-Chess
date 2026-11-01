@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useNowMs } from './NowClock';
 import { Pressable } from './AppPressable';
 import Text from './BughouseText';
 import { remainingAt, type BughouseMatch, type PromotionPiece } from '../logic/bughouse';
@@ -38,13 +39,21 @@ const PIECE_NAMES: Record<ReservePieceType, string> = { p: 'pawn', n: 'knight', 
 export interface BughouseBoardBlockProps {
   board: BoardId;
   match: BughouseMatch;
-  /** The instant the clocks are drawn at (the match's own time base). */
-  nowMs: number;
+  /**
+   * The instant the clocks are drawn at when no `NowProvider` is above (a block drawn alone, in a test). On the screen the instant comes from the provider (NowClock.tsx), so a clock tick
+   * re-renders the clock texts only (command #33).
+   */
+  nowMs?: number;
   orientation: BughouseColor;
   cell: number;
   lastMove: LastMove | null;
   /** Names for the seat bars ("You", "Amateur"). */
   seatName: (seat: BughouseSeat) => string;
+  /**
+   * The screen passes a STABLE `seatName` (it reads the latest names through a ref), so the memoized block would not notice a name that changed (an online seat going offline, with its grace
+   * countdown). This string changes whenever any seat's name does; it is only compared, never shown.
+   */
+  seatNamesKey?: string;
   badgeOf: (color: BughouseColor) => KingBadge | null;
   /** The seat a finger may act for on this board right now (the turn lock), or null. */
   actor: BughouseSeat | null;
@@ -86,7 +95,7 @@ type BoardPremoveMarks = NonNullable<React.ComponentProps<typeof BughouseBoard>[
  * One board with everything that belongs to it: the two players' bars (colour, name, clock, running marker), their pockets with counts, the board and its status line. Every test id
  * says which board it belongs to ("clock-A-white", "pocket-A-white-n", "A-e4"): a board is never implied.
  */
-export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
+function BughouseBoardBlock(props: BughouseBoardBlockProps) {
   const { board, match, orientation, cell, lastMove, badgeOf, actor, selected, moveTargets, dropTargets, onTapSquare, outlined } = props;
   const colors = useAppColors();
   const styles = createStyles(colors, Boolean(props.compact));
@@ -166,6 +175,33 @@ export default function BughouseBoardBlock(props: BughouseBoardBlockProps) {
 }
 
 /**
+ * Whether two sets of props draw the same block (command #33: the block is memoized, so a render of the screen that changed nothing about THIS board - a tick of the other board's bot, a
+ * selection on the other board - costs it nothing). Identity first; then the small values the screen rebuilds on every render: an array of strings / piece letters equal element by element,
+ * and the premove marks (a few strings) equal by value. Everything else (the match, the marks, the callbacks) must be identical: a callback the screen passes is a STABLE one (it reads the
+ * latest state through a ref), so a changed identity means a real change and the block re-renders.
+ */
+export function blockPropsEqual(a: BughouseBoardBlockProps, b: BughouseBoardBlockProps): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof BughouseBoardBlockProps>;
+  for (const key of keys) {
+    const x = a[key];
+    const y = b[key];
+    if (Object.is(x, y)) continue;
+    if (Array.isArray(x) && Array.isArray(y)) {
+      if (x.length !== y.length || x.some((item, i) => !Object.is(item, y[i]))) return false;
+      continue;
+    }
+    if (key === 'premove' && x && y && typeof x === 'object' && typeof y === 'object') {
+      if (JSON.stringify(x) !== JSON.stringify(y)) return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+export default memo(BughouseBoardBlock, blockPropsEqual);
+
+/**
  * A chip is 24-26 dp tall and 24-40 wide in a bar that is as slim as the two-board layouts need. The hit slop reaches the bar's own edge above and below (the bar clips, and a touch outside a
  * clipping parent is not a touch of its child) and half a gap to each neighbour, so two chips never claim the same point: a touch area of about 36 x 26..40 dp, the most five chips of a full
  * pocket can have side by side in a 304 dp strip.
@@ -176,7 +212,7 @@ const MATRIX_EXEMPT = { dataSet: { matrixExempt: '1' } } as object;
 /** `compact` opts out of AppPressable's 44 dp floor (the chips are 22-26 dp tall with hit slop; bughouseCompact.dom.test.tsx pins that the prop reaches AppPressable). */
 const COMPACT = { compact: true } as object;
 
-function SeatBar({ seat, match, nowMs, seatName, actor: moveActor, premoveSeat, pickedPiece, bank, onPickPocket, compact, touches }: BughouseBoardBlockProps & { seat: BughouseSeat; touches: BoardTouches | null }) {
+function SeatBar({ seat, match, nowMs = 0, seatName, actor: moveActor, premoveSeat, pickedPiece, bank, onPickPocket, compact, touches }: BughouseBoardBlockProps & { seat: BughouseSeat; touches: BoardTouches | null }) {
   // While the opponent is to move, the chips of the waiting human can be picked for a DROP PREMOVE (every chip it holds); otherwise only the side to move's chips with a legal square are usable.
   const premoving = premoveSeat === seat && moveActor !== seat;
   const actor = premoving ? seat : moveActor;
@@ -186,7 +222,6 @@ function SeatBar({ seat, match, nowMs, seatName, actor: moveActor, premoveSeat, 
   const word = place.color === 'w' ? 'white' : 'black';
   const clock = match.clocks[seat];
   const running = match.result === null && clock.runningSince !== null;
-  const remaining = remainingAt(clock, nowMs);
   const chips = pocketChips(match, seat, actor).map((chip) => (premoving ? { ...chip, usable: true } : chip));
   const flashed = bank !== null && bank.seat === seat && bank.seq === match.seq;
   // The strip is MEASURED, never assumed (bughousePocket.ts): its width decides whether the name is shown, the pocket row's width how wide the chips are. Not measured yet (the first render, a
@@ -251,10 +286,21 @@ function SeatBar({ seat, match, nowMs, seatName, actor: moveActor, premoveSeat, 
           );
         })}
       </View>
-      <Text maxFontSizeMultiplier={1} style={[styles.clock, { minWidth: stripClockMin(stripWidth) }, running && styles.clockRunning, remaining < 10000 && styles.clockLow]} testID={`clock-${place.board}-${word}`} accessibilityLabel={`Board ${place.board} ${word} clock`}>
-        {formatBughouseClock(remaining)}
-      </Text>
+      <SeatClock clock={clock} running={running} fallbackNow={nowMs} minWidth={stripClockMin(stripWidth)} board={place.board} word={word} styles={styles} />
     </View>
+  );
+}
+
+/**
+ * The one clock text of a seat. It is the ONLY part of a seat bar that subscribes to the clock instant (NowClock.tsx): a tick of the clock re-renders this `Text` and nothing else on the
+ * screen (command #33; renderBudget.dom.test.tsx counts it). `fallbackNow` is the instant for a block drawn without the screen's provider (a test).
+ */
+function SeatClock({ clock, running, fallbackNow, minWidth, board, word, styles }: { clock: BughouseMatch['clocks'][BughouseSeat]; running: boolean; fallbackNow: number; minWidth: number; board: BoardId; word: string; styles: ReturnType<typeof createStyles> }) {
+  const remaining = remainingAt(clock, useNowMs(fallbackNow));
+  return (
+    <Text maxFontSizeMultiplier={1} style={[styles.clock, { minWidth }, running && styles.clockRunning, remaining < 10000 && styles.clockLow]} testID={`clock-${board}-${word}`} accessibilityLabel={`Board ${board} ${word} clock`}>
+      {formatBughouseClock(remaining)}
+    </Text>
   );
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { PositionEpoch } from '../logic/annotationLifecycle';
 import { addSquareArrow, NO_MARKS, toggleSquareHighlight, type SquareMarks } from '../logic/boardArrows';
 import { useClearAnnotationsOnMove } from './useClearAnnotationsOnMove';
@@ -21,5 +21,6 @@ export function useBoardMarks(epoch: PositionEpoch): BoardMarks {
   useClearAnnotationsOnMove(epoch, () => setMarks(NO_MARKS));
   const drawArrow = useCallback((from: string | null, to: string | null) => setMarks((m) => addSquareArrow(m, from, to)), []);
   const toggleHighlight = useCallback((square: string | null) => setMarks((m) => toggleSquareHighlight(m, square)), []);
-  return { marks, drawArrow, toggleHighlight };
+  // (one object for as long as nothing changed: a board that receives it is memoized, command #33)
+  return useMemo(() => ({ marks, drawArrow, toggleHighlight }), [marks, drawArrow, toggleHighlight]);
 }

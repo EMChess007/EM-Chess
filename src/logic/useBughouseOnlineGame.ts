@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { connectSocket, disconnectSocket } from '../api/socket';
+import { createNowStore } from '../components/NowClock';
 import { logDiagnostic } from './diagnosticLog';
 import { BughouseOnlineSession, initialSessionState, type SendOutcome, type BugSocket, type BughouseOnlineRole, type BughouseSessionEffects, type BughouseSessionState } from './bughouseOnlineSession';
 import type { BughouseOnlineAction } from './bughouseOnline';
@@ -8,6 +9,8 @@ import { playMoveSound } from './moveSounds';
 
 /** How often the clocks and the grace countdowns are redrawn (the clock text has a tenth of a second under 10 s; 4 times a second is smooth enough and cheap). */
 const TICK_MS = 250;
+/** How often the screen itself re-renders for a clock-like reason (the whole-second offline countdown of a seat). */
+const COARSE_TICK_MS = 1000;
 
 const REAL_EFFECTS: BughouseSessionEffects = {
   now: () => Date.now(),
@@ -45,12 +48,20 @@ export function useBughouseOnlineGame(authToken: string | null, role: BughouseOn
   }, [authToken, roomId]);
 
   const live = state.view !== null && state.view.match.result === null && state.view.gameOver === null;
+  // Two rates (command #33, the lag): the CLOCKS tick at TICK_MS into a store that only the clock texts subscribe to (no render of the screen); the coarse `now` the screen reads (a seat's
+  // offline countdown, in whole seconds) moves once a second.
+  const [nowSource] = useState(() => createNowStore(Date.now()));
   useEffect(() => {
     if (!live) return;
     setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), TICK_MS);
-    return () => clearInterval(timer);
-  }, [live]);
+    nowSource.set(Date.now());
+    const timer = setInterval(() => nowSource.set(Date.now()), TICK_MS);
+    const coarse = setInterval(() => setNow(Date.now()), COARSE_TICK_MS);
+    return () => {
+      clearInterval(timer);
+      clearInterval(coarse);
+    };
+  }, [live, nowSource]);
 
   const sendAction = useCallback((action: BughouseOnlineAction) => sessionRef.current?.sendAction(action), []);
   const resign = useCallback((onError: (message: string) => void) => sessionRef.current?.resign(onError), []);
@@ -62,5 +73,5 @@ export function useBughouseOnlineGame(authToken: string | null, role: BughouseOn
   const sendQuick = useCallback((code: number, done: (outcome: SendOutcome) => void) => sessionRef.current?.sendQuick(code, done), []);
   const sendChat = useCallback((text: string, done: (outcome: SendOutcome) => void) => sessionRef.current?.sendChat(text, done), []);
 
-  return { ...state, now, sendAction, resign, retry, leave, sendQuick, sendChat };
+  return { ...state, now, nowSource, sendAction, resign, retry, leave, sendQuick, sendChat };
 }

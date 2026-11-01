@@ -10,6 +10,7 @@ import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
+import { useStableCallback } from '../components/useStableCallback';
 import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
@@ -570,6 +571,7 @@ export default function LocalGameScreen({
   // Disabled entirely in Fog of War — scrubbing back would show `positions`' real, unredacted
   // fenAfter snapshots, which would hand either player the exact true position at any past point
   // in the game, defeating the whole variant.
+  const selectMove = useStableCallback((index: number) => handleSelectMove(index)); // (one identity for the memoized move list: command #33)
   const handleSelectMove = (index: number) => {
     if (fogOfWar) return;
     const next = index + 1;
@@ -653,7 +655,7 @@ export default function LocalGameScreen({
         }
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
-        onSelectMove={handleSelectMove}
+        onSelectMove={selectMove}
       />
       <GameScreenBody
         compact={spellChess || crazyhouse}

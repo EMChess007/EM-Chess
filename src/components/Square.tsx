@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Text } from './AppText';
 import type { BoardSquare } from '../types/chess';
@@ -66,7 +67,11 @@ interface SquareProps {
 
 // Purely presentational — ChessBoard's own PanResponder (on the board container) handles every
 // tap/long-press/drag across the whole grid, so this never needs its own touch handling.
-export default function Square({
+//
+// MEMOIZED (command #33, the lag on the phone): every prop is a primitive, or the engine's own `data` object / the theme's image map (both stable between renders of the same position), so a
+// board render that changes one square's picture - a selection, the legal-move dots, a drawn arrow, a clock tick above the board - re-renders THAT square and its piece, not 64 squares and 32
+// SVG pieces. renderBudget.dom.test.tsx counts it.
+function Square({
   data,
   isLight,
   isSelected,
@@ -120,6 +125,8 @@ export default function Square({
     </View>
   );
 }
+
+export default memo(Square);
 
 const styles = StyleSheet.create({
   square: {

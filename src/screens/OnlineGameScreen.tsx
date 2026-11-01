@@ -13,6 +13,7 @@ import GameScreenBody from '../components/GameScreenBody';
 import { initialCrazyhouseState, type CrazyhouseState } from '../logic/crazyhouse';
 import { plyStateAtView } from '../logic/perPlyState';
 import MoveListStrip from '../components/MoveListStrip';
+import { useStableCallback } from '../components/useStableCallback';
 import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { ChessEngine } from '../logic/ChessEngine';
@@ -858,6 +859,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
 
   // Tapping a move in the strip drives the exact same viewIndex the Back/Forward buttons do —
   // no separate navigation mechanism.
+  const selectMove = useStableCallback((index: number) => handleSelectMove(index)); // (one identity for the memoized move list: command #33)
   const handleSelectMove = (index: number) => {
     const next = index + 1;
     setViewIndex(next >= positions.length - 1 ? null : next);
@@ -937,7 +939,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         moves={moveList.map((m) => ({ san: duckChess ? duckMoveNotation(m.move) : spellChess ? spellMoveNotation(m.move, m.move.spell ?? null) : m.move.san }))}
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
-        onSelectMove={handleSelectMove}
+        onSelectMove={selectMove}
       />
       <GameScreenBody
         compact={spellChess || crazyhouse}

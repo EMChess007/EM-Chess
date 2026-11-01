@@ -141,22 +141,25 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
               .filter(Boolean)
               .join(', ');
             const background = checkedSquare === square ? '#ef5350' : selected === square ? '#a2d149' : premove && (premove.from === square || premove.to === square) ? PREMOVE_COLOR : lastMove &&(lastMove.from === square || lastMove.to === square) ? '#f7ec74' : light ? theme.lightColor : theme.darkColor;
+            // One MEMOIZED cell per square, fed primitives only (command #33): a render of the board that changes one square's picture re-renders that cell and its piece, not 64 cells and 32 SVG pieces.
             return (
-              <View key={col} testID={`${board}-${square}`} accessibilityLabel={label} style={[styles.cell, { width: cell, height: cell, backgroundColor: background }]}>
-                {(isMove || isDrop) && <View style={[styles.dot, isDrop && styles.dropDot, { width: cell * 0.36, height: cell * 0.36, borderRadius: cell * 0.18 }]} />}
-                {piece && (
-                  <View style={{ width: cell, height: cell, alignItems: 'center', justifyContent: 'center' }}>
-                    <PieceArt color={piece.color} type={piece.type} cell={cell} images={pieceTheme.images} />
-                  </View>
-                )}
-                {premove && premove.to === square && (
-                  <View pointerEvents="none" testID={`premove-ghost-${board}`} style={[styles.ghost, { width: cell, height: cell }]}>
-                    <PieceArt color={premove.ghost.color} type={premove.ghost.type} cell={cell} images={pieceTheme.images} />
-                  </View>
-                )}
-                {promotedSet.has(square) && piece && <Text maxFontSizeMultiplier={1} style={[styles.promotedMark, { fontSize: Math.max(8, cell * 0.3) }]}>~</Text>}
-                {badge && <BadgeMark badge={badge} cell={cell} board={board} square={square} />}
-              </View>
+              <BoardCell
+                key={col}
+                board={board}
+                square={square}
+                label={label}
+                background={background}
+                cell={cell}
+                dot={isDrop ? 'drop' : isMove ? 'move' : null}
+                pieceColor={piece ? piece.color : null}
+                pieceType={piece ? piece.type : null}
+                ghostColor={premove && premove.to === square ? premove.ghost.color : null}
+                ghostType={premove && premove.to === square ? premove.ghost.type : null}
+                promotedMark={promotedSet.has(square) && piece !== null}
+                badgeTeam={badge ? badge.team : null}
+                badgeShape={badge ? badge.shape : null}
+                images={pieceTheme.images}
+              />
             );
           })}
         </View>
@@ -176,6 +179,44 @@ function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, chec
     </View>
   );
 }
+
+interface BoardCellProps {
+  board: BoardId;
+  square: string;
+  label: string;
+  background: string;
+  cell: number;
+  dot: 'move' | 'drop' | null;
+  pieceColor: BughouseColor | null;
+  pieceType: string | null;
+  ghostColor: BughouseColor | null;
+  ghostType: string | null;
+  promotedMark: boolean;
+  badgeTeam: KingBadge['team'] | null;
+  badgeShape: KingBadge['shape'] | null;
+  images?: PieceImageMap;
+}
+
+/** One square of a Bughouse board: every prop is a string, a number or null (or the theme's image map, stable), so the shallow `memo` is exact. */
+const BoardCell = memo(function BoardCell({ board, square, label, background, cell, dot, pieceColor, pieceType, ghostColor, ghostType, promotedMark, badgeTeam, badgeShape, images }: BoardCellProps) {
+  return (
+    <View testID={`${board}-${square}`} accessibilityLabel={label} style={[styles.cell, { width: cell, height: cell, backgroundColor: background }]}>
+      {dot !== null && <View style={[styles.dot, dot === 'drop' && styles.dropDot, { width: cell * 0.36, height: cell * 0.36, borderRadius: cell * 0.18 }]} />}
+      {pieceColor !== null && pieceType !== null && (
+        <View style={{ width: cell, height: cell, alignItems: 'center', justifyContent: 'center' }}>
+          <PieceArt color={pieceColor} type={pieceType} cell={cell} images={images} />
+        </View>
+      )}
+      {ghostColor !== null && ghostType !== null && (
+        <View pointerEvents="none" testID={`premove-ghost-${board}`} style={[styles.ghost, { width: cell, height: cell }]}>
+          <PieceArt color={ghostColor} type={ghostType} cell={cell} images={images} />
+        </View>
+      )}
+      {promotedMark && <Text maxFontSizeMultiplier={1} style={[styles.promotedMark, { fontSize: Math.max(8, cell * 0.3) }]}>~</Text>}
+      {badgeTeam !== null && badgeShape !== null && <BadgeMark badge={{ team: badgeTeam, shape: badgeShape, label: '' }} cell={cell} board={board} square={square} />}
+    </View>
+  );
+});
 
 function PieceArt({ color, type, cell, images }: { color: BughouseColor; type: string; cell: number; images?: PieceImageMap }) {
   return (

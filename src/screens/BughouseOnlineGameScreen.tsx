@@ -38,7 +38,7 @@ export default function BughouseOnlineGameScreen({ authToken, match, resume, onE
   const colors = useAppColors();
   const styles = createStyles(colors);
   const game = useBughouseOnlineGame(authToken, { match, resume });
-  const { view, connection, problem, now, sendAction, resign, retry, leave, chat, quick, sendQuick, sendChat } = game;
+  const { view, connection, problem, now, nowSource, sendAction, resign, retry, leave, chat, quick, sendQuick, sendChat } = game;
   const [resignError, setResignError] = useState<string | null>(null);
   const seats = useMemo(() => (view ? onlineSeatConfig(view.mySeat) : null), [view?.mySeat]);
   const ended = view !== null && isOver(view);
@@ -95,6 +95,7 @@ export default function BughouseOnlineGameScreen({ authToken, match, resume, onE
         online={{
           view,
           now,
+          nowSource,
           connection,
           problem,
           onAction: sendAction,

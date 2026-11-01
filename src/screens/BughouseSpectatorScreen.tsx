@@ -27,7 +27,7 @@ export default function BughouseSpectatorScreen({ authToken, roomId, onExit }: B
   const colors = useAppColors();
   const styles = createStyles(colors);
   const game = useBughouseOnlineGame(authToken, { spectate: { roomId } });
-  const { view, connection, problem, now, retry, leave } = game;
+  const { view, connection, problem, now, nowSource, retry, leave } = game;
   // Two equal boards when the window has the room for them; on a small phone (360 x 640 dp) Board A large and Board B as a thumbnail - the "rotate the device" layer would otherwise cover the
   // game (the Android run found it, and its accessibility tree hides everything under such a layer).
   const win = useWindowDimensions();
@@ -59,7 +59,7 @@ export default function BughouseSpectatorScreen({ authToken, roomId, onExit }: B
         seats={seats}
         timeControl={view.match.timeControl}
         onExit={leaveNow}
-        online={{ view, now, connection, problem, onAction: NOTHING, onResign: NOTHING, onRetry: retry, onPlayAgain: leaveNow, resignError: null }}
+        online={{ view, now, nowSource, connection, problem, onAction: NOTHING, onResign: NOTHING, onRetry: retry, onPlayAgain: leaveNow, resignError: null }}
       />
     </View>
   );

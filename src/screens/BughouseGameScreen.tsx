@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Pressable } from '../components/AppPressable';
 import Text from '../components/BughouseText';
@@ -7,13 +7,15 @@ import BughouseBoard from '../components/BughouseBoard';
 import BughouseBoardBlock from '../components/BughouseBoardBlock';
 import BughouseRulesSheet from '../components/BughouseRulesSheet';
 import { getTouchDebugOverlay } from '../components/devOverlayRegistry';
+import { createNowStore, NowProvider, useNowMs, type NowSource } from '../components/NowClock';
 import { useBoardMarks } from '../components/useBoardMarks';
+import { useStableCallback } from '../components/useStableCallback';
 import { pieceInk } from '../components/pieceArt';
 import PieceIcon from '../components/PieceIcon';
 import PromotionPicker from '../components/PromotionPicker';
 import ScreenHeader from '../components/ScreenHeader';
 import { firstLegalAction, legalMovesOn, remainingAt, type BughouseMatch, type BughouseTimeControl, type PromotionPiece } from '../logic/bughouse';
-import { BOARD_IDS, otherBoard, seatAt, seatPlace, type BoardId, type BughouseSeat } from '../logic/bughouse/types';
+import { BOARD_IDS, BUGHOUSE_SEATS, otherBoard, seatAt, seatPlace, type BoardId, type BughouseColor, type BughouseSeat } from '../logic/bughouse/types';
 import {
   BUGHOUSE_DUAL_GUTTER,
   BUGHOUSE_DUAL_MIN_CELL,
@@ -69,8 +71,12 @@ interface BughouseGameScreenProps {
 /** What the online wrapper (`BughouseOnlineGameScreen`) gives the game screen. */
 export interface BughouseOnlineBinding {
   view: BughouseOnlineView;
-  /** The local clock (ms), ticking: the clocks are the server's "now" estimated from it (`serverNowAt`). */
+  /** The local clock (ms), ticking once a second: the clocks are the server's "now" estimated from it (`serverNowAt`); a seat's offline countdown reads it. */
   now: number;
+  /**
+   * The local clock at the clocks' rate (250 ms) as a store, so a tick re-renders the clock texts and NOT this screen (command #33). Absent (a test, a fixed `now`): the clocks follow `now`.
+   */
+  nowSource?: NowSource;
   connection: BughouseConnection;
   /** Why the room could not be read again ("Can't reach the server"), or why the game is gone; null when all is well. */
   problem: string | null;
@@ -84,6 +90,19 @@ export interface BughouseOnlineBinding {
 }
 
 const PROMOTION_ORDER: readonly PromotionPiece[] = ['q', 'r', 'b', 'n'];
+
+/** The one empty list every board without targets is given (a fresh `[]` per render would defeat the boards' memo; command #33). */
+const NO_SQUARES: readonly string[] = [];
+
+/** A thumbnail line: the seat, its clock and its pocket. Only the clock moves with the tick, so this is the one part of the thumbnail that subscribes to it (NowClock.tsx). */
+function ThumbLine({ clock, testID, style, lead, tail }: { clock: BughouseMatch['clocks'][BughouseSeat]; testID: string; style: object; lead: string; tail: string }) {
+  const now = useNowMs();
+  return (
+    <Text style={style} testID={testID}>
+      {`${lead}  ${formatBughouseClock(remainingAt(clock, now))}${tail}`}
+    </Text>
+  );
+}
 
 /**
  * Bughouse, Local (W3a): one human (its board large and the partner's a thumbnail, or two equal boards side by side in landscape) or several humans all on ONE board (pass-and-play: that
@@ -129,7 +148,9 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   if (online) stateRef.current = state;
   const onlineRef = useRef(online);
   onlineRef.current = online;
-  const [nowMs, setNowMs] = useState(0);
+  // The instant the clocks are drawn at lives in a store, NOT in this screen's state (command #33, the lag): a tick re-renders the clock texts that subscribe to it (NowClock.tsx), not the
+  // screen with its two boards. Local: the screen's own elapsed time; online: the server's "now" estimated from the local clock (below).
+  const clockStore = useRef(createNowStore(online ? serverNowAt(online.view, online.nowSource ? Date.now() : online.now) : 0)).current;
   const [flagKick, setFlagKick] = useState(0);
   const [swapped, setSwapped] = useState(false);
   const [autoFlip, setAutoFlip] = useState(true);
@@ -172,20 +193,31 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
       if (step.outcome.kind === 'applied' || step.outcome.kind === 'flag') {
         stateRef.current = step.state;
         setState(step.state);
-        setNowMs(step.state.match.nowMs);
+        clockStore.set(step.state.match.nowMs);
       }
       return step.outcome;
     },
-    [elapsed],
+    [elapsed, clockStore],
   );
 
   // The clocks on screen.
   const over = match.result !== null;
   useEffect(() => {
     if (over || online) return; // online, the hook ticks the local clock and the clocks are the server's instant estimated from it
-    const id = setInterval(() => setNowMs(elapsed()), 200);
+    const id = setInterval(() => clockStore.set(elapsed()), 200);
     return () => clearInterval(id);
-  }, [over, online, elapsed]);
+  }, [over, online, elapsed, clockStore]);
+  // Online: the displayed instant follows the binding - at once when a snapshot arrives or the coarse clock moves (before the next paint), and on every tick of the binding's own source
+  // (250 ms, no re-render of this screen). The estimate is `serverNowAt`: the server's instant plus the LOCAL time since the snapshot, never the wall clock compared with the server's.
+  const onlineViewForClock = online?.view;
+  const onlineCoarseNow = online?.now;
+  const onlineSource = online?.nowSource;
+  useLayoutEffect(() => {
+    if (onlineViewForClock === undefined || onlineCoarseNow === undefined) return;
+    const publish = () => clockStore.set(serverNowAt(onlineViewForClock, onlineSource ? Date.now() : onlineCoarseNow));
+    publish();
+    return onlineSource ? onlineSource.subscribe(publish) : undefined;
+  }, [onlineViewForClock, onlineCoarseNow, onlineSource, clockStore]);
 
   // The flag timer: it fires when the earliest running clock would flag; a timer that wakes a hair early is idle and re-armed. Online the SERVER settles flags and says so in a snapshot.
   useEffect(() => {
@@ -356,7 +388,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
     const fresh = startLocalGame(timeControl, elapsed(), Math.floor(random() * 1000000));
     stateRef.current = fresh;
     setState(fresh);
-    setNowMs(fresh.match.nowMs);
+    clockStore.set(fresh.match.nowMs);
     setSwapped(false);
   };
 
@@ -372,14 +404,25 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
 
   // --- Rendering ----------------------------------------------------------------------------------------------------------------------------
   const humans = humanBughouseSeats(seats);
-  // The instant the clocks are drawn at: Local its own elapsed time; online the SERVER's "now" estimated from the last snapshot (never the wall clock compared with the server's).
-  const clockNow = online ? serverNowAt(online.view, online.now) : nowMs;
-  const seatName = (seat: BughouseSeat): string => {
+  // (The instant the clocks are drawn at is the `clockStore` above: Local its own elapsed time; online the SERVER's "now" estimated from the last snapshot, never the wall clock compared with
+  // the server's. The clock texts subscribe to it; this render never reads it.)
+  const seatNameNow = (seat: BughouseSeat): string => {
     if (online) return seatDisplayName(online.view, seat, online.now);
     const controller = seats[seat];
     if (controller.kind === 'bot') return botDisplayName(controller.elo);
     return humans.length === 1 ? 'You' : seatRowLabel(seat).text.replace(/ · Team \d/, '');
   };
+  // ONE identity that always answers with the latest names, and a key that changes when any name does: the memoized boards re-render for a name, not for a tick (command #33).
+  const seatName = useStableCallback(seatNameNow);
+  const seatNamesKey = BUGHOUSE_SEATS.map(seatNameNow).join('|');
+  // The team badge of a king: the layout is fixed for the screen's life, so one function per board for good.
+  const badgeOfA = useCallback((color: BughouseColor) => kingBadge(layout, 'A', color), [layout]);
+  const badgeOfB = useCallback((color: BughouseColor) => kingBadge(layout, 'B', color), [layout]);
+  const badgeOfBoard = (board: BoardId) => (board === 'A' ? badgeOfA : badgeOfB);
+  // The handlers the boards are given: stable identities that run the latest closure (the screen's state is read at the call, not at the render the board last saw).
+  const tapSquare = useStableCallback((tapped: BoardId, square: string) => (dual ? dualInput(tapped, { kind: 'tapSquare', square }) : onTapSquare(tapped, square)));
+  const pickPocket = useStableCallback((tapped: BoardId, piece: ReservePieceType) => (dual ? dualInput(tapped, { kind: 'pickPocket', piece }) : onPickPocket(tapped, piece)));
+  const promotionChoice = useStableCallback((chosen: BoardId, choice: PromotionPiece | 'cancel') => dualInput(chosen, choice === 'cancel' ? { kind: 'cancelPromotion' } : { kind: 'choosePromotion', piece: choice }));
   const summary = gameOverSummary(match);
   const mainBoard: BoardId = swapped ? otherBoard(mainBoardOf(layout)) : mainBoardOf(layout);
   const arrangement = standardArrangement(width, height);
@@ -427,24 +470,24 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         key={board}
         board={board}
         match={match}
-        nowMs={clockNow}
         orientation={dual ? dualBoardOrientation(seats, board, match, autoFlip) : boardOrientation(layout, board, match, autoFlip)}
         cell={cell}
         lastMove={state.lastMove[board]}
         seatName={seatName}
-        badgeOf={(color) => kingBadge(layout, board, color)}
+        seatNamesKey={seatNamesKey}
+        badgeOf={badgeOfBoard(board)}
         actor={actors[board]}
         selected={own ? own.selected : preHalf?.kind === 'select' ? preHalf.square : selected && selected.board === board ? selected.square : null}
-        moveTargets={own ? own.moveTargets : selected && selected.board === board ? selectedTargets : []}
-        dropTargets={own ? own.dropTargets : picked && picked.board === board ? dropTargetsOfPick : []}
+        moveTargets={own ? own.moveTargets : selected && selected.board === board ? selectedTargets : NO_SQUARES}
+        dropTargets={own ? own.dropTargets : picked && picked.board === board ? dropTargetsOfPick : NO_SQUARES}
         pickedPiece={own ? own.picked : preHalf?.kind === 'pick' ? preHalf.piece : picked && picked.board === board ? picked.piece : null}
         premoveSeat={preHere ? premoveSeat : null}
         premove={preMarks}
         marks={board === 'A' ? marksA : marksB}
         bank={state.bank}
         statusYou={layout.kind === 'standard' ? seatAt(board, match.verdicts[board].turn) === layout.seat : actors[board] !== null}
-        onTapSquare={dual ? (tapped, square) => dualInput(tapped, { kind: 'tapSquare', square }) : onTapSquare}
-        onPickPocket={dual ? (tapped, piece) => dualInput(tapped, { kind: 'pickPocket', piece }) : onPickPocket}
+        onTapSquare={tapSquare}
+        onPickPocket={pickPocket}
         outlined={summary !== null && summary.decidingBoard === board}
         compact={dual || arrangement === 'sideBySide'}
         sideBySide={dual ? dualFit.arrangement === 'sideBySide' : arrangement === 'sideBySide'}
@@ -452,7 +495,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         touchDebug={devTouchDebug && touchDebug}
         shared={dual && match.result === null && dualBoardPlan(seats, board).shared}
         promotionChoices={own ? own.promotionChoices : undefined}
-        onPromotionChoice={(chosen, choice) => dualInput(chosen, choice === 'cancel' ? { kind: 'cancelPromotion' } : { kind: 'choosePromotion', piece: choice })}
+        onPromotionChoice={promotionChoice}
       />
     );
   };
@@ -478,9 +521,9 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
           lastMove={state.lastMove[board]}
           checkedSquare={null}
           selected={null}
-          moveTargets={[]}
-          dropTargets={[]}
-          badgeOf={(color) => kingBadge(layout, board, color)}
+          moveTargets={NO_SQUARES}
+          dropTargets={NO_SQUARES}
+          badgeOf={badgeOfBoard(board)}
           interactive={false}
           outlined={summary !== null && summary.decidingBoard === board}
         />
@@ -489,11 +532,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
           {seatsOfBoard.map((seat) => {
             const word = seatPlace(seat).color === 'w' ? 'white' : 'black';
             const chips = pocketChips(match, seat, null);
-            return (
-              <Text key={seat} style={styles.thumbLine} testID={`thumb-line-${board}-${word}`}>
-                {`${word === 'white' ? '○' : '●'} ${seatName(seat)}  ${formatBughouseClock(remainingAt(match.clocks[seat], clockNow))}${chips.length ? `  ${chips.map((c) => `${c.piece.toUpperCase()}${c.count}`).join(' ')}` : ''}`}
-              </Text>
-            );
+            return <ThumbLine key={seat} clock={match.clocks[seat]} testID={`thumb-line-${board}-${word}`} style={styles.thumbLine} lead={`${word === 'white' ? '○' : '●'} ${seatName(seat)}`} tail={chips.length ? `  ${chips.map((c) => `${c.piece.toUpperCase()}${c.count}`).join(' ')}` : ''} />;
           })}
           <Text style={styles.thumbStatus}>{boardStatusLine(match, board, false).text}</Text>
           <Text style={styles.thumbHint}>Tap to swap</Text>
@@ -577,6 +616,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   const rotateOverlay = !over && needsRotateOverlay(seats, width, height);
 
   return (
+    <NowProvider value={clockStore}>
     <View style={styles.container} testID="bughouse-game">
       {compact ? (
         <View style={[styles.compactBar, { paddingTop: insets.top }]} testID="bughouse-compact-bar">
@@ -711,6 +751,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         </View>
       )}
     </View>
+    </NowProvider>
   );
 }
 

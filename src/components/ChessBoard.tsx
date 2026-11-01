@@ -444,22 +444,22 @@ function ChessBoard({
   // regardless of whose turn it actually is, which is also what makes this correct in premove mode.
   // Giveaway: the same pseudo-legal primitive, collapsed to mandatory captures when any exist.
   // Duck Chess: while the duck is being placed the "targets" are the squares it may go to instead.
-  const duckTargets = pendingDuck ? getLegalDuckPlacementSquares(engine, duckSquare) : [];
-  const dropTargets = dropPiece ? engine.getLegalDropSquares(dropPiece) : [];
-  const legalTargets = pendingDuck
-    ? duckTargets
-    : dropPiece
-      ? dropTargets
-      : selectedSquare && !isPremoveMode
-      ? giveaway
-        ? getGiveawayMoves(engine, selectedSquare).map((m) => m.to)
-        : fogOfWar || duckChess
-        ? engine
-            .getPseudoLegalMoves(selectableColor)
-            .filter((m) => m.from === selectedSquare)
-            .map((m) => m.to)
-        : engine.getLegalMoves(selectedSquare)
-      : [];
+  // (memoized, command #33: this used to generate the moves again on every render of the board - each touch-move of a drawn arrow, each parent render - on a phone's JavaScript thread)
+  const legalTargets = useMemo(() => {
+    if (pendingDuck) return getLegalDuckPlacementSquares(engine, duckSquare);
+    if (dropPiece) return engine.getLegalDropSquares(dropPiece);
+    if (selectedSquare && !isPremoveMode) {
+      if (giveaway) return getGiveawayMoves(engine, selectedSquare).map((m) => m.to);
+      if (fogOfWar || duckChess) {
+        return engine
+          .getPseudoLegalMoves(selectableColor)
+          .filter((m) => m.from === selectedSquare)
+          .map((m) => m.to);
+      }
+      return engine.getLegalMoves(selectedSquare);
+    }
+    return [];
+  }, [pendingDuck, duckSquare, dropPiece, selectedSquare, isPremoveMode, giveaway, fogOfWar, duckChess, engine, selectableColor]);
 
   // Giveaway: the pieces that can capture, ringed on the board while a capture is mandatory and it is this board's player to move.
   const captureSquares = useMemo(
@@ -518,7 +518,7 @@ function ChessBoard({
       setPendingDuck(null); // the player took the move back
       return;
     }
-    if (!duckTargets.includes(square)) return;
+    if (!legalTargets.includes(square)) return; // (a pending duck: the targets ARE the duck's placement squares)
     const committed: Move = { ...pendingDuck.move, duck: square };
     skipAnimationRef.current = true;
     setPendingDuck(null);
@@ -558,7 +558,7 @@ function ChessBoard({
     // Crazyhouse: a reserve piece is picked up — a tap on one of its legal squares drops it; a tap anywhere else puts it
     // back and carries on as an ordinary tap (so tapping one of your own pieces selects it in one go).
     if (dropPiece) {
-      if (dropTargets.includes(square)) {
+      if (legalTargets.includes(square)) {
         handleDrop(dropPiece, square);
         return;
       }
