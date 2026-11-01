@@ -17,6 +17,6 @@ describe('the floating gear button reserve', () => {
     const bughouse = readFileSync(path.join(root, 'src/screens/BughouseGameScreen.tsx'), 'utf8');
     expect(home).toMatch(/paddingRight: GEAR_RESERVE/);
     expect(bughouse).toMatch(/compactBar:[^\n]*paddingRight: GEAR_RESERVE/);
-    expect(bughouse).toMatch(/controls: [^\n]*paddingRight: GEAR_RESERVE - 8/);
+    expect(bughouse).toMatch(/controlsUnderBar: [^\n]*paddingRight: GEAR_RESERVE - 8/);
   });
 });

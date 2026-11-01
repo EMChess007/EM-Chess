@@ -580,7 +580,9 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
     const seat = humans.find((s) => seatPlace(s).team === team);
     if (seat !== undefined && match.result === null) commit({ seat, action: { kind: 'resign' } });
   };
-  const controls = (
+  // Two groups (command #34): the stacked dual layout puts the menu link, Rules and the turn switch in the bar (the title gives its room up) and the resignations in the row under it, so
+  // both lines keep the gear button's corner free (GEAR_RESERVE) without a third line of chrome - the 28 dp cells of a 360 x 740 phone have no height to spare.
+  const setupControls = (
     <>
       <Pressable accessibilityRole="button" accessibilityLabel="Rules" testID="bughouse-rules" style={ctl} onPress={() => setRulesOpen(true)} {...slim}>
         <Text style={ctlText}>Rules</Text>
@@ -590,6 +592,11 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
           <Text style={ctlText}>{dual ? (autoFlip ? 'Turn: auto' : 'Turn: fixed') : autoFlip ? 'Auto-turn: on' : 'Auto-turn: off'}</Text>
         </Pressable>
       )}
+    </>
+  );
+  // (the dev-only touch switch rides with the resignations: in the bar it would push Rules and the turn switch onto a line of their own - a development build only, a release build has none)
+  const resignControls = (
+    <>
       {devTouchDebug && dual && (
         <Pressable accessibilityRole="button" accessibilityLabel={touchDebug ? 'Touch debug is on' : 'Touch debug is off'} testID="bughouse-touch-debug" style={ctl} onPress={() => setTouchDebug((on) => !on)} {...slim}>
           <Text style={ctlText}>{touchDebug ? 'Touch debug: on' : 'Touch debug: off'}</Text>
@@ -608,6 +615,14 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
       )}
     </>
   );
+  const controls = (
+    <>
+      {setupControls}
+      {resignControls}
+    </>
+  );
+  // The stacked dual layout: the bar holds the menu link and the setup controls, the row under it the resignations.
+  const splitControls = dual && !controlsInBar && !blockedLayout;
   // The premove's strip (W5): a Cancel control while one is queued, and the one-sentence reason when one was dropped (a notice for a game that ended is never shown).
   const premoveBar =
     premove !== null || premoveNotice !== null ? (
@@ -636,9 +651,13 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
           <Pressable accessibilityRole="button" accessibilityLabel="Back to the menu" onPress={onExit} style={styles.compactBack} compact hitSlop={SLIM_HIT_SLOP}>
             <Text style={styles.controlText}>‹ Menu</Text>
           </Pressable>
-          <Text style={styles.compactTitle}>
-            {layout.kind === 'passAndPlay' ? 'Bughouse · pass and play' : 'Bughouse'}
-          </Text>
+          {splitControls ? (
+            <View style={styles.compactControls}>{setupControls}</View>
+          ) : (
+            <Text style={styles.compactTitle}>
+              {layout.kind === 'passAndPlay' ? 'Bughouse · pass and play' : 'Bughouse'}
+            </Text>
+          )}
           {controlsInBar && <View style={styles.compactControls}>{controls}</View>}
         </View>
       ) : (
@@ -658,7 +677,11 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
           if (summary !== null) scrollRef.current?.scrollToEnd({ animated: false });
         }}
       >
-        {!controlsInBar && <View style={styles.controls}>{controls}</View>}
+        {splitControls ? (
+          <View style={[styles.controls, styles.controlsUnderBar]}>{resignControls}</View>
+        ) : (
+          !controlsInBar && <View style={styles.controls}>{controls}</View>
+        )}
 
         {online && (
           <View style={styles.onlineStatus} testID="bughouse-online-status">
@@ -774,8 +797,9 @@ function createStyles(colors: AppColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     content: { padding: 8, gap: 8, alignItems: 'center' },
-    // (the first row under the bar is still inside the gear button's corner on a phone: it keeps the reserve too)
-    controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignSelf: 'stretch', justifyContent: 'center', paddingRight: GEAR_RESERVE - 8 },
+    controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignSelf: 'stretch', justifyContent: 'center' },
+    // (the row right under the bar of the stacked dual layout is still inside the gear button's corner on a phone: it keeps the reserve too - the content already pads 8 dp)
+    controlsUnderBar: { paddingRight: GEAR_RESERVE - 8 },
     control: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
     controlText: { fontSize: 14, fontWeight: '700', color: colors.text },
     controlSlim: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
