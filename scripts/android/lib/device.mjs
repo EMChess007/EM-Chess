@@ -11,7 +11,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { decodePng } from './png.mjs';
 import { extractXml, findNodes, findOne, fingerprint, parseHierarchy, visibleWords } from './hierarchy.mjs';
-import { PACKAGE } from './checks.mjs';
+import { gearIssues, PACKAGE } from './checks.mjs';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -129,6 +129,7 @@ export class Device {
             attempt = -1; // read the tree again, now without the notice
             continue;
           }
+          this.noteGear(this.last.nodes);
           return this.last.nodes;
         }
         lastError = out.slice(0, 200);
@@ -138,6 +139,23 @@ export class Device {
       await sleep(this.dumpGapMs ?? 700);
     }
     throw new Error(`uiautomator dump failed: ${lastError}`);
+  }
+
+  /**
+   * The floating gear button check (command #34; checks.mjs `gearIssues`): EVERY tree this driver reads, on every screen of every scenario and on both phone profiles, is judged for a tappable
+   * node of the app inside the gear zone. The findings are collected by node and screen words and reported as ONE check at the end of the run (`gearFindings`, `gearDumps`).
+   */
+  noteGear(nodes) {
+    if (!this.display) return;
+    this.gearDumps = (this.gearDumps ?? 0) + 1;
+    const found = gearIssues(nodes, this.display);
+    if (found.length === 0) return;
+    this.gearFindings = this.gearFindings ?? new Map();
+    const screenWords = visibleWords(nodes, 6).join(' / ');
+    for (const issue of found) {
+      const key = `${issue.text}|${issue.detail}`;
+      if (!this.gearFindings.has(key)) this.gearFindings.set(key, `"${issue.text}": ${issue.detail} (screen: ${screenWords})`);
+    }
   }
 
   /** Counts the dumps that failed, by uiautomator's own message ("could not get idle state" = the screen never stood still), and prints the first few. */

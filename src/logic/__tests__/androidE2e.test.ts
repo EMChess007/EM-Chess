@@ -6,6 +6,7 @@ import {
   startPositionMarkers,
   crashIssues,
   cornerColour,
+  gearIssues,
   judgePieceCell,
   judgeSelection,
   markerFromWords,
@@ -89,6 +90,36 @@ UI hierchary dumped to: /dev/tty`;
     expect(findNodes(both, { text: 'CLASSIC' })).toHaveLength(0);
     expect(findNodes(both, { text: 'CLASSIC', ci: true })).toHaveLength(1);
     expect(byClass(both, 'x')).toHaveLength(1);
+  });
+});
+
+describe('the floating gear button (command #34)', () => {
+  // 720 x 1280 px at scale 2 = 360 x 640 dp: the zone is the last 72 dp (144 px) of the width, from the top down to 24 + 64 dp = 176 px
+  const screen = { w: 720, h: 1280, scale: 2 };
+  const button = (x1: number, y1: number, x2: number, y2: number, extra: Record<string, unknown> = {}) => node({ cls: 'android.view.ViewGroup', clickable: true, desc: 'Resign', bounds: box(x1, y1, x2, y2), ...extra });
+
+  it('reports a tappable node of the app that reaches into the top right zone, with its name and box', () => {
+    const found = gearIssues([button(560, 100, 700, 160)], screen);
+    expect(found).toHaveLength(1);
+    expect(found[0].text).toBe('Resign');
+    expect(found[0].detail).toContain('560..700 x 100..160');
+    expect(found[0].detail).toContain('576..720 x 0..176');
+  });
+
+  it('is clean for a node left of the zone, below it, one that only touches its edge, a text that is not tappable, a disabled node, another package and a window-sized layer', () => {
+    expect(gearIssues([button(300, 100, 570, 160)], screen)).toEqual([]); // ends at 570 < 576
+    expect(gearIssues([button(560, 176, 700, 236)], screen)).toEqual([]); // starts at the zone's bottom edge
+    expect(gearIssues([button(560, 100, 577, 160)], screen)).toEqual([]); // 1 px inside: under the 2 dp tolerance
+    expect(gearIssues([button(560, 100, 700, 160, { clickable: false })], screen)).toEqual([]);
+    expect(gearIssues([button(560, 100, 700, 160, { enabled: false })], screen)).toEqual([]);
+    expect(gearIssues([button(560, 100, 700, 160, { pkg: 'com.android.systemui' })], screen)).toEqual([]);
+    expect(gearIssues([button(0, 0, 720, 1280)], screen)).toEqual([]);
+    expect(gearIssues([button(560, 100, 700, 160, { bounds: null })], screen)).toEqual([]);
+  });
+
+  it('the zone is in dp: the same node is clean at scale 1 where the zone is 72 x 88 px', () => {
+    expect(gearIssues([button(560, 100, 700, 160)], { w: 360, h: 640, scale: 1 })).toEqual([]); // 100 px is below 88
+    expect(gearIssues([button(300, 40, 340, 80)], { w: 360, h: 640, scale: 1 })).toHaveLength(1);
   });
 });
 

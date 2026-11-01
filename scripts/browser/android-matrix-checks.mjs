@@ -13,10 +13,11 @@
  *   board-cell   a board cell smaller than the board's minimum (the size gate / scrolling must have applied);
  *   inset        text or a control inside a system bar / display cutout (the insets are emulated with CDP, see android-matrix-def.mjs);
  *   contrast     an icon marked data-matrix-glyph (the tab bar's) whose ink has less than CRITERIA.minGlyphContrast : 1 against what is behind it, or is not drawn as a vector path.
+ *   gear         a control that intersects the zone of the host's floating gear button (top right; android-matrix-def.mjs GEAR_ZONE) - the button would hide part of it;
  *   movelist     (a screen that declares `moveList`) a move number whose text is not on the same line as its move: the vertical centres of the two texts differ by more than 1 dp.
  */
 export function pageChecks(opts) {
-  const { insets, minTarget, clipTolerance, minBoardCell, boardKind, exempt, minGlyphContrast, expectGlyphs } = opts;
+  const { insets, minTarget, clipTolerance, minBoardCell, boardKind, exempt, minGlyphContrast, expectGlyphs, gearZone } = opts;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const issues = [];
@@ -198,6 +199,19 @@ export function pageChecks(opts) {
       if (r.bottom > vh - insets.bottom + clipTolerance && r.top < vh && !vScroller(el)) add('inset', el, 'control ends at ' + Math.round(r.bottom) + ', inside the bottom inset ' + insets.bottom);
       if (r.left < insets.left - clipTolerance && r.right > 0 && !hs) add('inset', el, 'control starts at ' + Math.round(r.left) + ', inside the left inset ' + insets.left);
       if (r.right > vw - insets.right + clipTolerance && r.left < vw && !hs) add('inset', el, 'control ends at ' + Math.round(r.right) + ', inside the right inset ' + insets.right);
+    }
+  }
+  // The floating gear button (command #34, android-matrix-def.mjs GEAR_ZONE): the host draws a round button over the top right corner; no control of ours may reach under it.
+  // The same rectangle as `gearZoneRect` (this function cannot import).
+  if (gearZone) {
+    const zoneRight = vw - insets.right;
+    const zone = { left: zoneRight - gearZone.width, top: 0, right: zoneRight, bottom: insets.top + gearZone.below };
+    for (const { el, r } of boxes) {
+      if (r.width >= vw * 0.9 && r.height >= vh * 0.9) continue; // a window-sized layer is not a button
+      if (isExempt(el)) continue;
+      const w = Math.min(r.right, zone.right) - Math.max(r.left, zone.left);
+      const h = Math.min(r.bottom, zone.bottom) - Math.max(r.top, zone.top);
+      if (w > 2 && h > 2) add('gear', el, 'reaches into the floating gear button zone (' + Math.round(zone.left) + '..' + Math.round(zone.right) + ' x 0..' + Math.round(zone.bottom) + '): control ' + Math.round(r.left) + '..' + Math.round(r.right) + ' x ' + Math.round(r.top) + '..' + Math.round(r.bottom));
     }
   }
   const overlapArea = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));

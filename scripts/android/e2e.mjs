@@ -1301,6 +1301,8 @@ try {
   await dev.snapshot('FAILED-run').catch(() => {});
 }
 dev.beacon.stop();
+// The floating gear button (command #34): every tree the run read, on every screen it visited, was judged for a tappable node inside the gear zone (device.mjs `noteGear`).
+record('gear zone: no tappable element reaches the floating gear button', [...(dev.gearFindings?.values() ?? [])], `${dev.gearDumps ?? 0} screens read`);
 // ... and at the end (the input path only: a dump of a live game screen is slow by nature)
 try {
   health.end = { inputMs: measureInput(dev) };

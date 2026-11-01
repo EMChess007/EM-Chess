@@ -34,6 +34,8 @@ import { describePremoveCancel } from '../logic/premove';
 import { useCaptureNudge } from '../logic/useCaptureNudge';
 import { useFourPlayerOnlineGame } from '../logic/useFourPlayerOnlineGame';
 import { usePremove } from '../logic/usePremove';
+import { useExpiringNotice, useTransientNotice } from '../logic/useTransientNotice';
+import { positionEpoch } from '../logic/fourPlayer/annotations';
 import { useScoreGains } from '../logic/useScoreGains';
 
 interface FourPlayerOnlineGameScreenProps {
@@ -92,7 +94,14 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
     gameOver: !view || !!view.gameOver || !!view.state.result,
     resolve: (intent) => (view && mySeat !== null ? resolvePremove(view.state, mySeat, intent) : null),
     play: sendMove,
+    epoch: view ? positionEpoch(view.state) : 0,
   });
+
+  // One-off messages (command #34): a refused move (the reducer's moveError, null again at every send) and a failed action go at the next
+  // move by any seat or after a few seconds, whichever comes first (logic/useTransientNotice.ts).
+  const noticeEpoch = view ? positionEpoch(view.state) : 0;
+  const shownMoveError = useExpiringNotice(view?.moveError ?? null, noticeEpoch);
+  useTransientNotice(actionError, noticeEpoch, () => setActionError(null));
 
   const leaveNow = (resumable: boolean) => {
     leave();
@@ -202,7 +211,7 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
           onMandatoryCaptureBlocked={nudgeCapture}
         />
 
-        {view.moveError && <Text style={styles.errorText}>{view.moveError}</Text>}
+        {shownMoveError && <Text style={styles.errorText}>{shownMoveError}</Text>}
         {actionError && <Text style={styles.errorText}>{actionError}</Text>}
         {cancelReason && <Text style={styles.errorText}>{describePremoveCancel(cancelReason)}</Text>}
         {premove && !myTurnReady && !over && (

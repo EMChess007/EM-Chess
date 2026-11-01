@@ -111,6 +111,33 @@ describe('a premove while the opponent is to move', () => {
     expect(labelOf('A', 'c5')).not.toContain('premove');
   });
 
+  // Command #34: the sentence is a one-off message - it goes at the next move on EITHER board or after five seconds, whichever comes first.
+  const droppedPremove = () => {
+    renderGame();
+    tap('f8');
+    tap('c5');
+    fire('bug_state', stateOf(whitePlays(start(), 'e2', 'e4', 2000), 2000));
+    expect(screen.getByTestId('bughouse-premove-notice')).toBeTruthy();
+  };
+
+  it('the dropped-premove sentence goes after five seconds when nobody moves', () => {
+    droppedPremove();
+    act(() => void vi.advanceTimersByTime(4999));
+    expect(screen.getByTestId('bughouse-premove-notice')).toBeTruthy();
+    act(() => void vi.advanceTimersByTime(1));
+    expect(screen.queryByTestId('bughouse-premove-notice')).toBeNull();
+    expect(screen.queryByTestId('bughouse-premove-bar')).toBeNull();
+  });
+
+  it('the dropped-premove sentence goes at the next move, whoever makes it', () => {
+    droppedPremove();
+    const afterE4 = whitePlays(start(), 'e2', 'e4', 2000);
+    const next = settle(afterE4.match, { seat: 1 as BughouseSeat, action: { kind: 'move', board: 'A', from: 'e7', to: 'e5' } }, 3000);
+    if (next.kind !== 'applied') throw new Error(`not applied: ${next.kind}`);
+    fire('bug_state', stateOf(next, 3000));
+    expect(screen.queryByTestId('bughouse-premove-notice')).toBeNull();
+  });
+
   it('a premove is not made with the opponent\'s pieces or from an empty square', () => {
     renderGame();
     tap('e2'); // White's pawn

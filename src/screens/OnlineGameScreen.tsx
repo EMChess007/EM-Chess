@@ -46,6 +46,7 @@ import { getRatings, recordRatedGame } from '../logic/ratingStorage';
 import { categoryForInitialSeconds } from '../logic/timeControls';
 import { THREE_CHECK_TARGET, getThreeCheckCounts } from '../logic/threeCheck';
 import { isUnlimitedClock, playerClockText } from '../logic/time';
+import { useTransientNotice } from '../logic/useTransientNotice';
 import type { Move, PieceColor } from '../types/chess';
 import type { AnalyzeParams, GameHistoryEntry } from '../types/history';
 import type {
@@ -745,6 +746,12 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   };
 
   const [premoveInvalidNotice, setPremoveInvalidNotice] = useState(false);
+
+  // One-off messages (command #34): the cancelled premove, a refused move / action and the draw-offer notice go at the next move by
+  // either side (the FEN changed) or after a few seconds, whichever comes first (logic/useTransientNotice.ts).
+  useTransientNotice(premoveInvalidNotice, fen, () => setPremoveInvalidNotice(false));
+  useTransientNotice(moveError, fen, () => setMoveError(null));
+  useTransientNotice(drawNotice, fen, () => setDrawNotice(null));
 
   useEffect(() => {
     if (!premove || turn !== myColor || gameOver) return;

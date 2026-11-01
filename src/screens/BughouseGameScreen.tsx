@@ -48,6 +48,8 @@ import type { BughouseConnection } from '../logic/bughouseOnlineSession';
 import { matchIntroLine, seatDisplayName } from '../logic/bughouseOnlineUi';
 import { CANT_REACH } from '../logic/bughouseOnlineSession';
 import { PROMOTION_LABELS } from '../logic/promotion';
+import { GEAR_RESERVE } from '../components/gearReserve';
+import { useExpiringNotice, useTransientNotice } from '../logic/useTransientNotice';
 import type { Premove } from '../logic/bughouse/premove';
 import { isWaiting, liveHalf, premoveMarks, premovePick, premovesAllowed, premoveTap, stepPremove, type PremoveHalf } from '../logic/bughousePremoveInput';
 
@@ -303,6 +305,12 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
     setHalf(null);
     setPremoveNotice(null);
   };
+  // One-off messages (command #34): the cancelled-premove sentence, a refused online action and a refused resignation go at the next move on
+  // EITHER board (the pair of FENs changed) or after a few seconds, whichever comes first (logic/useTransientNotice.ts).
+  const noticeEpoch = `${match.boards.A.fen}|${match.boards.B.fen}`;
+  useTransientNotice(premoveNotice, noticeEpoch, () => setPremoveNotice(null));
+  const shownActionError = useExpiringNotice(online?.view.actionError ?? null, noticeEpoch);
+  const shownResignError = useExpiringNotice(online?.resignError ?? null, noticeEpoch);
 
   const movesOfSelected = useMemo(() => (selected ? legalMovesOn(match, selected.board).filter((m) => m.from === selected.square) : []), [match, selected]);
   const selectedTargets = useMemo(() => Array.from(new Set(movesOfSelected.map((m) => m.to))), [movesOfSelected]);
@@ -684,14 +692,14 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
                 </View>
               )
             )}
-            {online.view.actionError !== null && (
+            {shownActionError !== null && (
               <Text style={styles.onlineError} testID="bughouse-online-action-error">
-                {online.view.actionError}
+                {shownActionError}
               </Text>
             )}
-            {online.resignError !== null && (
+            {shownResignError !== null && (
               <Text style={styles.onlineError} testID="bughouse-online-resign-error">
-                {online.resignError}
+                {shownResignError}
               </Text>
             )}
           </View>
@@ -766,12 +774,14 @@ function createStyles(colors: AppColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     content: { padding: 8, gap: 8, alignItems: 'center' },
-    controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignSelf: 'stretch', justifyContent: 'center' },
+    // (the first row under the bar is still inside the gear button's corner on a phone: it keeps the reserve too)
+    controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignSelf: 'stretch', justifyContent: 'center', paddingRight: GEAR_RESERVE - 8 },
     control: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
     controlText: { fontSize: 14, fontWeight: '700', color: colors.text },
     controlSlim: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
     controlTextSlim: { fontSize: 13, fontWeight: '700', color: colors.text },
-    compactBar: { minHeight: 36, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 10, paddingHorizontal: 8 },
+    // The right GEAR_RESERVE dp stay free (the host's floating gear button: components/gearReserve.ts): the controls wrap onto a second line rather than slip under it.
+    compactBar: { minHeight: 36, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 10, paddingLeft: 8, paddingRight: GEAR_RESERVE },
     compactBack: { paddingVertical: 4, paddingHorizontal: 6 },
     compactTitle: { flexGrow: 1, flexShrink: 1, minWidth: 0, fontSize: 16, fontWeight: '800', color: colors.text },
     compactControls: { flexDirection: 'row', flexWrap: 'wrap', flexShrink: 1, justifyContent: 'flex-end', gap: 6 },

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PositionEpoch } from './annotationLifecycle';
 import { noticeAfterTurnChange, stepPremove, type PremoveCancelReason } from './premove';
+import { useTransientNotice } from './useTransientNotice';
 
 interface UsePremoveOptions<I, M> {
   isMyTurn: boolean;
@@ -9,6 +11,8 @@ interface UsePremoveOptions<I, M> {
   resolve: (intent: I) => M | null;
   /** Plays a resolved move exactly as if the player had just made it. Always read fresh (it closes over the current position). */
   play: (move: M) => void;
+  /** The board's position epoch (annotationLifecycle.ts: the ply for the 4-seat games). A "cancelled" notice goes at the next move by any seat. */
+  epoch: PositionEpoch;
 }
 
 /**
@@ -18,7 +22,7 @@ interface UsePremoveOptions<I, M> {
  * they have moved (the 2-player screens keep it until the next premove or cancel; with three other seats moving, that would leave a
  * stale message on screen for rounds).
  */
-export function usePremove<I, M>({ isMyTurn, canStillPlay, gameOver, resolve, play }: UsePremoveOptions<I, M>) {
+export function usePremove<I, M>({ isMyTurn, canStillPlay, gameOver, resolve, play, epoch }: UsePremoveOptions<I, M>) {
   const [premove, setPremove] = useState<I | null>(null);
   const [cancelReason, setCancelReason] = useState<PremoveCancelReason | null>(null);
 
@@ -50,6 +54,10 @@ export function usePremove<I, M>({ isMyTurn, canStillPlay, gameOver, resolve, pl
   useEffect(() => {
     setCancelReason((reason) => noticeAfterTurnChange(reason, isMyTurn));
   }, [isMyTurn]);
+
+  // Command #34: every cancelled-premove line (illegal or eliminated) is a one-off message - it goes at the next move by any seat or after
+  // a few seconds, whichever comes first. (Before, an illegal notice raised on the player's own turn stayed until that player moved.)
+  useTransientNotice(cancelReason, epoch, () => setCancelReason(null));
 
   return { premove, queue, cancel, cancelReason };
 }

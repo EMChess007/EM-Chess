@@ -74,6 +74,7 @@ import { THREE_CHECK_TARGET, getThreeCheckCounts, getThreeCheckWinner } from '..
 import { formatTime } from '../logic/time';
 import { parseUciMove, uciMoveToSan } from '../logic/uciMove';
 import { useChessClock } from '../logic/useChessClock';
+import { useTransientNotice } from '../logic/useTransientNotice';
 import { START_FEN } from '../types/chess';
 import type { ColorChoice, Move, PieceColor } from '../types/chess';
 import type { BotPersonality } from '../types/bot';
@@ -892,6 +893,10 @@ export default function BotGameScreen({
     setPremove(null);
     setPremoveInvalid(false);
   };
+
+  // The "cancelled" line is a one-off message (command #34: it stayed for dozens of moves on the phone): it goes at the next move by
+  // either side (the FEN changed) or after a few seconds, whichever comes first (logic/useTransientNotice.ts).
+  useTransientNotice(premoveInvalid, fen, () => setPremoveInvalid(false));
 
   useEffect(() => {
     if (!premove || turn !== userColor || gameOver) return;

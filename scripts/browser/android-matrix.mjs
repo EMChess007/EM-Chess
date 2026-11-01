@@ -30,7 +30,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PAGE_CHECKS_SOURCE } from './android-matrix-checks.mjs';
 import { checkPieceColours } from './android-matrix-pieces.mjs';
-import { comboId, CRITERIA, fullCombos, insetSweep, insetsFor, miniCombos, quickCombos, SCREEN_SIZES, viewportFor, FONTS } from './android-matrix-def.mjs';
+import { comboId, CRITERIA, fullCombos, GEAR_ZONE, insetSweep, insetsFor, miniCombos, quickCombos, SCREEN_SIZES, viewportFor, FONTS } from './android-matrix-def.mjs';
 import { openProgress, progressKey } from './android-matrix-progress.mjs';
 import { allScreens } from './android-matrix-screens.mjs';
 
@@ -182,7 +182,7 @@ async function applyCombo(page, cdp, combo) {
 }
 
 function checkOptions(screen, insets) {
-  return { insets, minTarget: CRITERIA.minTouchTarget, minGlyphContrast: CRITERIA.minGlyphContrast, expectGlyphs: screen.glyphs ?? 0, clipTolerance: CRITERIA.clipTolerance, minBoardCell: CRITERIA.minBoardCell, boardKind: screen.boardKind ?? null, pockets: Boolean(screen.pockets), moveList: Boolean(screen.moveList), exempt };
+  return { insets, minTarget: CRITERIA.minTouchTarget, minGlyphContrast: CRITERIA.minGlyphContrast, expectGlyphs: screen.glyphs ?? 0, clipTolerance: CRITERIA.clipTolerance, minBoardCell: CRITERIA.minBoardCell, boardKind: screen.boardKind ?? null, pockets: Boolean(screen.pockets), moveList: Boolean(screen.moveList), exempt, gearZone: GEAR_ZONE };
 }
 
 async function runChecks(page, screen, insets) {
@@ -502,7 +502,15 @@ async function selfTest() {
     expect('a number 12 dp below its move (the phone of command #32) is reported', kinds(await run(listItem('line-height:18px;position:relative;top:12px', 'line-height:18px'), { moveList: true })).has('movelist'));
     expect('a move at the top of a tall button while the number is centred is reported', kinds(await run(listItem('line-height:18px', 'min-height:44px;line-height:18px'), { moveList: true })).has('movelist'));
     expect('a screen that declares a move list and shows none is reported', kinds(await run('<div>no list</div>', { moveList: true })).has('movelist'));
-    expect('a screen that does not declare a move list is not judged', !kinds(await run(listItem('position:relative;top:12px', 'line-height:18px'))).has('movelist'));
+    // the gear check (command #34): a 360 x 640 window, no insets -> the zone is x 288..360, y 0..64
+    const chipAt = (left, top) => `<div role="button" tabindex="0" style="position:absolute;left:${left}px;top:${top}px;width:60px;height:48px">Resign</div>`;
+    expect('a control under the top right gear zone is reported', kinds(await run(chipAt(296, 8))).has('gear'));
+    expect('a control that ends 2 dp left of the zone is clean', !kinds(await run(chipAt(226, 8))).has('gear'));
+    expect('a control left of the zone is clean', !kinds(await run(chipAt(100, 8))).has('gear'));
+    expect('a control right below the zone is clean', !kinds(await run(chipAt(296, 70))).has('gear'));
+    expect('the zone moves below the top inset (48): a control at y 60 is under it, at y 120 is not', kinds(await run(chipAt(296, 60), {}, { top: 48, bottom: 0, left: 0, right: 0 })).has('gear') && !kinds(await run(chipAt(296, 120), {}, { top: 48, bottom: 0, left: 0, right: 0 })).has('gear'));
+    expect('the zone sits inside the right inset (48): x 240..312, so a control at 250..310 is under it',kinds(await run(chipAt(250, 8), {}, { top: 0, bottom: 0, left: 0, right: 48 })).has('gear'));
+    expect('a screen that does not declare a move list is not judged',!kinds(await run(listItem('position:relative;top:12px', 'line-height:18px'))).has('movelist'));
 
     // the pocket check (command #27b): one row inside its strip, reaching no board, clock or status line
     const chip = (piece, extra = '') => `<div data-testid="pocket-A-white-${piece}" style="width:24px;height:24px;flex-shrink:0;${extra}">1</div>`;

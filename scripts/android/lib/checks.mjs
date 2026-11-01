@@ -3,6 +3,7 @@
  * reports what it claims - the old Android-only bugs among them (a clipped label, a black king drawn white, a touch one rank low).
  */
 import { analyseCell, bodyLuminance, BLACK_BODY_MAX, LIGHT_SHARE_BY_THEME, lightShare, judgeCell, judgeImageCell } from '../../browser/android-matrix-pieces.mjs';
+import { GEAR_ZONE } from '../../browser/android-matrix-def.mjs';
 import { crop } from './png.mjs';
 
 export const PACKAGE = 'com.emchess.app';
@@ -37,6 +38,32 @@ export function textIssues(nodes, screen) {
     // (a clock reading - "5:00", "0:59" - is narrow by its colon and its digits, not clipped: the first run that could read the online game's tree flagged "0:00" at 0.198)
     if (oneLine && /^\S+$/.test(n.text) && !/\d:\d/.test(n.text) && letters >= 4 && letters <= 16 && w / (letters * h) < MIN_WIDTH_PER_LETTER) {
       issues.push({ kind: 'narrow', text: n.text, detail: `${w}x${h} px for ${letters} letters (${(w / (letters * h)).toFixed(2)} per letter, minimum ${MIN_WIDTH_PER_LETTER})` });
+    }
+  }
+  return issues;
+}
+
+/**
+ * THE FLOATING GEAR BUTTON (command #34; android-matrix-def.mjs GEAR_ZONE has the reasoning): no tappable node of the app may intersect the zone in the top right corner that the host's
+ * round settings button floats over. `screen` is { w, h, scale } in pixels (scale = density / 160); the zone is `GEAR_ZONE.width` dp wide at the right edge, from the top of the window down to
+ * the emulator's 24 dp status bar plus `GEAR_ZONE.below` dp (the matrix's "three-button" profile; a taller status bar only moves the controls down with it). Window-sized layers (a dimming
+ * backdrop that dismisses on tap) are not buttons. Returns [{ text, detail }] for the nodes of the app's own package that are clickable and enabled.
+ */
+export const STATUS_BAR_DP = 24;
+export function gearIssues(nodes, screen) {
+  const scale = screen.scale ?? 1;
+  const zone = { x1: screen.w - GEAR_ZONE.width * scale, y1: 0, x2: screen.w, y2: (STATUS_BAR_DP + GEAR_ZONE.below) * scale };
+  const issues = [];
+  for (const n of nodes) {
+    if (n.pkg !== PACKAGE || !n.clickable || !n.enabled || n.bounds === null) continue;
+    const { x1, y1, x2, y2, w, h } = n.bounds;
+    if (w <= 0 || h <= 0) continue;
+    if (w >= screen.w * 0.9 && h >= screen.h * 0.9) continue;
+    const overlapW = Math.min(x2, zone.x2) - Math.max(x1, zone.x1);
+    const overlapH = Math.min(y2, zone.y2) - Math.max(y1, zone.y1);
+    if (overlapW > 2 * scale && overlapH > 2 * scale) {
+      const name = n.desc || n.text || n.id || n.cls;
+      issues.push({ text: name, detail: `box ${x1}..${x2} x ${y1}..${y2} px reaches into the gear zone ${Math.round(zone.x1)}..${zone.x2} x 0..${Math.round(zone.y2)} px` });
     }
   }
   return issues;
