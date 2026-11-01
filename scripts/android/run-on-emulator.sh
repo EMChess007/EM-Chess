@@ -9,6 +9,7 @@
 #   small-gallery                       the on-device text-fit probe and the Piece gallery pixels (the gallery does not depend on the window: the cramped phone runs it)
 #   large-screens-1 | large-screens-2   the board and tab screens on the large phone (the emulator's own screen, font scale 1.0)
 #   large-touch                         the text-fit probe, real touches on the 2-player board and on both Bughouse boards - edge-to-edge and in the frame of the phone of command #26
+#   large-perf                          the performance budget (command #33): taps, bot reply, arrows and the Bughouse clocks timed by the app, the JavaScript thread's lateness (lib/perf.mjs)
 #   online                              the backend + the buddies: register, sign in, spectate, the online Bughouse game, then the backend STOPPED and the offline states (cramped phone)
 #   all                                 every slice, one after the other (a local run)
 # A failing slice never stops the later ones; the exit code is non-zero if any failed.
@@ -83,6 +84,7 @@ case "$job" in
   large-screens-1) phase large static screens1 --parts screens --shard 1/2 ;;
   large-screens-2) phase large static screens2 --parts screens --shard 2/2 ;;
   large-touch) phase large static touch --parts textfit,touch2p,touchbug,touchinset ;;
+  large-perf) phase large static perf --parts perf ;;
   online) online ;;
   all)
     phase small static screens1 --parts screens --shard 1/2
@@ -91,6 +93,7 @@ case "$job" in
     phase large static screens1 --parts screens --shard 1/2
     phase large static screens2 --parts screens --shard 2/2
     phase large static touch --parts textfit,touch2p,touchbug,touchinset
+    phase large static perf --parts perf
     online
     ;;
   *) echo "[run] unknown job '$job'" >&2; exit 2 ;;

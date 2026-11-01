@@ -134,7 +134,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job: [small-screens-1, small-screens-2, small-gallery, large-screens-1, large-screens-2, large-touch, online]
+        job: [small-screens-1, small-screens-2, small-gallery, large-screens-1, large-screens-2, large-touch, large-perf, online]
     env:
       ANDROID_E2E_ALL: ${{ github.event.inputs.all_screens == 'true' && '1' || '' }}
     services:

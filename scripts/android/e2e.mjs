@@ -23,7 +23,9 @@ import { SCREENS } from '../browser/android-matrix-screens.mjs';
 // Bughouse's screens live in an optional file (a branch without Bughouse has none): the run then covers the screens it has.
 const EXTRA_SCREENS = await import('../browser/android-matrix-screens-extra.mjs').then((m) => m.EXTRA_SCREENS, () => []);
 import { Device, PROFILES, sleep } from './lib/device.mjs';
+import { Chess } from 'chess.js';
 import { Beacon } from './lib/beacon.mjs';
+import { PHONE_BUDGET, judgePerf, latenciesOf, scaledBudget, summarize, windowStats } from './lib/perf.mjs';
 import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
 import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
@@ -46,7 +48,7 @@ if (!profile || !['static', 'online', 'offline'].includes(phase)) {
   process.exit(2);
 }
 // --parts: which checks of the static phase this run does (the workflow runs them in parallel jobs); --shard i/n: this run's share of the screens; --tag: a suffix for the output folder
-const PARTS = new Set(arg('parts', 'screens,textfit,gallery,touch2p,touchbug,touchinset').split(','));
+const PARTS = new Set(arg('parts', 'screens,textfit,gallery,touch2p,touchbug,touchinset,perf').split(','));
 const SHARD = (() => {
   const m = /^(\d+)\/(\d+)$/.exec(arg('shard', '1/1'));
   if (!m || Number(m[1]) < 1 || Number(m[1]) > Number(m[2])) {
@@ -688,6 +690,133 @@ async function touchesBughouseBody(dev, name, inset) {
   }
 }
 
+// --- performance (command #33) -------------------------------------------------------------------------------------------------------------------------------------------------------
+/** The next report of the app's performance probe (src/dev/e2ePerf.ts; every 500 ms), at least 300 ms after `after`'s. */
+const nextPerf = (dev, after = null) => dev.beacon.waitFor('perf', (s) => after === null || s.now > after.now + 300, 10_000);
+
+/**
+ * THE PERFORMANCE BUDGET (command #33, TESTING.md section 49; scripts/android/lib/perf.mjs has the numbers and the arithmetic). The phone lagged and no check could say so. This plays a real
+ * game against a bot (Kiddo, White, 3 min) and a local Bughouse game with four humans (both clocks running) and reads from the app's own stopwatch how long each input took to reach the
+ * drawn frame, and how late the JavaScript thread ran: a tap that selects, a tap that moves, the bot's reply, a Bughouse tap; a held-and-dragged arrow; six idle seconds of each game
+ * (the clocks only). The run FAILS when a 95th percentile or the longest gap is over the budget scaled by the runner's health - labelled RUNNER or APP like every other failure.
+ */
+async function perf(dev) {
+  const name = 'performance: taps, bot reply, arrows, Bughouse clocks';
+  await scenario(dev, name, async () => {
+    const samples = { select: [], move: [], botReply: [], bugTap: [] };
+    const windows = [];
+    const notes = [];
+    const pushSamples = (report, from) => {
+      for (const kind of Object.keys(samples)) samples[kind].push(...latenciesOf(report, kind, from).map((l) => l.frameMs));
+    };
+
+    // ---- 2-player against a bot -----------------------------------------------------------------------------------------------------------------------------------------------------
+    await toHome(dev);
+    dev.beacon.forget('state-board-2p');
+    dev.beacon.forget('perf');
+    await dev.runSteps([{ text: 'Play' }, { text: 'Classic', nth: 0 }, { text: 'Kiddo' }, { text: 'White' }, { text: '3 min' }]);
+    const first = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50, 40_000);
+    if (!first) throw new Error('the 2-player board against the bot reported no state');
+    await dev.beacon.settled(['state-board-2p'], 3000, 20_000);
+    const start2p = await nextPerf(dev);
+    if (!start2p) throw new Error('the app sent no performance report: the probe is not in this build (EXPO_PUBLIC_E2E)');
+    const game = (state) => new Chess(state.fen);
+    for (let ply = 0; ply < 8; ply++) {
+      const state = await dev.beacon.waitFor('state-board-2p', (s) => s.fen.split(' ')[1] === 'w' && s.rect && s.rect.w > 50, 30_000);
+      if (!state) {
+        notes.push(`the bot did not answer in 30 s before ply ${ply + 1}`);
+        break;
+      }
+      const moves = game(state).moves({ verbose: true }).filter((m) => m.piece !== 'k' && !m.promotion);
+      if (moves.length === 0) break;
+      const move = moves[(ply * 5) % moves.length];
+      const board = rectOfState(state);
+      const o = state.orientation ?? 'w';
+      const from = squareRect(board, o, move.from);
+      dev.press(from.cx, from.cy, 90);
+      if (!(await waitSelected(dev, 'state-board-2p', move.from, 4000))) {
+        notes.push(`ply ${ply + 1}: touching ${move.from} did not select it`);
+        continue;
+      }
+      const to = squareRect(board, o, move.to);
+      dev.press(to.cx, to.cy, 90);
+      await dev.beacon.waitFor('state-board-2p', (s) => s.fen !== state.fen, 4000);
+    }
+    // the bot's last reply, then a held-and-dragged arrow three times (the gesture that waits 400 ms: it must not freeze the thread), then six idle seconds
+    const settled = await dev.beacon.waitFor('state-board-2p', (s) => s.fen.split(' ')[1] === 'w' && s.rect && s.rect.w > 50, 30_000);
+    if (settled) {
+      const board = rectOfState(settled);
+      const o = settled.orientation ?? 'w';
+      const at = (sq) => squareRect(board, o, sq);
+      const a0 = await nextPerf(dev);
+      dev.drawArrow(at('g1').cx, at('g1').cy, at('f3').cx, at('f3').cy);
+      dev.drawArrow(at('b1').cx, at('b1').cy, at('c3').cx, at('c3').cy);
+      dev.drawArrow(at('d2').cx, at('d2').cy, at('d4').cx, at('d4').cy);
+      const a1 = await nextPerf(dev, a0);
+      if (a0 && a1) windows.push({ name: '2-player: three drawn arrows', stats: windowStats(a0, a1) });
+      const i0 = await nextPerf(dev, a1);
+      await sleep(6000);
+      const i1 = await nextPerf(dev, i0);
+      if (i0 && i1) windows.push({ name: '2-player: six idle seconds (clocks running)', stats: windowStats(i0, i1) });
+    }
+    const end2p = await nextPerf(dev);
+    if (end2p) pushSamples(end2p, start2p.now);
+
+    // ---- Bughouse, four humans, both clocks running -----------------------------------------------------------------------------------------------------------------------------------
+    // (the small phone refuses four humans on two boards by design: this part needs the large one)
+    if (profile.id === 'small') {
+      notes.push('Bughouse part skipped on the small phone (it refuses four humans on two boards)');
+    } else {
+      await toHome(dev);
+      dev.beacon.forget('state-board-A');
+      dev.beacon.forget('state-board-B');
+      await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse local' }, { id: 'preset-four' }, { id: 'bughouse-start' }, { text: '3 min' }]);
+      const states = {};
+      for (const b of ['A', 'B']) states[b] = await dev.beacon.waitFor(`state-board-${b}`, (s) => s.rect && s.rect.w > 50, 40_000);
+      if (!states.A || !states.B) throw new Error('the Bughouse boards reported no state');
+      await dev.beacon.settled(['state-board-A', 'state-board-B']);
+      const b0 = await nextPerf(dev);
+      await sleep(8000);
+      const b1 = await nextPerf(dev, b0);
+      if (b0 && b1) windows.push({ name: 'Bughouse (4 humans): eight idle seconds, both clocks running', stats: windowStats(b0, b1) });
+      const plies = ['e2e4', 'e7e5', 'g1f3', 'b8c6'];
+      const t0 = await nextPerf(dev, b1);
+      for (const b of ['A', 'B']) {
+        for (const ply of plies) {
+          const latest = dev.beacon.get(`state-board-${b}`);
+          const board = rectOfState(latest);
+          const o = latest.orientation ?? 'w';
+          const from = squareRect(board, o, ply.slice(0, 2));
+          dev.press(from.cx, from.cy, 90);
+          if (!(await waitSelected(dev, `state-board-${b}`, ply.slice(0, 2), 4000))) {
+            notes.push(`board ${b}: touching ${ply.slice(0, 2)} did not select it`);
+            continue;
+          }
+          const to = squareRect(board, o, ply.slice(2));
+          dev.press(to.cx, to.cy, 90);
+          await dev.beacon.waitFor(`state-board-${b}`, (s) => s.selected === null && s.fen !== latest.fen, 4000);
+        }
+      }
+      const t1 = await nextPerf(dev, t0);
+      if (t0 && t1) {
+        windows.push({ name: 'Bughouse (4 humans): sixteen taps on the two boards', stats: windowStats(t0, t1) });
+        pushSamples(t1, t0.now);
+      }
+    }
+
+    const budget = scaledBudget(health);
+    const issues = judgePerf({ samples, windows }, budget, profile.id === 'small' ? { select: 4, move: 4, botReply: 3, bugTap: 0 } : undefined);
+    const line = (label, values) => `${label}: ${summarize(values)}`;
+    const numbers = [line('select', samples.select), line('move', samples.move), line('botReply', samples.botReply), line('bugTap', samples.bugTap), ...windows.map((w) => `${w.name}: wall ${w.stats.wallMs} ms, thread ${Math.round(w.stats.busyShare * 100)} % late, longest gap ${w.stats.maxStallMs} ms, gaps>=100 ${w.stats.stalls100}, >=250 ${w.stats.stalls250}`)];
+    log(`performance (frame times to the drawn picture; budget scaled x${(budget.selectP95Ms / PHONE_BUDGET.selectP95Ms).toFixed(1)} = select ${budget.selectP95Ms} / move ${budget.moveP95Ms} / bot ${budget.botReplyP95Ms} / bug ${budget.bugTapP95Ms} ms, gap ${budget.stallMs} ms):`);
+    for (const n of numbers) log(`  ${n}`);
+    for (const n of notes) log(`  note: ${n}`);
+    writeFileSync(join(OUT, 'perf.json'), JSON.stringify({ budget, samples, windows, notes }, null, 1));
+    await dev.snapshot('perf');
+    record(name, [...issues, ...notes.filter((n) => /did not select|did not answer/.test(n)).map((n) => `input: ${n}`)], numbers.join(' | '));
+  });
+}
+
 // --- online --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 async function register() {
   const tag = randomBytes(4).toString('hex');
@@ -1095,6 +1224,8 @@ try {
     if (PARTS.has('touchbug')) await touchesBughouse(dev, false);
     // the same two boards in the frame of the phone of command #26 (root view below the status bar): where the reverted fix fails
     if (PARTS.has('touchinset')) await touchesBughouse(dev, true);
+    // the performance budget (command #33): its own slice, so the emulator is not busy with anything else
+    if (PARTS.has('perf')) await perf(dev);
   } else if (phase === 'online') {
     const account = await online(dev);
     // Straight on to the offline states, in the same run: a fresh app (the game of the scenario above, still saved for a rejoin, would otherwise open at launch), signed in with the same

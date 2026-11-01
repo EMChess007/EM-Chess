@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BughouseBoard from '../components/BughouseBoard';
 import BughouseBoardBlock from '../components/BughouseBoardBlock';
 import BughouseRulesSheet from '../components/BughouseRulesSheet';
-import { getTouchDebugOverlay } from '../components/devOverlayRegistry';
+import { getE2ePerf, getTouchDebugOverlay } from '../components/devOverlayRegistry';
 import { useBoardMarks } from '../components/useBoardMarks';
 import { pieceInk } from '../components/pieceArt';
 import PieceIcon from '../components/PieceIcon';
@@ -443,7 +443,10 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         marks={board === 'A' ? marksA : marksB}
         bank={state.bank}
         statusYou={layout.kind === 'standard' ? seatAt(board, match.verdicts[board].turn) === layout.seat : actors[board] !== null}
-        onTapSquare={dual ? (tapped, square) => dualInput(tapped, { kind: 'tapSquare', square }) : onTapSquare}
+        onTapSquare={(tapped, square) => {
+          getE2ePerf()?.start('bugTap', `board-${tapped}`); // (end-to-end build only; src/dev/e2ePerf.ts)
+          return dual ? dualInput(tapped, { kind: 'tapSquare', square }) : onTapSquare(tapped, square);
+        }}
         onPickPocket={dual ? (tapped, piece) => dualInput(tapped, { kind: 'pickPocket', piece }) : onPickPocket}
         outlined={summary !== null && summary.decidingBoard === board}
         compact={dual || arrangement === 'sideBySide'}

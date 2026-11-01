@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { PixelRatio, View } from 'react-native';
-import type { E2eStateProbeProps } from '../components/devOverlayRegistry';
+import { getE2ePerf, type E2eStateProbeProps } from '../components/devOverlayRegistry';
 import { e2eReport } from './e2eBeacon';
 
 /**
@@ -16,6 +16,10 @@ export default function E2eStateProbe({ channel, state, rectOf }: E2eStateProbeP
   const json = JSON.stringify(state);
   // every mounted board has its own number, so a new game with the same position and rectangle as the last is still reported (the beacon sends only CHANGED states)
   const mount = useRef(++mounts).current;
+  // Command #33: this effect runs AFTER the board's new state was committed - the end of the latency the app's input started (e2ePerf.ts).
+  useEffect(() => {
+    getE2ePerf()?.end(channel);
+  }, [channel, json]);
   useEffect(() => {
     const report = (rect: Record<string, number> | null) => e2eReport(`state-${channel}`, { ...JSON.parse(json), mount, ...(rect ? { rect } : {}) });
     const measure = () => {
