@@ -39,10 +39,16 @@ describe('the performance budget', () => {
 
   it('passes a calm run and fails each kind of overrun with its own sentence', () => {
     expect(judgePerf({ samples: fine, windows: [calm] }, budget)).toEqual([]);
-    expect(judgePerf({ samples: { ...fine, select: [40, 50, 60, 130] }, windows: [calm] }, budget)[0]).toMatch(/^select: p95 130 ms .* over the budget of 100 ms/);
-    expect(judgePerf({ samples: { ...fine, move: [60, 70, 80, 151] }, windows: [calm] }, budget)[0]).toMatch(/^move: p95 151/);
+    // the MEDIAN is held to the limit: a slow typical tap fails ...
+    expect(judgePerf({ samples: { ...fine, select: [101, 120, 130, 140] }, windows: [calm] }, budget)[0]).toMatch(/^select: the MEDIAN 120 ms .* over the budget of 100 ms/);
+    expect(judgePerf({ samples: { ...fine, move: [151, 160, 170, 180] }, windows: [calm] }, budget)[0]).toMatch(/^move: the MEDIAN 160/);
+    // ... one bad sample among good ones (a shared emulator's bad second) does not, until it is more than 2.5 x the limit
+    expect(judgePerf({ samples: { ...fine, select: [40, 50, 60, 249] }, windows: [calm] }, budget)).toEqual([]);
+    expect(judgePerf({ samples: { ...fine, select: [40, 50, 60, 251] }, windows: [calm] }, budget)[0]).toMatch(/^select: p95 251 ms .* over 2.5 x the budget of 100 ms/);
     expect(judgePerf({ samples: fine, windows: [{ name: 'Bughouse', stats: { ...calm.stats, maxStallMs: 250 } }] }, budget)[0]).toMatch(/Bughouse: the JavaScript thread stood still for 250 ms/);
-    expect(judgePerf({ samples: fine, windows: [{ name: 'Bughouse', stats: { ...calm.stats, busyShare: 0.5 } }] }, budget)[0]).toMatch(/50 % late/);
+    // the thread's lateness is judged in an idle window only (the driver's own touches load the emulator in the others)
+    expect(judgePerf({ samples: fine, windows: [{ name: 'Bughouse', idle: true, stats: { ...calm.stats, busyShare: 0.5 } }] }, budget)[0]).toMatch(/50 % late/);
+    expect(judgePerf({ samples: fine, windows: [{ name: 'taps', stats: { ...calm.stats, busyShare: 0.9 } }] }, budget)).toEqual([]);
   });
 
   it('too few samples is a finding, never a pass', () => {

@@ -757,7 +757,7 @@ async function perf(dev) {
       const i0 = await nextPerf(dev, a1);
       await sleep(6000);
       const i1 = await nextPerf(dev, i0);
-      if (i0 && i1) windows.push({ name: '2-player: six idle seconds (clocks running)', stats: windowStats(i0, i1) });
+      if (i0 && i1) windows.push({ name: '2-player: six idle seconds (clocks running)', idle: true, stats: windowStats(i0, i1) });
     }
     const end2p = await nextPerf(dev);
     if (end2p) pushSamples(end2p, start2p.now);
@@ -778,7 +778,7 @@ async function perf(dev) {
       const b0 = await nextPerf(dev);
       await sleep(8000);
       const b1 = await nextPerf(dev, b0);
-      if (b0 && b1) windows.push({ name: 'Bughouse (4 humans): eight idle seconds, both clocks running', stats: windowStats(b0, b1) });
+      if (b0 && b1) windows.push({ name: 'Bughouse (4 humans): eight idle seconds, both clocks running', idle: true, stats: windowStats(b0, b1) });
       const plies = ['e2e4', 'e7e5', 'g1f3', 'b8c6'];
       const t0 = await nextPerf(dev, b1);
       for (const b of ['A', 'B']) {
