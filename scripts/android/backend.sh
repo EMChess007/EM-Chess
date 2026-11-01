@@ -68,7 +68,19 @@ case "${1:-}" in
     echo "[backend] its first lines:"
     head -n 4 "$state/buddy3.log" || true
     ;;
+  friend)
+    # W6: a logged-in FRIEND for the phone's room (command #32): joins the room whose 6-character code is the second argument, then plays as the phone's teammate.
+    code="${2:?usage: backend.sh friend <room code>}"
+    stop_one "$state/friend.pid"
+    BACKEND_URL=http://localhost:3000 nohup $tsx scripts/bughouse-friend-buddy.mjs "$code" > "$state/friend.log" 2>&1 &
+    echo $! > "$state/friend.pid"
+    echo "[backend] a friend buddy started for the room (pid $(cat "$state/friend.pid"))"
+    sleep 5
+    echo "[backend] its first lines:"
+    head -n 3 "$state/friend.log" || true
+    ;;
   stop)
+    stop_one "$state/friend.pid"
     for n in 1 2 3; do stop_one "$state/buddy$n.pid"; done
     stop_one "$state/backend.pid"
     echo "[backend] stopped"

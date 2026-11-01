@@ -50,6 +50,9 @@ interface PlayModeSelectScreenProps {
   /** Bughouse (two teams of two, two boards): Local (seat setup, bots allowed) and Online (W4, behind the login gate: queue, bots fill the empty seats after 30 s). */
   onBughouse: () => void;
   onBughouseOnline: () => void;
+  /** Bughouse FRIEND ROOMS (W6, behind the login gate): open a room and invite a friend / join one with a code. */
+  onBughouseFriend: () => void;
+  onBughouseJoin: () => void;
   /** Set while the player has left an online 4 Player game that is still going: offers "Return to your game". */
   onFourPlayerResume?: () => void;
   /** Which game that left online game is, so the link sits under its card (4 Player Chess when omitted, as before Chaturaji). */
@@ -107,6 +110,8 @@ export default function PlayModeSelectScreen({
   onChaturajiOnline,
   onBughouse,
   onBughouseOnline,
+  onBughouseFriend,
+  onBughouseJoin,
   onFourPlayerResume,
   fourPlayerResumeVariant = 'ffa',
   onBughouseResume,
@@ -145,6 +150,8 @@ export default function PlayModeSelectScreen({
   const handleFourPlayerGiveawayOnline = requireLogin(onFourPlayerGiveawayOnline);
   const handleChaturajiOnline = requireLogin(onChaturajiOnline);
   const handleBughouseOnline = requireLogin(onBughouseOnline);
+  const handleBughouseFriend = requireLogin(onBughouseFriend);
+  const handleBughouseJoin = requireLogin(onBughouseJoin);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [bughouseRulesOpen, setBughouseRulesOpen] = useState(false);
   const resumeLink = (variant: FourVariant) =>
@@ -335,6 +342,14 @@ export default function PlayModeSelectScreen({
             </Pressable>
             <Pressable accessibilityLabel="Bughouse online" testID="bughouse-online-button" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={handleBughouseOnline}>
               <ModeButtonLabel label="Online" style={styles.subButtonText} />
+            </Pressable>
+          </View>
+          <View style={styles.subButtonRow}>
+            <Pressable accessibilityLabel="Bughouse play with a friend" testID="bughouse-friend-button" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={handleBughouseFriend}>
+              <ModeButtonLabel label="Play with a friend" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable accessibilityLabel="Bughouse join with a code" testID="bughouse-join-button" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={handleBughouseJoin}>
+              <ModeButtonLabel label="Join with a code" style={styles.subButtonText} />
             </Pressable>
           </View>
           <Pressable accessibilityLabel="Bughouse rules" testID="bughouse-rules-link" style={styles.spectateLink} onPress={() => setBughouseRulesOpen(true)}>

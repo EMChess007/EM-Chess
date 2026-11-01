@@ -46,6 +46,8 @@ import TournamentScreen from './src/screens/TournamentScreen';
 import TournamentStandingsScreen from './src/screens/TournamentStandingsScreen';
 import BughouseGameScreen from './src/screens/BughouseGameScreen';
 import BughouseMatchmakingScreen from './src/screens/BughouseMatchmakingScreen';
+import BughouseRoomScreen, { type BughouseRoomMode } from './src/screens/BughouseRoomScreen';
+import { inviteCodeFromPath, timeControlOfMatch } from './src/logic/bughouseFriendRoomUi';
 import BughouseOnlineGameScreen from './src/screens/BughouseOnlineGameScreen';
 import BughouseSpectatorScreen from './src/screens/BughouseSpectatorScreen';
 import type { BugMatchFoundPayload } from './src/logic/bughouse/wire';
@@ -171,6 +173,9 @@ type Screen =
   // Bughouse Online (W4): pick one of the six time controls -> queue -> the game (the server's).
   | { name: 'bughouseOnlineTimeControl'; token: string }
   | { name: 'bughouseMatchmaking'; token: string; timeControl: TimeControl }
+  // Bughouse FRIEND ROOMS (W6): "Play with a friend" -> a time control -> the room; "Join with a code" (or an invite link) -> the code field -> the room.
+  | { name: 'bughouseRoomTimeControl'; token: string }
+  | { name: 'bughouseRoom'; token: string; mode: BughouseRoomMode }
   | { name: 'bughouseOnlineGame'; token: string; match: BugMatchFoundPayload; timeControl: TimeControl; resume: boolean }
   | { name: 'themeSelect' }
   | { name: 'streak' }
@@ -237,6 +242,19 @@ export default function App() {
   // the wrong theme for even one frame is exactly the reported bug (dark-mode users seeing a
   // flash of light background at cold start) — so nothing renders until it's known for certain.
   const [themeReady, setThemeReady] = useState(false);
+  // W6: an invite link (web) opens the app at /bughouse/join/<code>. Once the player is signed in (friend rooms need an account) the Join screen opens with the code already in it; the player
+  // still presses Join. The address is put back to "/" so a refresh does not reopen it.
+  const [inviteCode, setInviteCode] = useState<string | null>(() => (Platform.OS === 'web' && typeof window !== 'undefined' ? inviteCodeFromPath(window.location.pathname) : null));
+  useEffect(() => {
+    if (!inviteCode || !authSession) return;
+    setInviteCode(null);
+    try {
+      window.history.replaceState(null, '', '/');
+    } catch {
+      /* no history API: the link just stays in the address bar */
+    }
+    setScreen({ name: 'bughouseRoom', token: authSession.token, mode: { kind: 'join', code: inviteCode } });
+  }, [inviteCode, authSession]);
 
   const colors = useAppColors();
   // Nothing renders until the bundled font is settled (loaded, failed or too slow): see logic/typography.ts.
@@ -420,6 +438,8 @@ export default function App() {
         onChaturajiOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'chaturaji', token: authSession.token })}
         onBughouse={() => setScreen({ name: 'bughouseSetup', seats: presetSeatConfig('solo') })}
         onBughouseOnline={() => authSession && setScreen({ name: 'bughouseOnlineTimeControl', token: authSession.token })}
+        onBughouseFriend={() => authSession && setScreen({ name: 'bughouseRoomTimeControl', token: authSession.token })}
+        onBughouseJoin={() => authSession && setScreen({ name: 'bughouseRoom', token: authSession.token, mode: { kind: 'join' } })}
         fourPlayerResumeVariant={fourResume ? fourVariantOf(fourResume.match) : undefined}
         onFourPlayerResume={
           fourResume && authSession?.token === fourResume.token
@@ -941,6 +961,30 @@ export default function App() {
         onlyIds={BUGHOUSE_TIME_CONTROL_IDS}
         onSelect={(timeControl) => setScreen({ name: 'bughouseMatchmaking', token, timeControl })}
         onBack={() => setScreen({ name: 'playModeSelect' })}
+      />
+    );
+  } else if (screen.name === 'bughouseRoomTimeControl') {
+    const { token } = screen;
+    content = (
+      <TimeControlSelectScreen
+        subtitle="Bughouse · Play with a friend"
+        excludeCategories={['rapid', 'daily', 'unlimited']}
+        onlyIds={BUGHOUSE_TIME_CONTROL_IDS}
+        onSelect={(timeControl) => setScreen({ name: 'bughouseRoom', token, mode: { kind: 'create', timeControl: bughouseTimeControlOf(timeControl) } })}
+        onBack={() => setScreen({ name: 'playModeSelect' })}
+      />
+    );
+  } else if (screen.name === 'bughouseRoom') {
+    const { token, mode } = screen;
+    content = (
+      <BughouseRoomScreen
+        authToken={token}
+        mode={mode}
+        onMatchFound={(match, label) => {
+          setBughouseResume(null);
+          setScreen({ name: 'bughouseOnlineGame', token, match, timeControl: timeControlOfMatch(match.timeControl, label || match.timeControlLabel), resume: false });
+        }}
+        onExit={() => setScreen({ name: 'playModeSelect' })}
       />
     );
   } else if (screen.name === 'bughouseMatchmaking') {

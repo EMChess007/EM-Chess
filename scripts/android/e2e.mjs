@@ -160,7 +160,7 @@ const POSITION_HEADINGS = { Classic: ['Bots', 'Local', 'Engine vs Engine'], 'Set
  * Cards near the end of the Play menu: swipe to the bottom WITHOUT reading the screen between swipes (a tree costs several seconds on the CI emulator, and finding the Bughouse card
  * by looking after each swipe took a minute), then back up to the card. The bottom of the list shows Bughouse, Engine vs Engine and the Board Editor.
  */
-const BLIND = { 'Bughouse local': { down: 9 }, 'Bughouse online': { down: 9 }, 'Bughouse rules': { down: 9 }, 'bughouse-rules-link': { down: 9 }, 'Chaturaji local': { down: 9, up: 1 }, 'chaturaji-rules-link': { down: 9, up: 1 } };
+const BLIND = { 'Bughouse local': { down: 9 }, 'Bughouse online': { down: 9 }, 'Bughouse play with a friend': { down: 9 }, 'Bughouse join with a code': { down: 9 }, 'Bughouse rules': { down: 9 }, 'bughouse-rules-link': { down: 9 }, 'Chaturaji local': { down: 9, up: 1 }, 'chaturaji-rules-link': { down: 9, up: 1 } };
 function phoneStep(step) {
   const headings = step.text === undefined ? undefined : POSITION_HEADINGS[step.text];
   const positioned = step.nth !== undefined && headings?.[step.nth] ? { text: step.text, below: headings[step.nth] } : step;
@@ -800,7 +800,44 @@ async function online(dev) {
       dev.dumpGapMs = undefined;
     }
   });
+  await friendRoom(dev);
   return account;
+}
+
+/**
+ * BUGHOUSE FRIEND ROOM (command #32, W6), the host's side on the phone against the run's own backend: Play > Bughouse > Play with a friend > 5 min opens a room (a 6-character code, the friend
+ * slot waiting, the countdown); a FRIEND (a second logged-in account, `backend.sh friend <code>`, a socket.io client that joins the room) enters and the slot says so; "Start with bots" starts
+ * the match with the two bots on the other team, and the game screen's boards appear (the app's own report). The text checks run on the room screen in both states.
+ */
+async function friendRoom(dev) {
+  const name = 'online: friend room';
+  await scenario(dev, name, async () => {
+    await toHome(dev);
+    dev.beacon.forgetAll();
+    const issues = [];
+    await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse play with a friend' }, { text: '5 min' }]);
+    const created = await dev.waitFor('the room code', (list) => list.some((n) => n.id === 'bughouse-room-code' && /^[A-HJKMNP-Z2-9]{6}$/.test(n.text)), 40_000, 1200);
+    const code = created.find((n) => n.id === 'bughouse-room-code').text;
+    issues.push(...crashIssues(created), ...textIssues(created, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`));
+    const slot = (list, id) => list.find((n) => n.id === id)?.text ?? '';
+    if (slot(created, 'bughouse-room-slot-2') !== 'Friend: waiting') issues.push(`the free friend slot reads "${slot(created, 'bughouse-room-slot-2')}", not "Friend: waiting"`);
+    if (!created.some((n) => n.id === 'bughouse-room-countdown' && /The code works for \d+:\d\d/.test(n.text))) issues.push('no countdown of the code\'s life on the room screen');
+    await dev.snapshot('friend-room-waiting');
+    execFileSync('bash', ['scripts/android/backend.sh', 'friend', code], { stdio: 'inherit' });
+    const joined = await dev.waitFor('the friend in the room', (list) => /^Friend: friend/.test(slot(list, 'bughouse-room-slot-2')), 40_000, 1500);
+    issues.push(...textIssues(joined, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`));
+    await dev.snapshot('friend-room-joined');
+    const bots = joined.find((n) => n.id === 'bughouse-room-bots' && n.bounds);
+    if (!bots) issues.push('no "Start with bots" button once the friend is in');
+    else {
+      dev.beacon.forget('state-board-A');
+      dev.beacon.forget('state-board-B');
+      dev.tap(bots.bounds.cx, bots.bounds.cy);
+      const game = await dev.beacon.waitFor('state-board-B', (s) => typeof s.fen === 'string', 60_000);
+      if (!game) issues.push('Start with bots: the game screen did not appear (no board reported within 60 s)');
+    }
+    record(name, issues, `the room code was read from the screen and given to the friend buddy; the match started with bots`);
+  });
 }
 
 async function onlineGame(dev, account, progress = { issues: [] }) {
