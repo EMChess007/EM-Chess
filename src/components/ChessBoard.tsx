@@ -21,7 +21,7 @@ import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { ExplodedPiece, Move, PieceColor, Piece as PieceModel, SpellCast } from '../types/chess';
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
 import { getBoardSize } from './boardSize';
-import { getE2eStateProbe } from './devOverlayRegistry';
+import { getE2ePerf, getE2eStateProbe } from './devOverlayRegistry';
 import PromotionPicker from './PromotionPicker';
 import { useBoardGestures } from './useBoardGestures';
 import { useClearAnnotationsOnMove } from './useClearAnnotationsOnMove';
@@ -554,6 +554,7 @@ function ChessBoard({
 
   const handleSquarePress = (square: string) => {
     if (disabled || gameOver || pendingPromotion) return;
+    getE2ePerf()?.start(selectedSquare === null ? 'select' : 'move', 'board-2p'); // (end-to-end build only: the latency from this tap to the committed state; src/dev/e2ePerf.ts)
 
     // Crazyhouse: a reserve piece is picked up — a tap on one of its legal squares drops it; a tap anywhere else puts it
     // back and carries on as an ordinary tap (so tapping one of your own pieces selects it in one go).

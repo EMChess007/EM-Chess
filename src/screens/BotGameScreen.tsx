@@ -9,6 +9,7 @@ import ChessBoard, { type PremoveIntent } from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import GameScreenBody from '../components/GameScreenBody';
+import { getE2ePerf } from '../components/devOverlayRegistry';
 import MoveListStrip from '../components/MoveListStrip';
 import { useStableCallback } from '../components/useStableCallback';
 import PostGameSummaryModal from '../components/PostGameSummaryModal';
@@ -670,6 +671,7 @@ export default function BotGameScreen({
         clock.applyIncrement(botColor);
         playMoveSound(move);
         triggerMoveHaptics(move);
+        getE2ePerf()?.start('botReply', 'board-2p'); // (end-to-end build only: the time from the engine's answer to the board showing it; src/dev/e2ePerf.ts)
         setHistory((h) => [
           ...h,
           {

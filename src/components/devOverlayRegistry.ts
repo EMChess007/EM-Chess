@@ -38,6 +38,24 @@ export function getE2eStateProbe(): ComponentType<E2eStateProbeProps> | null {
   return registeredProbe;
 }
 
+/**
+ * The end-to-end build's performance probe (command #33, `src/dev/e2ePerf.ts`): the time from an input to the committed state and to the drawn frame, and the lateness of the JavaScript
+ * thread. Null in a release build and in a development build that is not the end-to-end build; every call site is `getE2ePerf()?.start(...)`.
+ */
+export interface E2ePerfHook {
+  start: (kind: string, channel: string) => void;
+  end: (channel: string) => void;
+}
+let registeredPerf: E2ePerfHook | null = null;
+
+export function registerE2ePerf(perf: E2ePerfHook): void {
+  registeredPerf = perf;
+}
+
+export function getE2ePerf(): E2ePerfHook | null {
+  return registeredPerf;
+}
+
 /** The end-to-end build's counter of gesture events (a board's responder granted / released / resolved a tap): the driver compares them with what it injected. Null everywhere else. */
 export type E2eGestureCounter = (channel: string, event: string, extra?: Record<string, unknown>) => void;
 let registeredCounter: E2eGestureCounter | null = null;

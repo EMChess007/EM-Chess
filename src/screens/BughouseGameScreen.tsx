@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BughouseBoard from '../components/BughouseBoard';
 import BughouseBoardBlock from '../components/BughouseBoardBlock';
 import BughouseRulesSheet from '../components/BughouseRulesSheet';
-import { getTouchDebugOverlay } from '../components/devOverlayRegistry';
+import { getE2ePerf, getTouchDebugOverlay } from '../components/devOverlayRegistry';
 import { createNowStore, NowProvider, useNowMs, type NowSource } from '../components/NowClock';
 import { useBoardMarks } from '../components/useBoardMarks';
 import { useStableCallback } from '../components/useStableCallback';
@@ -420,7 +420,10 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   const badgeOfB = useCallback((color: BughouseColor) => kingBadge(layout, 'B', color), [layout]);
   const badgeOfBoard = (board: BoardId) => (board === 'A' ? badgeOfA : badgeOfB);
   // The handlers the boards are given: stable identities that run the latest closure (the screen's state is read at the call, not at the render the board last saw).
-  const tapSquare = useStableCallback((tapped: BoardId, square: string) => (dual ? dualInput(tapped, { kind: 'tapSquare', square }) : onTapSquare(tapped, square)));
+  const tapSquare = useStableCallback((tapped: BoardId, square: string) => {
+    getE2ePerf()?.start('bugTap', `board-${tapped}`); // (end-to-end build only: the latency from this tap to the board's committed state; src/dev/e2ePerf.ts)
+    return dual ? dualInput(tapped, { kind: 'tapSquare', square }) : onTapSquare(tapped, square);
+  });
   const pickPocket = useStableCallback((tapped: BoardId, piece: ReservePieceType) => (dual ? dualInput(tapped, { kind: 'pickPocket', piece }) : onPickPocket(tapped, piece)));
   const promotionChoice = useStableCallback((chosen: BoardId, choice: PromotionPiece | 'cancel') => dualInput(chosen, choice === 'cancel' ? { kind: 'cancelPromotion' } : { kind: 'choosePromotion', piece: choice }));
   const summary = gameOverSummary(match);

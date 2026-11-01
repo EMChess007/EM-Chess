@@ -1,7 +1,8 @@
 import { LogBox } from 'react-native';
-import { registerE2eGestureCounter, registerE2eStateProbe } from '../components/devOverlayRegistry';
+import { registerE2eGestureCounter, registerE2ePerf, registerE2eStateProbe } from '../components/devOverlayRegistry';
 import E2eStateProbe from './E2eStateProbe';
 import { e2eCount, isE2eBuild } from './e2eBeacon';
+import { createE2ePerf } from './e2ePerf';
 
 /**
  * DEV ONLY, and only for the Android end-to-end run (command #29, .github/workflows/android-e2e.yml). index.ts loads this file under `if (__DEV__)`, a literal false in a release bundle, so
@@ -17,4 +18,6 @@ if (process.env.EXPO_PUBLIC_E2E === '1') {
 if (isE2eBuild()) {
   registerE2eStateProbe(E2eStateProbe);
   registerE2eGestureCounter(e2eCount);
+  // Command #33: the latency and JavaScript-thread probe (src/dev/e2ePerf.ts). Only here, so an ordinary development build runs no 20 ms timer.
+  registerE2ePerf(createE2ePerf());
 }

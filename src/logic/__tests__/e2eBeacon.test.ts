@@ -125,7 +125,11 @@ describe('it exists only in the end-to-end build', () => {
 
   it('only src/dev imports the beacon and the probe; the boards reach them through the registry', () => {
     const beaconImporters = files.filter((f) => /from\s+'[^']*e2eBeacon'/.test(code(f))).map(rel).sort();
-    expect(beaconImporters).toEqual(['src/dev/E2eStateProbe.tsx', 'src/dev/registerE2e.ts']);
+    expect(beaconImporters).toEqual(['src/dev/E2eStateProbe.tsx', 'src/dev/e2ePerf.ts', 'src/dev/registerE2e.ts']);
+    // command #33: the performance probe is reached the same way - a call site never calls it unguarded (null in every build but the end-to-end one)
+    const perfCallers = files.filter((f) => /getE2ePerf\(\)/.test(code(f)) && !rel(f).endsWith('devOverlayRegistry.ts')).map(rel).sort();
+    expect(perfCallers).toEqual(['src/components/ChessBoard.tsx', 'src/dev/E2eStateProbe.tsx', 'src/screens/BotGameScreen.tsx', 'src/screens/BughouseGameScreen.tsx']);
+    for (const f of perfCallers) for (const use of code(join(root, f)).match(/getE2ePerf\(\)\S*/g) ?? []) expect(use, `${f}: ${use}`).toMatch(/^getE2ePerf\(\)\?\./);
     const probeImporters = files.filter((f) => /from\s+'[^']*E2eStateProbe'/.test(code(f))).map(rel);
     expect(probeImporters).toEqual(['src/dev/registerE2e.ts']);
     const registrationImporters = files.filter((f) => /from\s+'[^']*registerE2e'/.test(code(f)));
@@ -137,7 +141,7 @@ describe('it exists only in the end-to-end build', () => {
 
   it('is registered only when EXPO_PUBLIC_E2E is on in a development build', () => {
     const registration = code(join(root, 'src/dev/registerE2e.ts'));
-    expect(registration).toMatch(/if \(isE2eBuild\(\)\) \{\s*registerE2eStateProbe\(E2eStateProbe\);\s*registerE2eGestureCounter\(e2eCount\);\s*\}/);
+    expect(registration).toMatch(/if \(isE2eBuild\(\)\) \{\s*registerE2eStateProbe\(E2eStateProbe\);\s*registerE2eGestureCounter\(e2eCount\);\s*registerE2ePerf\(createE2ePerf\(\)\);\s*\}/);
   });
 
   it('the switch is set on Metro by the run\'s script and never in a workflow, an env file or a deployment config', () => {
