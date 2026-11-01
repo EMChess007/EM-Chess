@@ -46,9 +46,8 @@ describe('the performance budget', () => {
     expect(judgePerf({ samples: { ...fine, select: [40, 50, 60, 249] }, windows: [calm] }, budget)).toEqual([]);
     expect(judgePerf({ samples: { ...fine, select: [40, 50, 60, 251] }, windows: [calm] }, budget)[0]).toMatch(/^select: p95 251 ms .* over 2.5 x the budget of 100 ms/);
     expect(judgePerf({ samples: fine, windows: [{ name: 'Bughouse', stats: { ...calm.stats, maxStallMs: 250 } }] }, budget)[0]).toMatch(/Bughouse: the JavaScript thread stood still for 250 ms/);
-    // the thread's lateness is judged in an idle window only (the driver's own touches load the emulator in the others)
-    expect(judgePerf({ samples: fine, windows: [{ name: 'Bughouse', idle: true, stats: { ...calm.stats, busyShare: 0.5 } }] }, budget)[0]).toMatch(/50 % late/);
-    expect(judgePerf({ samples: fine, windows: [{ name: 'taps', stats: { ...calm.stats, busyShare: 0.9 } }] }, budget)).toEqual([]);
+    // the thread's lateness SHARE is reported, never judged (a 20 ms timer fires late by itself on the emulator); a long stall is
+    expect(judgePerf({ samples: fine, windows: [{ name: 'Bughouse', idle: true, stats: { ...calm.stats, busyShare: 0.9 } }] }, budget)).toEqual([]);
   });
 
   it('too few samples is a finding, never a pass', () => {
