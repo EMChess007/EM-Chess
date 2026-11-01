@@ -1140,10 +1140,23 @@ async function onlineGame(dev, account, progress = { issues: [] }) {
       try {
         found = await dev.waitFor('the result', finished, 30_000, 1000);
       } catch {
+        // (the result was not on the screen for 30 s: the finder scrolled to it - which is itself the finding of command #33)
         found = await dev.find({ id: 'game-over-headline' }).catch(() => null);
+        issues.push('the result card was below the visible screen: it was only found by scrolling');
       }
       if (found) log('result: ' + (found.text || found.id));
       else issues.push('no sign of a finished game 30 s after the dialog was confirmed (no game-over node, no won / lost / resigned text, even after scrolling)');
+      // THE RESULT CARD MUST BE ON SCREEN WITHOUT SCROLLING (command #33): the phone showed "Team 2 wins" below the visible screen and the player had to scroll to find it. The screen scrolls to the
+      // card by itself when a result arrives; the finder above may have scrolled too, so wait, look at the tree as it is NOW, and require the headline and both buttons fully inside the window.
+      if (found) {
+        await sleep(1500);
+        const tree = await dev.dump().catch(() => []);
+        for (const id of ['game-over-headline', 'bughouse-rematch', 'bughouse-menu']) {
+          const node = tree.find((n) => n.id === id && n.bounds);
+          if (!node) issues.push(`the result card's "${id}" is not on the screen (the tree has no such visible node: the card is below the fold)`);
+          else if (node.bounds.y1 < 0 || node.bounds.y2 > dev.display.h || node.bounds.x1 < 0 || node.bounds.x2 > dev.display.w) issues.push(`the result card's "${id}" is cut off: bounds y ${node.bounds.y1}-${node.bounds.y2} in a window of ${dev.display.h} px`);
+        }
+      }
     }
     await dev.snapshot('online-result');
     record('online: Bughouse game', issues, `${moves} moves played as ${colour} on board ${board}`);

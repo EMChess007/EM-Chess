@@ -240,6 +240,7 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
     <View style={styles.container}>
       <ScreenHeader title={variantTitle(variant)} subtitle={`${variantModeLabel(variant)} · ${timeControl.label}`} onBack={onExit} backLabel="‹ Menu" />
       <GameScreenBody
+        resultShown={!!game.result}
         bottomBar={
           <>
             <View style={styles.controlsWrap}>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Platform, ScrollView, type ScrollViewInstance, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Pressable } from '../components/AppPressable';
 import Text from '../components/BughouseText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -158,6 +158,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   // DEV ONLY (a development build): the touch-debug overlay, switched on from the controls. A release build has neither the switch nor the overlay's code (BughouseBoard).
   const devTouchDebug = typeof __DEV__ !== 'undefined' && __DEV__ && getTouchDebugOverlay() !== null;
   const [touchDebug, setTouchDebug] = useState(false);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
   const [scrollContentHeight, setScrollContentHeight] = useState(0);
   const contentOverflows = scrollViewportHeight > 0 && scrollContentHeight > scrollViewportHeight + 1;
@@ -636,6 +637,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         <ScreenHeader title="Bughouse" subtitle={online ? `${online.view.spectator ? 'Watching' : 'Online'} · ${online.view.timeControlLabel}` : layout.kind === 'passAndPlay' ? 'Local · pass and play' : 'Local'} onBack={onExit} backLabel="‹ Menu" />
       )}
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.content}
         // The two-board layouts do not scroll while everything fits (a scroll view could take a touch from a board); they DO when the content is taller than the window - large text or a
         // wide font wraps a control row onto a second line - so nothing is ever cut off (Android device matrix).
@@ -644,6 +646,8 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         onContentSizeChange={(_w, h) => {
           setScrollContentHeight(h);
           setMeasured({ cell: renderedCell.current, content: h });
+          // The result card joins the content UNDER the boards; on a phone it arrived below the visible screen (command #33): show it as soon as it is there.
+          if (summary !== null) scrollRef.current?.scrollToEnd({ animated: false });
         }}
       >
         {!controlsInBar && <View style={styles.controls}>{controls}</View>}

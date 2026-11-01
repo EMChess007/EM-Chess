@@ -148,6 +148,7 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
     <View style={styles.container}>
       <ScreenHeader title={variantTitle(view.variant)} subtitle={`Online · ${view.timeControlLabel}`} onBack={handleBack} backLabel="‹ Menu" />
       <GameScreenBody
+        resultShown={!!view.gameOver}
         bottomBar={
           <>
             <View style={styles.controlsWrap}>
