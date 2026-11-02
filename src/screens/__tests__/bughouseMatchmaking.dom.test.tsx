@@ -59,7 +59,7 @@ const text = (id: string) => screen.getByTestId(id).textContent ?? '';
 describe('the searching screen', () => {
   it('joins the queue for its time control with the 6 s limit, and says it is looking', () => {
     renderQueue();
-    expect(screen.getByText('Bughouse · 1 min')).toBeTruthy();
+    expect(screen.getByText('Crazy Bughouse · 1 min')).toBeTruthy();
     const [req] = socket.pending('bug_join_queue');
     expect(req.payload).toEqual({ timeControl: { initialMs: 60000, incrementMs: 0 } });
     expect(req.ms).toBe(6000);
@@ -160,35 +160,29 @@ describe('every wait ends', () => {
   });
 });
 
-describe('the Play menu', () => {
+describe('the Online card (command #35: Crazy Bughouse is a chip of Quick Match, no longer a card of its own)', () => {
   const baseProps = (over: Record<string, unknown> = {}): ComponentProps<typeof PlayModeSelectScreen> =>
-    ({ authUser: { id: 'u', username: 'Ana' }, onAuthPress: vi.fn(), onBughouse: vi.fn(), onBughouseOnline: vi.fn(), ...over }) as unknown as ComponentProps<typeof PlayModeSelectScreen>;
+    ({ authUser: { id: 'u', username: 'Ana' }, onAuthPress: vi.fn(), onBughouse: vi.fn(), onOnline: vi.fn(), ...over }) as unknown as ComponentProps<typeof PlayModeSelectScreen>;
 
-  it('the Bughouse card has Local AND Online', () => {
+  it('has no Bughouse Online / friend / join button any more (they are in Quick Match and Challenge a Friend)', () => {
     render(<PlayModeSelectScreen {...baseProps()} />);
-    const card = screen.getByTestId('bughouse-card');
-    expect(card.querySelector('[aria-label="Bughouse local"]')).not.toBeNull();
-    expect(card.querySelector('[aria-label="Bughouse online"]')).not.toBeNull();
+    expect(screen.queryByLabelText('Bughouse online')).toBeNull();
+    expect(screen.queryByLabelText('Bughouse play with a friend')).toBeNull();
+    expect(screen.queryByLabelText('Bughouse join with a code')).toBeNull();
+    expect(screen.getByText('Quick Match')).toBeTruthy();
   });
 
-  it('Online opens the online flow for a signed-in player', () => {
-    const onBughouseOnline = vi.fn();
-    render(<PlayModeSelectScreen {...baseProps({ onBughouseOnline })} />);
-    fireEvent.click(screen.getByLabelText('Bughouse online'));
-    expect(onBughouseOnline).toHaveBeenCalledTimes(1);
-  });
-
-  it('a guest is asked to log in first and the flow does not start', () => {
-    const onBughouseOnline = vi.fn();
+  it('Quick Match asks a guest to log in first and the flow does not start', () => {
+    const onOnline = vi.fn();
     const onAuthPress = vi.fn();
     render(
       <>
-        <PlayModeSelectScreen {...baseProps({ authUser: null, onBughouseOnline, onAuthPress })} />
+        <PlayModeSelectScreen {...baseProps({ authUser: null, onOnline, onAuthPress })} />
         <AppAlertHost />
       </>
     );
-    fireEvent.click(screen.getByLabelText('Bughouse online'));
-    expect(onBughouseOnline).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Quick Match'));
+    expect(onOnline).not.toHaveBeenCalled();
     expect(screen.getByText('Login required')).toBeTruthy();
     fireEvent.click(screen.getByText('Log in / Sign up'));
     expect(onAuthPress).toHaveBeenCalledTimes(1);

@@ -47,38 +47,29 @@ describe('the Play menu', () => {
   const baseProps = (over: Record<string, unknown> = {}): ComponentProps<typeof PlayModeSelectScreen> =>
     ({ authUser: null, onAuthPress: vi.fn(), onBughouse: vi.fn(), ...over }) as unknown as ComponentProps<typeof PlayModeSelectScreen>;
 
-  it('lists Bughouse as a card of its own next to the other variants, with Local and a "How to play" link', () => {
+  it('is ONE button of the "4 Player Variations" card, named Crazy Bughouse (command #35)', () => {
     render(
       <>
         <PlayModeSelectScreen {...baseProps()} />
         <AppAlertHost />
       </>
     );
-    const card = screen.getByTestId('bughouse-card');
-    expect(within(card).getByText('Bughouse')).toBeTruthy();
-    expect(within(card).getByLabelText('Bughouse local')).toBeTruthy();
-    expect(within(card).getByText(/How to play/)).toBeTruthy();
-    expect(screen.getByText('Chaturaji')).toBeTruthy(); // the other cards are still there
-    expect(screen.getByText('4 Player Giveaway')).toBeTruthy();
+    const card = screen.getByTestId('four-player-variations-card');
+    expect(within(card).getByText('4 Player Variations')).toBeTruthy();
+    expect(within(card).getByLabelText('Crazy Bughouse')).toBeTruthy();
+    expect(screen.queryByText('Bughouse')).toBeNull(); // nobody sees the plain name any more
+    expect(screen.queryByTestId('bughouse-card')).toBeNull(); // no card of its own
+    expect(screen.queryByTestId('bughouse-online-button')).toBeNull(); // Online and the friend room live in the Online card now
+    expect(screen.queryByTestId('bughouse-friend-button')).toBeNull();
+    expect(screen.queryByTestId('bughouse-join-button')).toBeNull();
   });
 
-  it('Local goes straight to the setup', () => {
+  it('the button goes straight to the local setup (no separate Local button)', () => {
     const onBughouse = vi.fn();
     render(<PlayModeSelectScreen {...baseProps({ onBughouse })} />);
-    fireEvent.click(screen.getByLabelText('Bughouse local'));
+    expect(screen.queryByLabelText('Bughouse local')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Crazy Bughouse'));
     expect(onBughouse).toHaveBeenCalledTimes(1);
-  });
-
-  it('the rules sheet opens from the card and closes again; it is generated from the engine (the six controls, no draws)', () => {
-    render(<PlayModeSelectScreen {...baseProps()} />);
-    expect(screen.queryByTestId('bughouse-rules-sheet')).toBeNull();
-    fireEvent.click(screen.getByTestId('bughouse-rules-link'));
-    const sheet = screen.getByTestId('bughouse-rules-sheet');
-    expect(within(sheet).getByText('How to play Bughouse')).toBeTruthy();
-    expect(within(sheet).getByText(/Time controls: 1 min, 2 \| 1, 3 min, 3 \| 2, 5 min, 5 \| 2\./)).toBeTruthy();
-    expect(within(sheet).getByText('There are no draws in Bughouse.')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('bughouse-rules-close'));
-    expect(screen.queryByTestId('bughouse-rules-sheet')).toBeNull();
   });
 });
 
@@ -156,7 +147,7 @@ describe('the setup screen', () => {
   it('"How to play" opens the same rules sheet', () => {
     render(<Harness />);
     fireEvent.click(screen.getByTestId('how-to-play'));
-    expect(within(screen.getByTestId('bughouse-rules-sheet')).getByText('How to play Bughouse')).toBeTruthy();
+    expect(within(screen.getByTestId('bughouse-rules-sheet')).getByText('How to play Crazy Bughouse')).toBeTruthy();
   });
 });
 
@@ -166,8 +157,8 @@ describe('the rules sheet from every entry point', () => {
     expect(screen.queryByTestId('bughouse-rules-sheet')).toBeNull();
     fireEvent.click(screen.getByTestId('bughouse-rules'));
     const sheet = screen.getByTestId('bughouse-rules-sheet');
-    expect(within(sheet).getByText('How to play Bughouse')).toBeTruthy();
-    expect(within(sheet).getByText('There are no draws in Bughouse.')).toBeTruthy();
+    expect(within(sheet).getByText('How to play Crazy Bughouse')).toBeTruthy();
+    expect(within(sheet).getByText('There are no draws in Crazy Bughouse.')).toBeTruthy();
     fireEvent.click(screen.getByTestId('bughouse-rules-close'));
     expect(screen.queryByTestId('bughouse-rules-sheet')).toBeNull();
   });

@@ -14,7 +14,7 @@
 import { PIECE_THEME_IDS } from './android-matrix-screens.mjs';
 
 const PLAY = { text: 'Play' };
-const SETUP = [PLAY, { label: 'Bughouse local' }];
+const SETUP = [PLAY, { label: 'Crazy Bughouse' }];
 const startWith = (preset) => [...SETUP, { id: preset }, { id: 'bughouse-start' }, { text: '3 min' }];
 const BW_PIECES = { mode: 'bw', allKinds: true };
 /** A screen where bots keep playing: a photograph can catch a cell between two renders, so an empty cell is inconclusive there (android-matrix-pieces.mjs `liveBots`); a wrong colour still fails. */

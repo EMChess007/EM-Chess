@@ -246,7 +246,7 @@ export function buildSpectateRows(
     for (const game of chaturaji) rows.push({ key: `four:${game.roomId}`, kind: 'four', game });
   }
   if (bughouse !== null && bughouse.length > 0) {
-    rows.push({ key: 'header:bughouse', kind: 'header', title: 'Bughouse' });
+    rows.push({ key: 'header:bughouse', kind: 'header', title: 'Crazy Bughouse' });
     for (const game of bughouse) rows.push({ key: `bughouse:${game.roomId}`, kind: 'bughouse', game });
   }
   if (two.length > 0) {

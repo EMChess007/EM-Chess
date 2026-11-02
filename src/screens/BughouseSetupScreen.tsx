@@ -34,10 +34,10 @@ export default function BughouseSetupScreen({ seats, onChange, onPickBot, onCont
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Bughouse" subtitle="Local" onBack={onBack} backLabel="‹ Back" />
+      <ScreenHeader title="Crazy Bughouse" subtitle="Local" onBack={onBack} backLabel="‹ Back" />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.intro}>Two teams of two, two boards. A piece you capture goes to your partner&apos;s pocket - they can drop it instead of moving. No draws.</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="How to play Bughouse" testID="how-to-play" style={styles.rulesButton} onPress={() => setRulesOpen(true)}>
+        <Pressable accessibilityRole="button" accessibilityLabel="How to play Crazy Bughouse" testID="how-to-play" style={styles.rulesButton} onPress={() => setRulesOpen(true)}>
           <Text style={styles.rulesButtonText}>How to play ›</Text>
         </Pressable>
 

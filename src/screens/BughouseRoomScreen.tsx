@@ -25,7 +25,8 @@ import { viewFromMatchFound } from '../logic/bughouseOnline';
 import { describeQueue, fillSecondsLeft } from '../logic/bughouseOnlineUi';
 import { canFindOpponents, canStartWithBots, closedText, formatRoomCountdown, inviteMessage, ROOM_BUTTONS, roomHeadline, roomSecondsLeft, roomSlots } from '../logic/bughouseFriendRoomUi';
 
-export type BughouseRoomMode = { kind: 'create'; timeControl: BughouseTimeControl } | { kind: 'join'; code?: string };
+/** `joined`: the player is ALREADY in the room (Challenge a Friend's "Join by Code" found it - command #35); the screen starts from the view the join answered with. */
+export type BughouseRoomMode = { kind: 'create'; timeControl: BughouseTimeControl } | { kind: 'join'; code?: string } | { kind: 'joined'; room: BugFriendRoomView };
 
 interface BughouseRoomScreenProps {
   authToken: string;
@@ -51,7 +52,7 @@ type Failure = { kind: 'unreachable'; retry: () => void } | { kind: 'refused'; t
 export default function BughouseRoomScreen({ authToken, mode, onMatchFound, onExit }: BughouseRoomScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const [view, setView] = useState<{ room: BugFriendRoomView; receivedAt: number } | null>(null);
+  const [view, setView] = useState<{ room: BugFriendRoomView; receivedAt: number } | null>(() => (mode.kind === 'joined' ? { room: mode.room, receivedAt: Date.now() } : null));
   const [queue, setQueue] = useState<{ payload: BugQueueUpdatePayload; receivedAt: number } | null>(null);
   const [soloQueued, setSoloQueued] = useState(false);
   const [closed, setClosed] = useState<string | null>(null);
@@ -62,8 +63,8 @@ export default function BughouseRoomScreen({ authToken, mode, onMatchFound, onEx
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   // Leaving the room is sent on unmount unless a match began or the player already left on purpose.
-  const inRoomRef = useRef(false);
-  const labelRef = useRef('');
+  const inRoomRef = useRef(mode.kind === 'joined');
+  const labelRef = useRef(mode.kind === 'joined' ? mode.room.timeControlLabel : '');
   const matchRef = useRef(onMatchFound);
   matchRef.current = onMatchFound;
 

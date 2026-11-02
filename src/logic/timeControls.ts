@@ -40,6 +40,16 @@ export const TIME_CONTROL_COUNT = TIME_CONTROLS.length;
 /** The line the ONLINE pickers show under the Daily heading: a Daily game has no abandonment forfeit (its clock of days decides) but lives in the server's memory. */
 export const ONLINE_DAILY_NOTE = 'A Daily game is kept while the server runs; an app update on the server can end it.';
 
+/**
+ * The app's record for a control that came back from a SERVER (a match payload carries seconds and a label, never the preset): the preset of the list when there is one (its category is what the clocks,
+ * "play again" and the rating read), else a record built from the numbers (an old room, a control the list no longer has).
+ */
+export function presetOrCustom(initialSeconds: number, incrementSeconds: number, label: string, customId: string): TimeControl {
+  const preset = TIME_CONTROLS.find((tc) => tc.initialSeconds === initialSeconds && tc.incrementSeconds === incrementSeconds);
+  if (preset) return { ...preset, label: label || preset.label };
+  return { id: customId, label, initialSeconds, incrementSeconds, category: initialSeconds <= 120 ? 'bullet' : 'blitz' };
+}
+
 export const TIME_CONTROL_CATEGORIES: { category: TimeControlCategory; label: string }[] = [
   { category: 'bullet', label: 'Bullet' },
   { category: 'blitz', label: 'Blitz' },

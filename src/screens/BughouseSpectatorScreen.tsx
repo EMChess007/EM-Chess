@@ -42,7 +42,7 @@ export default function BughouseSpectatorScreen({ authToken, roomId, onExit }: B
   if (!view) {
     return (
       <View style={styles.container} testID="bughouse-spectator-loading">
-        <ScreenHeader title="Spectating" subtitle="Bughouse" onBack={leaveNow} backLabel="‹ Back" />
+        <ScreenHeader title="Spectating" subtitle="Crazy Bughouse" onBack={leaveNow} backLabel="‹ Back" />
         <Text style={styles.problem}>{problem ?? (connection === 'unavailable' ? 'This game is no longer available.' : 'Loading…')}</Text>
         {problem !== null && connection !== 'unavailable' && (
           <Pressable accessibilityRole="button" accessibilityLabel="Retry" testID="bughouse-spectator-retry" style={styles.button} onPress={retry}>

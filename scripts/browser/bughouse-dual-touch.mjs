@@ -115,7 +115,7 @@ async function openGame(browser, baseUrl, viewport, options = {}) {
   });
   await page.goto(baseUrl, { waitUntil: 'load' });
   await page.getByText('Play', { exact: true }).first().click({ timeout: 120000 });
-  await page.locator('[aria-label="Bughouse local"]').click();
+  await page.locator('[aria-label="Crazy Bughouse"]').click();
   await page.locator('[data-testid="preset-four"]').click();
   await page.locator('[data-testid="bughouse-start"]').click();
   await page.getByText('3 min', { exact: true }).first().click();

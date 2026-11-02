@@ -103,7 +103,7 @@ describe('the screens’ wording and decisions', () => {
   it('writes the closed sentences and the invite', () => {
     expect(closedText('hostLeft')).toBe('The host closed the room.');
     expect(closedText('expired')).toBe('The room expired. Open a new one.');
-    expect(inviteMessage('K7M2PQ', 'https://app.example')).toBe('Play Bughouse with me on EM-Chess! https://app.example/bughouse/join/K7M2PQ (code K7M2PQ)');
+    expect(inviteMessage('K7M2PQ', 'https://app.example')).toBe('Play Crazy Bughouse with me on EM-Chess! https://app.example/bughouse/join/K7M2PQ (code K7M2PQ)');
     expect(inviteMessage('K7M2PQ', null)).toContain('enter K7M2PQ');
     expect(inviteMessage('K7M2PQ', null)).not.toContain('http');
   });
@@ -143,14 +143,20 @@ describe('the wiring (source scans)', () => {
     for (const line of source.split('\n').filter((l) => l.includes('logDiagnostic('))) expect(line.split(' // ')[0]).not.toMatch(/\bcode\b|\$\{raw\}|room\.code/);
   });
 
-  it('the menu offers both entries and the app opens an invite link', () => {
+  it('the friend room lives in Challenge a Friend (command #35): the menu has no friend / join buttons of its own, Challenge opens the room and joins by code, and the app opens an invite link', () => {
     const menu = read('src/screens/PlayModeSelectScreen.tsx');
-    expect(menu).toContain('Bughouse play with a friend');
-    expect(menu).toContain('Bughouse join with a code');
-    expect(menu).toContain('requireLogin(onBughouseFriend)');
+    expect(menu).not.toContain('onBughouseFriend');
+    expect(menu).not.toContain('onBughouseJoin');
+    expect(menu).not.toContain('Play with a friend');
+    expect(menu).not.toContain('Join with a code');
+    const challenge = read('src/screens/ChallengeScreen.tsx');
+    expect(challenge).toContain("kind: 'createBughouse'");
+    expect(challenge).toContain("kind: 'joinedBughouse'");
     const app = read('App.tsx');
     expect(app).toContain('inviteCodeFromPath(window.location.pathname)');
     expect(app).toContain("name: 'bughouseRoom'");
+    expect(app).toContain("mode: { kind: 'create', timeControl: bughouseTimeControlOf(target.timeControl) }");
+    expect(app).toContain("mode: { kind: 'joined', room: target.room }");
   });
 
   it('the mirror lists the room wire and the backend dependency order is unchanged', () => {

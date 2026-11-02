@@ -655,13 +655,13 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
             <View style={styles.compactControls}>{setupControls}</View>
           ) : (
             <Text style={styles.compactTitle}>
-              {layout.kind === 'passAndPlay' ? 'Bughouse · pass and play' : 'Bughouse'}
+              {layout.kind === 'passAndPlay' ? 'Crazy Bughouse · pass and play' : 'Crazy Bughouse'}
             </Text>
           )}
           {controlsInBar && <View style={styles.compactControls}>{controls}</View>}
         </View>
       ) : (
-        <ScreenHeader title="Bughouse" subtitle={online ? `${online.view.spectator ? 'Watching' : 'Online'} · ${online.view.timeControlLabel}` : layout.kind === 'passAndPlay' ? 'Local · pass and play' : 'Local'} onBack={onExit} backLabel="‹ Menu" />
+        <ScreenHeader title="Crazy Bughouse" subtitle={online ? `${online.view.spectator ? 'Watching' : 'Online'} · ${online.view.timeControlLabel}` : layout.kind === 'passAndPlay' ? 'Local · pass and play' : 'Local'} onBack={onExit} backLabel="‹ Menu" />
       )}
       <ScrollView
         ref={scrollRef}

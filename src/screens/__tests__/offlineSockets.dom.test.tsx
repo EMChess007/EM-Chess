@@ -184,9 +184,9 @@ describe('Tournament create / join / start', () => {
 });
 
 describe('Challenge create / join', () => {
-  const renderChallenge = () => render(<ChallengeScreen authToken="t" onMatchFound={() => {}} onSetupChessPaired={() => {}} onBack={() => {}} />);
+  const renderChallenge = () => render(<ChallengeScreen authToken="t" onMatchFound={() => {}} onFriendRoom={() => {}} onSetupChessPaired={() => {}} onBack={() => {}} />);
 
-  it('Join: asks with a 6000 ms deadline; no answer says "Can\'t reach the server"; the server\'s refusal keeps its words', () => {
+  it('Join: asks with a 6000 ms deadline; no answer says "Can\'t reach the server"; a refusal about the player keeps its words', async () => {
     renderChallenge();
     fireEvent.click(screen.getByText('Join by Code'));
     fireEvent.change(screen.getByPlaceholderText('ABC123'), { target: { value: 'QQQ111' } });
@@ -194,22 +194,41 @@ describe('Challenge create / join', () => {
     expect(last().event).toBe('join_challenge');
     expect(last().payload).toEqual({ code: 'QQQ111' });
     expect(last().ms).toBe(6000);
-    act(() => last().answer(timedOut()));
+    await act(async () => last().answer(timedOut()));
     expect(screen.getByText("Can't reach the server")).toBeTruthy();
     fireEvent.click(screen.getByText('Join'));
-    act(() => last().answer(null, { ok: false, error: 'Code expired' }));
-    expect(screen.getByText('Code expired')).toBeTruthy();
+    await act(async () => last().answer(null, { ok: false, error: 'Finish or leave your current game or queue first.' }));
+    expect(screen.getByText('Finish or leave your current game or queue first.')).toBeTruthy();
+    expect(requests).toHaveLength(2); // a refusal about the player ends the search: no room request was sent
   });
 
-  it('Create: asks with a 6000 ms deadline; no answer says "Can\'t reach the server"; the answer shows the code', () => {
+  it('Join: ONE code field for every game (command #35) - the code is tried as a challenge, a Crazy Bughouse room, then a 4-seat room, with the 6000 ms deadline on each; a wrong code is the one sentence', async () => {
+    renderChallenge();
+    fireEvent.click(screen.getByText('Join by Code'));
+    fireEvent.change(screen.getByPlaceholderText('ABC123'), { target: { value: 'QQQ222' } });
+    fireEvent.click(screen.getByText('Join'));
+    expect(last().event).toBe('join_challenge');
+    await act(async () => last().answer(null, { ok: false, error: 'That challenge code was not found or has expired.' }));
+    expect(last().event).toBe('bug_room_join');
+    expect(last().payload).toEqual({ code: 'QQQ222' });
+    expect(last().ms).toBe(6000);
+    await act(async () => last().answer(null, { ok: false, error: 'That code was not found or has expired.' }));
+    expect(last().event).toBe('four_room_join');
+    expect(last().ms).toBe(6000);
+    await act(async () => last().answer(null, { ok: false, error: 'That code was not found or has expired.' }));
+    expect(requests.map((r) => r.event)).toEqual(['join_challenge', 'bug_room_join', 'four_room_join']);
+    expect(screen.getByText('That code was not found or has expired.')).toBeTruthy();
+  });
+
+  it('Create: asks with a 6000 ms deadline; no answer says "Can\'t reach the server"; the answer shows the code', async () => {
     renderChallenge();
     fireEvent.click(screen.getByText('Create Challenge'));
-    fireEvent.click(screen.getAllByText(/^\d/)[0]);
+    fireEvent.click(screen.getByLabelText('Bullet 1 min'));
     expect(last().event).toBe('create_challenge');
     expect(last().ms).toBe(6000);
     act(() => last().answer(timedOut()));
     expect(screen.getByText("Can't reach the server")).toBeTruthy();
-    fireEvent.click(screen.getAllByText(/^\d/)[0]);
+    fireEvent.click(screen.getByLabelText('Bullet 1 min'));
     act(() => last().answer(null, { ok: true, code: 'XYZ789' }));
     expect(screen.getByText('XYZ789')).toBeTruthy();
   });

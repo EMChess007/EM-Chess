@@ -72,18 +72,15 @@ describe('every screen that picks a control renders the one list', () => {
     expect(app).not.toContain('excludeCategories');
     expect(app).not.toContain('onlyIds');
     expect(app).not.toContain('BUGHOUSE_TIME_CONTROL_IDS');
-    // Bots + Local + Engine vs Engine (one step), 4-seat local, 4-seat online, Crazy Bughouse local, online and friend room: six steps in App; Quick Match, Challenge and Tournaments have their own screens
-    expect((app.match(/<TimeControlSelectScreen/g) ?? []).length).toBe(6);
+    // Bots + Local + Engine vs Engine (one step), 4-seat local and Crazy Bughouse local: three LOCAL steps in App. Everything online picks its control on the Online card's own screens: Quick Match
+    // (every game, the 4 Player Variations too), Challenge a Friend, Tournaments - the old per-game online steps are gone (command #35).
+    expect((app.match(/<TimeControlSelectScreen/g) ?? []).length).toBe(3);
+    for (const gone of ['fourPlayerOnlineTimeControl', 'bughouseOnlineTimeControl', 'bughouseRoomTimeControl']) expect(app, gone).not.toContain(gone);
   });
 
-  it('the online steps show the Daily note, the local ones do not', () => {
-    const app = read('App.tsx');
-    for (const step of ['bughouseOnlineTimeControl', 'bughouseRoomTimeControl', 'fourPlayerOnlineTimeControl']) {
-      const at = app.indexOf(`screen.name === '${step}'`);
-      expect(at, step).toBeGreaterThan(0);
-      expect(app.slice(at, at + 700), step).toContain('dailyNote={ONLINE_DAILY_NOTE}');
-    }
+  it('the online pickers show the Daily note, the local ones do not', () => {
     for (const screen of ['OnlineTimeControlSelectScreen', 'ChallengeScreen', 'TournamentScreen']) expect(read(`src/screens/${screen}.tsx`)).toContain('ONLINE_DAILY_NOTE');
+    expect(read('App.tsx')).not.toContain('dailyNote');
   });
 });
 

@@ -54,7 +54,7 @@ export default function BughouseOnlineGameScreen({ authToken, match, resume, onE
   if (!view || !seats) {
     return (
       <View style={styles.container} testID="bughouse-online-loading">
-        <ScreenHeader title="Bughouse" subtitle="Online" onBack={() => leaveNow(false)} backLabel="‹ Menu" />
+        <ScreenHeader title="Crazy Bughouse" subtitle="Online" onBack={() => leaveNow(false)} backLabel="‹ Menu" />
         <Text style={styles.problem}>{problem ?? 'Loading…'}</Text>
       </View>
     );

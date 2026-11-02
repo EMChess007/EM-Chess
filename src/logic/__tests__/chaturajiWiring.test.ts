@@ -12,19 +12,20 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8').replace(/\r\
 const app = read('App.tsx');
 
 describe('navigation', () => {
-  it('the Play menu\'s Chaturaji buttons start the existing 4-seat flow with the variant, Online behind the login gate, and the resume link knows which game it is', () => {
+  it('the 4 Player Variations button of Chaturaji starts the existing 4-seat flow with the variant (command #35: online is Quick Match / Challenge a Friend), and the resume link knows which game it is', () => {
     expect(app).toContain("onChaturaji={() => setScreen({ name: 'fourPlayerSetup', variant: 'chaturaji', seats: defaultSeatConfig() })}");
-    expect(app).toContain("onChaturajiOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'chaturaji', token: authSession.token })}");
+    expect(app).not.toContain('onChaturajiOnline');
     expect(app).toContain('fourPlayerResumeVariant={fourResume ? fourVariantOf(fourResume.match) : undefined}');
+    // Quick Match routes a chosen 4-seat game to its own queue; Challenge a Friend to its own room
+    expect(app).toContain("setScreen(fourVariant === null ? { name: 'bughouseMatchmaking', token, timeControl } : { name: 'fourPlayerMatchmaking', variant: fourVariant, token, timeControl });");
     const menu = read('src/screens/PlayModeSelectScreen.tsx');
-    expect(menu).toContain('const handleChaturajiOnline = requireLogin(onChaturajiOnline);');
-    expect(menu).toContain("resumeLink('chaturaji')");
-    expect(menu).toContain("resumeLink('ffa')");
-    expect(menu).toContain("resumeLink('giveaway')");
+    expect(menu).not.toContain('handleChaturajiOnline');
+    expect(menu).toContain('variantTitle(fourPlayerResumeVariant)');
+    expect(menu).toContain('onPress={onChaturaji}');
   });
 
   it('the flow after the menu is variant-driven for every game: one setup, one time-control step (no Daily), one game screen, one queue', () => {
-    for (const screen of ['fourPlayerSetup', 'fourPlayerBotSelect', 'fourPlayerTimeControl', 'fourPlayerGame', 'fourPlayerOnlineTimeControl', 'fourPlayerMatchmaking']) {
+    for (const screen of ['fourPlayerSetup', 'fourPlayerBotSelect', 'fourPlayerTimeControl', 'fourPlayerGame', 'fourPlayerMatchmaking', 'fourPlayerRoom']) {
       expect(app, screen).toMatch(new RegExp(`name: '${screen}'[^}]*variant`));
     }
     // (command #35: no step leaves a category out any more - timeControlsEverywhere.test.ts scans every picker)
@@ -79,9 +80,9 @@ describe('the local screens stay local', () => {
 });
 
 describe('the rules sheet is reachable from every place the spec lists', () => {
-  it('the menu card, the setup screen and both game screens (local and online) open the same sheet', () => {
+  it('the setup screen and both game screens (local and online) open the same sheet (command #35: the menu card is gone, "How to play" lives on the setup screen)', () => {
+    expect(read('src/screens/PlayModeSelectScreen.tsx')).not.toContain('ChaturajiRulesSheet');
     for (const [file, marker] of [
-      ['src/screens/PlayModeSelectScreen.tsx', '<ChaturajiRulesSheet visible={rulesOpen}'],
       ['src/screens/FourPlayerSetupScreen.tsx', '<ChaturajiRulesSheet visible={rulesOpen}'],
       ['src/screens/FourPlayerGameScreen.tsx', '<ChaturajiRulesSheet visible={rulesOpen}'],
       ['src/screens/FourPlayerOnlineGameScreen.tsx', '<ChaturajiRulesSheet visible={rulesOpen}'],

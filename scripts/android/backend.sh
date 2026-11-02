@@ -79,7 +79,19 @@ case "${1:-}" in
     echo "[backend] its first lines:"
     head -n 3 "$state/friend.log" || true
     ;;
+  four-friend)
+    # command #35: a logged-in FRIEND for the phone's 4-seat room (4 Player Chess / Giveaway / Chaturaji): joins the room whose 6-character code is the second argument and stays seated.
+    code="${2:?usage: backend.sh four-friend <room code>}"
+    stop_one "$state/four-friend.pid"
+    BACKEND_URL=http://localhost:3000 nohup $tsx scripts/four-friend-buddy.mjs "$code" > "$state/four-friend.log" 2>&1 &
+    echo $! > "$state/four-friend.pid"
+    echo "[backend] a 4-seat friend buddy started for the room (pid $(cat "$state/four-friend.pid"))"
+    sleep 5
+    echo "[backend] its first lines:"
+    head -n 3 "$state/four-friend.log" || true
+    ;;
   stop)
+    stop_one "$state/four-friend.pid"
     stop_one "$state/friend.pid"
     for n in 1 2 3; do stop_one "$state/buddy$n.pid"; done
     stop_one "$state/backend.pid"

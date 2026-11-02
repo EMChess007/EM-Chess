@@ -131,7 +131,7 @@ describe('the list', () => {
     expect(buildSpectateRows([], null, null)).toEqual([]);
     const rows = buildSpectateRows([], [], [game]);
     expect(rows).toEqual([
-      { key: 'header:bughouse', kind: 'header', title: 'Bughouse' },
+      { key: 'header:bughouse', kind: 'header', title: 'Crazy Bughouse' },
       { key: 'bughouse:r1', kind: 'bughouse', game },
     ]);
     expect(describeBughouseGame(game)).toBe('Ann + Di vs Bob + Cy');

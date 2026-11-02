@@ -131,7 +131,7 @@ async function toHome(dev) {
  * Bughouse (local) games, Puzzles, Analysis, More, Diagnostics - on the small phone, and the board and tab screens on the large one. `--all` (a manual run of the workflow) adds every other
  * screen of the web matrix's lists (rules sheets, the More sub-screens, the other setups).
  */
-const CORE_SCREENS = new Set(['home', 'play-menu', 'time-control', 'game-2p', 'ffa-setup', 'game-ffa', 'chaturaji-setup', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-passplay', 'bughouse-game-dual']);
+const CORE_SCREENS = new Set(['home', 'play-menu', 'time-control', 'game-2p', 'ffa-setup', 'game-ffa', 'giveaway-setup', 'game-giveaway', 'chaturaji-setup', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-passplay', 'bughouse-game-dual']);
 const LARGE_SCREENS = new Set(['home', 'play-menu', 'game-2p', 'ffa-setup', 'game-ffa', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-dual']);
 /** Screens that cannot be driven through the tree: the accessibility tree of the 2-player game screen lags the screen (the photograph is right), so its Options menu cannot be found; the menu's text is checked by the web matrix. */
 const TREE_LAGS = new Set(['game-2p-options']);
@@ -163,7 +163,7 @@ const POSITION_HEADINGS = { Classic: ['Bots', 'Local', 'Engine vs Engine'], 'Set
  * Cards near the end of the Play menu: swipe to the bottom WITHOUT reading the screen between swipes (a tree costs several seconds on the CI emulator, and finding the Bughouse card
  * by looking after each swipe took a minute), then back up to the card. The bottom of the list shows Bughouse, Engine vs Engine and the Board Editor.
  */
-const BLIND = { 'Bughouse local': { down: 9 }, 'Bughouse online': { down: 9 }, 'Bughouse play with a friend': { down: 9 }, 'Bughouse join with a code': { down: 9 }, 'Bughouse rules': { down: 9 }, 'bughouse-rules-link': { down: 9 }, 'Chaturaji local': { down: 9, up: 1 }, 'chaturaji-rules-link': { down: 9, up: 1 } };
+const BLIND = { 'Crazy Bughouse': { down: 9 }, 'Chaturaji': { down: 9 }, '4 Player Chess': { down: 9 }, '4 Player Giveaway': { down: 9 } };
 function phoneStep(step) {
   const headings = step.text === undefined ? undefined : POSITION_HEADINGS[step.text];
   const positioned = step.nth !== undefined && headings?.[step.nth] ? { text: step.text, below: headings[step.nth] } : step;
@@ -640,7 +640,7 @@ async function touchesBughouseBody(dev, name, inset) {
     await toHome(dev);
     dev.beacon.forget('state-board-A');
     dev.beacon.forget('state-board-B');
-    await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse local' }, { id: 'preset-four' }, { id: 'bughouse-start' }, { text: '3 min' }]);
+    await dev.runSteps([{ text: 'Play' }, { label: 'Crazy Bughouse' }, { id: 'preset-four' }, { id: 'bughouse-start' }, { text: '3 min' }]);
     const issues = [];
     const states = {};
     const boards = {};
@@ -811,7 +811,7 @@ async function perf(dev) {
       await toHome(dev);
       dev.beacon.forget('state-board-A');
       dev.beacon.forget('state-board-B');
-      await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse local' }, { id: 'preset-four' }, { id: 'bughouse-start' }, { text: '3 min' }]);
+      await dev.runSteps([{ text: 'Play' }, { label: 'Crazy Bughouse' }, { id: 'preset-four' }, { id: 'bughouse-start' }, { text: '3 min' }]);
       const states = {};
       for (const b of ['A', 'B']) states[b] = await dev.beacon.waitFor(`state-board-${b}`, (s) => s.rect && s.rect.w > 50, 40_000);
       if (!states.A || !states.B) throw new Error('the Bughouse boards reported no state');
@@ -985,6 +985,7 @@ async function online(dev) {
     }
   });
   await friendRoom(dev);
+  await fourFriendRoom(dev);
   return account;
 }
 
@@ -999,7 +1000,8 @@ async function friendRoom(dev) {
     await toHome(dev);
     dev.beacon.forgetAll();
     const issues = [];
-    await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse play with a friend' }, { text: '5 min' }]);
+    // (command #35: the friend room is in Challenge a Friend now - the chip row names the game, then a control)
+    await dev.runSteps([{ text: 'Play' }, { text: 'Challenge Friend' }, { text: 'Create Challenge' }, { label: 'Crazy Bughouse' }, { label: 'Blitz 5 min' }]);
     const created = await dev.waitFor('the room code', (list) => list.some((n) => n.id === 'bughouse-room-code' && /^[A-HJKMNP-Z2-9]{6}$/.test(n.text)), 40_000, 1200);
     const code = created.find((n) => n.id === 'bughouse-room-code').text;
     issues.push(...crashIssues(created), ...textIssues(created, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`));
@@ -1024,12 +1026,71 @@ async function friendRoom(dev) {
   });
 }
 
+/**
+ * THE ONLINE CARD'S NEW SCREENS AND A 4-SEAT FRIEND ROOM (command #35), on the phone against the run's own backend. (1) Quick Match: the chip row names the four 4 Player Variations next to the 2-player
+ * variants and the time-control list has Daily and No time limit - the text checks run on it. (2) Challenge a Friend > Create Challenge with Chaturaji: a ROOM opens (a 6-character code, four seats:
+ * "Bot fills this seat" x3, the countdown; Start is disabled), a FRIEND (`backend.sh four-friend <code>`, a second logged-in account) enters and the second seat names them, Start now says two bots
+ * fill the empty seats, and starting it opens the game screen (its Resign control). The text checks run on the room screen in both states.
+ */
+async function fourFriendRoom(dev) {
+  const name = 'online: 4-seat friend room';
+  await scenario(dev, 'online: Quick Match chips and controls', async () => {
+    await toHome(dev);
+    await dev.runSteps([{ text: 'Play' }, { text: 'Quick Match' }]);
+    const picker = await dev.waitFor('the Quick Match picker', (list) => list.some((n) => n.desc === 'Crazy Bughouse' || n.text === 'Crazy Bughouse'), 30_000);
+    const issues = [...crashIssues(picker), ...textIssues(picker, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`)];
+    for (const chip of ['4 Player Chess', '4 Player Giveaway', 'Chaturaji', 'Crazy Bughouse']) {
+      if (!picker.some((n) => n.desc === chip || n.text === chip)) issues.push(`the chip "${chip}" is not on the Quick Match screen`);
+    }
+    await dev.snapshot('quick-match-chips');
+    // the controls: scroll down to Daily and No time limit
+    let daily = null;
+    for (let i = 0; i < 6 && daily === null; i++) {
+      const list = await dev.dump();
+      daily = list.find((n) => n.desc === 'Daily 1 day' || n.text === 'Daily 1 day') ?? null;
+      if (daily === null) dev.scrollDown();
+    }
+    if (daily === null) issues.push('"Daily 1 day" is not in the Quick Match time-control list');
+    await dev.snapshot('quick-match-daily');
+    record('online: Quick Match chips and controls', issues);
+  });
+  await scenario(dev, name, async () => {
+    await toHome(dev);
+    const issues = [];
+    await dev.runSteps([{ text: 'Play' }, { text: 'Challenge Friend' }, { text: 'Create Challenge' }, { label: 'Chaturaji' }, { label: 'Blitz 5 min' }]);
+    const created = await dev.waitFor('the room code', (list) => list.some((n) => n.id === 'four-room-code' && /^[A-HJKMNP-Z2-9]{6}$/.test(n.text)), 40_000, 1200);
+    const code = created.find((n) => n.id === 'four-room-code').text;
+    issues.push(...crashIssues(created), ...textIssues(created, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`));
+    const slot = (list, n) => list.find((x) => x.id === `four-room-slot-${n}`)?.text ?? '';
+    if (slot(created, 2) !== 'Bot fills this seat') issues.push(`the free second seat reads "${slot(created, 2)}", not "Bot fills this seat"`);
+    if (!created.some((n) => n.id === 'four-room-countdown' && /The code works for \d+:\d\d/.test(n.text))) issues.push("no countdown of the code's life on the room screen");
+    const startBefore = created.find((n) => n.id === 'four-room-start');
+    if (!startBefore || startBefore.enabled) issues.push('Start is not disabled while no friend is in the room');
+    await dev.snapshot('four-room-waiting');
+    execFileSync('bash', ['scripts/android/backend.sh', 'four-friend', code], { stdio: 'inherit' });
+    const joined = await dev.waitFor('the friend in the room', (list) => /^friend/.test(slot(list, 2)), 40_000, 1500);
+    issues.push(...textIssues(joined, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`));
+    await dev.snapshot('four-room-joined');
+    const start = joined.find((n) => n.id === 'four-room-start' && n.bounds);
+    if (!start) issues.push('no Start button once the friend is in');
+    else {
+      if (!/2 bots fill/.test(start.text)) issues.push(`Start reads "${start.text}", not "Start - 2 bots fill the empty seats"`);
+      dev.tap(start.bounds.cx, start.bounds.cy);
+      const game = await dev.waitFor('the game screen', (list) => list.some((n) => n.text === 'Resign' || n.desc === 'Resign'), 60_000, 1500).catch(() => null);
+      if (!game) issues.push('Start: the 4-seat game screen did not appear (no Resign control within 60 s)');
+      else await dev.snapshot('four-room-game');
+    }
+    record(name, issues, 'the room code was read from the screen and given to the 4-seat friend buddy; the game started with bots');
+  });
+}
+
 async function onlineGame(dev, account, progress = { issues: [] }) {
   {
     await toHome(dev);
     dev.beacon.forgetAll(); // (the spectated game above also had boards: what arrives from here on is this game's)
     execFileSync('bash', ['scripts/android/backend.sh', 'buddy'], { stdio: 'inherit' }); // the phone's own opponent: one human + one buddy
-    await dev.runSteps([{ text: 'Play' }, { label: 'Bughouse online' }, { text: '5 min' }]);
+    // (command #35: Quick Match's chip row - Crazy Bughouse, then a control)
+    await dev.runSteps([{ text: 'Play' }, { text: 'Quick Match' }, { label: 'Crazy Bughouse' }, { label: 'Blitz 5 min' }]);
     // (the buddy is already waiting: the match can start before the first tree after the tap is read, so a game screen is as good an answer as the queue screen)
     const queued = await dev.waitFor('the queue screen or the game', (list) => list.some((n) => n.id === 'bughouse-queue' || n.id.startsWith('bughouse-queue-') || n.id === 'board-A' || n.id === 'bughouse-online-intro'), 30_000);
     const onQueue = queued.some((n) => n.id === 'bughouse-queue' || n.id.startsWith('bughouse-queue-'));

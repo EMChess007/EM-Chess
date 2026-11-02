@@ -211,7 +211,7 @@ describe('time controls and the rules sheet', () => {
     expect(bughouseRulesSheet().map((s) => s.title)).toEqual(['The idea', 'Captures feed your partner', 'Drops', 'Waiting', 'Clocks and the end']);
     expect(text).toContain('Time controls: 1 min, 2 | 1, 3 min, 3 | 2, 5 min, 5 | 2, No time limit, 1 | 1, 5 | 5, 10 min, 15 | 10, 30 min, 10 | 5, 20 min, 60 min, 1 day, 2 days, 3 days, 5 days, 7 days, 14 days.');
     expect(text).toContain('With "No time limit" there are no clocks');
-    expect(text).toContain('There are no draws in Bughouse.');
+    expect(text).toContain('There are no draws in Crazy Bughouse.');
     expect(text).toContain('never be dropped on the 1st or 8th rank');
     expect(text).toContain('pawn, knight, bishop, rook, queen');
     expect(text).toContain('Team 1 is Board A White and Board B Black');

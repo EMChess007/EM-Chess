@@ -52,7 +52,7 @@ export function bughouseRulesSheet(): RulesSection[] {
       lines: [
         `Every player has their own clock and all start together. Time controls: ${BUGHOUSE_TIME_CONTROLS.map(bughouseControlLabel).join(', ')}. With "No time limit" there are no clocks, so only a mate, a resignation or everyone leaving ends the match; a Daily match has a clock of days.`,
         'The whole match ends the moment ANY board ends - checkmate, resignation or a flag - and the team that won that board wins the match.',
-        'There are no draws in Bughouse.',
+        'There are no draws in Crazy Bughouse.',
       ],
     },
   ];

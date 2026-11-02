@@ -25,8 +25,8 @@ export default function BughouseRulesSheet({ visible, onClose }: BughouseRulesSh
       <View style={[styles.backdrop, { paddingTop: 16 + insets.top, paddingBottom: 16 + insets.bottom, paddingLeft: 16 + insets.left, paddingRight: 16 + insets.right }]}>
         {/* Rendered only while open, so closing takes the text off the page at once. */}
         {visible && (
-          <View style={styles.sheet} accessibilityViewIsModal accessibilityLabel="Bughouse rules" testID="bughouse-rules-sheet">
-            <Text style={styles.title}>How to play Bughouse</Text>
+          <View style={styles.sheet} accessibilityViewIsModal accessibilityLabel="Crazy Bughouse rules" testID="bughouse-rules-sheet">
+            <Text style={styles.title}>How to play Crazy Bughouse</Text>
             <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
               {bughouseRulesSheet().map((section) => (
                 <View key={section.title} style={styles.section}>

@@ -4,11 +4,15 @@ import ScreenHeader from '../components/ScreenHeader';
 import TimeControlSections from '../components/TimeControlSections';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import type { FourSeatGame } from '../logic/onlineGames';
 import { ONLINE_DAILY_NOTE } from '../logic/timeControls';
 import type { TimeControl } from '../types/timeControl';
 
+type OnlineGame = GameVariant | FourSeatGame;
+
 interface OnlineTimeControlSelectScreenProps {
-  onSelect: (timeControl: TimeControl, variant: GameVariant) => void;
+  /** `game` is a 2-player variant or one of the four 4 Player Variations (command #35): App routes the latter to its own queue. */
+  onSelect: (timeControl: TimeControl, game: OnlineGame) => void;
   onBack: () => void;
 }
 
@@ -18,14 +22,14 @@ interface OnlineTimeControlSelectScreenProps {
 export default function OnlineTimeControlSelectScreen({ onSelect, onBack }: OnlineTimeControlSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const [variant, setVariant] = useState<GameVariant>('classic');
+  const [variant, setVariant] = useState<OnlineGame>('classic');
 
   return (
     <View style={styles.container}>
       <ScreenHeader title="Play Online" onBack={onBack} />
 
       <View style={styles.variantRow}>
-        <VariantSelector value={variant} onChange={setVariant} />
+        <VariantSelector<OnlineGame> value={variant} onChange={setVariant} includeFourSeat />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>

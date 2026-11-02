@@ -217,9 +217,14 @@ describe('isolation and wiring (no React Native renderer available)', () => {
   });
 
   it('it is a mode of its own: no 2-player variant plumbing mentions it (selector, outcome, payload, online flags, bots, history)', () => {
-    for (const file of ['components/VariantSelector.tsx', 'logic/gameResult.ts', 'logic/gamePayload.ts', 'logic/onlineVariants.ts', 'logic/bots.ts', 'types/history.ts', 'types/multiplayer.ts', 'logic/ChessEngine.ts', 'logic/useChessClock.ts']) {
+    for (const file of ['logic/gameResult.ts', 'logic/gamePayload.ts', 'logic/onlineVariants.ts', 'logic/bots.ts', 'types/history.ts', 'types/multiplayer.ts', 'logic/ChessEngine.ts', 'logic/useChessClock.ts']) {
       expect(read(file), file).not.toMatch(/fourPlayer|FourPlayer|4 Player/);
     }
+    // (command #35: the selector's chip row names the 4 Player Variations on purpose - through ONE module, `onlineGames`, never inline - and only when a screen asks for them)
+    const selector = read('components/VariantSelector.tsx');
+    expect(selector).toContain("from '../logic/onlineGames'");
+    expect(selector).toContain('includeFourSeat');
+    expect(selector).not.toMatch(/FourPlayer|4 Player/);
   });
 
   it('the games are neither rated, saved, nor given achievements in this pass', () => {
@@ -227,12 +232,13 @@ describe('isolation and wiring (no React Native renderer available)', () => {
     for (const forbidden of ['recordRatedGame', 'unlockAchievement', 'buildGamePayload', 'gamePayload', 'saveGame', 'authToken']) expect(game, forbidden).not.toContain(forbidden);
   });
 
-  it('PlayModeSelectScreen has a top-level "4 Player Chess" card with a Free-for-All button', () => {
+  it('PlayModeSelectScreen has ONE "4 Player Variations" card (command #35) with a "4 Player Chess" button that opens the local setup', () => {
     const menu = read('screens/PlayModeSelectScreen.tsx');
     expect(menu).toContain('onFourPlayer: () => void;');
-    expect(menu).toContain('<Text style={styles.categoryTitle}>4 Player Chess</Text>');
+    expect(menu).toContain('<Text style={styles.categoryTitle}>4 Player Variations</Text>');
     expect(menu).toContain('onPress={onFourPlayer}');
-    expect(menu).toContain('label="Free-for-All"');
+    expect(menu).toContain('label="4 Player Chess"');
+    expect(menu).not.toContain('Free-for-All');
   });
 
   it('App.tsx starts setup with the default seats, and Back/Menu return one step / to the play menu', () => {

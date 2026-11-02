@@ -3,7 +3,7 @@
  * the twin of `bughouseOnlineUi.ts`. The wire contract is `bughouse/roomWire.ts`; the server's rules are backend `bughouseFriendRooms.ts`.
  */
 import type { TimeControl } from '../types/timeControl';
-import { TIME_CONTROLS } from './timeControls';
+import { presetOrCustom } from './timeControls';
 import { bugRoomInviteLink, type BugFriendRoomView, type BugRoomClosedReason } from './bughouse/roomWire';
 
 /** How many whole seconds of the code's life are left, counted on THIS device's clock from the moment the view arrived (never the server's clock); never below 0. */
@@ -46,7 +46,7 @@ export function closedText(reason: BugRoomClosedReason): string {
 /** What the share sheet / the clipboard carries. `baseUrl` is the app's own address on the web and null on a phone (there is no link to a native app yet: the code is the invite). */
 export function inviteMessage(code: string, baseUrl: string | null): string {
   const link = baseUrl === null ? null : bugRoomInviteLink(baseUrl, code);
-  return link === null ? `Play Bughouse with me on EM-Chess! Open Bughouse > Join with a code and enter ${code}.` : `Play Bughouse with me on EM-Chess! ${link} (code ${code})`;
+  return link === null ? `Play Crazy Bughouse with me on EM-Chess! Open Play > Online > Challenge Friend > Join by Code and enter ${code}.` : `Play Crazy Bughouse with me on EM-Chess! ${link} (code ${code})`;
 }
 
 /** The invite code in the address the web app was opened with (`/bughouse/join/<code>`), or null. Pure: the caller passes the pathname. */
@@ -60,9 +60,7 @@ export function timeControlOfMatch(timeControl: { initialMs: number; incrementMs
   const initialSeconds = Math.round(timeControl.initialMs / 1000);
   const incrementSeconds = Math.round(timeControl.incrementMs / 1000);
   // the app's own preset when there is one (its category is what "play again" and the clocks read), else a record built from the milliseconds
-  const preset = TIME_CONTROLS.find((tc) => tc.initialSeconds === initialSeconds && tc.incrementSeconds === incrementSeconds);
-  if (preset) return { ...preset, label: label || preset.label };
-  return { id: `bughouse-room-${initialSeconds}-${incrementSeconds}`, label, initialSeconds, incrementSeconds, category: initialSeconds <= 120 ? 'bullet' : 'blitz' };
+  return presetOrCustom(initialSeconds, incrementSeconds, label, `bughouse-room-${initialSeconds}-${incrementSeconds}`);
 }
 
 /** The two "Back" destinations of the Room screen: a host who closes, a friend who leaves. */

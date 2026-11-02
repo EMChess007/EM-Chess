@@ -138,7 +138,7 @@ export default function PieceGalleryScreen({ onBack }: PieceGalleryScreenProps) 
             ))}
           </View>
         ))}
-        <Text style={styles.info}>Pocket chips are always the vector set, as in a Bughouse game.</Text>
+        <Text style={styles.info}>Pocket chips are always the vector set, as in a Crazy Bughouse game.</Text>
       </ScrollView>
     </View>
   );

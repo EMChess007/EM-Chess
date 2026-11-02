@@ -115,7 +115,7 @@ export default function BughouseMatchmakingScreen({ authToken, timeControl, time
 
   return (
     <SafeAreaView style={styles.container} testID="bughouse-queue">
-      <Text style={styles.title}>Bughouse · {timeControlLabel}</Text>
+      <Text style={styles.title}>Crazy Bughouse · {timeControlLabel}</Text>
       {failure?.kind === 'unreachable' ? (
         <>
           <LoadFailed message={SERVER_UNREACHABLE_MESSAGE} onRetry={() => joinRef.current()} testID="bughouse-queue-failed" />

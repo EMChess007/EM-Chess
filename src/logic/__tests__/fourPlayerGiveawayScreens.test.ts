@@ -414,33 +414,29 @@ describe('screens: the Giveaway flow is wired through the same screens (no rende
   const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8').replace(/\r\n/g, '\n');
   const app = readFileSync(join(SRC, '../App.tsx'), 'utf8').replace(/\r\n/g, '\n');
 
-  it('the Play menu has a 4 Player Giveaway card under the 4 Player Chess one: Local, and Online behind the login gate', () => {
+  it('the Play menu has a 4 Player Giveaway BUTTON after the 4 Player Chess one in the one 4 Player Variations card (command #35); its online play is in the Online card', () => {
     const menu = read('screens/PlayModeSelectScreen.tsx');
-    expect(menu).toContain('<Text style={styles.categoryTitle}>4 Player Giveaway</Text>');
-    expect(menu.indexOf('4 Player Chess</Text>')).toBeLessThan(menu.indexOf('4 Player Giveaway</Text>'));
-    expect(menu).toContain('const handleFourPlayerGiveawayOnline = requireLogin(onFourPlayerGiveawayOnline);');
+    expect(menu).toContain('label="4 Player Giveaway"');
+    expect(menu.indexOf('label="4 Player Chess"')).toBeLessThan(menu.indexOf('label="4 Player Giveaway"'));
     expect(menu).toContain('onPress={onFourPlayerGiveaway}');
-    expect(menu).toContain('onPress={handleFourPlayerGiveawayOnline}');
-    expect(menu).toContain('label="Local"');
-    // the Chess card is as it was
-    expect(menu.match(/label="Free-for-All"/g)).toHaveLength(1);
+    expect(menu).not.toContain('handleFourPlayerGiveawayOnline');
+    expect(menu).not.toContain('handleFourPlayerOnline');
+    expect(menu.match(/label="4 Player Chess"/g)).toHaveLength(1);
     expect(menu).toContain('onPress={onFourPlayer}');
-    expect(menu).toContain('onPress={handleFourPlayerOnline}');
   });
 
   it('App.tsx: Giveaway local goes setup -> bot picker -> time control (no Daily) -> game with variant "giveaway"; online goes time control (no Daily / unlimited) -> queue', () => {
     expect(app).toContain("onFourPlayerGiveaway={() => setScreen({ name: 'fourPlayerSetup', variant: 'giveaway', seats: defaultSeatConfig() })}");
-    expect(app).toContain("onFourPlayerGiveawayOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'giveaway', token: authSession.token })}");
-    expect(app).toContain("| { name: 'fourPlayerOnlineTimeControl'; variant: FourVariant; token: string }");
+    expect(app).not.toContain('onFourPlayerGiveawayOnline'); // command #35: online is Quick Match's chip (OnlineTimeControlSelectScreen), routed to the same queue
+    expect(app).toContain("fourVariantOfGame(game)");
     expect(app).toContain("| { name: 'fourPlayerMatchmaking'; variant: FourVariant; token: string; timeControl: TimeControl }");
     expect(app).toContain('<FourPlayerMatchmakingScreen\n        variant={variant}');
     expect(app).toContain('<FourPlayerSetupScreen\n        variant={variant}');
-    expect(app).toContain("onSelect={(timeControl) => setScreen({ name: 'fourPlayerMatchmaking', variant, token, timeControl })}");
+    expect(app).toContain("{ name: 'fourPlayerMatchmaking', variant: fourVariant, token, timeControl }"); // Quick Match's chip -> the queue of that game
     expect(app).not.toContain('excludeCategories'); // command #35: every control, online too
     expect(app).toContain('subtitle={`${variantTitle(variant)} · ${variantModeLabel(variant)}`}');
     // every Chess entry passes 'ffa' explicitly
     expect(app).toContain("onFourPlayer={() => setScreen({ name: 'fourPlayerSetup', variant: 'ffa', seats: defaultSeatConfig() })}");
-    expect(app).toContain("onFourPlayerOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'ffa', token: authSession.token })}");
   });
 
   it('the local game: the start rules, the bot and every new game follow the variant; no "in check" in Giveaway', () => {
