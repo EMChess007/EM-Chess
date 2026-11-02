@@ -30,6 +30,7 @@ import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from
 import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
+import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -292,6 +293,46 @@ async function textFit(dev) {
     const issues = [...verdict.mismatches.map((l) => l.trim())];
     if (verdict.bundledFontMissing) issues.push('the bundled font is NOT loaded on the phone');
     record('text-fit probe', issues, verdict.lines[0]?.replace('[TextFit] ', ''));
+  });
+}
+
+// --- the launcher icon -----------------------------------------------------------------------------------------------------------------------------------------------------------------
+/**
+ * THE APP ICON AS ANDROID SHOWS IT (command #35). Home key, the launcher's app list, the entry labelled "EM-Chess": its pixels are judged by lib/launcher.mjs (a dark tile, a green and a
+ * silver ring - not the old cream crown on green, not a default icon) and the entry is saved as launcher-icon.png / launcher-icon-entry.png (the artifact the user looks at).
+ */
+async function launcherIcon(dev) {
+  await scenario(dev, 'launcher icon', async () => {
+    dev.stop();
+    await sleep(500);
+    dev.key(3); // HOME
+    await sleep(1500);
+    const { w, h } = dev.display;
+    dev.swipe(w / 2, h * 0.93, w / 2, h * 0.2, 500); // the app list opens with a swipe up from the bottom of the home screen
+    await sleep(1500);
+    let entry = null;
+    let last = null;
+    for (let scroll = 0; scroll < 8 && entry === null; scroll++) {
+      last = await dev.look();
+      entry = findNodes(last.nodes, { text: 'EM-Chess' }).find((n) => n.pkg !== 'com.emchess.app') ?? null;
+      if (entry === null) {
+        dev.swipe(w / 2, h * 0.75, w / 2, h * 0.3, 600);
+        await sleep(800);
+      }
+    }
+    if (entry === null) {
+      await dev.snapshot('FAILED-launcher-icon');
+      return record('launcher icon', [`no launcher entry labelled "EM-Chess" in the app list; it showed: ${visibleWords(last?.nodes ?? [], 30).join(' | ')}`]);
+    }
+    const { png } = last;
+    writeFileSync(join(OUT, 'launcher-icon.png'), encodePng(png));
+    const box = { x: entry.bounds.x1, y: entry.bounds.y1, w: entry.bounds.w, h: entry.bounds.h };
+    writeFileSync(join(OUT, 'launcher-icon-entry.png'), encodePng(crop(png, box)));
+    const measured = measureIcon(png, entry.bounds);
+    const issues = judgeLauncherIcon(png, entry.bounds);
+    const shares = measured ? `dark ${(measured.dark * 100).toFixed(1)} %, green ${(measured.green * 100).toFixed(1)} %, silver ${(measured.silver * 100).toFixed(2)} %, old green ${(measured.oldGreen * 100).toFixed(1)} %, background ${measured.background.join(',')}` : 'no icon pixels';
+    if (issues.length > 0) log(`PNG64 launcher-icon-entry ${encodePng(crop(png, box)).toString('base64')}`);
+    record('launcher icon', issues, shares);
   });
 }
 
@@ -1269,6 +1310,8 @@ try {
     if (PARTS.has('textfit')) await textFit(dev);
     // the gallery's pixels do not depend on the window: the cramped phone runs it, the large phone's budget goes to the screens
     if (PARTS.has('gallery') && !flag('skip-gallery') && profile.id === 'small') await gallery(dev);
+    // the installed app's icon in the launcher's app list (command #35); it leaves the app on the launcher, so it runs after the parts that need the app
+    if (PARTS.has('launcher')) await launcherIcon(dev);
     if (PARTS.has('touch2p')) {
       await touches2p(dev);
       await arrows2p(dev); // the same game screen, after e2-e4 (command #32)

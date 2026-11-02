@@ -6,7 +6,7 @@
 #
 # <job> is one slice of the run; the workflow starts them side by side, each on its own emulator, so the wall time is the slowest slice and not the sum (36 - 40 minutes in one job):
 #   small-screens-1 | small-screens-2   the core screens on the cramped phone (360 x 640 dp at font scale 1.3), every other screen of the list each
-#   small-gallery                       the on-device text-fit probe and the Piece gallery pixels (the gallery does not depend on the window: the cramped phone runs it)
+#   small-gallery                       the on-device text-fit probe, the Piece gallery pixels (the gallery does not depend on the window: the cramped phone runs it) and the app's icon in the launcher (command #35)
 #   large-screens-1 | large-screens-2   the board and tab screens on the large phone (the emulator's own screen, font scale 1.0)
 #   large-touch                         the text-fit probe, real touches on the 2-player board and on both Bughouse boards - edge-to-edge and in the frame of the phone of command #26
 #   large-perf                          the performance budget (command #33): taps, bot reply, arrows and the Bughouse clocks timed by the app, the JavaScript thread's lateness (lib/perf.mjs)
@@ -80,7 +80,7 @@ online() {
 case "$job" in
   small-screens-1) phase small static screens1 --parts screens --shard 1/2 ;;
   small-screens-2) phase small static screens2 --parts screens --shard 2/2 ;;
-  small-gallery) phase small static gallery --parts textfit,gallery ;;
+  small-gallery) phase small static gallery --parts textfit,gallery,launcher ;;
   large-screens-1) phase large static screens1 --parts screens --shard 1/2 ;;
   large-screens-2) phase large static screens2 --parts screens --shard 2/2 ;;
   large-touch) phase large static touch --parts textfit,touch2p,touchbug,touchinset ;;
@@ -89,7 +89,7 @@ case "$job" in
   all)
     phase small static screens1 --parts screens --shard 1/2
     phase small static screens2 --parts screens --shard 2/2
-    phase small static gallery --parts textfit,gallery
+    phase small static gallery --parts textfit,gallery,launcher
     phase large static screens1 --parts screens --shard 1/2
     phase large static screens2 --parts screens --shard 2/2
     phase large static touch --parts textfit,touch2p,touchbug,touchinset

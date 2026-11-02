@@ -68,7 +68,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: apk-cache
-          key: apk-v2-${{ hashFiles('package-lock.json', 'app.json', 'app.config.js', 'assets/icon.png', 'assets/android-icon-*.png', 'scripts/android/build-apk.sh', 'scripts/android/patch-main-activity.mjs') }}
+          key: apk-v3-${{ hashFiles('package-lock.json', 'app.json', 'app.config.js', 'assets/icon.png', 'assets/splash-icon.png', 'assets/android-icon-*.png','scripts/android/build-apk.sh', 'scripts/android/patch-main-activity.mjs') }}
 
       - uses: actions/setup-node@v4
         if: steps.apk.outputs.cache-hit != 'true'
