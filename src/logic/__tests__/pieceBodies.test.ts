@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { PIECE_CHIP_BACKGROUND, PIECE_OUTLINE_WIDTH, WHITE_PIECE_INK, BLACK_PIECE_INK } from '../../components/pieceArt';
 import { AVAILABLE_BOARD_THEMES } from '../boardThemes';
 import { AVAILABLE_PIECE_THEMES } from '../pieceThemes';
-import { BLACK_BODY_MAX, analyseCell, bodyLuminance, expectedCell } from '../../../scripts/browser/android-matrix-pieces.mjs';
+import { BLACK_BODY_MAX, analyseCell, blackBodyMax, bodyLuminance, expectedCell } from '../../../scripts/browser/android-matrix-pieces.mjs';
 import { BOARD_THEME_IDS } from '../../../scripts/browser/android-matrix-screens.mjs';
 
 /**
@@ -135,6 +135,37 @@ describe('every black image piece at 32 dp reads dark on every board theme and o
       }
     }
     expect(bodyLuminance({ width: size, height: size, data })).toBeGreaterThan(BLACK_BODY_MAX);
+  });
+
+  it('the limit is 90 at a 32 px cell or more and 98 below it (the full matrix: Cburnett\'s black king reads 91 on the 28 px cell of the smallest dual layout); a LIGHT body is flagged at both sizes', () => {
+    // literals on purpose (a test that reads the constant from the module under mutation cannot kill a mutant of it)
+    expect(blackBodyMax(32)).toBe(90);
+    expect(blackBodyMax(31)).toBe(98);
+    expect(blackBodyMax(28)).toBe(98);
+    expect(blackBodyMax(96)).toBe(90);
+    for (const size of [28, 32, 40]) {
+      const data = new Uint8Array(size * size * 4);
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const inside = x >= 2 && x < size - 2 && y >= 2 && y < size - 2;
+          const c = inside ? 230 : 140; // a white piece drawn on a black piece's place
+          data.set([c, c, c, 255], (y * size + x) * 4);
+        }
+      }
+      expect(bodyLuminance({ width: size, height: size, data }), `a light body at ${size} px`).toBeGreaterThan(blackBodyMax(size));
+    }
+  });
+  it('Cburnett\'s black king: dark at 32 px and within the small-cell limit at 28 px, on both squares of every board theme the dual layouts draw it on', () => {
+    for (const [boardId, squares] of Object.entries(BOARDS)) {
+      for (const square of squares) {
+        for (const cellSize of [28, 32]) {
+          const box = Math.round(cellSize * 0.85);
+          const rect = { x: (cellSize - box) / 2, y: (cellSize - box) / 2, w: box, h: box };
+          const body = bodyLuminance(expectedCell(assetOf('cburnett', 'bk'), hex(square), cellSize, cellSize, rect));
+          expect(body as number, `cburnett bk at ${cellSize} px on ${boardId} ${square}`).toBeLessThanOrEqual(blackBodyMax(cellSize));
+        }
+      }
+    }
   });
 });
 

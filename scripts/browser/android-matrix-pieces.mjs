@@ -66,6 +66,14 @@ export function analyseCell(png, backgroundDistance = BACKGROUND_DISTANCE) {
  * A white piece has no counterpart: its outline is most of its pixels in some sets.
  */
 export const BLACK_BODY_MAX = 90;
+/**
+ * The limit for a cell BELOW 32 px (command #35b): the limit above was calibrated at a 32 dp cell (a 27 px piece). The smallest cell a game screen ever draws is 28 px (the Bughouse dual layouts'
+ * minimum), where the piece is 24 px and its anti-aliased edge is a larger share of its pixels: the full device matrix found Cburnett's black king at median luminance 91 on a 28 px cell (limit 90)
+ * in 2 of 3 combinations, the same art that reads 79 at 32 px. A LIGHT body (a white piece drawn black) reads 200+ at every size, so the margin keeps the check's meaning.
+ */
+export const BLACK_BODY_MAX_SMALL_CELL = 98;
+export const BODY_FULL_SIZE_CELL = 32;
+export const blackBodyMax = (cellPx) => (cellPx < BODY_FULL_SIZE_CELL ? BLACK_BODY_MAX_SMALL_CELL : BLACK_BODY_MAX);
 
 export function bodyLuminance(png) {
   const { width, height, data } = png;
@@ -107,7 +115,8 @@ export function lightShare(png) {
 function lightBodyIssue(marker, png, lightMax = Infinity) {
   if (marker[0] !== 'b' || !/^b[pnbrqk]$/.test(marker)) return null;
   const body = bodyLuminance(png);
-  if (body !== null && body > BLACK_BODY_MAX) return `${marker}: the body reads light (median luminance ${Math.round(body)}, limit ${BLACK_BODY_MAX})`;
+  const limit = blackBodyMax(png.width);
+  if (body !== null && body > limit) return `${marker}: the body reads light (median luminance ${Math.round(body)}, limit ${limit})`;
   const share = lightShare(png);
   return share > lightMax ? `${marker}: ${(share * 100).toFixed(1)} % of the piece is light (limit ${(lightMax * 100).toFixed(0)} %): a light outline or light bands on a black piece` : null;
 }

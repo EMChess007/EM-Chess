@@ -206,7 +206,21 @@ export function pageChecks(opts) {
   if (gearZone) {
     const zoneRight = vw - insets.right;
     const zone = { left: zoneRight - gearZone.width, top: 0, right: zoneRight, bottom: insets.top + gearZone.below };
-    for (const { el, r } of boxes) {
+    // A control is judged where it stands AT REST (command #35b): a page that scrolls (large text on a 360 x 640 window) was measured after the matrix had scrolled it, and the pass-and-play "Resign"
+    // chip, 140 px down the page, was "under the gear" 128 px of scrolling later - content that scrolls under the host's button is how every long page behaves. The offset of every scrolled
+    // ancestor is added back to the rectangle.
+    const scrolledBy = (el) => {
+      let dx = 0;
+      let dy = 0;
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        dx += p.scrollLeft || 0;
+        dy += p.scrollTop || 0;
+      }
+      return { dx, dy };
+    };
+    for (const { el, r: seen } of boxes) {
+      const { dx, dy } = scrolledBy(el);
+      const r = { left: seen.left + dx, right: seen.right + dx, top: seen.top + dy, bottom: seen.bottom + dy, width: seen.width, height: seen.height };
       if (r.width >= vw * 0.9 && r.height >= vh * 0.9) continue; // a window-sized layer is not a button
       if (isExempt(el)) continue;
       const w = Math.min(r.right, zone.right) - Math.max(r.left, zone.left);
