@@ -78,7 +78,8 @@ import type { ColorChoice, PieceColor } from './src/types/chess';
 import { SEAT_NAMES, defaultSeatConfig, withController, type Seat, type SeatConfig } from './src/logic/fourPlayer';
 import { controllerForBot } from './src/logic/fourPlayerBots';
 import type { BughouseTimeControl } from './src/logic/bughouse/rules';
-import { BUGHOUSE_TIME_CONTROL_IDS, bughouseTimeControlOf, presetSeatConfig } from './src/logic/bughouseLayout';
+import { bughouseTimeControlOf, presetSeatConfig } from './src/logic/bughouseLayout';
+import { ONLINE_DAILY_NOTE } from './src/logic/timeControls';
 import type { AnalyzeParams } from './src/types/history';
 import { variantModeLabel, variantTitle } from './src/logic/fourPlayerVariant';
 import { fourVariantOf, type FourMatchFoundPayload, type FourVariant } from './src/logic/fourPlayerWire';
@@ -911,7 +912,6 @@ export default function App() {
     content = (
       <TimeControlSelectScreen
         subtitle={`${variantTitle(variant)} · ${variantModeLabel(variant)}`}
-        excludeCategories={['daily']}
         onSelect={(timeControl) => setScreen({ name: 'fourPlayerGame', variant, seats, timeControl })}
         onBack={() => setScreen({ name: 'fourPlayerSetup', variant, seats })}
       />
@@ -943,9 +943,7 @@ export default function App() {
     const { seats } = screen;
     content = (
       <TimeControlSelectScreen
-        subtitle="Bughouse · Local"
-        excludeCategories={['rapid', 'daily', 'unlimited']}
-        onlyIds={BUGHOUSE_TIME_CONTROL_IDS}
+        subtitle="Crazy Bughouse · Local"
         onSelect={(timeControl) => setScreen({ name: 'bughouseGame', seats, timeControl: bughouseTimeControlOf(timeControl) })}
         onBack={() => setScreen({ name: 'bughouseSetup', seats })}
       />
@@ -956,9 +954,8 @@ export default function App() {
     const { token } = screen;
     content = (
       <TimeControlSelectScreen
-        subtitle="Bughouse · Online"
-        excludeCategories={['rapid', 'daily', 'unlimited']}
-        onlyIds={BUGHOUSE_TIME_CONTROL_IDS}
+        subtitle="Crazy Bughouse · Online"
+        dailyNote={ONLINE_DAILY_NOTE}
         onSelect={(timeControl) => setScreen({ name: 'bughouseMatchmaking', token, timeControl })}
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
@@ -967,9 +964,8 @@ export default function App() {
     const { token } = screen;
     content = (
       <TimeControlSelectScreen
-        subtitle="Bughouse · Play with a friend"
-        excludeCategories={['rapid', 'daily', 'unlimited']}
-        onlyIds={BUGHOUSE_TIME_CONTROL_IDS}
+        subtitle="Crazy Bughouse · Challenge a Friend"
+        dailyNote={ONLINE_DAILY_NOTE}
         onSelect={(timeControl) => setScreen({ name: 'bughouseRoom', token, mode: { kind: 'create', timeControl: bughouseTimeControlOf(timeControl) } })}
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />
@@ -1027,7 +1023,7 @@ export default function App() {
     content = (
       <TimeControlSelectScreen
         subtitle={`${variantTitle(variant)} · Online`}
-        excludeCategories={['daily', 'unlimited']}
+        dailyNote={ONLINE_DAILY_NOTE}
         onSelect={(timeControl) => setScreen({ name: 'fourPlayerMatchmaking', variant, token, timeControl })}
         onBack={() => setScreen({ name: 'playModeSelect' })}
       />

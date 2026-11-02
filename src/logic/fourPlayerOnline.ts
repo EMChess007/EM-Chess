@@ -405,5 +405,6 @@ export function displayClocksMs(view: FourOnlineView, now: number): FourClocksMs
 /** The clocks in the shape `FourPlayerSeatStrip` takes (seconds). */
 export function displayClock(view: FourOnlineView, now: number): FourPlayerClock {
   const ms = displayClocksMs(view, now);
-  return { enabled: true, incrementSeconds: view.timeControl.incrementSeconds, seconds: [ms[0] / 1000, ms[1] / 1000, ms[2] / 1000, ms[3] / 1000] };
+  // "No time limit" (command #35): the room has no clock at all, so the strip shows none
+  return { enabled: view.timeControl.initialSeconds > 0, incrementSeconds: view.timeControl.incrementSeconds, seconds: [ms[0] / 1000, ms[1] / 1000, ms[2] / 1000, ms[3] / 1000] };
 }

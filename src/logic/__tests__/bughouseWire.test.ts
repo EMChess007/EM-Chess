@@ -63,9 +63,12 @@ describe('ids and boards', () => {
 });
 
 describe('the time control', () => {
-  it('only the spec\'s six are valid, in milliseconds', () => {
+  it('only the app\'s 21 controls are valid, in milliseconds (No time limit and Daily included, command #35)', () => {
+    expect(BUGHOUSE_TIME_CONTROLS).toHaveLength(21);
     for (const tc of BUGHOUSE_TIME_CONTROLS) expect(validateBugTimeControl({ ...tc })).toEqual({ ok: true, value: tc });
-    const refused: unknown[] = [{ initialMs: 600000, incrementMs: 0 }, { initialMs: 180000, incrementMs: 1000 }, { initialMs: 180000 }, { initialSeconds: 180, incrementSeconds: 0 }, { initialMs: '180000', incrementMs: 0 }, { initialMs: 180000.5, incrementMs: 0 }, null, undefined, 5, 'x', []];
+    expect(validateBugTimeControl({ initialMs: 0, incrementMs: 0 }).ok).toBe(true);
+    expect(validateBugTimeControl({ initialMs: 1209600000, incrementMs: 0 }).ok).toBe(true);
+    const refused: unknown[] = [{ initialMs: 420000, incrementMs: 0 }, { initialMs: 0, incrementMs: 1000 }, { initialMs: 129600000, incrementMs: 0 }, { initialMs: 1296000000, incrementMs: 0 }, { initialMs: 180000, incrementMs: 1000 }, { initialMs: 180000 }, { initialSeconds: 180, incrementSeconds: 0 }, { initialMs: '180000', incrementMs: 0 }, { initialMs: 180000.5, incrementMs: 0 }, null, undefined, 5, 'x', []];
     for (const tc of refused) expect(validateBugTimeControl(tc).ok).toBe(false);
   });
 

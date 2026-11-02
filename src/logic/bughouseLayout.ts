@@ -21,9 +21,6 @@ export const BUGHOUSE_DUAL_MIN_CELL = 28;
 /** The width from which a tie between the two arrangements goes to side by side (S-U3). */
 export const BUGHOUSE_SIDE_BY_SIDE_MIN_WIDTH = 700;
 
-/** The app's time-control presets that are Bughouse's six (B11: 1, 2 | 1, 3, 3 | 2, 5, 5 | 2 - 10 minutes is dropped, no Daily, no "No time limit"). */
-export const BUGHOUSE_TIME_CONTROL_IDS: readonly string[] = ['bullet-1', 'bullet-2-1', 'blitz-3', 'blitz-3-2', 'blitz-5', 'blitz-5-2'];
-
 /** A preset as the engine's integer-millisecond control. */
 export function bughouseTimeControlOf(preset: { initialSeconds: number; incrementSeconds: number }): BughouseTimeControl {
   return { initialMs: preset.initialSeconds * 1000, incrementMs: preset.incrementSeconds * 1000 };

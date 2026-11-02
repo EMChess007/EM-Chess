@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   BUGHOUSE_SETUP_PRESETS,
-  BUGHOUSE_TIME_CONTROL_IDS,
   bughouseSetupGate,
   bughouseTimeControlOf,
   deriveBughouseLayout,
@@ -200,10 +199,9 @@ describe('the cell sizes of the standard layouts', () => {
 });
 
 describe('time controls and the rules sheet', () => {
-  it('the six controls, and the presets that stand for them', () => {
-    expect([...BUGHOUSE_TIME_CONTROL_IDS]).toEqual(['bullet-1', 'bullet-2-1', 'blitz-3', 'blitz-3-2', 'blitz-5', 'blitz-5-2']);
+  it('a preset as the engine\'s milliseconds; the first six labels of the list (command #35: all 21 are pinned in bughouseTimeControls.test.ts)', () => {
     expect(bughouseTimeControlOf({ initialSeconds: 120, incrementSeconds: 1 })).toEqual({ initialMs: 120000, incrementMs: 1000 });
-    expect(BUGHOUSE_TIME_CONTROLS.map(bughouseControlLabel)).toEqual(['1 min', '2 | 1', '3 min', '3 | 2', '5 min', '5 | 2']);
+    expect(BUGHOUSE_TIME_CONTROLS.slice(0, 6).map(bughouseControlLabel)).toEqual(['1 min', '2 | 1', '3 min', '3 | 2', '5 min', '5 | 2']);
   });
 
   it('the sheet says what the engine does: the six controls, no draws, no pawn drop on the 1st or 8th rank, the five pocket pieces', () => {
@@ -211,7 +209,8 @@ describe('time controls and the rules sheet', () => {
       .map((s) => `${s.title}\n${s.lines.join('\n')}`)
       .join('\n');
     expect(bughouseRulesSheet().map((s) => s.title)).toEqual(['The idea', 'Captures feed your partner', 'Drops', 'Waiting', 'Clocks and the end']);
-    expect(text).toContain('Time controls: 1 min, 2 | 1, 3 min, 3 | 2, 5 min, 5 | 2.');
+    expect(text).toContain('Time controls: 1 min, 2 | 1, 3 min, 3 | 2, 5 min, 5 | 2, No time limit, 1 | 1, 5 | 5, 10 min, 15 | 10, 30 min, 10 | 5, 20 min, 60 min, 1 day, 2 days, 3 days, 5 days, 7 days, 14 days.');
+    expect(text).toContain('With "No time limit" there are no clocks');
     expect(text).toContain('There are no draws in Bughouse.');
     expect(text).toContain('never be dropped on the 1st or 8th rank');
     expect(text).toContain('pawn, knight, bishop, rook, queen');

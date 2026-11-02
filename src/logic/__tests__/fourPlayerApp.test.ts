@@ -110,17 +110,17 @@ describe('the time-control step', () => {
     expect(app).toContain("{ name: 'fourPlayerTimeControl'; variant: FourVariant; seats: SeatConfig }");
     expect(app).toContain("{ name: 'fourPlayerGame'; variant: FourVariant; seats: SeatConfig; timeControl: TimeControl }");
     expect(app).toContain("onContinue={() => setScreen({ name: 'fourPlayerTimeControl', variant, seats })}");
-    expect(app).toContain("excludeCategories={['daily']}");
     expect(app).toContain("setScreen({ name: 'fourPlayerGame', variant, seats, timeControl })");
     expect(app).toContain('<FourPlayerGameScreen variant={screen.variant} seats={screen.seats} timeControl={screen.timeControl}');
+    // (command #35: the picker has no exclusion at all - every control of the list)
     const picker = read('screens/TimeControlSelectScreen.tsx');
-    expect(picker).toContain('excludeCategories?: TimeControlCategory[];');
-    expect(picker).toContain('TIME_CONTROL_CATEGORIES.filter(({ category }) => !excludeCategories.includes(category)).map(');
+    expect(picker).not.toContain('excludeCategories');
+    expect(picker).toContain('<TimeControlSections');
   });
 
-  it('the preset list the picker shows is still Bullet / Blitz / Rapid / No time limit once Daily is removed', async () => {
+  it('the preset list the picker shows is every category: Bullet / Blitz / Rapid / Daily / No time limit', async () => {
     const { TIME_CONTROL_CATEGORIES } = await import('../timeControls');
-    expect(TIME_CONTROL_CATEGORIES.filter(({ category }) => category !== 'daily').map((c) => c.label)).toEqual(['Bullet', 'Blitz', 'Rapid', 'No time limit']);
+    expect(TIME_CONTROL_CATEGORIES.map((c) => c.label)).toEqual(['Bullet', 'Blitz', 'Rapid', 'Daily', 'No time limit']);
   });
 });
 

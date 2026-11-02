@@ -3,6 +3,7 @@
  * the twin of `bughouseOnlineUi.ts`. The wire contract is `bughouse/roomWire.ts`; the server's rules are backend `bughouseFriendRooms.ts`.
  */
 import type { TimeControl } from '../types/timeControl';
+import { TIME_CONTROLS } from './timeControls';
 import { bugRoomInviteLink, type BugFriendRoomView, type BugRoomClosedReason } from './bughouse/roomWire';
 
 /** How many whole seconds of the code's life are left, counted on THIS device's clock from the moment the view arrived (never the server's clock); never below 0. */
@@ -58,6 +59,9 @@ export function inviteCodeFromPath(pathname: string): string | null {
 export function timeControlOfMatch(timeControl: { initialMs: number; incrementMs: number }, label: string): TimeControl {
   const initialSeconds = Math.round(timeControl.initialMs / 1000);
   const incrementSeconds = Math.round(timeControl.incrementMs / 1000);
+  // the app's own preset when there is one (its category is what "play again" and the clocks read), else a record built from the milliseconds
+  const preset = TIME_CONTROLS.find((tc) => tc.initialSeconds === initialSeconds && tc.incrementSeconds === incrementSeconds);
+  if (preset) return { ...preset, label: label || preset.label };
   return { id: `bughouse-room-${initialSeconds}-${incrementSeconds}`, label, initialSeconds, incrementSeconds, category: initialSeconds <= 120 ? 'bullet' : 'blitz' };
 }
 

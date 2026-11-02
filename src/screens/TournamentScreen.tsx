@@ -3,15 +3,16 @@ import { ActivityIndicator, ScrollView, Share, StyleSheet, View } from 'react-na
 import { Pressable } from '../components/AppPressable';
 import { Text, TextInput } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
+import TimeControlSections from '../components/TimeControlSections';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { connectSocket, disconnectSocket, getSocket } from '../api/socket';
 import { emitWithin } from '../api/socketAck';
 import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
-import { getTimeControlsByCategory } from '../logic/timeControls';
+import { ONLINE_DAILY_NOTE } from '../logic/timeControls';
 import type { AuthUser } from '../types/auth';
 import type { Ack, TournamentLobbyState } from '../types/multiplayer';
-import type { TimeControl, TimeControlCategory } from '../types/timeControl';
+import type { TimeControl } from '../types/timeControl';
 
 interface TournamentScreenProps {
   authToken: string;
@@ -23,12 +24,6 @@ interface TournamentScreenProps {
 type Phase = 'menu' | 'create' | 'join' | 'lobby';
 
 const MIN_PARTICIPANTS_TO_START = 3;
-
-const CATEGORIES: { category: TimeControlCategory; label: string }[] = [
-  { category: 'bullet', label: 'Bullet' },
-  { category: 'blitz', label: 'Blitz' },
-  { category: 'rapid', label: 'Rapid' },
-];
 
 /**
  * Create/join/lobby flow for a small friend-group round-robin tournament — same overall shape
@@ -206,18 +201,7 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
           <VariantSelector value={variant} onChange={setVariant} excludeVariants={['setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'crazyhouse']} />
           {error && <Text style={styles.errorText}>{error}</Text>}
           <ScrollView contentContainerStyle={styles.setupScrollContent}>
-            {CATEGORIES.map(({ category, label }) => (
-              <View key={category} style={styles.section}>
-                <Text style={styles.sectionTitle}>{label}</Text>
-                <View style={styles.presetGrid}>
-                  {getTimeControlsByCategory(category).map((tc) => (
-                    <Pressable key={tc.id} style={styles.presetButton} onPress={() => handleCreate(tc)}>
-                      <Text style={styles.presetButtonText}>{tc.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            ))}
+            <TimeControlSections onSelect={handleCreate} dailyNote={ONLINE_DAILY_NOTE} />
           </ScrollView>
         </View>
       )}

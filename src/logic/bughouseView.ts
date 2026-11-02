@@ -171,6 +171,9 @@ export function kingBadge(layout: BughouseLayout, board: BoardId, color: Bughous
 export function formatBughouseClock(ms: number): string {
   const clamped = Math.max(0, Math.floor(ms));
   const totalSeconds = Math.floor(clamped / 1000);
+  // a Daily clock (command #35): days and hours, then h:mm:ss from an hour down (the old "1440:00" for a day was unreadable)
+  if (totalSeconds >= 86400) return `${Math.floor(totalSeconds / 86400)}d ${Math.floor((totalSeconds % 86400) / 3600)}h`;
+  if (totalSeconds >= 3600) return `${Math.floor(totalSeconds / 3600)}:${String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   const base = `${minutes}:${String(seconds).padStart(2, '0')}`;

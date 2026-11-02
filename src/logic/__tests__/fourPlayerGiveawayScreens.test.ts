@@ -436,7 +436,7 @@ describe('screens: the Giveaway flow is wired through the same screens (no rende
     expect(app).toContain('<FourPlayerMatchmakingScreen\n        variant={variant}');
     expect(app).toContain('<FourPlayerSetupScreen\n        variant={variant}');
     expect(app).toContain("onSelect={(timeControl) => setScreen({ name: 'fourPlayerMatchmaking', variant, token, timeControl })}");
-    expect(app).toContain("excludeCategories={['daily', 'unlimited']}");
+    expect(app).not.toContain('excludeCategories'); // command #35: every control, online too
     expect(app).toContain('subtitle={`${variantTitle(variant)} · ${variantModeLabel(variant)}`}');
     // every Chess entry passes 'ffa' explicitly
     expect(app).toContain("onFourPlayer={() => setScreen({ name: 'fourPlayerSetup', variant: 'ffa', seats: defaultSeatConfig() })}");

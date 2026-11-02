@@ -1,5 +1,4 @@
 import {
-  BUGHOUSE_TIME_CONTROLS,
   createMatch,
   settle,
   seatPlace,
@@ -141,9 +140,19 @@ export interface PairedRun {
   model: RefMatch;
 }
 
+const LIVE_SIX: readonly { initialMs: number; incrementMs: number }[] = [
+  { initialMs: 60000, incrementMs: 0 },
+  { initialMs: 120000, incrementMs: 1000 },
+  { initialMs: 180000, incrementMs: 0 },
+  { initialMs: 180000, incrementMs: 2000 },
+  { initialMs: 300000, incrementMs: 0 },
+  { initialMs: 300000, incrementMs: 2000 },
+];
+
 export function newPair(seed: number): PairedRun {
   const rng = mulberry32(seed);
-  const tc = BUGHOUSE_TIME_CONTROLS[Math.floor(rng() * BUGHOUSE_TIME_CONTROLS.length)];
+  // the spec's six, as literals: the reference model was written for live clocks and the seeded matches were recorded with them. "No time limit" and Daily are tested in bughouseTimeControls.test.ts
+  const tc = LIVE_SIX[Math.floor(rng() * LIVE_SIX.length)];
   const room = Math.floor(rng() * 1000);
   const start = Math.floor(rng() * 5000);
   return { engine: createMatch({ timeControl: tc, roomNumber: room, startMs: start }), model: new RefMatch(tc.initialMs, tc.incrementMs, room, start) };

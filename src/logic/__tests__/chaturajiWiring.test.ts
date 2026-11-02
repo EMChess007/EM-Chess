@@ -27,8 +27,8 @@ describe('navigation', () => {
     for (const screen of ['fourPlayerSetup', 'fourPlayerBotSelect', 'fourPlayerTimeControl', 'fourPlayerGame', 'fourPlayerOnlineTimeControl', 'fourPlayerMatchmaking']) {
       expect(app, screen).toMatch(new RegExp(`name: '${screen}'[^}]*variant`));
     }
-    expect(app).toContain("excludeCategories={['daily']}");
-    expect(app).toContain("excludeCategories={['daily', 'unlimited']}");
+    // (command #35: no step leaves a category out any more - timeControlsEverywhere.test.ts scans every picker)
+    expect(app).not.toContain('excludeCategories');
     expect(app).toContain('variant: fourVariantOf(match), token, timeControl'); // Play again queues for the game that was just played
     expect(app).not.toMatch(/variant: 'chaturaji'[^\n]*(daily|unlimited)/);
   });

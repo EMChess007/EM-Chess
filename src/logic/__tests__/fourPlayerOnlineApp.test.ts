@@ -160,16 +160,11 @@ describe('entry, queue and leaving', () => {
     expect(app).toContain("onFourPlayerOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'ffa', token: authSession.token })}");
   });
 
-  it('the picker leaves out Daily and No time limit, and every preset it does offer is accepted by the server\'s validator', () => {
-    expect(app).toContain("excludeCategories={['daily', 'unlimited']}");
-    const offered = TIME_CONTROLS.filter((tc) => tc.category !== 'daily' && tc.category !== 'unlimited');
-    expect(offered.length).toBeGreaterThanOrEqual(10);
-    for (const tc of offered) {
+  it('the picker leaves out nothing (command #35): EVERY preset of the list is accepted by the server\'s validator, Daily and No time limit included', () => {
+    expect(app).not.toContain('excludeCategories');
+    expect(TIME_CONTROLS).toHaveLength(21);
+    for (const tc of TIME_CONTROLS) {
       expect(validateFourTimeControl({ initialSeconds: tc.initialSeconds, incrementSeconds: tc.incrementSeconds }).ok, tc.id).toBe(true);
-    }
-    // ...and the two that are left out are exactly the ones it would refuse
-    for (const tc of TIME_CONTROLS.filter((t) => t.category === 'daily' || t.category === 'unlimited')) {
-      expect(validateFourTimeControl({ initialSeconds: tc.initialSeconds, incrementSeconds: tc.incrementSeconds }).ok, tc.id).toBe(false);
     }
   });
 

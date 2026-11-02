@@ -31,6 +31,15 @@ export const TIME_CONTROLS: TimeControl[] = [
   { id: 'daily-14', label: '14 days', initialSeconds: 14 * DAY, incrementSeconds: 0, category: 'daily' },
 ];
 
+/**
+ * The ONE canonical list is TIME_CONTROLS above (command #35): 3 Bullet, 5 Blitz, 6 Rapid, 6 Daily and No time limit = 21 presets. Every picker renders it through
+ * components/TimeControlSections.tsx; no mode has its own list. These ids are pinned as literals in timeControlsEverywhere.test.ts.
+ */
+export const TIME_CONTROL_COUNT = TIME_CONTROLS.length;
+
+/** The line the ONLINE pickers show under the Daily heading: a Daily game has no abandonment forfeit (its clock of days decides) but lives in the server's memory. */
+export const ONLINE_DAILY_NOTE = 'A Daily game is kept while the server runs; an app update on the server can end it.';
+
 export const TIME_CONTROL_CATEGORIES: { category: TimeControlCategory; label: string }[] = [
   { category: 'bullet', label: 'Bullet' },
   { category: 'blitz', label: 'Blitz' },

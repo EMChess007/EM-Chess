@@ -286,7 +286,7 @@ function SeatBar({ seat, match, nowMs = 0, seatName, actor: moveActor, premoveSe
           );
         })}
       </View>
-      <SeatClock clock={clock} running={running} fallbackNow={nowMs} minWidth={stripClockMin(stripWidth)} board={place.board} word={word} styles={styles} />
+      <SeatClock clock={clock} unlimited={match.timeControl.initialMs === 0} running={running} fallbackNow={nowMs} minWidth={stripClockMin(stripWidth)} board={place.board} word={word} styles={styles} />
     </View>
   );
 }
@@ -295,8 +295,16 @@ function SeatBar({ seat, match, nowMs = 0, seatName, actor: moveActor, premoveSe
  * The one clock text of a seat. It is the ONLY part of a seat bar that subscribes to the clock instant (NowClock.tsx): a tick of the clock re-renders this `Text` and nothing else on the
  * screen (command #33; renderBudget.dom.test.tsx counts it). `fallbackNow` is the instant for a block drawn without the screen's provider (a test).
  */
-function SeatClock({ clock, running, fallbackNow, minWidth, board, word, styles }: { clock: BughouseMatch['clocks'][BughouseSeat]; running: boolean; fallbackNow: number; minWidth: number; board: BoardId; word: string; styles: ReturnType<typeof createStyles> }) {
+function SeatClock({ clock, unlimited, running, fallbackNow, minWidth, board, word, styles }: { clock: BughouseMatch['clocks'][BughouseSeat]; unlimited: boolean; running: boolean; fallbackNow: number; minWidth: number; board: BoardId; word: string; styles: ReturnType<typeof createStyles> }) {
   const remaining = remainingAt(clock, useNowMs(fallbackNow));
+  // "No time limit" (command #35): no clock runs, so the strip says so instead of a red "0:00.0"
+  if (unlimited) {
+    return (
+      <Text maxFontSizeMultiplier={1} style={[styles.clock, { minWidth }]} testID={`clock-${board}-${word}`} accessibilityLabel={`Board ${board} ${word}: no time limit`}>
+        {'∞'}
+      </Text>
+    );
+  }
   return (
     <Text maxFontSizeMultiplier={1} style={[styles.clock, { minWidth }, running && styles.clockRunning, remaining < 10000 && styles.clockLow]} testID={`clock-${board}-${word}`} accessibilityLabel={`Board ${board} ${word} clock`}>
       {formatBughouseClock(remaining)}

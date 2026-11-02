@@ -4,6 +4,7 @@
  * map does not have.
  */
 import { BUGHOUSE_TIME_CONTROLS } from './bughouse';
+import { bughouseControlLabel as engineControlLabel } from './bughouse/rules';
 import { seatPlace } from './bughouse/types';
 import { RESERVE_PIECE_TYPES } from './crazyhouse';
 import type { RulesSection } from './chaturajiUi';
@@ -11,11 +12,8 @@ import type { BughouseTimeControl } from './bughouse/rules';
 
 const PIECE_WORD = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen' } as const;
 
-/** "3 min" / "3 | 2" - the label the time-control screen shows for a control. */
-export function bughouseControlLabel(control: BughouseTimeControl): string {
-  const minutes = control.initialMs / 60000;
-  return control.incrementMs === 0 ? `${minutes} min` : `${minutes} | ${control.incrementMs / 1000}`;
-}
+/** The label of a control (the engine's own, bughouse/rules.ts): kept exported from here for the rules sheet's callers. */
+export const bughouseControlLabel = (control: BughouseTimeControl): string => engineControlLabel(control);
 
 export function bughouseRulesSheet(): RulesSection[] {
   const team1 = [0, 1, 2, 3].filter((s) => seatPlace(s as 0 | 1 | 2 | 3).team === 1).map((s) => seatPlace(s as 0 | 1 | 2 | 3));
@@ -52,7 +50,7 @@ export function bughouseRulesSheet(): RulesSection[] {
     {
       title: 'Clocks and the end',
       lines: [
-        `Every player has their own clock and all start together. Time controls: ${BUGHOUSE_TIME_CONTROLS.map(bughouseControlLabel).join(', ')}.`,
+        `Every player has their own clock and all start together. Time controls: ${BUGHOUSE_TIME_CONTROLS.map(bughouseControlLabel).join(', ')}. With "No time limit" there are no clocks, so only a mate, a resignation or everyone leaving ends the match; a Daily match has a clock of days.`,
         'The whole match ends the moment ANY board ends - checkmate, resignation or a flag - and the team that won that board wins the match.',
         'There are no draws in Bughouse.',
       ],

@@ -117,8 +117,13 @@ describe('the screens’ wording and decisions', () => {
   });
 
   it('turns a room’s match into the app’s time-control record', () => {
-    expect(timeControlOfMatch({ initialMs: 180000, incrementMs: 2000 }, '3 | 2')).toEqual({ id: 'bughouse-room-180-2', label: '3 | 2', initialSeconds: 180, incrementSeconds: 2, category: 'blitz' });
+    // (command #35: a control of the app's list comes back as the app's own preset)
+    expect(timeControlOfMatch({ initialMs: 180000, incrementMs: 2000 }, '3 | 2')).toEqual({ id: 'blitz-3-2', label: '3 | 2', initialSeconds: 180, incrementSeconds: 2, category: 'blitz' });
     expect(timeControlOfMatch({ initialMs: 60000, incrementMs: 0 }, '1 min').category).toBe('bullet');
+    expect(timeControlOfMatch({ initialMs: 0, incrementMs: 0 }, 'No time limit')).toMatchObject({ id: 'unlimited', category: 'unlimited' });
+    expect(timeControlOfMatch({ initialMs: 7 * 86_400_000, incrementMs: 0 }, '7 days')).toMatchObject({ id: 'daily-7', category: 'daily', initialSeconds: 604800 });
+    // a control the list does not have (an old room record) still becomes a record
+    expect(timeControlOfMatch({ initialMs: 420000, incrementMs: 0 }, '7 min')).toEqual({ id: 'bughouse-room-420-0', label: '7 min', initialSeconds: 420, incrementSeconds: 0, category: 'blitz' });
   });
 });
 

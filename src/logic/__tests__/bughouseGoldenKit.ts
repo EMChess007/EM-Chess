@@ -10,7 +10,6 @@
  * mulberry32 for every choice, instants are integers made from the seed, no clock and no Date.
  */
 import {
-  BUGHOUSE_TIME_CONTROLS,
   createMatch,
   legalActions,
   seatPlace,
@@ -73,10 +72,23 @@ export interface GameCoverage {
 }
 export const emptyGameCoverage = (): GameCoverage => ({ games: 0, commits: 0, captures: 0, drops: 0, banks: 0, promotions: 0, mates: 0, flags: 0, resigns: 0, stuck: 0, rejected: 0 });
 
+/**
+ * The six controls of the spec (rule 26), as LITERALS: the golden transcripts were recorded with them, and the engine's list grew to the app's 21 in command #35 (its first six are these:
+ * bughouseTimeControls.test.ts pins that), so the seeded games keep picking among the six and no transcript changes. "No time limit" and Daily have their own tests.
+ */
+export const SPEC_SIX: readonly BughouseTimeControl[] = [
+  { initialMs: 60000, incrementMs: 0 },
+  { initialMs: 120000, incrementMs: 1000 },
+  { initialMs: 180000, incrementMs: 0 },
+  { initialMs: 180000, incrementMs: 2000 },
+  { initialMs: 300000, incrementMs: 0 },
+  { initialMs: 300000, incrementMs: 2000 },
+];
+
 /** Plays one seeded match with the engine's own legal lists; optionally adds what it reached to `coverage`. */
 export function recordBughouseGame(seed: number, maxSteps = 110, coverage?: GameCoverage): string {
   const rng = mulberry32(seed);
-  const timeControl: BughouseTimeControl = BUGHOUSE_TIME_CONTROLS[Math.floor(rng() * BUGHOUSE_TIME_CONTROLS.length)];
+  const timeControl: BughouseTimeControl = SPEC_SIX[Math.floor(rng() * SPEC_SIX.length)];
   const room = Math.floor(rng() * 500);
   const start = Math.floor(rng() * 3000);
   let m = createMatch({ timeControl, roomNumber: room, startMs: start });

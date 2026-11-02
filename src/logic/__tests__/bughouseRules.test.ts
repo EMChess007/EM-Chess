@@ -23,7 +23,8 @@ describe('R3, R24, R26: the start', () => {
     expect(m.verdicts.A.turn).toBe('w');
     expect(m.verdicts.B.turn).toBe('w');
     expect(m.clocks.map((c) => c.runningSince)).toEqual([0, null, 0, null]);
-    expect(BUGHOUSE_TIME_CONTROLS).toEqual([
+    // (the list grew to the app's 21 in command #35; its FIRST six are still the spec's, in this order - bughouseTimeControls.test.ts pins the rest)
+    expect(BUGHOUSE_TIME_CONTROLS.slice(0, 6)).toEqual([
       { initialMs: 60000, incrementMs: 0 },
       { initialMs: 120000, incrementMs: 1000 },
       { initialMs: 180000, incrementMs: 0 },
