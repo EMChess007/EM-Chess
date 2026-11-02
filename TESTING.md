@@ -2077,5 +2077,8 @@ See the backend TESTING.md section 43 and BUGHOUSE_SPEC.md section 9.
 - **Mutation:** W4 / W5 client logic 78 of 78 killed (section D).
 - **security-audit:** success in both repos on every pushed commit.
 
+### D2. The `large-perf` app process dying (command #36): UNPROVEN
+- The app process was gone in about 4 of ~9 `large-perf` runs. The newest android-e2e logs (runs on `e655548` and `3242fd6`) hold no exit reason, ANR, OOM, native signal or stack for it (the `large/static/perf` slice of the `3242fd6` run ended `exit 0`, 138 s). Whether it is an app crash or an emulator issue is UNPROVEN; no fix was made. If it happens again, `whereIsTheApp` prints the death lines of the whole log: read those first.
+
 ### E. A red that predates this command
 - The backend `CI` was red from `cf044fb` on: `test-bughouse-friend-online.mjs` pinned the old sentence "Sign in to play Bughouse with a friend." after the Crazy Bughouse rename; the job stops at its first failing step, so every later suite had not run in CI. Fixed; the suites after it (`rejoinPersist` needs the CI server with `FOUR_GRACE_MS`) pass locally.
