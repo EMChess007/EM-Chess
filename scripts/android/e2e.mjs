@@ -773,15 +773,20 @@ async function perf(dev) {
     };
 
     // ---- 2-player against a bot -----------------------------------------------------------------------------------------------------------------------------------------------------
-    await toHome(dev);
-    dev.beacon.forget('state-board-2p');
-    dev.beacon.forget('perf');
-    await dev.runSteps([{ text: 'Play' }, { text: 'Classic', nth: 0 }, { text: 'Kiddo' }, { text: 'White' }, { text: '3 min' }]);
-    const first = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50, 40_000);
-    if (!first) throw new Error('the 2-player board against the bot reported no state');
-    await dev.beacon.settled(['state-board-2p'], 3000, 20_000);
-    const start2p = await nextPerf(dev);
-    if (!start2p) throw new Error('the app sent no performance report: the probe is not in this build (EXPO_PUBLIC_E2E)');
+    const startBotGame = async () => {
+      await toHome(dev);
+      dev.beacon.forget('state-board-2p');
+      dev.beacon.forget('perf');
+      await dev.runSteps([{ text: 'Play' }, { text: 'Classic', nth: 0 }, { text: 'Kiddo' }, { text: 'White' }, { text: '3 min' }]);
+      const first = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50, 40_000);
+      if (!first) throw new Error('the 2-player board against the bot reported no state');
+      await dev.beacon.settled(['state-board-2p'], 3000, 20_000);
+      const reported = await nextPerf(dev);
+      if (!reported) throw new Error('the app sent no performance report: the probe is not in this build (EXPO_PUBLIC_E2E)');
+      return reported;
+    };
+    let start2p = await startBotGame();
+    let appDiedOnce = false;
     const game = (state) => new Chess(state.fen);
     for (let ply = 0; ply < 8; ply++) {
       const state = await dev.beacon.waitFor('state-board-2p', (s) => s.fen.split(' ')[1] === 'w' && s.rect && s.rect.w > 50, 30_000);
@@ -797,6 +802,29 @@ async function perf(dev) {
       const from = squareRect(board, o, move.from);
       dev.press(from.cx, from.cy, 90);
       if (!(await waitSelected(dev, 'state-board-2p', move.from, 4000))) {
+        // THE APP PROCESS DIED between the start of the bot game and the first touch (command #35b: 4 of 7 runs of this slice on the CI emulator; "app died, no saved state" in the system log, the
+        // launcher in the photograph, `pidof` empty, no crash trace; cause UNPROVEN). A measurement of a game that is gone says nothing about the game: the app and the game are started ONCE more, the
+        // death is printed with Android's own exit reason (`dumpsys activity exit-info`) and kept in the check's note, so it is counted and visible - never silent.
+        let alive = true;
+        try {
+          alive = !/no process/.test(String(dev.sh('pidof com.emchess.app || echo "no process"', { timeout: 10_000 })));
+        } catch {
+          /* cannot ask: not treated as a death */
+        }
+        if (ply === 0 && !alive && !appDiedOnce) {
+          appDiedOnce = true;
+          await whereIsTheApp(dev, 'perf, the app process is gone');
+          try {
+            log(`  exit-info: ${String(dev.sh('dumpsys activity exit-info com.emchess.app | head -40', { timeout: 20_000 })).replace(/\s+/g, ' ').slice(0, 900)}`);
+          } catch {
+            /* nothing to print */
+          }
+          notes.push('THE APP PROCESS DIED once before the first touch of the bot game (see the exit-info line): the app and the game were started again');
+          dev.relaunch();
+          start2p = await startBotGame();
+          ply = -1;
+          continue;
+        }
         notes.push(`ply ${ply + 1}: touching ${move.from} did not select it`);
         if (ply === 0) {
           // the first red run of this check (command #35b) left no picture: say where the touch went and what the app thought
@@ -888,7 +916,8 @@ async function perf(dev) {
     const found = [...issues, ...notes.filter((n) => /did not select|did not answer/.test(n)).map((n) => `input: ${n}`)];
     // (the digest prints a passing check's note and a failing check's issues: a failure carries the numbers too, so one short log has everything the budget was judged on)
     if (found.length > 0) found.push(`numbers: ${numbers.join(' | ')}`);
-    record(name, found, numbers.join(' | '));
+    // (a death of the app process is part of a PASSING check's note too: it is counted, never silent - CHECKLIST 23)
+    record(name, found, [...numbers, ...notes.filter((n) => /DIED/.test(n))].join(' | '));
   });
 }
 
