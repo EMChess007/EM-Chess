@@ -18,6 +18,7 @@ import {
   resultOf,
   serverNowAt,
   viewFromMatchFound,
+  viewFromSpectate,
   type BughouseOnlineView,
 } from '../bughouseOnline';
 
@@ -394,5 +395,60 @@ describe('seat updates', () => {
     expect(updated.seatsAt).toBe(1_009_000);
     expect(applySeatUpdate(v, { roomId: 'other', seats: next }, 1)).toBe(v);
     expect(applySeatUpdate(v, { roomId: ROOM, seats: [] as unknown as BugSeats }, 1)).toBe(v);
+  });
+});
+
+// Pins found by the W4 / W5 mutation run of command #35b (scripts/mutation/configs/bughouse-w4-w5-client.config.cjs): each one kills a mutant the suite above let live.
+describe('what the first view and the end of the game must not accept', () => {
+  it('a seat list is exactly FOUR seats and each seat has a text name', () => {
+    const three = SEATS.slice(0, 3) as unknown as BugSeats;
+    const five = [...SEATS, SEATS[0]] as unknown as BugSeats;
+    const nameless = SEATS.map((s, i) => (i === 2 ? { ...s, name: 5 } : s)) as unknown as BugSeats;
+    expect(viewFromMatchFound({ ...found(start()), seats: three }, 0)).toBeNull();
+    expect(viewFromMatchFound({ ...found(start()), seats: five }, 0)).toBeNull();
+    expect(viewFromMatchFound({ ...found(start()), seats: nameless }, 0)).toBeNull();
+    expect(viewFromMatchFound({ ...found(start()), seats: SEATS }, 0)).not.toBeNull();
+  });
+
+  const resigned = settle(start(), { seat: 1, action: { kind: 'resign' } }, 3000);
+  const moved = play(start(), 0, { kind: 'move', board: 'A', from: 'e2', to: 'e4' }, 2000);
+
+  it('an ending snapshot OLDER than ours never replaces ours; an EQUAL one is adopted together with its clock instant', () => {
+    const ahead = applyBugState(view(), statePayload(moved, 2000), 1_002_000).view;
+    expect(ahead.match.seq).toBe(1);
+    const older = applyGameOver(ahead, { roomId: ROOM, result: resigned.match.result!, state: serializeMatch(start()) }, 1_003_000);
+    expect(older.match).toBe(ahead.match);
+    expect(older.receivedAt).toBe(1_002_000);
+    expect(older.serverNowMs).toBe(2000);
+    const equal = applyGameOver(ahead, { roomId: ROOM, result: resigned.match.result!, state: serializeMatch(moved.match) }, 1_004_000);
+    expect(equal.match).not.toBe(ahead.match);
+    expect(equal.match.seq).toBe(1);
+    expect(equal.receivedAt).toBe(1_004_000);
+    expect(equal.serverNowMs).toBe(moved.match.nowMs);
+  });
+
+  it('a spectator view needs a text room id, four named seats and a readable snapshot, and says it is a spectator', () => {
+    const room = { roomId: ROOM, seats: SEATS, timeControl: TC, timeControlLabel: '1 min', seq: 0, state: serializeMatch(start()), serverNowMs: 0, log: [] };
+    const ok = viewFromSpectate(room, 5);
+    expect(ok?.spectator).toBe(true);
+    expect(ok?.mySeat).toBe(0);
+    expect(viewFromSpectate({ ...room, roomId: 5 as unknown as string }, 5)).toBeNull();
+    expect(viewFromSpectate({ ...room, state: 'nope' }, 5)).toBeNull();
+    expect(viewFromSpectate({ ...room, serverNowMs: 'x' as unknown as number }, 5)).toBeNull();
+  });
+
+  it('a move and a drop name the match seq they were validated against (not zero)', () => {
+    const ahead = applyBugState(view(), statePayload(moved, 2000), 1_002_000).view;
+    expect(actionPayload(ahead, { kind: 'move', board: 'A', from: 'd7', to: 'd5' }).baseSeq).toBe(1);
+    expect(actionPayload(ahead, { kind: 'drop', board: 'B', piece: 'n', square: 'f6' }).baseSeq).toBe(1);
+  });
+
+  it("the match's own result wins over the one bug_game_over carried", () => {
+    const v: BughouseOnlineView = {
+      ...view(resigned.match),
+      gameOver: { roomId: ROOM, result: { winnerTeam: 2, reason: 'flag', board: 'B', loserSeat: 2 }, state: '' },
+    };
+    expect(resultOf(v)).toEqual(resigned.match.result);
+    expect(resultOf(v)).not.toEqual({ winnerTeam: 2, reason: 'flag', board: 'B', loserSeat: 2 });
   });
 });

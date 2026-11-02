@@ -137,6 +137,31 @@ describe('the resolution (never early, one reason each)', () => {
   });
 });
 
+// Pins found by the W4 / W5 mutation run of command #35b: each kills a mutant the tests above let live.
+describe('what the mutation run added', () => {
+  it('picking ANOTHER chip while one is picked switches to it (only the same chip puts it down)', () => {
+    const m = withBoardA('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', { 1: { n: 1, p: 1 } });
+    const knight = premovePick(m, BLACK_A, null, 'n') as PremoveHalf;
+    expect(premovePick(m, BLACK_A, knight, 'p')).toEqual({ kind: 'pick', board: 'A', piece: 'p', fen: m.boards.A.fen });
+  });
+
+  it('only a pawn promotes on the last rank: a rook reaching it queues a plain move', () => {
+    const m = withBoardA('4k3/8/8/8/8/r7/8/4K3 w - - 0 1', {});
+    const half = premoveTap(m, BLACK_A, null, 'a3').half as PremoveHalf;
+    expect(premoveTap(m, BLACK_A, half, 'a1')).toEqual({ half: null, queued: { kind: 'move', from: 'a3', to: 'a1' } });
+  });
+
+  it('after the end nothing is waiting and a half-made premove is gone', () => {
+    const m = start();
+    const ended = { ...m, result: { winnerTeam: 1, reason: 'resign', board: 'A' } as never };
+    expect(isWaiting(m, BLACK_A)).toBe(true);
+    expect(isWaiting(ended, BLACK_A)).toBe(false);
+    const half = premoveTap(m, BLACK_A, null, 'e7').half;
+    expect(liveHalf(half, m)).toEqual(half);
+    expect(liveHalf(half, ended)).toBeNull();
+  });
+});
+
 describe('the marks', () => {
   it('a move marks both squares with the moving piece as the ghost; a promotion shows the new piece; a drop marks its square with the dropped piece', () => {
     const m = start();

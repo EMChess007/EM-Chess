@@ -67,6 +67,13 @@ jobs:
         env:
           E2E_BROWSER_PATH: /usr/bin/google-chrome
 
+      # Crazy Bughouse on the app's own dev web server: two fingers at once on the stacked and side-by-side dual layouts (CDP touch points), the offset of the page, the mouse, the 360 x 640
+      # refusal and pass-and-play on one board (BUGHOUSE_SPEC W8, command #35b). Starts and kills its own `expo start --web` on a free port; touches no other server.
+      - name: Crazy Bughouse two-finger, 360 x 640 refusal and pass-and-play (browser)
+        run: node scripts/browser/bughouse-dual-touch.mjs
+        env:
+          E2E_BROWSER_PATH: /usr/bin/google-chrome
+
       - name: Keep the contact sheets
         if: always()
         uses: actions/upload-artifact@v4

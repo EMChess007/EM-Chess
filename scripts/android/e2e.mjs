@@ -984,9 +984,133 @@ async function online(dev) {
       dev.dumpGapMs = undefined;
     }
   });
+  // A scenario that STARTS a match leaves it saved for a rejoin: the app reopens it at every launch (the first run of command #35b: the next scenario's "back to Home" relaunched into the saved
+  // Bughouse game for 120 s). A fresh, signed-in app between them (the same account) is what the offline phase does too.
   await friendRoom(dev);
+  await freshSignedIn(dev, account, 'after the friend room');
   await fourFriendRoom(dev);
+  await freshSignedIn(dev, account, 'after the 4-seat friend room');
+  await premoveNotice(dev);
   return account;
+}
+
+async function freshSignedIn(dev, account, when) {
+  try {
+    dev.stop();
+    await login(dev, account);
+  } catch (e) {
+    log(`  a fresh signed-in app ${when} could not be made: ${e.message}`);
+  }
+}
+
+/**
+ * "PREMOVE WAS NO LONGER LEGAL" ON THE PHONE (command #35b; CHECKLIST 21: a one-off message goes at the next move by either side or after 5 s). The phone creates a Classic challenge, a scripted
+ * guest (`backend.sh premove-opponent`, backend/scripts/premove-opponent.mjs) joins it and answers each of the phone's two moves 9 s later with a move that makes the phone's premove illegal.
+ * The colours are a coin flip on the server, so both are scripted (`PLANS`). Round 1: the premove is queued ("Premove queued: e4-e5" on the screen), the reply arrives, the notice is on the screen,
+ * the phone does nothing and the notice must be GONE 6.5 s after the reply (it expires 5 s after it appeared; the reply is seen on the app's own beacon, so the stopwatch starts at the
+ * action it limits). Round 2: the same, but the phone MOVES at once (two touches) and the notice must be gone at the first tree read after that move - only judged when that tree was read
+ * within 4 s of the reply, because later the 5 s expiry alone would also explain a missing notice (then the check says "not distinguishing" instead of passing silently).
+ */
+const PLANS = {
+  w: {
+    wait: null,
+    moves: [['e2', 'e4'], ['d2', 'd4']],
+    premoves: [['e4', 'e5'], ['d4', 'e5']],
+    blocks: [{ square: 'e5', piece: 'p' }, { square: 'd4', piece: 'p' }],
+    after: ['d1', 'd4'],
+  },
+  b: {
+    wait: { square: 'd4', piece: 'P' },
+    moves: [['d7', 'd6'], ['c7', 'c6']],
+    premoves: [['d6', 'd5'], ['c6', 'd5']],
+    blocks: [{ square: 'd5', piece: 'P' }, { square: 'c6', piece: 'P' }],
+    after: ['b8', 'c6'],
+  },
+};
+const PREMOVE_NOTICE = /Premove was no longer legal/;
+
+async function premoveNotice(dev) {
+  const name = 'online: premove notice';
+  await scenario(dev, name, async () => {
+    await toHome(dev);
+    dev.beacon.forget('state-board-2p');
+    await dev.runSteps([{ text: 'Play' }, { text: 'Challenge Friend' }, { text: 'Create Challenge' }, { label: 'Rapid 10 min' }]);
+    const waiting = await dev.waitFor('the challenge code', (list) => list.some((n) => /^[A-HJKMNP-Z2-9]{6}$/.test(n.text ?? '')), 40_000, 1200);
+    const code = waiting.find((n) => /^[A-HJKMNP-Z2-9]{6}$/.test(n.text ?? '')).text;
+    execFileSync('bash', ['scripts/android/backend.sh', 'premove-opponent', code], { stdio: 'inherit' });
+    const CH = 'state-board-2p';
+    const started = await dev.beacon.waitFor(CH, (s) => s.rect && s.rect.w > 50 && typeof s.fen === 'string' && s.fen.split(' ').length > 1, 60_000);
+    if (!started) throw new Error('the challenge game never started on the phone (no board reported within 60 s)');
+    const orientation = started.orientation ?? 'w';
+    const plan = PLANS[orientation];
+    const issues = [];
+    const touch = (square) => {
+      const s = dev.beacon.get(CH);
+      const r = squareRect(rectOfState(s), orientation, square);
+      dev.press(r.cx, r.cy, 90);
+    };
+    const hasPiece = (square, piece) => (s) => pieceOnSquare(s.fen, square) === piece;
+    const play = async ([from, to], label) => {
+      touch(from);
+      if (!(await waitSelected(dev, CH, from, 2500))) issues.push(`${label}: touched ${from}, the app selected ${JSON.stringify(dev.beacon.get(CH)?.selected ?? null)}`);
+      touch(to);
+    };
+    if (plan.wait) {
+      const opened = await dev.beacon.waitFor(CH, (s) => hasPiece(plan.wait.square, plan.wait.piece)(s) && s.fen.split(' ')[1] === orientation, 60_000);
+      if (!opened) throw new Error(`the scripted opponent's opening never arrived: the app's position is "${dev.beacon.get(CH)?.fen}"`);
+    } else {
+      const mine = await dev.beacon.waitFor(CH, (s) => s.fen.split(' ')[1] === orientation, 60_000);
+      if (!mine) throw new Error('never my turn at the start');
+    }
+    let notes = '';
+    for (let round = 0; round < 2; round++) {
+      const [from, to] = plan.moves[round];
+      await play([from, to], `round ${round + 1} move`);
+      if (!(await dev.beacon.waitFor(CH, (s) => pieceOnSquare(s.fen, to) !== null && pieceOnSquare(s.fen, from) === null, 15_000))) {
+        issues.push(`round ${round + 1}: my move ${from}-${to} never showed: the app's position is "${dev.beacon.get(CH)?.fen}"`);
+        break;
+      }
+      await play(plan.premoves[round], `round ${round + 1} premove`);
+      // the premove must really be queued before the reply comes (the reply waits 9 s)
+      await sleep(300);
+      const queuedTree = await dev.dump();
+      const want = `Premove queued: ${plan.premoves[round][0]}-${plan.premoves[round][1]}`;
+      if (!queuedTree.some((n) => (n.text ?? '').includes(want))) issues.push(`round ${round + 1}: "${want}" is not on the screen after the two touches`);
+      // the reply (the app's own beacon): the stopwatch of the 5 s starts here
+      const block = plan.blocks[round];
+      const reply = await dev.beacon.waitFor(CH, (s) => hasPiece(block.square, block.piece)(s) && s.fen.split(' ')[1] === orientation, 40_000);
+      const tReply = Date.now();
+      if (!reply) {
+        issues.push(`round ${round + 1}: the scripted reply never arrived (the app's position is "${dev.beacon.get(CH)?.fen}")`);
+        break;
+      }
+      if (round === 0) {
+        const seen = (await dev.dump()).some((n) => PREMOVE_NOTICE.test(n.text ?? ''));
+        if (!seen) issues.push(`round 1: no "Premove was no longer legal" line ${Date.now() - tReply} ms after the reply that made the premove illegal`);
+        await sleep(Math.max(0, tReply + 6500 - Date.now()));
+        const late = await dev.dump();
+        const gone = !late.some((n) => PREMOVE_NOTICE.test(n.text ?? ''));
+        if (!gone) issues.push(`round 1: the notice was still on the screen ${Date.now() - tReply} ms after the reply (it must go within 5 s)`);
+        notes += `round 1: notice seen: ${seen}, gone after 6.5 s: ${gone}`;
+      } else {
+        // the phone MOVES at once: the next move must take the notice away before the 5 s could
+        const [mf, mt] = plan.after;
+        touch(mf);
+        await waitSelected(dev, CH, mf, 2500);
+        touch(mt);
+        const tree = await dev.dump();
+        const age = Date.now() - tReply;
+        const gone = !tree.some((n) => PREMOVE_NOTICE.test(n.text ?? ''));
+        if (age > 4000) notes += `; round 2 NOT DISTINGUISHING (the tree after the move was read ${age} ms after the reply)`;
+        else {
+          notes += `; round 2: gone ${age} ms after the reply, after my move: ${gone}`;
+          if (!gone) issues.push(`round 2: the notice was still on the screen ${age} ms after the reply although the phone had moved`);
+        }
+      }
+    }
+    await dev.snapshot('premove-notice');
+    record(name, issues, notes);
+  });
 }
 
 /**
@@ -1292,8 +1416,20 @@ async function onlineGame(dev, account, progress = { issues: [] }) {
       // card by itself when a result arrives; the finder above may have scrolled too, so wait, look at the tree as it is NOW, and require the headline and both buttons fully inside the window.
       if (found) {
         await sleep(1500);
-        const tree = await dev.dump().catch(() => []);
-        for (const id of ['game-over-headline', 'bughouse-rematch', 'bughouse-menu']) {
+        // A dump that FAILED is not a screen without the card (command #35b: the first run of the picker fix read `[]` after "could not get idle state" - three times in a row on a screen that had
+        // just been repainted - and called the card "below the fold"): it is read again, patiently, and when it still cannot be read the issue says THAT.
+        let tree = [];
+        dev.dumpAttempts = 8;
+        dev.dumpGapMs = 1500;
+        try {
+          tree = await dev.dump();
+        } catch (e) {
+          issues.push(`the result card could not be judged: the accessibility tree could not be read after 8 tries (${String(e.message).slice(0, 120)})`);
+        } finally {
+          dev.dumpAttempts = undefined;
+          dev.dumpGapMs = undefined;
+        }
+        for (const id of tree.length === 0 ? [] : ['game-over-headline', 'bughouse-rematch', 'bughouse-menu']) {
           const node = tree.find((n) => n.id === id && n.bounds);
           if (!node) issues.push(`the result card's "${id}" is not on the screen (the tree has no such visible node: the card is below the fold)`);
           else if (node.bounds.y1 < 0 || node.bounds.y2 > dev.display.h || node.bounds.x1 < 0 || node.bounds.x2 > dev.display.w) issues.push(`the result card's "${id}" is cut off: bounds y ${node.bounds.y1}-${node.bounds.y2} in a window of ${dev.display.h} px`);

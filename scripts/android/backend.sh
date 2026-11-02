@@ -90,7 +90,19 @@ case "${1:-}" in
     echo "[backend] its first lines:"
     head -n 3 "$state/four-friend.log" || true
     ;;
+  premove-opponent)
+    # command #35b: the scripted 2-player opponent that joins the phone's Classic challenge and makes its premove illegal, twice (backend/scripts/premove-opponent.mjs).
+    code="${2:?usage: backend.sh premove-opponent <challenge code>}"
+    stop_one "$state/premove-opponent.pid"
+    BACKEND_URL=http://localhost:3000 nohup $tsx scripts/premove-opponent.mjs "$code" > "$state/premove-opponent.log" 2>&1 &
+    echo $! > "$state/premove-opponent.pid"
+    echo "[backend] the premove opponent started for the challenge (pid $(cat "$state/premove-opponent.pid"))"
+    sleep 4
+    echo "[backend] its first lines:"
+    head -n 3 "$state/premove-opponent.log" || true
+    ;;
   stop)
+    stop_one "$state/premove-opponent.pid"
     stop_one "$state/four-friend.pid"
     stop_one "$state/friend.pid"
     for n in 1 2 3; do stop_one "$state/buddy$n.pid"; done

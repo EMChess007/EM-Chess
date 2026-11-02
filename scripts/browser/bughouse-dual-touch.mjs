@@ -34,8 +34,17 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(here, '..', '..');
-const requireFromBackend = createRequire(path.join(appDir, 'backend', 'package.json'));
-const { chromium } = requireFromBackend('playwright-core');
+// playwright-core is not an app dependency: the sibling backend checkout has it (cloud sessions, the laptop); the app's own CI job installs it with `npm i --no-save playwright-core` (command #35b).
+const { chromium } = (() => {
+  for (const base of [path.join(appDir, 'backend', 'package.json'), path.join(appDir, 'package.json')]) {
+    try {
+      return createRequire(base)('playwright-core');
+    } catch {
+      /* not there: try the next place */
+    }
+  }
+  throw new Error('playwright-core was not found in <app>/backend/node_modules or <app>/node_modules (npm i --no-save playwright-core)');
+})();
 
 const OUT_DIR = process.env.OUT_DIR || path.join(tmpdir(), 'bughouse-dual-touch');
 mkdirSync(OUT_DIR, { recursive: true });
@@ -165,7 +174,15 @@ async function scenario(browser, baseUrl, viewport) {
   check(`${tag} layout: the boards are fully inside the window`, a.x >= 0 && b.x + b.width <= viewport.width + 0.5 && a.y >= 0 && b.y + b.height <= viewport.height + 0.5, `window ${viewport.width}x${viewport.height}`);
   check(`${tag} layout: the cell is at least 28 px`, a.width / 8 >= 28, `${a.width / 8} px`);
   check(`${tag} layout: no horizontal page overflow`, dims.sw <= dims.iw, JSON.stringify(dims));
+  // The dev-only "Touch debug" switch (a development build only, `devTouchDebug` in BughouseGameScreen) is 130 px of controls a release build does not have: at 800 px it wraps the bar onto a second
+  // line and the status line falls 14 px below a 360 px window. The height check judges the layout the PLAYER gets, so the switch is taken out of the page first (command #35b).
+  // (hidden for the measurement and shown again: the page is used by every later check, and a node React owns must not be removed from under it)
+  const setDebugHidden = (hidden) => page.evaluate((h) => { const el = document.querySelector('[data-testid="bughouse-touch-debug"]'); if (el) el.style.display = h ? 'none' : ''; }, hidden);
+  await setDebugHidden(true);
+  await page.waitForTimeout(150);
   const blocks = await Promise.all(['block-A', 'block-B'].map((id) => boxOf(page, id)));
+  await setDebugHidden(false);
+  await page.waitForTimeout(150);
   check(`${tag} layout: both blocks (bars, clocks, board, status) fit the window height`, blocks.every((bl) => bl.y >= 0 && bl.y + bl.height <= viewport.height + 0.5), blocks.map((bl) => `${Math.round(bl.y)}..${Math.round(bl.y + bl.height)}`).join(' / '));
   const controlBoxes = await Promise.all(['bughouse-rules', 'bughouse-autoflip', 'bughouse-resign-team-1', 'bughouse-resign-team-2'].map((id) => boxOf(page, id)));
   check(`${tag} layout: every control (Rules, turn, both Resign) is fully on screen, none clipped`, controlBoxes.every((c) => c && c.x >= 0 && c.x + c.width <= viewport.width + 0.5 && c.y >= 0 && c.y + c.height <= viewport.height), controlBoxes.map((c) => c && `${Math.round(c.x)}..${Math.round(c.x + c.width)}`).join(' '));
@@ -313,15 +330,58 @@ async function mouseScenario(browser, baseUrl) {
   await context.close();
 }
 
+/**
+ * THE 360 x 640 REFUSAL AND PASS-AND-PLAY (command #35b, W8): at the smallest phone the four-humans setup (humans on both boards) must be refused with the spec's sentence and a disabled
+ * start button, "2 opponents" (every human on ONE board: pass-and-play) must not be refused, and its game must show Board A inside the window and let a finger select a piece.
+ */
+async function refusalScenario(browser, baseUrl) {
+  const viewport = { width: 360, height: 640 };
+  const context = await browser.newContext({ viewport, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  await page.goto(baseUrl, { waitUntil: 'load' });
+  await page.getByText('Play', { exact: true }).first().click({ timeout: 120000 });
+  await page.locator('[aria-label="Crazy Bughouse"]').click();
+  await page.locator('[data-testid="preset-four"]').click();
+  const SENTENCE = 'This seat setup needs a larger screen. Turn the device to landscape, or put every human on one board.';
+  const message = await page.locator('[data-testid="setup-gate-message"]').textContent().catch(() => null);
+  check('360x640 refusal: four humans (both boards) show the size sentence, word for word', message === SENTENCE, `"${message}"`);
+  const disabled = await page.locator('[data-testid="bughouse-start"]').getAttribute('aria-disabled');
+  check('360x640 refusal: the start button is disabled', disabled === 'true', `aria-disabled=${disabled}`);
+  await page.locator('[data-testid="preset-opponents"]').click();
+  const gone = (await page.locator('[data-testid="setup-gate-message"]').count()) === 0;
+  const enabled = (await page.locator('[data-testid="bughouse-start"]').getAttribute('aria-disabled')) !== 'true';
+  check('360x640 pass-and-play: two opponents on one board are not refused', gone && enabled);
+  await page.locator('[data-testid="bughouse-start"]').click();
+  await page.getByText('3 min', { exact: true }).first().click();
+  await page.waitForSelector('[data-testid="block-A"]');
+  const board = await boxOf(page, 'board-A');
+  check('360x640 pass-and-play: Board A is fully inside the window', board !== null && board.x >= 0 && board.x + board.width <= viewport.width + 0.5 && board.y >= 0 && board.y + board.height <= viewport.height + 0.5, `A ${JSON.stringify(board)}`);
+  const cdp = await cdpOf(context, page);
+  await tap(cdp, page, 'A', 'e2');
+  let count = await offered(page, 'A');
+  for (let i = 0; i < 20 && count !== 2; i++) {
+    await page.waitForTimeout(100); // the selection is drawn on the next render
+    count = await offered(page, 'A');
+  }
+  const labels = await page.locator('[data-testid^="A-e"]').evaluateAll((els) => els.slice(0, 8).map((el) => `${el.getAttribute('data-testid')}:${el.getAttribute('aria-label')}`));
+  check('360x640 pass-and-play: a finger on e2 offers its two squares', count === 2, `${count} squares offered; ${labels.join(' | ')}`);
+  await page.screenshot({ path: path.join(OUT_DIR, '360x640-pass-and-play.png') });
+  await context.close();
+}
+
 let exitCode = 1;
 try {
   const baseUrl = await startServer();
   console.log(JSON.stringify({ note: `app at ${baseUrl}`, ownServer: Boolean(server) }));
   const browser = await chromium.launch({ executablePath: process.env.E2E_BROWSER_PATH || undefined, headless: true });
   try {
-    for (const viewport of VIEWPORTS) await scenario(browser, baseUrl, viewport);
-    for (const viewport of [{ width: 412, height: 915 }, { width: 360, height: 740 }]) for (const offset of [24, 36, 48]) await offsetScenario(browser, baseUrl, viewport, offset);
-    await mouseScenario(browser, baseUrl);
+    const only = process.env.ONLY_SCENARIO || ''; // 'refusal': just the 360 x 640 scenario (a quick re-run while it is being worked on)
+    if (only !== 'refusal') {
+      for (const viewport of VIEWPORTS) await scenario(browser, baseUrl, viewport);
+      for (const viewport of [{ width: 412, height: 915 }, { width: 360, height: 740 }]) for (const offset of [24, 36, 48]) await offsetScenario(browser, baseUrl, viewport, offset);
+      await mouseScenario(browser, baseUrl);
+    }
+    await refusalScenario(browser, baseUrl);
   } finally {
     await browser.close();
   }
