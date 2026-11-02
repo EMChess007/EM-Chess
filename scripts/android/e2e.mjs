@@ -1103,9 +1103,19 @@ async function noticeReport(dev, want, timeoutMs, after = 0) {
 async function premoveNotice(dev) {
   const name = 'online: premove notice';
   await scenario(dev, name, async () => {
-    await toHome(dev);
-    dev.beacon.forget('state-board-2p');
-    await dev.runSteps([{ text: 'Play' }, { text: 'Challenge Friend' }, { text: 'Create Challenge' }, { label: 'Rapid 10 min' }]);
+    // The way to the picker is navigation, not the subject of this scenario: a run lost it once (the Play menu was still on screen after "Challenge Friend" was tapped, 1 relaunch before it):
+    // the way is walked again from Home ONCE, the first failure printed.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await toHome(dev);
+        dev.beacon.forget('state-board-2p');
+        await dev.runSteps([{ text: 'Play' }, { text: 'Challenge Friend' }, { text: 'Create Challenge' }, { label: 'Rapid 10 min' }]);
+        break;
+      } catch (e) {
+        log(`  premove notice: the way to the challenge picker failed at try ${attempt} of 2: ${String(e.message).slice(0, 200)}`);
+        if (attempt === 2) throw e;
+      }
+    }
     const waiting = await dev.waitFor('the challenge code', (list) => list.some((n) => /^[A-HJKMNP-Z2-9]{6}$/.test(n.text ?? '')), 40_000, 1200);
     const code = waiting.find((n) => /^[A-HJKMNP-Z2-9]{6}$/.test(n.text ?? '')).text;
     execFileSync('bash', ['scripts/android/backend.sh', 'premove-opponent', code], { stdio: 'inherit' });
