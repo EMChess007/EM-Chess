@@ -100,15 +100,18 @@ async function scenario(dev, name, body) {
  * WHERE IS THE APP when a touch on a board selected nothing (command #35b: two runs showed the Android LAUNCHER in the photograph taken right after, with the app's beacon still reporting the
  * board). Prints the resumed activity, whether the app's process is alive and the app's own log lines (the crash, the ANR), once per run, so the next red names its cause.
  */
-let whereReported = false;
+const whereReported = new Set();
 async function whereIsTheApp(dev, when) {
-  if (whereReported) return;
-  whereReported = true;
+  const key = when.split(',')[0];
+  if (whereReported.has(key)) return;
+  whereReported.add(key);
   try {
     const resumed = dev.sh('dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity" | head -3', { timeout: 20_000 });
     const alive = dev.sh('pidof com.emchess.app || echo "no process"', { timeout: 10_000 });
     log(`  where: (${when}) resumed: ${String(resumed).trim().replace(/\s+/g, ' ').slice(0, 260)} | pid: ${String(alive).trim()}`);
-    log(`  where: logcat tail:\n${String(dev.logcat(60)).split('\n').slice(-40).map((l) => `    ${l.slice(0, 220)}`).join('\n')}`);
+    // (the lines of the whole log buffer that name a death of the app: a crash, a native signal, the low-memory killer, an ANR - `logcat -t 60` showed only the last lines of the buffer, none of them)
+    const deaths = dev.sh('logcat -d -t 6000 | grep -E "FATAL EXCEPTION|AndroidRuntime|com.emchess.app.*(died|killed|crash)|Process com.emchess.app|lmkd|SIGSEGV|signal 11|signal 6|Fatal signal|ANR in|Out of memory|OutOfMemory|am_proc_died|am_kill|am_crash" | tail -30', { timeout: 30_000 });
+    log(`  where: the death lines of the log:\n${String(deaths).split('\n').filter(Boolean).slice(-30).map((l) => `    ${l.slice(0, 240)}`).join('\n') || '    (none)'}`);
   } catch (e) {
     log(`  where: could not ask the phone (${String(e.message).slice(0, 120)})`);
   }
@@ -1318,6 +1321,7 @@ async function onlineGame(dev, account, progress = { issues: [] }) {
         const turn = await dev.beacon.waitFor(myChannel, (s) => s.fen.split(' ')[1] === myTurn, 90_000);
         if (!turn) {
           issues.push(`never my turn on board ${board}: the app's position stayed "${dev.beacon.get(myChannel)?.fen}"`);
+          await whereIsTheApp(dev, 'online game, never my turn');
           break;
         }
       }
