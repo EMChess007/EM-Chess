@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   FOUR_ROOM_MAX_MEMBERS,
@@ -77,7 +79,10 @@ describe('the room screen\'s wording', () => {
 describe('the games of the online chip row', () => {
   it('are the four 4 Player Variations, in this order, with these names', () => {
     expect(FOUR_SEAT_GAMES.map((g) => g.value)).toEqual(['fourPlayerChess', 'fourPlayerGiveaway', 'chaturaji', 'crazyBughouse']);
-    expect(FOUR_SEAT_GAMES.map((g) => g.label.replace('\n', ' '))).toEqual(['4 Player Chess', '4 Player Giveaway', 'Chaturaji', 'Crazy Bughouse']);
+    expect(FOUR_SEAT_GAMES.map((g) => g.label.replaceAll('\n', ' '))).toEqual(['4 Player Chess', '4 Player Giveaway', 'Chaturaji', 'Crazy Bughouse']);
+    // every line break of a label becomes a space (a two-line label too), in the chip's accessibility label
+    expect('4 Player\nChess\nOnline'.replaceAll('\n', ' ')).toBe('4 Player Chess Online');
+    expect(readFileSync(join(__dirname, '../../components/VariantSelector.tsx'), 'utf8')).toContain("option.label.replaceAll('\\n', ' ')");
     expect(FOUR_SEAT_GAME_TITLES).toEqual({ fourPlayerChess: '4 Player Chess', fourPlayerGiveaway: '4 Player Giveaway', chaturaji: 'Chaturaji', crazyBughouse: 'Crazy Bughouse' });
   });
 

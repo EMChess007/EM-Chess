@@ -62,7 +62,7 @@ export default function VariantSelector<T extends GameVariant | FourSeatGame = G
       {options.map((option) => {
         const selected = value === option.value;
         return (
-          <Pressable key={option.value} accessibilityLabel={option.label.replace('\n', ' ')} style={[styles.chip, selected && styles.chipSelected]} onPress={() => onChange(option.value as T)}>
+          <Pressable key={option.value} accessibilityLabel={option.label.replaceAll('\n', ' ')} style={[styles.chip, selected && styles.chipSelected]} onPress={() => onChange(option.value as T)}>
             <Text style={[styles.chipText, selected && styles.chipTextSelected]} numberOfLines={2}>
               {option.label}
             </Text>

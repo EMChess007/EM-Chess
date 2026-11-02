@@ -27,6 +27,10 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+  actions: read
+
 concurrency:
   group: android-e2e-${{ github.ref }}
   cancel-in-progress: true
