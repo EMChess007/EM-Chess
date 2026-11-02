@@ -185,22 +185,23 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
 
       {phase === 'create' && (
         <View style={styles.setupContainer}>
-          <Text style={styles.sectionTitle}>Tournament name</Text>
-          <TextInput
-            style={styles.nameInput}
-            value={name}
-            onChangeText={setName}
-            placeholder="Friday Night Blitz"
-            placeholderTextColor={colors.textMuted}
-            maxLength={60}
-          />
-          <Text style={styles.sectionTitle}>Variant</Text>
-          {/* Setup Chess needs a per-match blind-setup phase that hasn't been designed for
-              round-robin pairing yet (one army for the whole tournament vs. a new one per match)
-              — excluded here until that's settled, unlike the 1v1 Online/Challenge flows. */}
-          <VariantSelector value={variant} onChange={setVariant} excludeVariants={['setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'crazyhouse']} />
-          {error && <Text style={styles.errorText}>{error}</Text>}
-          <ScrollView contentContainerStyle={styles.setupScrollContent}>
+          {/* The whole form scrolls (command #35b): the name, the variant chips and the time controls on a 360 x 640 phone at font scale 1.3 did not fit above a scroll view. */}
+          <ScrollView contentContainerStyle={styles.setupScrollContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.sectionTitle}>Tournament name</Text>
+            <TextInput
+              style={styles.nameInput}
+              value={name}
+              onChangeText={setName}
+              placeholder="Friday Night Blitz"
+              placeholderTextColor={colors.textMuted}
+              maxLength={60}
+            />
+            <Text style={styles.sectionTitle}>Variant</Text>
+            {/* Setup Chess needs a per-match blind-setup phase that hasn't been designed for
+                round-robin pairing yet (one army for the whole tournament vs. a new one per match)
+                — excluded here until that's settled, unlike the 1v1 Online/Challenge flows. */}
+            <VariantSelector value={variant} onChange={setVariant} excludeVariants={['setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'crazyhouse']} />
+            {error && <Text style={styles.errorText}>{error}</Text>}
             <TimeControlSections onSelect={handleCreate} dailyNote={ONLINE_DAILY_NOTE} />
           </ScrollView>
         </View>

@@ -28,11 +28,10 @@ export default function OnlineTimeControlSelectScreen({ onSelect, onBack }: Onli
     <View style={styles.container}>
       <ScreenHeader title="Play Online" onBack={onBack} />
 
-      <View style={styles.variantRow}>
-        <VariantSelector<OnlineGame> value={variant} onChange={setVariant} includeFourSeat />
-      </View>
-
+      {/* The game chips are INSIDE the scroll view (command #35b): with 13 + 4 chips they took two thirds of a 360 x 640 phone at font scale 1.3 when they sat above it, left a sliver for the
+          time controls and a swipe that began on them moved nothing - the page could not be scrolled to "Blitz 5 min". The whole page scrolls now. */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        <VariantSelector<OnlineGame> value={variant} onChange={setVariant} includeFourSeat />
         <TimeControlSections onSelect={(tc) => onSelect(tc, variant)} dailyNote={ONLINE_DAILY_NOTE} />
       </ScrollView>
     </View>
@@ -45,11 +44,6 @@ function createStyles(colors: AppColors) {
     container: {
       flex: 1,
       backgroundColor: colors.background,
-    },
-    variantRow: {
-      paddingHorizontal: 16,
-      paddingTop: 10,
-      paddingBottom: 4,
     },
     scrollContent: {
       padding: 16,

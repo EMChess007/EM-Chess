@@ -1045,7 +1045,8 @@ async function fourFriendRoom(dev) {
     await dev.snapshot('quick-match-chips');
     // the controls: scroll down to Daily and No time limit
     let daily = null;
-    for (let i = 0; i < 6 && daily === null; i++) {
+    // (the whole page scrolls - the chips are inside the scroll view since command #35b; the first run's page scrolled only below the chips, which filled a 360 x 640 phone, and found nothing)
+    for (let i = 0; i < 10 && daily === null; i++) {
       const list = await dev.dump();
       daily = list.find((n) => n.desc === 'Daily 1 day' || n.text === 'Daily 1 day') ?? null;
       if (daily === null) dev.scrollDown();
@@ -1386,15 +1387,25 @@ try {
     const account = await online(dev);
     // Straight on to the offline states, in the same run: a fresh app (the game of the scenario above, still saved for a rejoin, would otherwise open at launch), signed in with the same
     // account while the backend is still up, then the backend is stopped and every data screen must say "Can't reach the server".
-    try {
-      dev.stop();
-      dev.clearData();
-      dev.launch();
-      await dev.waitHome(180_000);
-      if (account) await login(dev, account);
-    } catch (e) {
-      record('offline: sign in before the backend stops', [`exception: ${e.message}`]);
+    // Two tries (command #35b): the first red run of this slice lost its `am start -W` of the cleared app to the 90 s limit (the emulator stalled; the green run's whole clear + launch + sign-in
+    // took 67 s), the sign-in never happened and the two data screens that need an account ("Leaderboard", "Spectate list") then showed "Login required" instead of the server message.
+    // A try that fails is LOGGED and counted; only two failures record the step as failed.
+    const signInFailures = [];
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        dev.stop();
+        dev.clearData();
+        dev.launch();
+        await dev.waitHome(180_000);
+        if (account) await login(dev, account);
+        signInFailures.length = 0;
+        break;
+      } catch (e) {
+        log(`  offline sign-in try ${attempt} of 2 failed: ${e.message}`);
+        signInFailures.push(`try ${attempt}: exception: ${e.message}`);
+      }
     }
+    if (signInFailures.length > 0) record('offline: sign in before the backend stops', signInFailures);
     execFileSync('bash', ['scripts/android/backend.sh', 'stop'], { stdio: 'inherit' });
     await offline(dev);
   } else {

@@ -160,9 +160,10 @@ export default function ChallengeScreen({ authToken, onMatchFound, onFriendRoom,
 
       {phase === 'setup' && (
         <View style={styles.setupContainer}>
-          <VariantSelector<GameVariant | FourSeatGame> value={variant} onChange={setVariant} includeFourSeat />
-          {error && <Text style={styles.errorText}>{error}</Text>}
+          {/* The game chips scroll with the time controls (command #35b): above the scroll view they left a sliver of a 360 x 640 phone for the controls and could not be swiped past. */}
           <ScrollView contentContainerStyle={styles.setupScrollContent}>
+            <VariantSelector<GameVariant | FourSeatGame> value={variant} onChange={setVariant} includeFourSeat />
+            {error && <Text style={styles.errorText}>{error}</Text>}
             <TimeControlSections onSelect={handleCreate} dailyNote={ONLINE_DAILY_NOTE} />
           </ScrollView>
         </View>
