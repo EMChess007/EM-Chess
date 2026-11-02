@@ -56,6 +56,22 @@ export function getE2ePerf(): E2ePerfHook | null {
   return registeredPerf;
 }
 
+/**
+ * The end-to-end build's report of a one-off notice (command #35b): "the cancelled-premove line is on the screen / is gone", with the instant the driver hears it, so the run can time the line
+ * (it must go at the next move or within 5 s, CHECKLIST 21) without a slow accessibility dump. Null in a release build and in a development build that is not the end-to-end build; the one
+ * call site is `useE2eNoticeReport` (`getE2eNotice()?.(...)`).
+ */
+export type E2eNoticeHook = (name: string, shown: boolean) => void;
+let registeredNotice: E2eNoticeHook | null = null;
+
+export function registerE2eNotice(hook: E2eNoticeHook): void {
+  registeredNotice = hook;
+}
+
+export function getE2eNotice(): E2eNoticeHook | null {
+  return registeredNotice;
+}
+
 /** The end-to-end build's counter of gesture events (a board's responder granted / released / resolved a tap): the driver compares them with what it injected. Null everywhere else. */
 export type E2eGestureCounter = (channel: string, event: string, extra?: Record<string, unknown>) => void;
 let registeredCounter: E2eGestureCounter | null = null;

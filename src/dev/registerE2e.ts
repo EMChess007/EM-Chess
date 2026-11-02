@@ -1,7 +1,7 @@
 import { LogBox } from 'react-native';
-import { registerE2eGestureCounter, registerE2ePerf, registerE2eStateProbe } from '../components/devOverlayRegistry';
+import { registerE2eGestureCounter, registerE2eNotice, registerE2ePerf, registerE2eStateProbe } from '../components/devOverlayRegistry';
 import E2eStateProbe from './E2eStateProbe';
-import { e2eCount, isE2eBuild } from './e2eBeacon';
+import { e2eCount, e2eReport, isE2eBuild } from './e2eBeacon';
 import { createE2ePerf } from './e2ePerf';
 
 /**
@@ -20,4 +20,7 @@ if (isE2eBuild()) {
   registerE2eGestureCounter(e2eCount);
   // Command #33: the latency and JavaScript-thread probe (src/dev/e2ePerf.ts). Only here, so an ordinary development build runs no 20 ms timer.
   registerE2ePerf(createE2ePerf());
+  // Command #35b: a one-off notice appears / goes (the cancelled-premove line): the driver times it from these reports (channel "notice"; `n` makes every report a new state).
+  let noticeReports = 0;
+  registerE2eNotice((name, shown) => e2eReport('notice', { name, shown, n: ++noticeReports }));
 }

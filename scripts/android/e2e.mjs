@@ -1057,6 +1057,17 @@ const PLANS = {
 };
 const PREMOVE_NOTICE = /Premove was no longer legal/;
 
+/** The next report of the premove notice with `shown` = `want` (and a report number above `after`): { n, at } with `at` = the instant the driver heard it, or null after `timeoutMs`. */
+async function noticeReport(dev, want, timeoutMs, after = 0) {
+  const t0 = Date.now();
+  for (;;) {
+    const entry = dev.beacon.channels.get('notice');
+    if (entry && entry.state.name === 'premove' && entry.state.shown === want && entry.state.n > after) return { n: entry.state.n, at: entry.at };
+    if (Date.now() - t0 > timeoutMs) return null;
+    await sleep(100);
+  }
+}
+
 async function premoveNotice(dev) {
   const name = 'online: premove notice';
   await scenario(dev, name, async () => {
@@ -1113,34 +1124,40 @@ async function premoveNotice(dev) {
         break;
       }
       if (round === 0) {
-        // (a tree read right at the reply can come first: the notice is set by an effect after the position is drawn - read again, while the 5 s have not passed)
-        let seen = false;
-        for (let attempt = 0; attempt < 3 && !seen && Date.now() - tReply < 3500; attempt++) seen = (await dev.dump()).some((n) => PREMOVE_NOTICE.test(n.text ?? ''));
-        if (!seen) issues.push(`round 1: no "Premove was no longer legal" line ${Date.now() - tReply} ms after the reply that made the premove illegal`);
-        await sleep(Math.max(0, tReply + 6500 - Date.now()));
-        const late = await dev.dump();
-        const gone = !late.some((n) => PREMOVE_NOTICE.test(n.text ?? ''));
-        if (!gone) issues.push(`round 1: the notice was still on the screen ${Date.now() - tReply} ms after the reply (it must go within 5 s)`);
-        notes += `round 1: notice seen: ${seen}, gone after 6.5 s: ${gone}`;
-      } else {
-        // the phone MOVES at once: the next move must take the notice away before the 5 s could
-        const [mf, mt] = plan.after;
-        // both touches in ONE shell call and no wait between them: the first run of this round read its tree 5112 ms after the reply, 112 ms too late to tell the move from the 5 s expiry
-        const grid = rectOfState(dev.beacon.get(CH));
-        const f = squareRect(grid, orientation, mf);
-        const t = squareRect(grid, orientation, mt);
-        dev.fresh = false;
-        dev.sh(`input swipe ${f.cx} ${f.cy} ${f.cx} ${f.cy} 90; input swipe ${t.cx} ${t.cy} ${t.cx} ${t.cy} 90`);
-        // the move counts from the moment the app SHOWS it (the first run read the tree before the server had answered: the position had not changed yet, and neither had the notice)
-        const shown = await dev.beacon.waitFor(CH, (s) => pieceOnSquare(s.fen, mf) === null, 6000);
-        if (!shown) issues.push(`round 2: my move ${mf}-${mt} never showed: the app's position is "${dev.beacon.get(CH)?.fen}"`);
-        const tree = await dev.dump();
-        const age = Date.now() - tReply;
-        const gone = !tree.some((n) => PREMOVE_NOTICE.test(n.text ?? ''));
-        if (age > 4000) notes += `; round 2 NOT DISTINGUISHING (the tree after the move was read ${age} ms after the reply)`;
+        // The line is TIMED by the app's own reports (the "notice" channel of the beacon: `shown` true / false with the instant the driver heard it), not by accessibility trees - a tree costs 2 - 3 s
+        // and its snapshot time is unknown, which made "gone at the next move" and "gone within 5 s" indistinguishable. The tree only confirms that the words are on the screen.
+        const up = await noticeReport(dev, true, 6000);
+        if (!up) issues.push(`round 1: the app never reported the premove notice as shown (${Date.now() - tReply} ms after the reply)`);
         else {
-          notes += `; round 2: gone ${age} ms after the reply, after my move: ${gone}`;
-          if (!gone) issues.push(`round 2: the notice was still on the screen ${age} ms after the reply although the phone had moved`);
+          const onScreen = (await dev.dump().catch(() => [])).some((n) => PREMOVE_NOTICE.test(n.text ?? ''));
+          const down = await noticeReport(dev, false, 9000, up.n);
+          if (!down) issues.push('round 1: the notice was still shown 9 s after it appeared (it must go within 5 s)');
+          else {
+            const lived = down.at - up.at;
+            if (lived < 4000 || lived > 6500) issues.push(`round 1: with no move the notice lived ${lived} ms (it must go at 5000 ms, NOTICE_TTL_MS)`);
+            notes += `round 1: the notice lived ${lived} ms with no move (words on screen: ${onScreen})`;
+          }
+        }
+      } else {
+        // the phone MOVES while the notice is up: the NEXT MOVE must take it away, long before the 5 s
+        const up = await noticeReport(dev, true, 6000);
+        if (!up) issues.push(`round 2: the app never reported the premove notice as shown (${Date.now() - tReply} ms after the reply)`);
+        else {
+          const [mf, mt] = plan.after;
+          await play([mf, mt], 'round 2 reply move');
+          const moved = await dev.beacon.waitFor(CH, (s) => pieceOnSquare(s.fen, mf) === null, 6000);
+          const tMoved = Date.now();
+          if (!moved) issues.push(`round 2: my move ${mf}-${mt} never showed: the app's position is "${dev.beacon.get(CH)?.fen}"`);
+          const down = await noticeReport(dev, false, 8000, up.n);
+          if (!down) issues.push('round 2: the notice was still shown after my move and 8 s');
+          else {
+            const lived = down.at - up.at;
+            if (tMoved - up.at > 3500) notes += `; round 2 NOT DISTINGUISHING (my move showed ${tMoved - up.at} ms after the notice, too close to its 5 s expiry; it lived ${lived} ms)`;
+            else {
+              notes += `; round 2: my move showed ${tMoved - up.at} ms after the notice and the notice lived ${lived} ms`;
+              if (lived > tMoved - up.at + 1500) issues.push(`round 2: the notice lived ${lived} ms; my move was shown ${tMoved - up.at} ms after it appeared - the move did not take it away`);
+            }
+          }
         }
       }
     }
@@ -1470,7 +1487,25 @@ async function onlineGame(dev, account, progress = { issues: [] }) {
           dev.dumpAttempts = undefined;
           dev.dumpGapMs = undefined;
         }
-        for (const id of tree.length === 0 ? [] : ['game-over-headline', 'bughouse-rematch', 'bughouse-menu']) {
+        const CARD_IDS = ['game-over-headline', 'bughouse-rematch', 'bughouse-menu'];
+        // The card may be a moment late (the screen scrolls to it when its height has been measured): look again, up to three times, 2 s apart - and say how late it was. A card that is still
+        // missing is photographed: the run of command #35b that missed it left no picture of what the screen did show.
+        let cardLateMs = 0;
+        for (let again = 0; again < 3 && tree.length > 0 && CARD_IDS.some((id) => !tree.find((n) => n.id === id && n.bounds)); again++) {
+          await sleep(2000);
+          cardLateMs += 2000;
+          tree = await dev.dump().catch(() => tree);
+        }
+        if (cardLateMs > 0 && tree.length > 0 && CARD_IDS.every((id) => tree.find((n) => n.id === id && n.bounds))) issues.push(`the result card was on the visible screen only ${1500 + cardLateMs} ms after the result (the screen must scroll to it at once)`);
+        if (tree.length > 0 && CARD_IDS.some((id) => !tree.find((n) => n.id === id && n.bounds))) {
+          try {
+            log(`PNG64 result-card-missing ${encodePng(shrink(dev.screenshot(), 3)).toString('base64')}`);
+            log(`  the screen, as words: ${visibleWords(tree, 30).join(' | ')}`);
+          } catch {
+            /* no screenshot */
+          }
+        }
+        for (const id of tree.length === 0 ? [] : CARD_IDS) {
           const node = tree.find((n) => n.id === id && n.bounds);
           if (!node) issues.push(`the result card's "${id}" is not on the screen (the tree has no such visible node: the card is below the fold)`);
           else if (node.bounds.y1 < 0 || node.bounds.y2 > dev.display.h || node.bounds.x1 < 0 || node.bounds.x2 > dev.display.w) issues.push(`the result card's "${id}" is cut off: bounds y ${node.bounds.y1}-${node.bounds.y2} in a window of ${dev.display.h} px`);

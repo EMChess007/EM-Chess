@@ -141,7 +141,15 @@ describe('it exists only in the end-to-end build', () => {
 
   it('is registered only when EXPO_PUBLIC_E2E is on in a development build', () => {
     const registration = code(join(root, 'src/dev/registerE2e.ts'));
-    expect(registration).toMatch(/if \(isE2eBuild\(\)\) \{\s*registerE2eStateProbe\(E2eStateProbe\);\s*registerE2eGestureCounter\(e2eCount\);\s*registerE2ePerf\(createE2ePerf\(\)\);\s*\}/);
+    expect(registration).toMatch(/if \(isE2eBuild\(\)\) \{\s*registerE2eStateProbe\(E2eStateProbe\);\s*registerE2eGestureCounter\(e2eCount\);\s*registerE2ePerf\(createE2ePerf\(\)\);\s*let noticeReports = 0;\s*registerE2eNotice\(\(name, shown\) => e2eReport\('notice', \{ name, shown, n: \+\+noticeReports \}\)\);\s*\}/);
+  });
+
+  it('the notice report (command #35b) is reached through the registry by ONE hook, guarded, and only the 2-player online screen calls the hook', () => {
+    const noticeCallers = files.filter((f) => /getE2eNotice\(\)/.test(code(f)) && !rel(f).endsWith('devOverlayRegistry.ts')).map(rel).sort();
+    expect(noticeCallers).toEqual(['src/logic/useE2eNoticeReport.ts']);
+    expect(code(join(root, 'src/logic/useE2eNoticeReport.ts'))).toContain('getE2eNotice()?.(name, shown)');
+    const hookUsers = files.filter((f) => /useE2eNoticeReport\(/.test(code(f)) && !rel(f).endsWith('useE2eNoticeReport.ts')).map(rel).sort();
+    expect(hookUsers).toEqual(['src/screens/OnlineGameScreen.tsx']);
   });
 
   it('the switch is set on Metro by the run\'s script and never in a workflow, an env file or a deployment config', () => {
