@@ -1113,7 +1113,9 @@ async function premoveNotice(dev) {
         break;
       }
       if (round === 0) {
-        const seen = (await dev.dump()).some((n) => PREMOVE_NOTICE.test(n.text ?? ''));
+        // (a tree read right at the reply can come first: the notice is set by an effect after the position is drawn - read again, while the 5 s have not passed)
+        let seen = false;
+        for (let attempt = 0; attempt < 3 && !seen && Date.now() - tReply < 3500; attempt++) seen = (await dev.dump()).some((n) => PREMOVE_NOTICE.test(n.text ?? ''));
         if (!seen) issues.push(`round 1: no "Premove was no longer legal" line ${Date.now() - tReply} ms after the reply that made the premove illegal`);
         await sleep(Math.max(0, tReply + 6500 - Date.now()));
         const late = await dev.dump();
@@ -1129,6 +1131,9 @@ async function premoveNotice(dev) {
         const t = squareRect(grid, orientation, mt);
         dev.fresh = false;
         dev.sh(`input swipe ${f.cx} ${f.cy} ${f.cx} ${f.cy} 90; input swipe ${t.cx} ${t.cy} ${t.cx} ${t.cy} 90`);
+        // the move counts from the moment the app SHOWS it (the first run read the tree before the server had answered: the position had not changed yet, and neither had the notice)
+        const shown = await dev.beacon.waitFor(CH, (s) => pieceOnSquare(s.fen, mf) === null, 6000);
+        if (!shown) issues.push(`round 2: my move ${mf}-${mt} never showed: the app's position is "${dev.beacon.get(CH)?.fen}"`);
         const tree = await dev.dump();
         const age = Date.now() - tReply;
         const gone = !tree.some((n) => PREMOVE_NOTICE.test(n.text ?? ''));
