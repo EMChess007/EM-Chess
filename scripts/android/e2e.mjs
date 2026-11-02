@@ -777,6 +777,15 @@ async function perf(dev) {
       dev.press(from.cx, from.cy, 90);
       if (!(await waitSelected(dev, 'state-board-2p', move.from, 4000))) {
         notes.push(`ply ${ply + 1}: touching ${move.from} did not select it`);
+        if (ply === 0) {
+          // the first red run of this check (command #35b) left no picture: say where the touch went and what the app thought
+          log(`  perf: first touch ${move.from} at ${from.cx},${from.cy}; the board rectangle ${JSON.stringify(board)}; the app's state ${JSON.stringify(dev.beacon.get('state-board-2p'))}; gestures ${JSON.stringify(dev.beacon.get('gestures-board'))}`);
+          try {
+            log(`PNG64 perf-first-touch-not-selected ${encodePng(shrink(dev.screenshot(), 3)).toString('base64')}`);
+          } catch {
+            /* no screenshot */
+          }
+        }
         continue;
       }
       const to = squareRect(board, o, move.to);
@@ -1095,9 +1104,12 @@ async function premoveNotice(dev) {
       } else {
         // the phone MOVES at once: the next move must take the notice away before the 5 s could
         const [mf, mt] = plan.after;
-        touch(mf);
-        await waitSelected(dev, CH, mf, 2500);
-        touch(mt);
+        // both touches in ONE shell call and no wait between them: the first run of this round read its tree 5112 ms after the reply, 112 ms too late to tell the move from the 5 s expiry
+        const grid = rectOfState(dev.beacon.get(CH));
+        const f = squareRect(grid, orientation, mf);
+        const t = squareRect(grid, orientation, mt);
+        dev.fresh = false;
+        dev.sh(`input swipe ${f.cx} ${f.cy} ${f.cx} ${f.cy} 90; input swipe ${t.cx} ${t.cy} ${t.cx} ${t.cy} 90`);
         const tree = await dev.dump();
         const age = Date.now() - tReply;
         const gone = !tree.some((n) => PREMOVE_NOTICE.test(n.text ?? ''));
@@ -1199,7 +1211,9 @@ async function fourFriendRoom(dev) {
     const start = joined.find((n) => n.id === 'four-room-start' && n.bounds);
     if (!start) issues.push('no Start button once the friend is in');
     else {
-      if (!/2 bots fill/.test(start.text)) issues.push(`Start reads "${start.text}", not "Start - 2 bots fill the empty seats"`);
+      // (the button carries an accessibility label: on the phone its words are the node's content description, its text is empty)
+      const startWords = start.text || start.desc || '';
+      if (!/2 bots fill/.test(startWords)) issues.push(`Start reads "${startWords}", not "Start - 2 bots fill the empty seats"`);
       dev.tap(start.bounds.cx, start.bounds.cy);
       const game = await dev.waitFor('the game screen', (list) => list.some((n) => n.text === 'Resign' || n.desc === 'Resign'), 60_000, 1500).catch(() => null);
       if (!game) issues.push('Start: the 4-seat game screen did not appear (no Resign control within 60 s)');
