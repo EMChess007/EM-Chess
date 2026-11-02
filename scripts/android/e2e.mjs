@@ -1090,8 +1090,13 @@ async function premoveNotice(dev) {
     };
     const hasPiece = (square, piece) => (s) => pieceOnSquare(s.fen, square) === piece;
     const play = async ([from, to], label) => {
+      // (what this scenario tests is the notice, not the board's touch input - that has its own slices: a touch the app did not take is repeated ONCE, and said so)
       touch(from);
-      if (!(await waitSelected(dev, CH, from, 2500))) issues.push(`${label}: touched ${from}, the app selected ${JSON.stringify(dev.beacon.get(CH)?.selected ?? null)}`);
+      if (!(await waitSelected(dev, CH, from, 2500))) {
+        log(`  ${label}: touching ${from} selected nothing (the app selected ${JSON.stringify(dev.beacon.get(CH)?.selected ?? null)}): touching it again`);
+        touch(from);
+        if (!(await waitSelected(dev, CH, from, 2500))) issues.push(`${label}: touched ${from} twice, the app selected ${JSON.stringify(dev.beacon.get(CH)?.selected ?? null)}`);
+      }
       touch(to);
     };
     if (plan.wait) {
@@ -1320,8 +1325,11 @@ async function onlineGame(dev, account, progress = { issues: [] }) {
       const t = squareRect(boards[board], orientation, to);
       dev.press(f.cx, f.cy, 90);
       if (!(await waitSelected(dev, myChannel, from, 2500))) {
-        issues.push(`touched ${from}: the app selected ${JSON.stringify(dev.beacon.get(myChannel)?.selected ?? null)}`);
         await whereIsTheApp(dev, `online game, touched ${from}`);
+        // (the game is what this scenario tests; the board's touch input has its own slices: a touch the app did not take is repeated ONCE, and said so)
+        log(`  online game: touching ${from} selected nothing (the app selected ${JSON.stringify(dev.beacon.get(myChannel)?.selected ?? null)}): touching it again`);
+        dev.press(f.cx, f.cy, 90);
+        if (!(await waitSelected(dev, myChannel, from, 2500))) issues.push(`touched ${from} twice: the app selected ${JSON.stringify(dev.beacon.get(myChannel)?.selected ?? null)}`);
       }
       dev.press(t.cx, t.cy, 90);
       if (premoving) {
