@@ -125,6 +125,12 @@ describe('the floating gear button (command #34)', () => {
     expect(gearIssues([button(520, 20, 700, 60)], screen)).toHaveLength(1); // a chip: centre 610 in the zone
   });
 
+  it('a SLIVER - the edge of a chip a scroll view clips at its top edge, under 8 dp tall - is not a control (a large-touch run caught a 12 px strip of "Fog of War" mid-scroll); a 9 dp chip still is', () => {
+    expect(gearIssues([button(705, 221, 983, 233)], { w: 1080, h: 2400, scale: 2.625 })).toEqual([]); // the 12 px strip of that run (4.6 dp)
+    expect(gearIssues([button(520, 20, 700, 35)], screen)).toEqual([]); // 15 px at scale 2 = 7.5 dp
+    expect(gearIssues([button(520, 20, 700, 38)], screen)).toHaveLength(1); // 18 px = 9 dp: a real, if tiny, control
+  });
+
   it('the zone is in dp: the same node is clean at scale 1 where the zone is 72 x 88 px', () => {
     expect(gearIssues([button(560, 100, 700, 160)], { w: 360, h: 640, scale: 1 })).toEqual([]); // 100 px is below 88
     expect(gearIssues([button(300, 40, 340, 80)], { w: 360, h: 640, scale: 1 })).toHaveLength(1);

@@ -96,6 +96,24 @@ async function scenario(dev, name, body) {
   log(`  (${name}: ${Math.round((Date.now() - t0) / 1000)} s)`);
 }
 
+/**
+ * WHERE IS THE APP when a touch on a board selected nothing (command #35b: two runs showed the Android LAUNCHER in the photograph taken right after, with the app's beacon still reporting the
+ * board). Prints the resumed activity, whether the app's process is alive and the app's own log lines (the crash, the ANR), once per run, so the next red names its cause.
+ */
+let whereReported = false;
+async function whereIsTheApp(dev, when) {
+  if (whereReported) return;
+  whereReported = true;
+  try {
+    const resumed = dev.sh('dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity" | head -3', { timeout: 20_000 });
+    const alive = dev.sh('pidof com.emchess.app || echo "no process"', { timeout: 10_000 });
+    log(`  where: (${when}) resumed: ${String(resumed).trim().replace(/\s+/g, ' ').slice(0, 260)} | pid: ${String(alive).trim()}`);
+    log(`  where: logcat tail:\n${String(dev.logcat(60)).split('\n').slice(-40).map((l) => `    ${l.slice(0, 220)}`).join('\n')}`);
+  } catch (e) {
+    log(`  where: could not ask the phone (${String(e.message).slice(0, 120)})`);
+  }
+}
+
 // --- navigation ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 const TABS = ['Home', 'Puzzles', 'Analysis', 'More'];
 const onTabs = (nodes) => TABS.every((t) => findNodes(nodes, { text: t }).length > 0);
@@ -785,6 +803,7 @@ async function perf(dev) {
           } catch {
             /* no screenshot */
           }
+          await whereIsTheApp(dev, `perf, touched ${move.from}`);
         }
         continue;
       }
@@ -1278,7 +1297,10 @@ async function onlineGame(dev, account, progress = { issues: [] }) {
       const f = squareRect(boards[board], orientation, from);
       const t = squareRect(boards[board], orientation, to);
       dev.press(f.cx, f.cy, 90);
-      if (!(await waitSelected(dev, myChannel, from, 2500))) issues.push(`touched ${from}: the app selected ${JSON.stringify(dev.beacon.get(myChannel)?.selected ?? null)}`);
+      if (!(await waitSelected(dev, myChannel, from, 2500))) {
+        issues.push(`touched ${from}: the app selected ${JSON.stringify(dev.beacon.get(myChannel)?.selected ?? null)}`);
+        await whereIsTheApp(dev, `online game, touched ${from}`);
+      }
       dev.press(t.cx, t.cy, 90);
       if (premoving) {
         await sleep(500);

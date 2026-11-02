@@ -52,6 +52,8 @@ export function textIssues(nodes, screen) {
 export const STATUS_BAR_DP = 24;
 /** The share of a control's area the gear zone may cover before the control counts as hidden (a corner of a wide card is fine, a chip under the button is not). */
 export const GEAR_MAX_COVERED = 0.25;
+/** A node shorter than this (dp) is the clipped edge of a scrolling control, not a control (the smallest real control is a 20 dp chip; AppPressable's floor is 44 dp). */
+export const GEAR_SLIVER_DP = 8;
 export function gearIssues(nodes, screen) {
   const scale = screen.scale ?? 1;
   const zone = { x1: screen.w - GEAR_ZONE.width * scale, y1: 0, x2: screen.w, y2: (STATUS_BAR_DP + GEAR_ZONE.below) * scale };
@@ -61,6 +63,9 @@ export function gearIssues(nodes, screen) {
     const { x1, y1, x2, y2, w, h } = n.bounds;
     if (w <= 0 || h <= 0) continue;
     if (w >= screen.w * 0.9 && h >= screen.h * 0.9) continue;
+    // A SLIVER (under GEAR_SLIVER_DP tall) is the edge of a control that a scroll view clips at its top edge, caught while a list moves (command #35b: a 12 px strip of the "Fog of War" chip, 5 dp,
+    // at the top of the Play menu, failed the large-touch slice once): its tappable part is the rest of the control, which is on screen elsewhere and judged there.
+    if (h < GEAR_SLIVER_DP * scale) continue;
     const overlapW = Math.min(x2, zone.x2) - Math.max(x1, zone.x1);
     const overlapH = Math.min(y2, zone.y2) - Math.max(y1, zone.y1);
     // A WIDE control (a menu card) whose zone overlap is only a corner of it is not hidden: the gear covers a quarter of it at most and its middle stays tappable. A control is
