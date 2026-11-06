@@ -214,9 +214,9 @@ describe('every screen uses it', () => {
     const src = read('screens', `${screen}.tsx`);
     expect(src).toContain("import { isRepetitionDraw } from '../logic/repetitionHistory';");
     expect(src).toContain('isRepetitionDraw(initialFen, history, { threeCheck, crazyhouse, duckChess, spellChess })');
-    expect(src).toContain('const engineGameOver = engineGameOverByRules || repetitionDraw;');
+    expect(src).toContain('const engineGameOver = engineGameOverByRules || repetitionDraw || racingKingsOutcome !== null;');
     expect(src).toContain("if (repetitionDraw) statusText = 'Draw by repetition';");
-    expect(src).toMatch(/spellChessWinner,\n\s+hordeWinner,\n\s+repetitionDraw\n\s+\);/);
+    expect(src).toMatch(/spellChessWinner,\n\s+hordeWinner,\n\s+repetitionDraw,\n\s+racingKingsOutcome\n\s+\);/);
     expect(src).not.toContain('isAtomicThreefoldRepetition');
   });
 

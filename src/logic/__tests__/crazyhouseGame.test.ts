@@ -132,8 +132,8 @@ describe('Crazyhouse wiring (no React Native renderer available)', () => {
       expect(src).toContain('crazyhouseState={displayCrazyhouse}');
       expect(src).toContain('compact={spellChess || crazyhouse}');
       expect(src).toContain('!spellChess && !horde && !racingKings && !crazyhouse && openingName');
-      expect(src).toContain('spellChess || horde || crazyhouse) return;'); // no hints
-      expect(src).toContain('hordeWinner,\n        horde,\n        crazyhouse,'); // the saved-game payload is tagged
+      expect(src).toContain('spellChess || horde || racingKings || crazyhouse) return;'); // no hints
+      expect(src).toContain('hordeWinner,\n        horde,\n        racingKingsOutcome,\n        racingKings,\n        crazyhouse,'); // the saved-game payload is tagged
       expect(src).toContain("? 'Crazyhouse'");
       expect(src).toContain('crazyhouse={crazyhouse}'); // the summary modal (and the board) know it is Crazyhouse
     });
@@ -148,8 +148,8 @@ describe('Crazyhouse wiring (no React Native renderer available)', () => {
     expect(bot).toContain('chooseCrazyhouseBotMove(moveEngine, bot.elo)');
     expect(bot).toContain("choice.type === 'drop'");
     expect(bot).toContain('? moveEngine.drop(choice.piece, choice.square)');
-    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : userColor}');
-    expect(bot).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : handleQueuePremove}');
+    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : userColor}');
+    expect(bot).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : handleQueuePremove}');
     expect(bot).toContain('if (ratingCategory && !giveaway && !atomic && !duckChess && !horde && !racingKings && !crazyhouse) recordRatedGame(');
     expect(bot).toContain('if (result === 1 && !giveaway && !atomic && !duckChess && !horde && !racingKings && !crazyhouse) {');
     expect(bot).toContain('crazyhouse,\n          crazyhouseState,'); // the bot's own move engine is built with the state
@@ -207,7 +207,7 @@ describe('Crazyhouse wiring (no React Native renderer available)', () => {
   });
 
   it('Crazyhouse is excluded from Tournaments (a tournament never creates a Crazyhouse room)', () => {
-    expect(read('screens/TournamentScreen.tsx')).toContain("'horde', 'crazyhouse']");
+    expect(read('screens/TournamentScreen.tsx')).toContain("'horde', 'racingKings', 'crazyhouse']");
     expect(read('screens/TournamentStandingsScreen.tsx').match(/isCrazyhouse: false/g)?.length).toBe(2);
   });
 
