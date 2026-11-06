@@ -8,6 +8,7 @@ import { getLegalDuckPlacementSquares } from './duckChess';
 import { getCrazyhouseMoves, reserveTotal, type CrazyhouseState, type ReservePieceType } from './crazyhouse';
 import { getGiveawayMoves } from './giveaway';
 import { getHordeMoves, getHordeWinnerFromFen } from './horde';
+import { getRacingKingsMoves, getRacingKingsOutcome } from './racingKings';
 import {
   canCastFreeze,
   canCastJump,
@@ -658,6 +659,84 @@ export function chooseHordeBotMove(engine: ChessEngine, elo: number, rng: () => 
       }
     }
     return { move: candidate.move, score: candidate.score - bestReply - (matedInOne ? HORDE_WIN : 0) };
+  });
+  const top = Math.max(...scored.map((s) => s.score));
+  const best = scored.filter((s) => s.score === top);
+  return best[Math.floor(rng() * best.length)].move;
+}
+
+// --- Racing Kings ---------------------------------------------------------------------------
+
+const RK_WIN = 1000;
+/** A draw (both kings reached rank 8, or stalemate) is worth less than play on but far more than a loss. */
+const RK_DRAW = -5;
+const RK_LOOKAHEAD_CANDIDATES = 8;
+
+/**
+ * Picks a move for a bot playing Racing Kings, on EITHER side. Deliberately NOT Stockfish: the stock UCI engine does not
+ * know that a checking move is illegal nor that the game ends when a king reaches rank 8 (same reason as the other
+ * custom-rule bots). Chess.js's legality stays authoritative: every candidate comes from getRacingKingsMoves.
+ *
+ *  - Pass 1 scores every legal move on a scratch engine: the king's progress up the board (the whole game is a race),
+ *    what it captures (a small weight: material only slows the opponent), and the decisive outcomes outright (the
+ *    bot's king wins +1000, a draw a small penalty).
+ *  - Pass 2 takes the best few and subtracts what the opponent's best reply is worth: a win for the opponent is a large
+ *    penalty, an opponent king advancing is a small one.
+ *  - ELO is the only strength dial: the chance of using the scored choice rather than a random legal move rises from
+ *    ~20% at 400 ELO to ~90% at 3000.
+ *
+ * Returns null only when the bot has no legal move (the game would already be over).
+ */
+export function chooseRacingKingsBotMove(engine: ChessEngine, elo: number, rng: () => number = Math.random): Move | null {
+  const moves = getRacingKingsMoves(engine);
+  if (moves.length === 0) return null;
+  if (moves.length === 1) return moves[0];
+
+  const bestChance = 0.2 + 0.7 * Math.min(1, Math.max(0, (elo - 400) / 2600));
+  if (rng() >= bestChance) return moves[Math.floor(rng() * moves.length)];
+
+  const me = engine.getTurn();
+  const fen = engine.getFen();
+  const options = { racingKings: true } as const;
+  const kingRank = (e: ChessEngine, color: PieceColor) => {
+    for (const s of e.getBoard().flat()) if (s.piece?.type === 'k' && s.piece.color === color) return Number(s.square[1]);
+    return 0;
+  };
+
+  const pass1 = moves.map((move) => {
+    const scratch = new ChessEngine(fen, options);
+    scratch.move(move.from, move.to, move.promotion);
+    let score = 0;
+    if (move.captured) score += 0.3 * PIECE_VALUES[move.captured];
+    score += 1.5 * kingRank(scratch, me);
+    const outcome = getRacingKingsOutcome(scratch);
+    if (outcome === me) score += RK_WIN;
+    else if (outcome === 'draw') score += RK_DRAW;
+    else if (outcome) score -= RK_WIN;
+    else {
+      const status = scratch.getStatus();
+      if (status === 'stalemate' || status === 'draw') score += RK_DRAW;
+    }
+    return { move, score, fen: scratch.getFen(), decided: score >= RK_WIN };
+  });
+  pass1.sort((a, b) => b.score - a.score || rng() - 0.5);
+  if (pass1[0].decided) return pass1[0].move;
+
+  const scored = pass1.slice(0, RK_LOOKAHEAD_CANDIDATES).map((candidate) => {
+    const afterMe = new ChessEngine(candidate.fen, options);
+    let worst = 0;
+    for (const reply of getRacingKingsMoves(afterMe)) {
+      const probe = new ChessEngine(candidate.fen, options);
+      probe.move(reply.from, reply.to);
+      const outcome = getRacingKingsOutcome(probe);
+      const opp = afterMe.getTurn();
+      if (outcome === opp) {
+        worst = RK_WIN;
+        break;
+      }
+      worst = Math.max(worst, 1.5 * kingRank(probe, opp) + (reply.captured ? 0.3 * PIECE_VALUES[reply.captured] : 0));
+    }
+    return { move: candidate.move, score: candidate.score - worst };
   });
   const top = Math.max(...scored.map((s) => s.score));
   const best = scored.filter((s) => s.score === top);

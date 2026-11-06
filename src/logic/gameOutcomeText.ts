@@ -18,7 +18,8 @@ export type EndReason =
   | 'atomic'
   | 'duckChess'
   | 'spellChess'
-  | 'horde';
+  | 'horde'
+  | 'racingKings';
 
 export function describeEndReason(reason: EndReason): string {
   switch (reason) {
@@ -40,6 +41,8 @@ export function describeEndReason(reason: EndReason): string {
       return 'by King Capture';
     case 'horde':
       return 'by Capturing the Horde';
+    case 'racingKings':
+      return 'by Reaching the 8th Rank';
     case 'timeout':
       return 'by Timeout';
     case 'resignation':

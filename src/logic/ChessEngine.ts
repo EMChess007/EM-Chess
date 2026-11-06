@@ -29,6 +29,7 @@ import {
   type CrazyhouseState,
   type ReservePieceType,
 } from './crazyhouse';
+import { racingKingsOutcomeFromFen } from './racingKings';
 import { HORDE_FIRST_RANK_DOUBLE_STEP_ALLOWS_EN_PASSANT, getHordeWinnerFromFen, hordeFirstRankDoubleStep } from './horde';
 import { castlingRookOrigin, getJumpAugmentedCaptures } from './spellChess';
 import { hideCheckFromPlayers } from './fogOfWarNotation';
@@ -297,6 +298,15 @@ export interface ChessEngineOptions {
    */
   horde?: boolean;
   /**
+   * Racing Kings only — see racingKings.ts for the rules. chess.js stays authoritative (the start FEN is a valid
+   * position, so no skipValidation); the ONE change is that a move which gives CHECK is illegal, filtered out of
+   * getLegalMoves/move/getLegalMoveCount via the "+" / "#" suffix of chess.js's own SAN. A king is never in check, so
+   * getStatus() never says 'check'/'checkmate'; it answers 'stalemate' when no check-free move exists and 'draw' on the
+   * fifty-move rule (never on insufficient material: bare kings can still race). The king-on-
+   * rank-8 result lives in racingKings.getRacingKingsOutcome, which callers check first. Not combinable with any other variant.
+   */
+  racingKings?: boolean;
+  /**
    * Crazyhouse only — see crazyhouse.ts for the rules and the state it carries. chess.js stays authoritative for every
    * ordinary move; this option adds a DROP (drop(), getLegalDropSquares(), getLegalDrops()) and keeps the reserve and the
    * promoted-piece set (`crazyhouseState`, passed in because it is NOT part of the FEN, like duckSquare) up to date on every
@@ -318,6 +328,7 @@ export class ChessEngine {
   private duckSquare: string | null;
   private spellChess: boolean;
   private horde: boolean;
+  private racingKings: boolean;
   private crazyhouse: boolean;
   private crazyhouseState: CrazyhouseState;
   private frozenSquares: string[];
@@ -336,6 +347,7 @@ export class ChessEngine {
     this.duckSquare = options?.duckChess ? (options.duckSquare ?? null) : null;
     this.spellChess = options?.spellChess ?? false;
     this.horde = options?.horde ?? false;
+    this.racingKings = options?.racingKings ?? false;
     this.crazyhouse = options?.crazyhouse ?? false;
     this.crazyhouseState = cloneCrazyhouseState(options?.crazyhouse ? (options.crazyhouseState ?? initialCrazyhouseState()) : initialCrazyhouseState());
     this.frozenSquares = options?.spellChess ? (options.frozenSquares ?? []) : [];
@@ -385,6 +397,9 @@ export class ChessEngine {
       const doubleStep = this.hordeDoubleStepTarget(square);
       return doubleStep ? [...targets, doubleStep] : targets;
     }
+    if (this.racingKings) {
+      return this.racingKingsMoves(square).map((move) => move.to as string);
+    }
     const verboseMoves = this.chess.moves({ square: square as ChessJsSquare, verbose: true });
 
     if (!this.chess960) {
@@ -412,6 +427,11 @@ export class ChessEngine {
     try {
       const result = this.chess.move({ from, to, promotion });
       if (!result) return null;
+      if (this.racingKings && /[+#]$/.test(result.san)) {
+        // Racing Kings: giving check is illegal -- take the move back (see ChessEngineOptions.racingKings).
+        this.chess.undo();
+        return null;
+      }
       // Use chess.js's own `promotion` (only set when the move actually promoted a pawn),
       // not the `promotion` parameter we passed in — ChessBoard always passes 'q' as a
       // just-in-case default even for non-promotion moves, and echoing that back verbatim
@@ -465,6 +485,12 @@ export class ChessEngine {
       if (this.chess.isDrawByFiftyMoves()) return 'draw';
       return inCheck ? 'check' : 'playing';
     }
+    if (this.racingKings) {
+      // No check, no checkmate (a checking move is illegal); stalemate and the fifty-move rule are draws. NO insufficient-
+      // material draw: bare kings can still race to rank 8.
+      if (this.racingKingsMoves().length === 0) return 'stalemate';
+      return this.chess.isDrawByFiftyMoves() ? 'draw' : 'playing';
+    }
     if (this.horde) {
       // Never chess.js's isDraw(): its insufficient-material rule misreads Horde (see ChessEngineOptions.horde). The
       // fifty-move rule is the only automatic draw besides stalemate; "White has nothing left" is the callers' win check.
@@ -490,6 +516,11 @@ export class ChessEngine {
     if (this.crazyhouse) {
       const status = this.getStatus();
       return status === 'checkmate' || status === 'stalemate' || status === 'draw';
+    }
+    if (this.racingKings) {
+      if (racingKingsOutcomeFromFen(this.getFen())) return true;
+      const status = this.getStatus();
+      return status === 'stalemate' || status === 'draw';
     }
     if (this.horde) {
       if (getHordeWinnerFromFen(this.getFen())) return true;
@@ -524,6 +555,7 @@ export class ChessEngine {
   getLegalMoveCount(): number {
     if (this.atomic) return this.getAtomicLegal().length;
     if (this.crazyhouse) return this.chess.moves().length + this.getLegalDrops().length;
+    if (this.racingKings) return this.racingKingsMoves().length;
     if (this.horde) {
       let doubleSteps = 0;
       for (const file of FILES) if (this.hordeDoubleStepTarget(`${file}1`)) doubleSteps++;
@@ -740,6 +772,15 @@ export class ChessEngine {
       drop: piece,
       crazyhouse: cloneCrazyhouseState(this.crazyhouseState),
     };
+  }
+
+  // --- Racing Kings (see racingKings.ts) ---------------------------------
+
+  /** chess.js's legal moves (own king never left in check) minus every move that gives check -- optionally only those
+   * starting on `square`. A checking move's SAN ends in "+" or "#". */
+  private racingKingsMoves(square?: string) {
+    const all = square ? this.chess.moves({ square: square as ChessJsSquare, verbose: true }) : this.chess.moves({ verbose: true });
+    return all.filter((move) => !/[+#]$/.test(move.san));
   }
 
   // --- Horde (see horde.ts) ----------------------------------------------

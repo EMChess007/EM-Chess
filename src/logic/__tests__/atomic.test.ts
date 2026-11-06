@@ -460,7 +460,7 @@ describe('isolation and wiring (no React Native renderer available)', () => {
   for (const screen of ['screens/LocalGameScreen.tsx', 'screens/BotGameScreen.tsx']) {
     it(`${screen} feeds the Atomic winner into getGameOutcome and the saved-game payload, and passes the flag on`, () => {
       const src = read(screen);
-      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner,\s*duckWinner,\s*spellChessWinner,\s*hordeWinner,\s*repetitionDraw\s*\)/);
+      expect(src).toMatch(/getGameOutcome\([\s\S]*?atomicWinner,\s*duckWinner,\s*spellChessWinner,\s*hordeWinner,\s*repetitionDraw,\s*racingKingsOutcome\s*\)/);
       expect(src).toContain('atomicWinner,\n        atomic,');
       expect(src).toContain('atomic={atomic}');
       expect(src).toContain('isRepetitionDraw'); // the shared repetition draw (repetition.ts) replaced the Atomic-only one
@@ -482,9 +482,9 @@ describe('isolation and wiring (no React Native renderer available)', () => {
     expect(atomicBranch).toBeGreaterThan(-1);
     expect(bot).toContain('chooseAtomicBotMove(moveEngine');
     expect(stockfishCall).toBeGreaterThan(atomicBranch);
-    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : userColor}');
-    expect(bot).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : handleQueuePremove}');
-    expect(bot).toContain('!giveaway && !atomic && !duckChess && !horde && !crazyhouse) recordRatedGame');
+    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : userColor}');
+    expect(bot).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : handleQueuePremove}');
+    expect(bot).toContain('!giveaway && !atomic && !duckChess && !horde && !racingKings && !crazyhouse) recordRatedGame');
   });
 
   it('hints and Game Review are off for Atomic (Stockfish knows nothing of explosions)', () => {
