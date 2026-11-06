@@ -599,6 +599,60 @@ async function touches2p(dev) {
 }
 
 /**
+ * RACING KINGS, a Local game (command #42; it replaces the step that command #41 put into smoke.mjs, which runs first in EVERY slice and pressed blindly at the square centres of the
+ * accessibility tree). It runs in the slice of "touch: 2-player board" and uses its method exactly: the board rectangle comes from the app's beacon (`state-board-2p`), a touch is
+ * `input tap`, then the lasting 90 ms press when the app did not select the square (waitSelected), and what is judged is what the app SAYS (the beacon), not the tree.
+ * The "Racing Kings" row of the Local card is low in the Play menu (about y 2100 of 2400 on the large phone, below the fold on the small one): it is found with `below: 'Local'` (as "Classic"),
+ * and when it stands in the bottom quarter of the window the menu is scrolled one more swipe so the touch does not land in the zone of the floating gear button.
+ * The move: e2 -> g3 (the white knight of the start position, a legal move that gives no check); then the position has the knight on g3, Black to move, last move [e2, g3].
+ */
+async function racingKings2p(dev) {
+  const name = 'touch: Racing Kings board (Local)';
+  await scenario(dev, name, async () => {
+    await toHome(dev);
+    dev.beacon.forget('state-board-2p');
+    const row = { text: 'Racing Kings', below: 'Local' };
+    await dev.runSteps([{ text: 'Play' }]);
+    const found = await dev.find(row);
+    if (found.bounds.cy > dev.display.h * 0.75) {
+      log(`  the Racing Kings row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
+      dev.scrollDown();
+      await sleep(700);
+    }
+    await dev.runSteps([row, { text: '5 min' }]);
+    const issues = [];
+    const state = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50 && s.turn === 'w', 40_000);
+    if (!state) return record(name, [`the Racing Kings board reported no state with a rectangle (the app said ${JSON.stringify(dev.beacon.get('state-board-2p'))}); on screen: ${visibleWords(await dev.look().then((l) => l.nodes).catch(() => []), 30).join(' | ')}`]);
+    const board = rectOfState(state);
+    if (Math.abs(board.w - board.h) > 2) issues.push(`the board is not square: ${board.w}x${board.h}`);
+    // the start position of Racing Kings: the white knight on e2 (and nothing on the third rank)
+    if (pieceOnSquare(state.fen, 'e2') !== 'N') issues.push(`the start position is "${state.fen}": no white knight on e2`);
+    await dev.snapshot('racing-kings-start');
+    const orientation = () => dev.beacon.get('state-board-2p')?.orientation ?? 'w';
+    const touch = async (square, until) => {
+      const r = squareRect(board, orientation(), square);
+      for (const method of ['tap', 'press']) {
+        if (method === 'tap') dev.tap(r.cx, r.cy);
+        else dev.press(r.cx, r.cy, 90);
+        if (await until()) return method;
+      }
+      return null;
+    };
+    const first = await touch('e2', () => waitSelected(dev, 'state-board-2p', 'e2', 1800));
+    if (first === null) issues.push(`touched e2 (tap, then a 90 ms press): the app selected ${JSON.stringify(dev.beacon.get('state-board-2p')?.selected ?? null)}`);
+    else {
+      const second = await touch('g3', () => dev.beacon.waitFor('state-board-2p', (s) => pieceOnSquare(s.fen, 'g3') === 'N' && s.turn === 'b', 2500));
+      const after = dev.beacon.get('state-board-2p');
+      if (second === null) issues.push(`after e2 then g3 the app's position is "${after?.fen}", not a knight on g3 with Black to move (selected ${JSON.stringify(after?.selected ?? null)}, legal targets ${after?.legal})`);
+      else if (JSON.stringify(after.lastMove) !== '["e2","g3"]') issues.push(`the app's last move is ${JSON.stringify(after.lastMove)}, not e2-g3`);
+      else log(`Racing Kings board: e2 selected by ${first}, g3 played by ${second}; the app's position "${after.fen}"`);
+    }
+    await dev.snapshot('racing-kings-after-ng3');
+    record(name, issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1} (from the app's beacon)`);
+  });
+}
+
+/**
  * FINGER-DRAWN ARROWS on the 2-player board (command #32), straight after the e2-e4 of the touch check: Black is to move, and two arrows are drawn - one from a Black piece, one from a White
  * piece (ANY turn, several at once) - by a finger held and dragged (`drawArrow`). The app reports the number of arrows on the board (beacon `arrows`): 2 after the drawing, the position and the
  * selection unchanged (drawing never moves or selects), and 0 after a move is played (e7-e5) - the arrows stay until a move.
@@ -1640,6 +1694,7 @@ try {
     if (PARTS.has('touch2p')) {
       await touches2p(dev);
       await arrows2p(dev); // the same game screen, after e2-e4 (command #32)
+      await racingKings2p(dev); // Racing Kings (Local), same method (command #42)
     }
     if (PARTS.has('touchbug')) await touchesBughouse(dev, false);
     // the same two boards in the frame of the phone of command #26 (root view below the status bar): where the reverted fix fails

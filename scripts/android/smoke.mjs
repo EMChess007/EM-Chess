@@ -8,7 +8,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Device, PROFILES } from './lib/device.mjs';
 import { visibleWords } from './lib/hierarchy.mjs';
-import { crashIssues, squareRect } from './lib/checks.mjs';
+import { crashIssues } from './lib/checks.mjs';
 
 const out = join(process.argv[2] ?? 'android-e2e-out', 'smoke');
 const dev = new Device({ outDir: out });
@@ -39,24 +39,6 @@ try {
   const issues = crashIssues(nodes);
   if (issues.length > 0) throw new Error(issues.join('; '));
   await dev.snapshot('home');
-
-  // Racing Kings (one short step): open a Local game, check the board renders, play 1.Ng3 (e2 -> g3, a legal non-checking move from the start position) with two real touches
-  // and see the app say so ("Last move: Ng3"). Everything else about the variant is covered by the logic / dom tests and the server scripts.
-  await dev.runSteps([{ text: 'Play' }, { text: 'Racing Kings', below: 'Local' }, { text: '5 min' }]);
-  const boardNodes = await dev.waitFor('the Racing Kings board', (list) => list.some((n) => (n.id === 'chess-board' || n.desc === 'chess-board') && n.bounds && n.bounds.w > 50), 40_000);
-  const board = boardNodes.find((n) => (n.id === 'chess-board' || n.desc === 'chess-board') && n.bounds && n.bounds.w > 50).bounds;
-  if (Math.abs(board.w - board.h) > 2) throw new Error(`the Racing Kings board is not square: ${board.w}x${board.h}`);
-  await dev.snapshot('racing-kings-start');
-  const from = squareRect(board, 'w', 'e2');
-  dev.press(from.cx, from.cy, 90);
-  await new Promise((r) => setTimeout(r, 500));
-  const to = squareRect(board, 'w', 'g3');
-  dev.press(to.cx, to.cy, 90);
-  const afterMove = await dev.waitFor('"Last move: Ng3" after 1.Ng3', (list) => list.some((n) => /Last move: Ng3/.test(n.text)), 15_000);
-  const rkIssues = crashIssues(afterMove);
-  if (rkIssues.length > 0) throw new Error(`Racing Kings: ${rkIssues.join('; ')}`);
-  await dev.snapshot('racing-kings-after-ng3');
-  console.log('smoke: Racing Kings (Local) board rendered and 1.Ng3 was played');
   ok = true;
 } catch (e) {
   console.error(`smoke: FAILED - ${e.message}`);
