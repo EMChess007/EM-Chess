@@ -185,7 +185,7 @@ describe('the wiring', () => {
     expect(sh).toContain('[ "$code" -eq 0 ] || rc=1');
     const e2e = read('scripts/android/e2e.mjs');
     expect(e2e).toContain("ATTEMPT === 2 ? '-retry' : ''");
-    expect(e2e).toContain('process.exit(exitStatus({ failed: failed.length > 0, health }))');
+    expect(e2e).toContain('process.exit(exitStatus({ failed: failed.length > 0, health, issues: failureIssues }))');
     expect(e2e).toContain('health.start = {');
     expect(e2e).toContain('health.end = {');
   });

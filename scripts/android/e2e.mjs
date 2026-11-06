@@ -26,7 +26,7 @@ import { Device, PROFILES, sleep } from './lib/device.mjs';
 import { Chess } from 'chess.js';
 import { Beacon } from './lib/beacon.mjs';
 import { PHONE_BUDGET, judgePerf, latenciesOf, scaledBudget, summarize, windowStats } from './lib/perf.mjs';
-import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
+import { exitStatus, HEALTHY_DUMP_MS, judgeHealth, labelAttempt, measureDump, measureInput, timeoutScale } from './lib/health.mjs';
 import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
@@ -1597,7 +1597,7 @@ async function offline(dev) {
         t0 = Date.now(); // Home is up: the 8 s count from here (the first render of a development bundle takes 10 s of its own)
       } else {
         // the clock starts at the LAST tap: the steps before it (finding a button in a long list, a dump or two) are not the screen's time
-        for (const step of steps.slice(0, -1)) await dev.tapStep(step, 150);
+        for (let i = 0; i < steps.length - 1; i++) await dev.tapStep(steps[i], steps[i + 1]);
         const last = await dev.find(steps[steps.length - 1]);
         t0 = Date.now();
         dev.tap(last.bounds.cx, last.bounds.cy);
@@ -1606,7 +1606,7 @@ async function offline(dev) {
       const ms = Date.now() - t0;
       const spinners = nodes.filter((n) => n.cls.endsWith('ProgressBar'));
       const issues = [];
-      if (ms > OFFLINE_BOUND_MS + DUMP_SLACK_MS) issues.push(`took ${ms} ms`);
+      if (ms > (OFFLINE_BOUND_MS + DUMP_SLACK_MS) * dev.timeScale) issues.push(`took ${ms} ms`);
       if (spinners.length > 0) issues.push(`${spinners.length} spinner(s) still on screen`);
       issues.push(...textIssues(nodes, dev.display).map((i) => `${i.kind}: "${i.text}" - ${i.detail}`));
       await dev.snapshot(`offline-${name.replace(/\W+/g, '_')}`);
@@ -1627,6 +1627,10 @@ try {
   // the runner's health at the start of the slice (command #32): the input path and one dump of the idle screen the slice starts from
   health.start = { inputMs: measureInput(dev), dumpMs: await measureDump(dev) };
   log(`runner health at the start: input ${health.start.inputMs} ms, dump ${health.start.dumpMs} ms -> ${judgeHealth(health.start).slow ? `SLOW (${judgeHealth(health.start).reasons.join('; ')})` : 'ok'}`);
+  // command #43: every wait of the slice (device waitFor, beacon waitFor, the tap settle windows) is multiplied by the measured slowness
+  dev.timeScale = timeoutScale(health.start.dumpMs);
+  dev.beacon.timeScale = dev.timeScale;
+  log(`timeout scale x${dev.timeScale.toFixed(2)} (start dump ${health.start.dumpMs} ms / ${HEALTHY_DUMP_MS} ms, at least 1, at most 5)`);
   if (phase === 'static') {
     dev.clearData();
     dev.launch();
@@ -1689,7 +1693,8 @@ try {
 }
 if (dev.dumpFailures) log(`accessibility dumps that failed: ${JSON.stringify(dev.dumpFailures)}`);
 const failed = results.filter((r) => !r.ok);
-const label = labelAttempt({ failed: failed.length > 0, health });
+const failureIssues = failed.flatMap((r) => r.issues);
+const label = labelAttempt({ failed: failed.length > 0, health, issues: failureIssues });
 log(`runner health at the end: input ${health.end?.inputMs ?? 'n/a'} ms -> ${label === '' ? 'passed' : `FAILED, labelled ${label}${label === 'RUNNER' ? ' (the first attempt is repeated once by run-on-emulator.sh)' : ''}`}`);
 writeFileSync(join(OUT, 'logcat.txt'), dev.logcat(800));
 writeFileSync(join(OUT, 'run.log'), logLines.join('\n'));
@@ -1697,4 +1702,4 @@ writeFileSync(join(OUT, 'results.json'), JSON.stringify({ profile: profile.id, p
 log(`android-e2e ${profile.id}/${phase}: ${results.length - failed.length} passed, ${failed.length} failed in ${Math.round((Date.now() - started) / 1000)} s (${relaunches} relaunches)`);
 for (const f of failed) log(`  FAILED: ${f.name}`);
 // 0 = passed, 3 = failed on a slow runner (retried once by the shell), 1 = failed on a healthy runner (an APP finding, never retried)
-process.exit(exitStatus({ failed: failed.length > 0, health }));
+process.exit(exitStatus({ failed: failed.length > 0, health, issues: failureIssues }));
