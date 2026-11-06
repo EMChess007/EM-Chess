@@ -7,7 +7,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Device, PROFILES } from './lib/device.mjs';
-import { visibleWords } from './lib/hierarchy.mjs';
+import { findNodes, visibleWords } from './lib/hierarchy.mjs';
 import { crashIssues, squareRect } from './lib/checks.mjs';
 
 const out = join(process.argv[2] ?? 'android-e2e-out', 'smoke');
@@ -42,7 +42,25 @@ try {
 
   // Racing Kings (one short step): open a Local game, check the board renders, play 1.Ng3 (e2 -> g3, a legal non-checking move from the start position) with two real touches
   // and see the app say so ("Last move: Ng3"). Everything else about the variant is covered by the logic / dom tests and the server scripts.
-  await dev.runSteps([{ text: 'Play' }, { text: 'Racing Kings', below: 'Local' }, { text: '5 min' }]);
+  // The first touches of a fresh app on a slow emulator can be lost (the tree says Home is up while the JS thread is still busy): every tap is repeated, up to 3 times, until the screen it
+  // should open shows up. A tap that really never works still fails the smoke, with the words on screen.
+  const tapUntil = async (step, appears, what) => {
+    let lastError = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await dev.tapStep(step);
+        await dev.waitFor(what, (list) => findNodes(list, appears).length > 0, 15_000);
+        return;
+      } catch (e) {
+        lastError = e;
+        console.error(`smoke: ${what}: attempt ${attempt} of 3 did not show it (${String(e.message).slice(0, 120)})`);
+      }
+    }
+    throw lastError;
+  };
+  await tapUntil({ text: 'Play' }, { text: 'Local' }, 'the Play menu');
+  await tapUntil({ text: 'Racing Kings', below: 'Local' }, { text: '5 min' }, 'the time controls');
+  await dev.tapStep({ text: '5 min' });
   const boardNodes = await dev.waitFor('the Racing Kings board', (list) => list.some((n) => (n.id === 'chess-board' || n.desc === 'chess-board') && n.bounds && n.bounds.w > 50), 40_000);
   const board = boardNodes.find((n) => (n.id === 'chess-board' || n.desc === 'chess-board') && n.bounds && n.bounds.w > 50).bounds;
   if (Math.abs(board.w - board.h) > 2) throw new Error(`the Racing Kings board is not square: ${board.w}x${board.h}`);

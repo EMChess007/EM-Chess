@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { GameVariant } from '../../components/VariantSelector';
@@ -6,6 +6,7 @@ import { describeEndReason } from '../gameOutcomeText';
 import { variantTitlePrefix, variantWireFlags } from '../onlineVariants';
 
 const SRC = join(__dirname, '../..');
+const hasBackend = existsSync(join(SRC, '../backend/src/game/tournaments.ts'));
 const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8').replace(/\r\n/g, '\n');
 
 const ALL: GameVariant[] = ['classic', 'chess960', 'kingOfTheHill', 'threeCheck', 'setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'racingKings', 'crazyhouse'];
@@ -51,12 +52,16 @@ describe('Racing Kings online wiring (source scan; the rendered screens need no 
     expect(screen).toContain("'spellChess', 'horde', 'crazyhouse']");
     expect(screen).not.toContain("'racingKings', 'crazyhouse']");
     expect(screen).toContain("const isRacingKings = variant === 'racingKings'");
+  });
+
+  // The backend is a separate repository: it is cloned at ./backend in the cloud sessions, but the app's CI checks out the app alone. Its own scripts (test-racing-kings.mjs) cover it there.
+  it.skipIf(!hasBackend)('Tournaments carry the Racing Kings flag to the server rooms', () => {
     const server = readFileSync(join(SRC, '../backend/src/game/tournaments.ts'), 'utf8');
     expect(server).toContain('racingKings: tournament.racingKings,');
     expect(server).toContain('isRacingKings: tournament.racingKings,');
   });
 
-  it('the rooms, the queue and the wire types carry the flag on the server', () => {
+  it.skipIf(!hasBackend)('the rooms, the queue and the wire types carry the flag on the server', () => {
     const server = (rel: string) => readFileSync(join(SRC, '../backend/src/game', rel), 'utf8');
     expect(server('matchmaking.ts')).toContain('q.isRacingKings === entry.isRacingKings');
     expect(server('socketHandlers.ts')).toContain('isRacingKings: Boolean(payload.isRacingKings)');
