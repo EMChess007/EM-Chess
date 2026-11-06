@@ -621,7 +621,18 @@ async function racingKings2p(dev) {
     }
     await dev.runSteps([row, { text: '5 min' }]);
     const issues = [];
-    const state = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50 && s.turn === 'w', 40_000);
+    const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
+    let state = await dev.beacon.waitFor('state-board-2p', boardReported, 15_000);
+    if (!state) {
+      // The run of command #42 lost the "5 min" touch once (the Select Time Control screen was still up 50 s later, no game was ever started). A touch the screen did not take is repeated
+      // ONCE, and only while that screen is still the one shown (so no second game can be started); the repeat is logged.
+      const tree = await dev.look().then((l) => l.nodes).catch(() => []);
+      if (findNodes(tree, { text: 'Select Time Control' }).length > 0) {
+        log('  the Select Time Control screen is still shown 15 s after the touch on "5 min": touching it once more');
+        await dev.runSteps([{ text: '5 min' }]);
+      }
+      state = await dev.beacon.waitFor('state-board-2p', boardReported, 40_000);
+    }
     if (!state) return record(name, [`the Racing Kings board reported no state with a rectangle (the app said ${JSON.stringify(dev.beacon.get('state-board-2p'))}); on screen: ${visibleWords(await dev.look().then((l) => l.nodes).catch(() => []), 30).join(' | ')}`]);
     const board = rectOfState(state);
     if (Math.abs(board.w - board.h) > 2) issues.push(`the board is not square: ${board.w}x${board.h}`);
