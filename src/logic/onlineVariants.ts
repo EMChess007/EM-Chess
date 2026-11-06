@@ -13,6 +13,7 @@ export interface OnlineVariantFlags {
   isDuckChess: boolean;
   isSpellChess: boolean;
   isHorde: boolean;
+  isRacingKings: boolean;
   isCrazyhouse: boolean;
 }
 
@@ -30,6 +31,7 @@ export function variantWireFlags(variant: GameVariant): OnlineVariantFlags {
     isDuckChess: variant === 'duckChess',
     isSpellChess: variant === 'spellChess',
     isHorde: variant === 'horde',
+    isRacingKings: variant === 'racingKings',
     isCrazyhouse: variant === 'crazyhouse',
   };
 }
@@ -55,6 +57,8 @@ export function variantTitlePrefix(variant: GameVariant): string {
       return 'Duck Chess · ';
     case 'spellChess':
       return 'Spell Chess · ';
+    case 'racingKings':
+      return 'Racing Kings · ';
     case 'horde':
       return 'Horde · ';
     case 'crazyhouse':

@@ -60,7 +60,7 @@ describe('the room for the Freeze/Jump row comes from tighter spacing, not from 
       expect(src, screen).toContain('!duckChess && !spellChess && !horde && !racingKings && !crazyhouse && openingName');
       expect(src, screen).toContain('duckChess || spellChess || horde || racingKings || crazyhouse) return;');
     }
-    expect(read('screens/OnlineGameScreen.tsx')).toContain('!duckChess && !spellChess && !horde && !crazyhouse && openingName');
+    expect(read('screens/OnlineGameScreen.tsx')).toContain('!duckChess && !spellChess && !horde && !racingKings && !crazyhouse && openingName');
   });
 });
 
