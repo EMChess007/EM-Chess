@@ -152,7 +152,7 @@ describe('Horde wiring (no React Native renderer available)', () => {
   });
 
   it('Horde is excluded from Tournaments (a tournament never creates a Horde room)', () => {
-    expect(read('screens/TournamentScreen.tsx')).toContain("'spellChess', 'horde', 'racingKings', 'crazyhouse']");
+    expect(read('screens/TournamentScreen.tsx')).toContain("'spellChess', 'horde', 'crazyhouse']");
     expect(read('screens/TournamentStandingsScreen.tsx').match(/isHorde: false/g)?.length).toBe(2);
   });
 

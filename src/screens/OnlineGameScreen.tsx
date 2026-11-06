@@ -9,6 +9,7 @@ import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard, { type PremoveIntent } from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
+import RacingKingsRulesSheet from '../components/RacingKingsRulesSheet';
 import GameScreenBody from '../components/GameScreenBody';
 import { initialCrazyhouseState, type CrazyhouseState } from '../logic/crazyhouse';
 import { plyStateAtView } from '../logic/perPlyState';
@@ -153,6 +154,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   const [opponentGraceSeconds, setOpponentGraceSeconds] = useState<number | null>(null);
   const [openingName, setOpeningName] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [viewIndex, setViewIndex] = useState<number | null>(null); // null = live position
   const [drawOfferPending, setDrawOfferPending] = useState(false);
   const [incomingDrawOffer, setIncomingDrawOffer] = useState(false);
@@ -978,8 +980,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                 items={[
                   { label: 'Request Draw', onPress: handleRequestDraw, disabled: !!gameOver || drawOfferPending },
                   { label: 'Resign', onPress: handleResign, destructive: true, disabled: !!gameOver },
+                  ...(racingKings ? [{ label: 'Rules', onPress: () => setRulesOpen(true) }] : []),
                 ]}
               />
+              {racingKings && <RacingKingsRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
             </View>
 
             <View style={styles.footer}>

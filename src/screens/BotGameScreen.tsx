@@ -8,6 +8,7 @@ import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard, { type PremoveIntent } from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
+import RacingKingsRulesSheet from '../components/RacingKingsRulesSheet';
 import GameScreenBody from '../components/GameScreenBody';
 import { getE2ePerf } from '../components/devOverlayRegistry';
 import MoveListStrip from '../components/MoveListStrip';
@@ -173,6 +174,7 @@ export default function BotGameScreen({
   const [openingName, setOpeningName] = useState<string | null>(null);
   const [flipped, setFlipped] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [resignedBy, setResignedBy] = useState<PieceColor | null>(null);
   const [hintText, setHintText] = useState<string | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
@@ -1124,8 +1126,12 @@ export default function BotGameScreen({
               />
               <GameOptionsMenu
                 visible={showOptions}
-                items={[{ label: 'Flip Board', onPress: () => setFlipped((v) => !v) }]}
+                items={[
+                  { label: 'Flip Board', onPress: () => setFlipped((v) => !v) },
+                  ...(racingKings ? [{ label: 'Rules', onPress: () => setRulesOpen(true) }] : []),
+                ]}
               />
+              {racingKings && <RacingKingsRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
             </View>
 
             <View style={styles.footer}>

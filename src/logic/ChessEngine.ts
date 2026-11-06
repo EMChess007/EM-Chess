@@ -302,7 +302,7 @@ export interface ChessEngineOptions {
    * position, so no skipValidation); the ONE change is that a move which gives CHECK is illegal, filtered out of
    * getLegalMoves/move/getLegalMoveCount via the "+" / "#" suffix of chess.js's own SAN. A king is never in check, so
    * getStatus() never says 'check'/'checkmate'; it answers 'stalemate' when no check-free move exists and 'draw' on the
-   * fifty-move rule or insufficient material (chess.js's own rule, as the spec asks). The king-on-
+   * fifty-move rule (never on insufficient material: bare kings can still race). The king-on-
    * rank-8 result lives in racingKings.getRacingKingsOutcome, which callers check first. Not combinable with any other variant.
    */
   racingKings?: boolean;
@@ -486,9 +486,10 @@ export class ChessEngine {
       return inCheck ? 'check' : 'playing';
     }
     if (this.racingKings) {
-      // No check, no checkmate (a checking move is illegal); stalemate, fifty-move and insufficient material are draws.
+      // No check, no checkmate (a checking move is illegal); stalemate and the fifty-move rule are draws. NO insufficient-
+      // material draw: bare kings can still race to rank 8.
       if (this.racingKingsMoves().length === 0) return 'stalemate';
-      return this.chess.isDrawByFiftyMoves() || this.chess.isInsufficientMaterial() ? 'draw' : 'playing';
+      return this.chess.isDrawByFiftyMoves() ? 'draw' : 'playing';
     }
     if (this.horde) {
       // Never chess.js's isDraw(): its insufficient-material rule misreads Horde (see ChessEngineOptions.horde). The

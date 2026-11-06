@@ -207,7 +207,7 @@ describe('Crazyhouse wiring (no React Native renderer available)', () => {
   });
 
   it('Crazyhouse is excluded from Tournaments (a tournament never creates a Crazyhouse room)', () => {
-    expect(read('screens/TournamentScreen.tsx')).toContain("'horde', 'racingKings', 'crazyhouse']");
+    expect(read('screens/TournamentScreen.tsx')).toContain("'horde', 'crazyhouse']");
     expect(read('screens/TournamentStandingsScreen.tsx').match(/isCrazyhouse: false/g)?.length).toBe(2);
   });
 

@@ -14,7 +14,7 @@ import type { Move, PieceColor, PieceType } from '../types/chess';
  *    king reaches rank 8 and Black's king can reach rank 8 on the very next move, the game is a DRAW (both made it);
  *    if it cannot, White wins. If Black's king gets to rank 8 first (White's is not there), Black wins at once.
  *  - Stalemate (the side to move has no check-free legal move) is a DRAW. The fifty-move rule, threefold repetition
- *    (repetition.ts) and chess.js's insufficient-material draw apply as in ordinary chess.
+ *    (repetition.ts) apply as in ordinary chess. There is NO insufficient-material draw (bare kings can still race).
  *
  * Mutually exclusive with every other variant. Every engine used with this file MUST be constructed with
  * { racingKings: true }. chess.js loads the start FEN normally (one king each, no castling rights), so no

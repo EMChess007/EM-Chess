@@ -110,10 +110,16 @@ describe('results', () => {
     expect(engine.getLegalMoveCount()).toBe(0);
   });
 
-  it('the fifty-move rule is a draw, and so is insufficient material (bare kings)', () => {
+  it('the fifty-move rule is a draw, but bare kings (K vs K) are NOT: the game goes on and a king can still win', () => {
     expect(rk('8/8/8/8/8/8/k7/R6K w - - 100 80').getStatus()).toBe('draw');
     expect(rk('8/8/8/8/8/8/k7/R6K w - - 0 1').getStatus()).toBe('playing');
-    expect(rk('8/8/8/8/8/8/k7/7K w - - 0 1').getStatus()).toBe('draw');
+    const bare = rk('8/8/8/8/8/8/k7/7K w - - 0 1');
+    expect(bare.getStatus()).toBe('playing');
+    expect(bare.isGameOver()).toBe(false);
+    const race = rk('8/7K/8/8/8/8/k7/8 w - - 0 1');
+    expect(race.getStatus()).toBe('playing');
+    expect(race.move('h7', 'h8')).not.toBeNull();
+    expect(getRacingKingsOutcome(race)).toBe('w');
   });
 
   it('Black reaching rank 8 FIRST wins (White is not there)', () => {

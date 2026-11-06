@@ -281,6 +281,7 @@ export interface CreateTournamentPayload {
   isChess960?: boolean;
   isKingOfTheHill?: boolean;
   isThreeCheck?: boolean;
+  isRacingKings?: boolean;
 }
 
 export interface JoinTournamentPayload {
@@ -304,6 +305,7 @@ export interface TournamentLobbyState {
   isChess960: boolean;
   isKingOfTheHill: boolean;
   isThreeCheck: boolean;
+  isRacingKings: boolean;
   status: TournamentStatus;
   creatorUserId: string;
   participants: TournamentParticipantSummary[];
@@ -323,6 +325,7 @@ export interface TournamentNextMatch {
   isChess960: boolean;
   isKingOfTheHill: boolean;
   isThreeCheck: boolean;
+  isRacingKings: boolean;
   roomId: string | null;
   playerToken: string | null;
   color: PieceColor | null;
@@ -348,6 +351,7 @@ export interface TournamentMatchReadyPayload {
   isChess960: boolean;
   isKingOfTheHill: boolean;
   isThreeCheck: boolean;
+  isRacingKings: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;

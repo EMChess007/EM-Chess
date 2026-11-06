@@ -46,8 +46,14 @@ describe('Racing Kings online wiring (source scan; the rendered screens need no 
     expect(spectator).toContain('racingKings={state.isRacingKings === true}');
   });
 
-  it('Tournaments leave Racing Kings out, as for every other special variant', () => {
-    expect(read('screens/TournamentScreen.tsx')).toContain("'horde', 'racingKings', 'crazyhouse']");
+  it('Tournaments offer Racing Kings (the other special variants stay excluded) and carry the flag to the server', () => {
+    const screen = read('screens/TournamentScreen.tsx');
+    expect(screen).toContain("'spellChess', 'horde', 'crazyhouse']");
+    expect(screen).not.toContain("'racingKings', 'crazyhouse']");
+    expect(screen).toContain("const isRacingKings = variant === 'racingKings'");
+    const server = readFileSync(join(SRC, '../backend/src/game/tournaments.ts'), 'utf8');
+    expect(server).toContain('racingKings: tournament.racingKings,');
+    expect(server).toContain('isRacingKings: tournament.racingKings,');
   });
 
   it('the rooms, the queue and the wire types carry the flag on the server', () => {

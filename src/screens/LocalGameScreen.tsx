@@ -8,6 +8,7 @@ import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
+import RacingKingsRulesSheet from '../components/RacingKingsRulesSheet';
 import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
 import { useStableCallback } from '../components/useStableCallback';
@@ -112,6 +113,7 @@ export default function LocalGameScreen({
   const [openingName, setOpeningName] = useState<string | null>(null);
   const [flipped, setFlipped] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [resignedBy, setResignedBy] = useState<PieceColor | null>(null);
   const [drawAgreed, setDrawAgreed] = useState(false);
   const [hintText, setHintText] = useState<string | null>(null);
@@ -693,8 +695,12 @@ export default function LocalGameScreen({
               />
               <GameOptionsMenu
                 visible={showOptions}
-                items={[{ label: 'Flip Board', onPress: () => setFlipped((v) => !v) }]}
+                items={[
+                  { label: 'Flip Board', onPress: () => setFlipped((v) => !v) },
+                  ...(racingKings ? [{ label: 'Rules', onPress: () => setRulesOpen(true) }] : []),
+                ]}
               />
+              {racingKings && <RacingKingsRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
             </View>
 
             <View style={styles.footer}>
