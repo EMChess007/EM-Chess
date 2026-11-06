@@ -2082,3 +2082,8 @@ See the backend TESTING.md section 43 and BUGHOUSE_SPEC.md section 9.
 
 ### E. A red that predates this command
 - The backend `CI` was red from `cf044fb` on: `test-bughouse-friend-online.mjs` pinned the old sentence "Sign in to play Bughouse with a friend." after the Crazy Bughouse rename; the job stops at its first failing step, so every later suite had not run in CI. Fixed; the suites after it (`rejoinPersist` needs the CI server with `FOUR_GRACE_MS`) pass locally.
+
+
+## 53. Command #43: android-e2e on slow GitHub runners (branch `ci/android-slow-runners`)
+
+Proved from CI logs (runs 42217508552, 42220311512, PR #31 run 42269885385): same code and APK, slices whose "runner health at the start" dump took 2.3-3.0 s passed, those with 5.2-12.7 s failed with lost taps, labelled APP. Changes (`scripts/android/lib/health.mjs`, `device.mjs`, `beacon.mjs`, `e2e.mjs`): a tap waits for the target bounds to be equal in two dumps in a row; after a tap the screen must change (or the next step target already be on screen), else ONE logged `re-tap` (`noRetap` on a step forbids it); every wait is multiplied by `timeoutScale(startDump)` = clamp(dump/3000, 1, 5) (logged as `timeout scale`); a failure whose issues are ALL `cannot find`/`timed out` with a start dump over 4000 ms is RUNNER, any other failure stays APP. Tests: `androidSlowRunner.test.ts` (pure decisions + a scripted fake phone with fake timers). UNPROVEN until the PR run: that the slices go green on a slow runner.

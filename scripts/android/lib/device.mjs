@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { decodePng } from './png.mjs';
 import { extractXml, findNodes, findOne, fingerprint, parseHierarchy, visibleWords } from './hierarchy.mjs';
 import { gearIssues, PACKAGE } from './checks.mjs';
+import { retapDecision, stableDecision } from './health.mjs';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -27,6 +28,8 @@ export class Device {
     this.serial = serial;
     this.log = log;
     this.counter = 0;
+    /** Every wait of the slice is multiplied by this (command #43, health.mjs `timeoutScale` of the start dump): 1 on a healthy runner. */
+    this.timeScale = 1;
     this.last = { nodes: [], xml: '' };
     mkdirSync(outDir, { recursive: true });
   }
@@ -271,6 +274,7 @@ export class Device {
 
   /** Calls `test(nodes)` on a fresh tree until it answers truthy; returns that answer. The bound only turns a hang into a failure. */
   async waitFor(what, test, timeoutMs = 20_000, stepMs = 600) {
+    timeoutMs = Math.round(timeoutMs * this.timeScale);
     const t0 = Date.now();
     let nodes = [];
     for (;;) {
@@ -363,16 +367,29 @@ export class Device {
     return node;
   }
 
-  async tapStep(step, settleMs = 700) {
-    if (step.wait) return sleep(step.wait);
-    if (step.fill) throw new Error('fill steps are not used on the phone');
-    const node = await this.find(step);
-    this.log(`  tap ${JSON.stringify(step)} -> ${node.cls.split('.').pop()} "${(node.text || node.desc || node.id).slice(0, 30)}" ${node.bounds.w}x${node.bounds.h} at ${node.bounds.cx},${node.bounds.cy}`);
-    const before = fingerprint(this.last.nodes);
-    this.tap(node.bounds.cx, node.bounds.cy);
-    await sleep(settleMs);
-    // A development build fetches a screen's code from Metro the first time it is opened (lazy bundling), which can take many seconds: the next step must not look at the OLD screen (the first
-    // run took the time-control screen for the game it was starting). Wait, up to 8 s, until the tree is not the one the tap was made on.
+  /**
+   * The step's node once its bounds are the same in two dumps in a row (command #43): on a slow runner a tap sent at a target that is still sliding in or laying out lands beside it. The
+   * node `find` returned came from the last dump; one more dump is the second reading, and a target that moved is read again (up to 4 times) before the tap goes out.
+   */
+  async stableTarget(step, node) {
+    for (let i = 0; i < 4; i++) {
+      const nodes = await this.dump();
+      const again = findOne(nodes, step);
+      if (again === null) return node; // gone from this dump: the old reading is the best there is, the tap's own check follows
+      const decision = stableDecision(node.bounds, again.bounds);
+      node = again;
+      if (decision === 'tap') return node;
+      this.log(`  (the target of ${JSON.stringify(step)} moved between two dumps: waiting for it to stand still)`);
+      await sleep(Math.round(400 * this.timeScale));
+    }
+    return node;
+  }
+
+  /**
+   * Waits (up to `ms`, already scaled) until the tree is not the one the tap was made on. A development build fetches a screen's code from Metro the first time it is opened (lazy bundling),
+   * which can take many seconds: the next step must not look at the OLD screen (the first run took the time-control screen for the game it was starting). Returns true when the screen moved.
+   */
+  async waitChanged(before, ms) {
     const t0 = Date.now();
     let nudged = false;
     for (;;) {
@@ -380,12 +397,12 @@ export class Device {
       const nodes = await this.dump().catch(() => null);
       if (nodes !== null && fingerprint(nodes) !== before) {
         if (nudged) this.log('  (the tree was stale until the status bar was touched)');
-        break;
+        return true;
       }
-      if (Date.now() - t0 > 8000) break;
+      if (Date.now() - t0 > ms) return false;
       // some screens of this app leave uiautomator with the PREVIOUS screen's tree (the photograph shows the new one): a touch on the status bar, which does nothing, is tried once to
       // make the app send the accessibility events that refresh it
-      if (!nudged && Date.now() - t0 > 2500) {
+      if (!nudged && Date.now() - t0 > 2500 * this.timeScale) {
         nudged = true;
         this.tap(this.display.w / 2, 4);
       }
@@ -393,8 +410,38 @@ export class Device {
     }
   }
 
+  /**
+   * One tap of a script. `next` is the step after it: a tap whose screen did not change AND whose successor is not on screen was lost (the first slow-runner run: after "Play" / "Classic" /
+   * "Local" the next screen never appeared), so it is repeated ONCE and logged "re-tap" - never blindly: a step with `noRetap` (a toggle) is never repeated, and a screen that changed is never tapped again.
+   */
+  async tapStep(step, next = null) {
+    if (step.wait) return sleep(Math.round(step.wait * this.timeScale));
+    if (step.fill) throw new Error('fill steps are not used on the phone');
+    let node = await this.find(step);
+    node = await this.stableTarget(step, node);
+    this.log(`  tap ${JSON.stringify(step)} -> ${node.cls.split('.').pop()} "${(node.text || node.desc || node.id).slice(0, 30)}" ${node.bounds.w}x${node.bounds.h} at ${node.bounds.cx},${node.bounds.cy}`);
+    const before = fingerprint(this.last.nodes);
+    // CI run 42274735615 (the first version of command #43): 34 of 170 navigation taps showed no new screen within 8 s x scale (the first visit of a screen: Play, More, Diagnostics, Puzzles), and 17 of
+    // those 34 showed none after the re-tap either. A development build fetches a screen's code from Metro on its first visit, which a slow runner needs far longer than 8 s for (UNPROVEN: the
+    // Metro log is not in the run's output), so the window before a re-tap is 20 s x scale, and the touch is a FINGER's (down, 90 ms, up: `press`, the touch every board already needs; an
+    // `input tap` sends down and up in one millisecond) - the re-tap stays the one and only repeat.
+    const waitMs = Math.round(20_000 * this.timeScale);
+    for (let retapped = false; ; retapped = true) {
+      this.press(node.bounds.cx, node.bounds.cy);
+      await sleep(Math.round(700 * this.timeScale));
+      const changed = await this.waitChanged(before, waitMs);
+      const expectedVisible = next !== null && !next.wait && next.below === undefined && !next.blind && findOne(this.last.nodes, next) !== null;
+      const decision = step.noRetap ? 'ok' : retapDecision({ changed, expectedVisible, retapped });
+      if (decision !== 'retap') {
+        if (decision === 'give-up') this.log(`  (the screen did not change after the re-tap of ${JSON.stringify(step)}; going on)`);
+        return;
+      }
+      this.log(`  re-tap ${JSON.stringify(step)}: the screen did not change in ${waitMs} ms and the next step's target is not on it`);
+    }
+  }
+
   async runSteps(steps) {
-    for (const step of steps) await this.tapStep(step);
+    for (let i = 0; i < steps.length; i++) await this.tapStep(steps[i], steps[i + 1] ?? null);
   }
 
   /** Is the app's first screen up (the tab bar's Play)? */

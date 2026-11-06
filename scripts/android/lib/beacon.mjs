@@ -13,6 +13,7 @@ export class Beacon {
     /** channel -> { state, seq, at } */
     this.channels = new Map();
     this.seq = 0;
+    this.timeScale = 1; // set by the driver from the runner's start dump (health.mjs `timeoutScale`)
     this.server = null;
   }
 
@@ -89,6 +90,7 @@ export class Beacon {
 
   /** Waits until `test(state)` is truthy for the channel's latest state; returns that state. The bound only turns a hang into a failure (null). */
   async waitFor(channel, test = () => true, timeoutMs = 20_000) {
+    timeoutMs = Math.round(timeoutMs * (this.timeScale ?? 1)); // command #43: scaled by the runner's measured slowness (health.mjs `timeoutScale`)
     const t0 = Date.now();
     for (;;) {
       const state = this.get(channel);
