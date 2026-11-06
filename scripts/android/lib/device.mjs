@@ -421,9 +421,13 @@ export class Device {
     node = await this.stableTarget(step, node);
     this.log(`  tap ${JSON.stringify(step)} -> ${node.cls.split('.').pop()} "${(node.text || node.desc || node.id).slice(0, 30)}" ${node.bounds.w}x${node.bounds.h} at ${node.bounds.cx},${node.bounds.cy}`);
     const before = fingerprint(this.last.nodes);
-    const waitMs = Math.round(8000 * this.timeScale);
+    // CI run 42274735615 (the first version of command #43): 34 of 170 navigation taps showed no new screen within 8 s x scale (the first visit of a screen: Play, More, Diagnostics, Puzzles), and 17 of
+    // those 34 showed none after the re-tap either. A development build fetches a screen's code from Metro on its first visit, which a slow runner needs far longer than 8 s for (UNPROVEN: the
+    // Metro log is not in the run's output), so the window before a re-tap is 20 s x scale, and the touch is a FINGER's (down, 90 ms, up: `press`, the touch every board already needs; an
+    // `input tap` sends down and up in one millisecond) - the re-tap stays the one and only repeat.
+    const waitMs = Math.round(20_000 * this.timeScale);
     for (let retapped = false; ; retapped = true) {
-      this.tap(node.bounds.cx, node.bounds.cy);
+      this.press(node.bounds.cx, node.bounds.cy);
       await sleep(Math.round(700 * this.timeScale));
       const changed = await this.waitChanged(before, waitMs);
       const expectedVisible = next !== null && !next.wait && next.below === undefined && !next.blind && findOne(this.last.nodes, next) !== null;

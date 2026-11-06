@@ -126,6 +126,10 @@ class FakePhone extends Device {
     return nodes as never;
   }
 
+  press(x: number, y: number) {
+    this.tap(x, y); // the step's touch is a 90 ms press; the fake records it like a tap
+  }
+
   tap(x: number, y: number) {
     this.fresh = false;
     if (y <= 4) return void this.nudges++; // the status-bar nudge of waitChanged does nothing on the phone
