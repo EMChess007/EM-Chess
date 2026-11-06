@@ -23,6 +23,7 @@ import {
   chooseFogOfWarExtraCastle,
   chooseGiveawayBotMove,
   chooseHordeBotMove,
+  chooseRacingKingsBotMove,
   chooseCrazyhouseBotMove,
   chooseSpellChessBotCast,
   getBotThinkTimeMs,
@@ -50,6 +51,7 @@ import { useCaptureNudge } from '../logic/useCaptureNudge';
 import { isRepetitionDraw } from '../logic/repetitionHistory';
 import { duckMoveNotation, getDuckChessWinner, hasNoDuckMoves } from '../logic/duckChess';
 import { HORDE_START_FEN, getHordeWinner } from '../logic/horde';
+import { RACING_KINGS_START_FEN, getRacingKingsOutcome } from '../logic/racingKings';
 import { initialCrazyhouseState } from '../logic/crazyhouse';
 import { latestPlyState, plyStateAtView } from '../logic/perPlyState';
 import { getGiveawayMoves, getGiveawayWinner } from '../logic/giveaway';
@@ -109,6 +111,9 @@ interface BotGameScreenProps {
    * Stockfish (which cannot be given a position with no White king). Not rated: that bot is a heuristic, not an
    * ELO-calibrated engine. Mutually exclusive with every other variant. */
   horde?: boolean;
+  /** Racing Kings — see racingKings.ts. Bots play it with chooseRacingKingsBotMove (no Stockfish: it would offer checking
+   * moves, which are illegal here), on either side. Mutually exclusive with every other variant. */
+  racingKings?: boolean;
   /** Crazyhouse — see crazyhouse.ts. Bots play it with chooseCrazyhouseBotMove (a move OR a drop), NOT Stockfish (no concept of
    * drops or a reserve). Not rated: a heuristic bot, not an ELO-calibrated engine. Mutually exclusive with every other variant. */
   crazyhouse?: boolean;
@@ -135,6 +140,7 @@ export default function BotGameScreen({
   duckChess = false,
   spellChess = false,
   horde = false,
+  racingKings = false,
   crazyhouse = false,
   initialFen: initialFenProp,
   colorChoice = 'random',
@@ -157,7 +163,7 @@ export default function BotGameScreen({
   // exception is a synthetic "custom engine" bot card (see BotSelectScreen), which sets
   // `engineId` explicitly to override this.
   const engineId = useMemo(() => bot.engineId ?? getEngineIdForElo(bot.elo), [bot.engineId, bot.elo]);
-  const [initialFen, setInitialFen] = useState(() => initialFenProp ?? (horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN));
+  const [initialFen, setInitialFen] = useState(() => initialFenProp ?? (racingKings ? RACING_KINGS_START_FEN : horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN));
   const [fen, setFen] = useState(initialFen);
   const [lastMove, setLastMove] = useState<Move | null>(null);
   const [history, setHistory] = useState<GameHistoryEntry[]>([]);
@@ -177,10 +183,10 @@ export default function BotGameScreen({
   // See LocalGameScreen's identical effect for why a miss here doesn't clear the name — it only
   // ever upgrades to a deeper/more specific match as the game continues.
   useEffect(() => {
-    if (chess960 || setupChess || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || crazyhouse) return;
+    if (chess960 || setupChess || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, crazyhouse]);
+  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse]);
 
   // skipValidation: once a Fog of War game ends via king capture, `fen` genuinely has no king
   // for the losing side — see ChessEngine's own doc comment on the option (this is the exact
@@ -200,8 +206,8 @@ export default function BotGameScreen({
   // Crazyhouse (see crazyhouse.ts): reserves and promoted squares are not in the FEN — the last ply's state (see LocalGameScreen).
   const crazyhouseState = useMemo(() => latestPlyState(history, (h) => h.crazyhouse, initialCrazyhouseState()), [history]);
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess || spellChess || horde, giveaway, atomic, duckChess, duckSquare, horde, crazyhouse, crazyhouseState }),
-    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare, spellChess, horde, crazyhouse, crazyhouseState]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess || spellChess || horde, giveaway, atomic, duckChess, duckSquare, horde, racingKings, crazyhouse, crazyhouseState }),
+    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare, spellChess, horde, racingKings, crazyhouse, crazyhouseState]
   );
   const turn = engine.getTurn();
   // Atomic: see LocalGameScreen's identical block — the engine answers status from atomic.ts, a blown-up
@@ -232,6 +238,8 @@ export default function BotGameScreen({
   // which would otherwise misreport this decisive win as a draw).
   // Horde: Black wins the instant White has nothing left (horde.ts), read off the position so it is right after Undo.
   const hordeWinner = useMemo(() => (horde ? getHordeWinner(engine) : null), [horde, engine]);
+  // Racing Kings: a king on rank 8 (or White's there and Black cannot follow) ends the game, read off the position (right after Undo too).
+  const racingKingsOutcome = useMemo(() => (racingKings ? getRacingKingsOutcome(engine) : null), [racingKings, engine]);
   const chessStatus = duckChess
     ? (duckBlockade ? 'draw' : 'playing')
     : spellChess && spellChessWinner
@@ -263,7 +271,7 @@ export default function BotGameScreen({
         : spellChess
           ? spellChessWinner !== null || engine.isGameOver()
           : engine.isGameOver();
-  const engineGameOver = engineGameOverByRules || repetitionDraw;
+  const engineGameOver = engineGameOverByRules || repetitionDraw || racingKingsOutcome !== null;
   // Auto-tick runs for whichever side's turn it is — including the bot's — so its clock counts
   // down live, second by second, in real wall-clock time while it "thinks" (the engine really
   // does take approximately thinkTimeMs to respond), exactly like the human side already did.
@@ -359,6 +367,8 @@ export default function BotGameScreen({
         spellChess,
         hordeWinner,
         horde,
+        racingKingsOutcome,
+        racingKings,
         crazyhouse,
         repetitionDraw,
         history,
@@ -386,6 +396,8 @@ export default function BotGameScreen({
       spellChess,
       hordeWinner,
       horde,
+      racingKingsOutcome,
+      racingKings,
       crazyhouse,
       repetitionDraw,
       history,
@@ -478,6 +490,7 @@ export default function BotGameScreen({
           duckSquare,
           spellChess,
           horde,
+          racingKings,
           crazyhouse,
           crazyhouseState,
           frozenSquares: spellFrozenForBot,
@@ -555,6 +568,22 @@ export default function BotGameScreen({
           if (!choice) throw new Error('Horde bot has no legal move');
           move = moveEngine.move(choice.from, choice.to, choice.promotion);
           if (!move) throw new Error(`Invalid Horde move: ${choice.from}${choice.to}`);
+        }
+
+        // Racing Kings: Stockfish is bypassed too (see chooseRacingKingsBotMove) — it would happily give check, which is illegal
+        // here, and knows nothing of the rank-8 goal. Either side; chess.js's legality stays authoritative via moveEngine.move.
+        if (racingKings) {
+          const thinkTimeMs = getBotThinkTimeMs({
+            timeControl,
+            remainingSeconds: botColor === 'w' ? clock.whiteSeconds : clock.blackSeconds,
+            legalMoveCount: engine.getLegalMoveCount(),
+          });
+          await new Promise((resolve) => setTimeout(resolve, Math.min(thinkTimeMs, 2500)));
+          if (cancelled) return;
+          const choice = chooseRacingKingsBotMove(moveEngine, bot.elo);
+          if (!choice) throw new Error('Racing Kings bot has no legal move');
+          move = moveEngine.move(choice.from, choice.to, choice.promotion);
+          if (!move) throw new Error(`Invalid Racing Kings move: ${choice.from}${choice.to}`);
         }
 
         // Crazyhouse: Stockfish is bypassed too (see chooseCrazyhouseBotMove) — it cannot read a reserve or play a drop. The bot
@@ -771,6 +800,11 @@ export default function BotGameScreen({
   if (hordeWinner) {
     statusText = `${hordeWinner === userColor ? 'You win' : `${bot.name} wins`} — the horde is destroyed!`;
   }
+  if (racingKingsOutcome === 'draw') {
+    statusText = 'Draw — both kings reached the 8th rank';
+  } else if (racingKingsOutcome) {
+    statusText = `${racingKingsOutcome === userColor ? 'You win' : `${bot.name} wins`} — king on the 8th rank!`;
+  }
   if (fogOfWarWinner) {
     statusText = `${fogOfWarWinner === userColor ? 'You win' : `${bot.name} wins`} by capturing the king!`;
   }
@@ -789,7 +823,8 @@ export default function BotGameScreen({
     duckWinner,
     spellChessWinner,
     hordeWinner,
-    repetitionDraw
+    repetitionDraw,
+    racingKingsOutcome
   );
   const winnerColor: PieceColor | null =
     outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
@@ -816,9 +851,9 @@ export default function BotGameScreen({
     // oversight — do not add !spellChess here. Horde, by contrast, IS excluded: its bot is the same kind of heuristic
     // (chooseHordeBotMove, no Stockfish) as Giveaway/Atomic/Duck Chess. Crazyhouse is excluded for the same reason
     // (chooseCrazyhouseBotMove — a heuristic bot, and a different game).
-    if (ratingCategory && !giveaway && !atomic && !duckChess && !horde && !crazyhouse) recordRatedGame(ratingCategory, bot.elo, result, authToken);
+    if (ratingCategory && !giveaway && !atomic && !duckChess && !horde && !racingKings && !crazyhouse) recordRatedGame(ratingCategory, bot.elo, result, authToken);
 
-    if (result === 1 && !giveaway && !atomic && !duckChess && !horde && !crazyhouse) {
+    if (result === 1 && !giveaway && !atomic && !duckChess && !horde && !racingKings && !crazyhouse) {
       if (bot.elo >= 2000) unlockAchievement('giant_slayer');
       if (wasMaterialDownRef.current) unlockAchievement('comeback_win');
     }
@@ -914,7 +949,7 @@ export default function BotGameScreen({
   }, [turn, premove]);
 
   const handleReset = () => {
-    const nextInitialFen = initialFenProp ?? (horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN);
+    const nextInitialFen = initialFenProp ?? (racingKings ? RACING_KINGS_START_FEN : horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN);
     setInitialFen(nextInitialFen);
     setFen(nextInitialFen);
     setLastMove(null);
@@ -958,7 +993,7 @@ export default function BotGameScreen({
   // Disabled for Fog of War — see LocalGameScreen's identical handleHintPress for why (reads the
   // true, full position, which would just hand the player a way around the whole variant).
   const handleHintPress = () => {
-    if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || crazyhouse) return;
+    if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse) return;
     setHintText(null);
     setHintLoading(true);
     setHintRequestKey((k) => k + 1);
@@ -1043,6 +1078,8 @@ export default function BotGameScreen({
                           ? 'Duck Chess'
                           : spellChess
                             ? 'Spell Chess'
+                            : racingKings
+                              ? 'Racing Kings'
                             : horde
                               ? 'Horde'
                               : crazyhouse
@@ -1075,7 +1112,7 @@ export default function BotGameScreen({
                     key: 'hint',
                     label: 'Hint',
                     onPress: handleHintPress,
-                    disabled: gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || crazyhouse,
+                    disabled: gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse,
                   },
                   {
                     key: 'undo',
@@ -1103,7 +1140,7 @@ export default function BotGameScreen({
         }
       >
         <Text style={styles.subtitle}>
-          {giveaway ? 'Giveaway bot' : atomic ? 'Atomic bot' : duckChess ? 'Duck Chess bot' : horde ? 'Horde bot' : crazyhouse ? 'Crazyhouse bot' : getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
+          {giveaway ? 'Giveaway bot' : atomic ? 'Atomic bot' : duckChess ? 'Duck Chess bot' : horde ? 'Horde bot' : racingKings ? 'Racing Kings bot' : crazyhouse ? 'Crazyhouse bot' : getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
         </Text>
         {/* The "bot is thinking" indicator rides inline on the status row instead of its own row --
             giving it a separate row (as before) adds enough height that Spell Chess's extra Freeze/Jump
@@ -1146,7 +1183,7 @@ export default function BotGameScreen({
           <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
 
-        {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={resetCount}
@@ -1168,6 +1205,7 @@ export default function BotGameScreen({
           onDuckPlacementChange={setPlacingDuck}
           spellChess={spellChess}
           horde={horde}
+          racingKings={racingKings}
           crazyhouse={crazyhouse}
           crazyhouseState={displayCrazyhouse}
           spellState={displaySpellState}
@@ -1178,8 +1216,8 @@ export default function BotGameScreen({
           // executor (see the premove effect) builds a plain engine that knows nothing of its rules.
           // Spell Chess: no premoves either, for the same root reason — a queued move can't carry a
           // cast, and frozen squares/an active jump can flip whether it's even still legal.
-          premoveColor={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : userColor}
-          onPremove={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : handleQueuePremove}
+          premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : userColor}
+          onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : handleQueuePremove}
         />
 
         <View style={styles.playerRow}>
@@ -1206,6 +1244,7 @@ export default function BotGameScreen({
         duckChess={duckChess}
         spellChess={spellChess}
         horde={horde}
+        racingKings={racingKings}
         crazyhouse={crazyhouse}
         history={history}
         players={[{ label: 'You', color: userColor }]}

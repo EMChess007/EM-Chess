@@ -117,7 +117,7 @@ export function replayPgn(pgn: string, chess960: boolean): { initialFen: string;
   // Atomic (explosions, adjacent kings never in check) is refused for the same reason.
   // Horde (no White king, a rank-1 double step) is refused too: ordinary chess rules cannot replay it. So is Crazyhouse: its
   // "N@f3" drops are not moves, and the reserves and promoted pieces are not in a PGN (a replay would lose them).
-  if (/\[Variant\s+"(Antichess|Atomic|Duck|Horde|Crazyhouse)"\]/i.test(pgn)) return null;
+  if (/\[Variant\s+"(Antichess|Atomic|Duck|Horde|Racing Kings|Crazyhouse)"\]/i.test(pgn)) return null;
   const initialFen = extractInitialFen(pgn);
   const history = replaySanTokens(initialFen, chess960, extractSanTokens(pgn));
   return history ? { initialFen, history } : null;

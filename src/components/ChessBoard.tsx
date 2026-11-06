@@ -122,6 +122,9 @@ interface ChessBoardProps {
   /** Horde only — see horde.ts. Every engine this board builds gets { horde: true } (which implies skipValidation: a
    * Horde FEN has no White king), so the rank-1 double step is offered and chess.js's draw rules are not trusted. */
   horde?: boolean;
+  /** Racing Kings only — see racingKings.ts. Every engine this board builds gets { racingKings: true }, so a move that
+   * gives check is simply not offered (no dot, no move). Mutually exclusive with every other variant. */
+  racingKings?: boolean;
   /** Crazyhouse only — see crazyhouse.ts. A turn is ONE action: an ordinary move, or a DROP — tap a piece in the reserve tray under
    * the board, then a highlighted square (the legal squares come from the engine, so pawn ranks and check-blocking are
    * honoured). `crazyhouseState` is the reserves/promoted set for the position shown (carried per ply, not in the fen); the
@@ -199,6 +202,7 @@ function ChessBoard({
   onMandatoryCaptureBlocked,
   spellChess = false,
   horde = false,
+  racingKings = false,
   crazyhouse = false,
   crazyhouseState,
   spellState,
@@ -268,13 +272,14 @@ function ChessBoard({
         duckSquare,
         spellChess,
         horde,
+        racingKings,
         crazyhouse,
         crazyhouseState,
         frozenSquares: spellFrozenSquares,
         jumpSquare: spellJumpSquare,
         freezeEscapeActive: spellFreezeEscapeActive,
       }),
-    [shownFen, chess960, initialFen, needsSkipValidation, giveaway, atomic, duckChess, duckSquare, spellChess, horde, crazyhouse, crazyhouseState, spellFrozenSquares, spellJumpSquare, spellFreezeEscapeActive]
+    [shownFen, chess960, initialFen, needsSkipValidation, giveaway, atomic, duckChess, duckSquare, spellChess, horde, racingKings, crazyhouse, crazyhouseState, spellFrozenSquares, spellJumpSquare, spellFreezeEscapeActive]
   );
   const board = useMemo(() => engine.getBoard(), [engine]);
   // Reversing both axes together preserves each square's light/dark identity (a 180° rotation
@@ -388,7 +393,7 @@ function ChessBoard({
     // flag through every caller.
     let movingPiece: PieceModel | null = null;
     try {
-      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: needsSkipValidation, giveaway, atomic, duckChess, horde }).getPieceAt(lastMove.from);
+      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: needsSkipValidation, giveaway, atomic, duckChess, horde, racingKings }).getPieceAt(lastMove.from);
     } catch {
       movingPiece = null;
     }
@@ -483,6 +488,7 @@ function ChessBoard({
       duckSquare,
       spellChess,
       horde,
+      racingKings,
       crazyhouse,
       crazyhouseState,
       frozenSquares: spellFrozenSquares,

@@ -138,7 +138,7 @@ describe('wiring (no React Native renderer available)', () => {
     expect(bot).toContain('chooseDuckBotMove(moveEngine');
     expect(stockfishCall).toBeGreaterThan(duckBranch);
     expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : userColor}');
-    expect(bot).toContain('!giveaway && !atomic && !duckChess && !horde && !crazyhouse) recordRatedGame');
+    expect(bot).toContain('!giveaway && !atomic && !duckChess && !horde && !racingKings && !crazyhouse) recordRatedGame');
   });
 
   it('is reachable from the play-mode menu for Local and Bots, and is a variant-selector option', () => {

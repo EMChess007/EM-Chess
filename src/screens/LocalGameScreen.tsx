@@ -35,6 +35,7 @@ import { useCaptureNudge } from '../logic/useCaptureNudge';
 import { isRepetitionDraw } from '../logic/repetitionHistory';
 import { duckMoveNotation, getDuckChessWinner, hasNoDuckMoves } from '../logic/duckChess';
 import { HORDE_START_FEN, getHordeWinner } from '../logic/horde';
+import { RACING_KINGS_START_FEN, getRacingKingsOutcome } from '../logic/racingKings';
 import { initialCrazyhouseState } from '../logic/crazyhouse';
 import { latestPlyState, plyStateAtView } from '../logic/perPlyState';
 import { getGiveawayMoves, getGiveawayWinner } from '../logic/giveaway';
@@ -70,6 +71,8 @@ interface LocalGameScreenProps {
   spellChess?: boolean;
   /** Horde — see horde.ts. Mutually exclusive with every other variant. */
   horde?: boolean;
+  /** Racing Kings — see racingKings.ts. Mutually exclusive with every other variant. */
+  racingKings?: boolean;
   /** Crazyhouse — see crazyhouse.ts. Mutually exclusive with every other variant. */
   crazyhouse?: boolean;
   /** The merged starting position from the Setup Chess builder flow — used instead of
@@ -92,6 +95,7 @@ export default function LocalGameScreen({
   duckChess = false,
   spellChess = false,
   horde = false,
+  racingKings = false,
   crazyhouse = false,
   initialFen: initialFenProp,
   authToken,
@@ -100,7 +104,7 @@ export default function LocalGameScreen({
 }: LocalGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const [initialFen, setInitialFen] = useState(() => initialFenProp ?? (horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN));
+  const [initialFen, setInitialFen] = useState(() => initialFenProp ?? (racingKings ? RACING_KINGS_START_FEN : horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN));
   const [fen, setFen] = useState(initialFen);
   const [lastMove, setLastMove] = useState<Move | null>(null);
   const [history, setHistory] = useState<GameHistoryEntry[]>([]);
@@ -166,10 +170,10 @@ export default function LocalGameScreen({
   // any further named position, no later position will match either, so this naturally stops
   // updating on its own.
   useEffect(() => {
-    if (chess960 || setupChess || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || crazyhouse) return;
+    if (chess960 || setupChess || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, crazyhouse]);
+  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse]);
 
   // skipValidation: once a Fog of War game ends via king capture, `fen` genuinely has no king
   // for the losing side — see ChessEngine's own doc comment on the option (this is the exact
@@ -194,8 +198,8 @@ export default function LocalGameScreen({
   // the last ply's state (or the empty start), which also makes Undo restore them for free.
   const crazyhouseState = useMemo(() => latestPlyState(history, (h) => h.crazyhouse, initialCrazyhouseState()), [history]);
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess || spellChess || horde, giveaway, atomic, duckChess, duckSquare, horde, crazyhouse, crazyhouseState }),
-    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare, spellChess, horde, crazyhouse, crazyhouseState]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess || spellChess || horde, giveaway, atomic, duckChess, duckSquare, horde, racingKings, crazyhouse, crazyhouseState }),
+    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare, spellChess, horde, racingKings, crazyhouse, crazyhouseState]
   );
   const turn = engine.getTurn();
   // Atomic: the engine answers check/mate/stalemate/50-move/insufficient material from atomic.ts. A king
@@ -231,6 +235,8 @@ export default function LocalGameScreen({
   // duckWinner/atomicWinner are) — it only needs to not be 'checkmate'/'stalemate'/'draw'/'check'.
   // Horde: Black wins the instant White has nothing left (horde.ts), read off the position so it is right after Undo.
   const hordeWinner = useMemo(() => (horde ? getHordeWinner(engine) : null), [horde, engine]);
+  // Racing Kings: a king on rank 8 (or White's there and Black cannot follow) ends the game, read off the position (right after Undo too).
+  const racingKingsOutcome = useMemo(() => (racingKings ? getRacingKingsOutcome(engine) : null), [racingKings, engine]);
   const chessStatus = duckChess
     ? (duckBlockade ? 'draw' : 'playing')
     : spellChess && spellChessWinner
@@ -269,7 +275,7 @@ export default function LocalGameScreen({
         : spellChess
           ? spellChessWinner !== null || engine.isGameOver()
           : engine.isGameOver();
-  const engineGameOver = engineGameOverByRules || repetitionDraw;
+  const engineGameOver = engineGameOverByRules || repetitionDraw || racingKingsOutcome !== null;
   const clock = useChessClock(timeControl, turn, engineGameOver);
   const gameOver =
     engineGameOver ||
@@ -358,6 +364,8 @@ export default function LocalGameScreen({
         spellChess,
         hordeWinner,
         horde,
+        racingKingsOutcome,
+        racingKings,
         crazyhouse,
         repetitionDraw,
         history,
@@ -386,6 +394,8 @@ export default function LocalGameScreen({
       spellChess,
       hordeWinner,
       horde,
+      racingKingsOutcome,
+      racingKings,
       crazyhouse,
       repetitionDraw,
       history,
@@ -428,6 +438,8 @@ export default function LocalGameScreen({
   if (duckWinner) statusText = `${duckWinner === 'w' ? 'White' : 'Black'} wins by capturing the king!`;
   if (spellChessWinner) statusText = `${spellChessWinner === 'w' ? 'White' : 'Black'} wins by capturing the king!`;
   if (hordeWinner) statusText = 'Black wins — the horde is destroyed!';
+  if (racingKingsOutcome === 'draw') statusText = 'Draw — both kings reached the 8th rank';
+  else if (racingKingsOutcome) statusText = `${racingKingsOutcome === 'w' ? 'White' : 'Black'} wins — king on the 8th rank!`;
 
   // No personal point of view here (two players share one device) — matches the plain
   // White/Black wording `statusText` above already uses.
@@ -445,7 +457,8 @@ export default function LocalGameScreen({
     duckWinner,
     spellChessWinner,
     hordeWinner,
-    repetitionDraw
+    repetitionDraw,
+    racingKingsOutcome
   );
   const summaryTitle = !outcome.over ? '' : outcome.result === '1/2-1/2' ? 'Draw' : outcome.result === '1-0' ? 'White Won' : 'Black Won';
   const summarySubtitle = outcome.over ? describeEndReason(outcome.reason) : '';
@@ -498,7 +511,7 @@ export default function LocalGameScreen({
   );
 
   const handleReset = () => {
-    const nextInitialFen = initialFenProp ?? (horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN);
+    const nextInitialFen = initialFenProp ?? (racingKings ? RACING_KINGS_START_FEN : horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN);
     setInitialFen(nextInitialFen);
     setFen(nextInitialFen);
     setLastMove(null);
@@ -551,7 +564,7 @@ export default function LocalGameScreen({
   // computed from information Fog of War says they shouldn't have yet would be a straightforward
   // way around the entire variant, so this is disabled outright rather than merely hidden.
   const handleHintPress = () => {
-    if (gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || crazyhouse) return;
+    if (gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse) return;
     setHintText(null);
     setHintLoading(true);
     setHintActive(true);
@@ -640,7 +653,9 @@ export default function LocalGameScreen({
                             ? 'Spell Chess'
                             : horde
                               ? 'Horde'
-                              : crazyhouse
+                              : racingKings
+                                ? 'Racing Kings'
+                                : crazyhouse
                                 ? 'Crazyhouse'
                                 : undefined
         }
@@ -667,7 +682,7 @@ export default function LocalGameScreen({
                   { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
                   { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver || awaitingPass },
                   { key: 'draw', label: 'Draw', onPress: handleDrawOffer, disabled: gameOver || awaitingPass },
-                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || crazyhouse },
+                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse },
                   {
                     key: 'undo',
                     label: 'Undo',
@@ -726,7 +741,7 @@ export default function LocalGameScreen({
               <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
             </View>
 
-            {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+            {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
             <ChessBoard
               key={resetCount}
@@ -748,6 +763,7 @@ export default function LocalGameScreen({
               onDuckPlacementChange={setPlacingDuck}
               spellChess={spellChess}
               horde={horde}
+              racingKings={racingKings}
               crazyhouse={crazyhouse}
               crazyhouseState={displayCrazyhouse}
               spellState={displaySpellState}
@@ -781,6 +797,7 @@ export default function LocalGameScreen({
         duckChess={duckChess}
         spellChess={spellChess}
         horde={horde}
+        racingKings={racingKings}
         crazyhouse={crazyhouse}
         history={history}
         players={[
