@@ -17,6 +17,7 @@ const root = process.cwd();
 const appJson = JSON.parse(readFileSync(path.join(root, 'app.json'), 'utf8')) as {
   expo: {
     icon: string;
+    splash?: { image?: string; resizeMode?: string; backgroundColor?: string };
     android: { adaptiveIcon: Record<string, string> };
     web: { favicon: string };
     plugins: Array<string | [string, Record<string, unknown>]>;
@@ -59,6 +60,12 @@ describe('the configured icon files exist and have the right size', () => {
     expect(splash?.[1].backgroundColor).toBe('#0a0c0d');
     expect(splash?.[1].resizeMode).toBe('contain');
     expect(Number(splash?.[1].imageWidth)).toBeGreaterThanOrEqual(150);
+  });
+
+  it('the top-level splash (Expo Go reads it for its loading screen) is also configured: same image, contain, the dark colour', () => {
+    expect(expo.splash?.image).toBe('./assets/splash-icon.png');
+    expect(expo.splash?.resizeMode).toBe('contain');
+    expect(expo.splash?.backgroundColor).toBe('#0a0c0d');
   });
 
   it('the splash plugin is a declared dependency (the config plugin only exists when the package is installed)', () => {
