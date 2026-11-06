@@ -1,58 +1,38 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { Pressable } from '../components/AppPressable';
-import { Text } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
+import TimeControlSections from '../components/TimeControlSections';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
-import { getTimeControlsByCategory } from '../logic/timeControls';
-import type { TimeControl, TimeControlCategory } from '../types/timeControl';
+import type { FourSeatGame } from '../logic/onlineGames';
+import { ONLINE_DAILY_NOTE } from '../logic/timeControls';
+import type { TimeControl } from '../types/timeControl';
+
+type OnlineGame = GameVariant | FourSeatGame;
 
 interface OnlineTimeControlSelectScreenProps {
-  onSelect: (timeControl: TimeControl, variant: GameVariant) => void;
+  /** `game` is a 2-player variant or one of the four 4 Player Variations (command #35): App routes the latter to its own queue. */
+  onSelect: (timeControl: TimeControl, game: OnlineGame) => void;
   onBack: () => void;
 }
 
-// "No time limit" is live-only play with no clock — both players stay connected, and the server still
-// forfeits a player who disconnects for 45 s. Daily is NOT offered: it needs correspondence-style play
-// (persisted games, no abandonment, notifications) which the live matchmaking queue cannot provide.
-const ONLINE_CATEGORIES: { category: TimeControlCategory; label: string }[] = [
-  { category: 'bullet', label: 'Bullet' },
-  { category: 'blitz', label: 'Blitz' },
-  { category: 'rapid', label: 'Rapid' },
-  { category: 'unlimited', label: 'No time limit' },
-];
+// Every control of the shared list is offered (command #35). "No time limit" is live-only play with no clock - both players stay connected, and the server still forfeits a player who
+// disconnects for 45 s. A Daily game has no abandonment forfeit (the clock of days decides) but lives in the server's memory: a server update ends it until games are persisted.
 
 export default function OnlineTimeControlSelectScreen({ onSelect, onBack }: OnlineTimeControlSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const [variant, setVariant] = useState<GameVariant>('classic');
+  const [variant, setVariant] = useState<OnlineGame>('classic');
 
   return (
     <View style={styles.container}>
       <ScreenHeader title="Play Online" onBack={onBack} />
 
-      <View style={styles.variantRow}>
-        <VariantSelector value={variant} onChange={setVariant} />
-      </View>
-
+      {/* The game chips are INSIDE the scroll view (command #35b): with 13 + 4 chips they took two thirds of a 360 x 640 phone at font scale 1.3 when they sat above it, left a sliver for the
+          time controls and a swipe that began on them moved nothing - the page could not be scrolled to "Blitz 5 min". The whole page scrolls now. */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {ONLINE_CATEGORIES.map(({ category, label }) => (
-          <View key={category} style={styles.section}>
-            <Text style={styles.sectionTitle}>{label}</Text>
-            <View style={styles.presetGrid}>
-              {getTimeControlsByCategory(category).map((tc) => (
-                <Pressable
-                  key={tc.id}
-                  style={styles.presetButton}
-                  onPress={() => onSelect(tc, variant)}
-                >
-                  <Text style={styles.presetButtonText}>{tc.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        ))}
+        <VariantSelector<OnlineGame> value={variant} onChange={setVariant} includeFourSeat />
+        <TimeControlSections onSelect={(tc) => onSelect(tc, variant)} dailyNote={ONLINE_DAILY_NOTE} />
       </ScrollView>
     </View>
   );
@@ -64,11 +44,6 @@ function createStyles(colors: AppColors) {
     container: {
       flex: 1,
       backgroundColor: colors.background,
-    },
-    variantRow: {
-      paddingHorizontal: 16,
-      paddingTop: 10,
-      paddingBottom: 4,
     },
     scrollContent: {
       padding: 16,

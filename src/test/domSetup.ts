@@ -8,13 +8,27 @@
  * Everything else - the real board, seat strip, result card, sheets and screens, the real engine - is the code the app ships.
  */
 import { cleanup } from '@testing-library/react';
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
 
 declare global {
   // eslint-disable-next-line no-var
   var IS_REACT_ACT_ENVIRONMENT: boolean;
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+/**
+ * THE DEFAULT WINDOW IS A PHONE (412 x 915). react-native-web's Dimensions reads `document.documentElement.clientWidth / clientHeight`, which jsdom reports as 0 - so, without
+ * this, every rendered test that does not resize the window runs in a 0 x 0 one, where every size- and layout-dependent branch of a screen takes its degenerate path. Each test
+ * starts at this size (a test that needs another calls `setWindowSize` in domKit.tsx).
+ */
+export const DOM_DEFAULT_WINDOW = { width: 412, height: 915 } as const;
+beforeEach(() => {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: DOM_DEFAULT_WINDOW.width });
+  Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: DOM_DEFAULT_WINDOW.height });
+  Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: DOM_DEFAULT_WINDOW.width });
+  Object.defineProperty(document.documentElement, 'clientHeight', { configurable: true, value: DOM_DEFAULT_WINDOW.height });
+  window.dispatchEvent(new Event('resize')); // Dimensions keeps the size it read last: tell it
+});
 
 afterEach(() => {
   cleanup();
@@ -50,7 +64,14 @@ vi.mock('react-native-safe-area-context', () => ({
 vi.mock('react-native-svg', async () => {
   const { createElement } = await import('react');
   const shape = (name: string) => {
-    const Shape = ({ children }: { children?: unknown }) => createElement('span', { 'data-svg': name }, children as never);
+    // fill / stroke / opacity are kept as data attributes: a piece's colour is the thing the piece tests read (pieceColours.dom.test.tsx).
+    // (width and the path data too: a test reads how big a piece is drawn and which silhouette it is)
+    // data-props: EVERY prop the code gave the shape (sorted keys, JSON), minus the children and the geometry: a test compares whole paint sets (pieceIcon.dom.test.tsx, command #27d).
+    const Shape = (props: { children?: unknown; fill?: string; stroke?: string; opacity?: number; width?: number; d?: string }) => {
+      const { children, fill, stroke, opacity, width, d, ...rest } = props as typeof props & Record<string, unknown>;
+      const paint = Object.fromEntries(Object.entries({ ...rest, fill, stroke }).sort(([a], [b]) => (a < b ? -1 : 1)));
+      return createElement('span', { 'data-svg': name, 'data-fill': fill, 'data-stroke': stroke, 'data-opacity': opacity, 'data-width': width, 'data-d': d, 'data-props': JSON.stringify(paint) }, children as never);
+    };
     return Shape;
   };
   return {
@@ -80,6 +101,12 @@ vi.mock('../components/useBoardGestures', () => ({
   MOVE_THRESHOLD_PX: 8,
   useBoardGestures: (options: unknown) => {
     (globalThis as unknown as { __boardGestures: unknown }).__boardGestures = options;
+    // A screen with several boards (Bughouse) names each: `tapBoardSquare` finds the one it means by that key.
+    const key = (options as { seamKey?: string }).seamKey;
+    if (key) {
+      const registry = ((globalThis as unknown as { __boardGesturesByKey?: Record<string, unknown> }).__boardGesturesByKey ??= {});
+      registry[key] = options;
+    }
     return { containerRef: { current: null }, onLayout: () => {}, panHandlers: {}, liveArrow: null, clearLiveArrow: () => {} };
   },
 }));

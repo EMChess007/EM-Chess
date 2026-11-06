@@ -13,6 +13,7 @@ import GameScreenBody from '../components/GameScreenBody';
 import { initialCrazyhouseState, type CrazyhouseState } from '../logic/crazyhouse';
 import { plyStateAtView } from '../logic/perPlyState';
 import MoveListStrip from '../components/MoveListStrip';
+import { useStableCallback } from '../components/useStableCallback';
 import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { ChessEngine } from '../logic/ChessEngine';
@@ -45,6 +46,8 @@ import { getRatings, recordRatedGame } from '../logic/ratingStorage';
 import { categoryForInitialSeconds } from '../logic/timeControls';
 import { THREE_CHECK_TARGET, getThreeCheckCounts } from '../logic/threeCheck';
 import { isUnlimitedClock, playerClockText } from '../logic/time';
+import { useE2eNoticeReport } from '../logic/useE2eNoticeReport';
+import { useTransientNotice } from '../logic/useTransientNotice';
 import type { Move, PieceColor } from '../types/chess';
 import type { AnalyzeParams, GameHistoryEntry } from '../types/history';
 import type {
@@ -745,6 +748,13 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
 
   const [premoveInvalidNotice, setPremoveInvalidNotice] = useState(false);
 
+  // One-off messages (command #34): the cancelled premove, a refused move / action and the draw-offer notice go at the next move by
+  // either side (the FEN changed) or after a few seconds, whichever comes first (logic/useTransientNotice.ts).
+  useTransientNotice(premoveInvalidNotice, fen, () => setPremoveInvalidNotice(false));
+  useE2eNoticeReport('premove', premoveInvalidNotice); // (the Android end-to-end run times the line; a no-op in every other build)
+  useTransientNotice(moveError, fen, () => setMoveError(null));
+  useTransientNotice(drawNotice, fen, () => setDrawNotice(null));
+
   useEffect(() => {
     if (!premove || turn !== myColor || gameOver) return;
     setPremove(null);
@@ -858,6 +868,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
 
   // Tapping a move in the strip drives the exact same viewIndex the Back/Forward buttons do —
   // no separate navigation mechanism.
+  const selectMove = useStableCallback((index: number) => handleSelectMove(index)); // (one identity for the memoized move list: command #33)
   const handleSelectMove = (index: number) => {
     const next = index + 1;
     setViewIndex(next >= positions.length - 1 ? null : next);
@@ -937,7 +948,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         moves={moveList.map((m) => ({ san: duckChess ? duckMoveNotation(m.move) : spellChess ? spellMoveNotation(m.move, m.move.spell ?? null) : m.move.san }))}
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
-        onSelectMove={handleSelectMove}
+        onSelectMove={selectMove}
       />
       <GameScreenBody
         compact={spellChess || crazyhouse}
@@ -1036,6 +1047,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           fen={displayFen}
           onMove={handleMove}
           disabled={!!gameOver || connectionState !== 'connected' || isReviewing}
+          enableAnnotations
           chess960={match.isChess960}
           initialFen={match.fen}
           orientation={myColor}

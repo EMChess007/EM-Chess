@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useRef, useState, type ReactNode } from 'react';
+import { ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface GameScreenBodyProps {
@@ -16,6 +16,12 @@ interface GameScreenBodyProps {
    * of its own — Spell Chess's Freeze/Jump row lives inside ChessBoard — so everything still fits WITHOUT shrinking the board
    * (the board is the same size in every variant). */
   compact?: boolean;
+  /**
+   * True while a result card is part of `children` (the 4-seat games and Chaturaji draw theirs under the board). The card appears AFTER the board, so on a phone it arrived below the visible
+   * screen and the player had to scroll to find who won (command #33). When the content is taller than the window, the body scrolls to its end - the card and the buttons under it - as soon as the
+   * card is there. Nothing moves while everything fits.
+   */
+  resultShown?: boolean;
 }
 
 /**
@@ -28,8 +34,9 @@ interface GameScreenBodyProps {
  * Once it does not fit, a swipe anywhere scrolls - the board hands a plain scroll swipe to its ancestor (useBoardGestures `onPanResponderTerminationRequest`, written
  * for exactly this) and keeps an armed arrow-drawing drag.
  */
-export default function GameScreenBody({ children, bottomBar, compact = false }: GameScreenBodyProps) {
+export default function GameScreenBody({ children, bottomBar, compact = false, resultShown = false }: GameScreenBodyProps) {
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [contentHeight, setContentHeight] = useState(0);
   // The first layout pass has no measurement yet: nothing scrolls until the content is known to be taller than the window.
@@ -37,6 +44,7 @@ export default function GameScreenBody({ children, bottomBar, compact = false }:
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={styles.container}
       contentContainerStyle={styles.scrollContent}
       scrollEnabled={overflowing}
@@ -44,7 +52,11 @@ export default function GameScreenBody({ children, bottomBar, compact = false }:
       bounces={false}
       overScrollMode="never"
       onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
-      onContentSizeChange={(_width, height) => setContentHeight(height)}
+      onContentSizeChange={(_width, height) => {
+        setContentHeight(height);
+        // the card has just joined the content (or grown): show it. `scrollToEnd` is a no-op while everything fits.
+        if (resultShown) scrollRef.current?.scrollToEnd({ animated: false });
+      }}
     >
       <View style={[styles.content, compact && styles.contentCompact]}>{children}</View>
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>{bottomBar}</View>

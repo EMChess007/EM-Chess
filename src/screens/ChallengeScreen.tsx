@@ -3,19 +3,34 @@ import { ActivityIndicator, ScrollView, Share, StyleSheet, View } from 'react-na
 import { Pressable } from '../components/AppPressable';
 import { Text, TextInput } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
+import TimeControlSections from '../components/TimeControlSections';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { emitWithin } from '../api/socketAck';
 import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import type { BugFriendRoomView } from '../logic/bughouse/roomWire';
+import type { FourFriendRoomView } from '../logic/fourPlayerRoomWire';
+import type { FourVariant } from '../logic/fourPlayerWire';
+import { joinFriendCode, type FriendCodeAsk } from '../logic/friendCodeJoin';
+import { fourVariantOfGame, isFourSeatGame, type FourSeatGame } from '../logic/onlineGames';
 import { variantWireFlags } from '../logic/onlineVariants';
-import { getTimeControlsByCategory } from '../logic/timeControls';
+import { ONLINE_DAILY_NOTE } from '../logic/timeControls';
 import type { Ack, MatchFoundPayload, SetupChessPairedPayload } from '../types/multiplayer';
-import type { TimeControl, TimeControlCategory } from '../types/timeControl';
+import type { TimeControl } from '../types/timeControl';
+
+/** Where Challenge a Friend sends the player for the 4 Player Variations (command #35): a room to OPEN for a game, or one the code just put them in. */
+export type FriendRoomTarget =
+  | { kind: 'createFour'; variant: FourVariant; timeControl: TimeControl }
+  | { kind: 'createBughouse'; timeControl: TimeControl }
+  | { kind: 'joinedFour'; room: FourFriendRoomView }
+  | { kind: 'joinedBughouse'; room: BugFriendRoomView };
 
 interface ChallengeScreenProps {
   authToken: string;
   onMatchFound: (match: MatchFoundPayload) => void;
+  /** Crazy Bughouse and the 4-seat games play in friend rooms (their own screens); the 2-player variants keep the challenge code below. */
+  onFriendRoom: (target: FriendRoomTarget) => void;
   /** Fires instead of onMatchFound for a Setup Chess challenge — see MatchmakingScreen's
    * identical prop for why. */
   onSetupChessPaired: (paired: SetupChessPairedPayload) => void;
@@ -24,17 +39,11 @@ interface ChallengeScreenProps {
 
 type Phase = 'menu' | 'setup' | 'waiting' | 'join';
 
-const CATEGORIES: { category: TimeControlCategory; label: string }[] = [
-  { category: 'bullet', label: 'Bullet' },
-  { category: 'blitz', label: 'Blitz' },
-  { category: 'rapid', label: 'Rapid' },
-];
-
-export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessPaired, onBack }: ChallengeScreenProps) {
+export default function ChallengeScreen({ authToken, onMatchFound, onFriendRoom, onSetupChessPaired, onBack }: ChallengeScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const [phase, setPhase] = useState<Phase>('menu');
-  const [variant, setVariant] = useState<GameVariant>('classic');
+  const [variant, setVariant] = useState<GameVariant | FourSeatGame>('classic');
   const [code, setCode] = useState<string | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +72,12 @@ export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessP
 
   const handleCreate = (timeControl: TimeControl) => {
     setError(null);
+    // the 4 Player Variations: a friend ROOM (its own screen opens it), not a 2-player challenge code
+    if (isFourSeatGame(variant)) {
+      const fourVariant = fourVariantOfGame(variant);
+      onFriendRoom(fourVariant === null ? { kind: 'createBughouse', timeControl } : { kind: 'createFour', variant: fourVariant, timeControl });
+      return;
+    }
     const socket = connectSocket(authToken);
     emitWithin<Ack<{ code: string }>>(
       socket,
@@ -109,9 +124,14 @@ export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessP
     if (!trimmed) return;
     setError(null);
     const socket = connectSocket(authToken);
-    emitWithin<Ack>(socket, 'join_challenge', { code: trimmed }, (result) => {
-      if (result.unreachable) setError(SERVER_UNREACHABLE_MESSAGE); // pressing Join again is the retry
-      else if (!result.ack.ok) setError(result.ack.error);
+    // ONE code field for every game: the code is tried as a 2-player challenge, a Crazy Bughouse room and a 4-seat room (logic/friendCodeJoin.ts); a match_found (challenge) is handled by the effect above
+    const ask: FriendCodeAsk = (event, payload) => new Promise((resolve) => emitWithin<Ack<{ room?: unknown }>>(socket, event, payload, (result) => resolve(result.unreachable ? { unreachable: true } : { ack: result.ack as never })));
+    void joinFriendCode(trimmed, ask).then((result) => {
+      if (result.kind === 'unreachable') setError(SERVER_UNREACHABLE_MESSAGE); // pressing Join again is the retry
+      else if (result.kind === 'refused') setError(result.error);
+      else if (result.kind === 'bughouse') onFriendRoom({ kind: 'joinedBughouse', room: result.room });
+      else if (result.kind === 'four') onFriendRoom({ kind: 'joinedFour', room: result.room });
+      // 'challenge': the server pairs both players and sends match_found
     });
   };
 
@@ -140,21 +160,11 @@ export default function ChallengeScreen({ authToken, onMatchFound, onSetupChessP
 
       {phase === 'setup' && (
         <View style={styles.setupContainer}>
-          <VariantSelector value={variant} onChange={setVariant} />
-          {error && <Text style={styles.errorText}>{error}</Text>}
+          {/* The game chips scroll with the time controls (command #35b): above the scroll view they left a sliver of a 360 x 640 phone for the controls and could not be swiped past. */}
           <ScrollView contentContainerStyle={styles.setupScrollContent}>
-            {CATEGORIES.map(({ category, label }) => (
-              <View key={category} style={styles.section}>
-                <Text style={styles.sectionTitle}>{label}</Text>
-                <View style={styles.presetGrid}>
-                  {getTimeControlsByCategory(category).map((tc) => (
-                    <Pressable key={tc.id} style={styles.presetButton} onPress={() => handleCreate(tc)}>
-                      <Text style={styles.presetButtonText}>{tc.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            ))}
+            <VariantSelector<GameVariant | FourSeatGame> value={variant} onChange={setVariant} includeFourSeat />
+            {error && <Text style={styles.errorText}>{error}</Text>}
+            <TimeControlSections onSelect={handleCreate} dailyNote={ONLINE_DAILY_NOTE} />
           </ScrollView>
         </View>
       )}

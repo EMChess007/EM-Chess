@@ -3,10 +3,10 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
+import TimeControlSections from '../components/TimeControlSections';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
-import { TIME_CONTROL_CATEGORIES, getTimeControlsByCategory } from '../logic/timeControls';
 import type { ColorChoice } from '../types/chess';
-import type { TimeControl, TimeControlCategory } from '../types/timeControl';
+import type { TimeControl } from '../types/timeControl';
 
 const COLOR_OPTIONS: { value: ColorChoice; label: string }[] = [
   { value: 'b', label: 'Black' },
@@ -21,8 +21,8 @@ interface TimeControlSelectScreenProps {
   // Only bot games let the player pick a color — local games share one device (picking a side
   // makes no sense) and online games must stay always-random with zero player input.
   showColorPicker?: boolean;
-  /** Categories to leave out (4 Player Chess leaves out Daily: its games are local and never persisted). */
-  excludeCategories?: TimeControlCategory[];
+  /** A line under the Daily heading (the online setups say how a Daily game is kept). */
+  dailyNote?: string;
 }
 
 export default function TimeControlSelectScreen({
@@ -30,7 +30,7 @@ export default function TimeControlSelectScreen({
   onBack,
   subtitle,
   showColorPicker = false,
-  excludeCategories = [],
+  dailyNote,
 }: TimeControlSelectScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
@@ -58,22 +58,7 @@ export default function TimeControlSelectScreen({
             </View>
           </View>
         )}
-        {TIME_CONTROL_CATEGORIES.filter(({ category }) => !excludeCategories.includes(category)).map(({ category, label }) => (
-          <View key={category} style={styles.section}>
-            <Text style={styles.sectionTitle}>{label}</Text>
-            <View style={styles.presetGrid}>
-              {getTimeControlsByCategory(category).map((tc) => (
-                <Pressable
-                  key={tc.id}
-                  style={styles.presetButton}
-                  onPress={() => onSelect(tc, showColorPicker ? colorChoice : undefined)}
-                >
-                  <Text style={styles.presetButtonText}>{tc.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        ))}
+        <TimeControlSections onSelect={(tc) => onSelect(tc, showColorPicker ? colorChoice : undefined)} dailyNote={dailyNote} />
       </ScrollView>
     </View>
   );

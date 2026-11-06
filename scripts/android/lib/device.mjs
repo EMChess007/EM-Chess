@@ -1,0 +1,412 @@
+/**
+ * The phone side of the Android end-to-end driver (command #29): adb, uiautomator and screencap behind a few verbs. Why adb + uiautomator and not Maestro or Detox:
+ *   - it needs nothing installed beyond the SDK's own adb (Maestro is a JVM tool downloaded from a third party at run time; Detox needs a native test module in the app);
+ *   - the app has no react-native-gesture-handler (and must not get one), so a driver that injects REAL touches at screen pixels - `adb shell input tap` - is exactly what a finger does,
+ *     and the tests of the touch frames (command #26) need a touch at a computed pixel, not "click the element";
+ *   - one process holds both the accessibility tree AND the screenshot, which the pixel checks (a black king drawn white) need and a flow language cannot express;
+ *   - it is the same language as the rest of the test stack, so the judges of scripts/browser/android-matrix-pieces.mjs are reused as they are.
+ */
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { decodePng } from './png.mjs';
+import { extractXml, findNodes, findOne, fingerprint, parseHierarchy, visibleWords } from './hierarchy.mjs';
+import { gearIssues, PACKAGE } from './checks.mjs';
+
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** The two phones of the checks: a small one at a large font, and a big one at the normal font. wm size is in pixels; the density gives the dp. */
+export const PROFILES = {
+  small: { id: 'small', title: '360x640 dp at font scale 1.3', size: '720x1280', density: 320, fontScale: 1.3 },
+  large: { id: 'large', title: 'large phone at font scale 1.0', size: null, density: null, fontScale: 1.0 },
+};
+
+export class Device {
+  constructor({ outDir, serial = process.env.ANDROID_SERIAL, log = console.log }) {
+    this.outDir = outDir;
+    this.serial = serial;
+    this.log = log;
+    this.counter = 0;
+    this.last = { nodes: [], xml: '' };
+    mkdirSync(outDir, { recursive: true });
+  }
+
+  adb(args, { timeout = 60_000, binary = false } = {}) {
+    const full = this.serial ? ['-s', this.serial, ...args] : args;
+    return execFileSync('adb', full, { timeout, encoding: binary ? 'buffer' : 'utf8', maxBuffer: 1 << 27, stdio: ['ignore', 'pipe', 'pipe'] });
+  }
+
+  sh(command, options) {
+    return this.adb(['shell', command], options);
+  }
+
+  // --- the phone's own settings -------------------------------------------------------------------------------------------------------------------------------------------------
+
+  /** Window size and density, font scale. A profile with `size: null` is the emulator's own screen. */
+  applyProfile(profile) {
+    if (profile.size) {
+      this.sh(`wm size ${profile.size}`);
+      this.sh(`wm density ${profile.density}`);
+    } else {
+      this.sh('wm size reset');
+      this.sh('wm density reset');
+    }
+    this.sh(`settings put system font_scale ${profile.fontScale}`);
+    this.sh('settings put global window_animation_scale 0');
+    this.sh('settings put global transition_animation_scale 0');
+    this.sh('settings put global animator_duration_scale 0');
+    this.stop();
+    this.display = this.readDisplay();
+    this.log(`profile ${profile.id}: ${profile.title} -> ${this.display.w}x${this.display.h} px, density ${this.display.density}, ${this.display.dpW}x${this.display.dpH} dp, font scale ${profile.fontScale}`);
+    return this.display;
+  }
+
+  readDisplay() {
+    // `wm size` prints "Physical size: 1080x2400" and, when overridden, "Override size: 720x1280" after it: the override is the one in force.
+    const sizes = [...this.sh('wm size').matchAll(/size: (\d+)x(\d+)/g)];
+    const densities = [...this.sh('wm density').matchAll(/density: (\d+)/g)];
+    if (sizes.length === 0 || densities.length === 0) throw new Error('cannot read the display size or density from wm');
+    const w = Number(sizes[sizes.length - 1][1]);
+    const h = Number(sizes[sizes.length - 1][2]);
+    const d = Number(densities[densities.length - 1][1]);
+    return { w, h, density: d, scale: d / 160, dpW: Math.round((w / d) * 160), dpH: Math.round((h / d) * 160) };
+  }
+
+  stop() {
+    this.sh(`am force-stop ${PACKAGE}`);
+  }
+
+  clearData() {
+    this.sh(`pm clear ${PACKAGE}`);
+  }
+
+  launch() {
+    this.sh(`am start -W -n ${PACKAGE}/.MainActivity`, { timeout: 90_000 });
+  }
+
+  /**
+   * Switches the end-to-end APK between edge-to-edge and the frame of the phone of command #26 (the app below the status bar; scripts/android/patch-main-activity.mjs). Takes effect
+   * when the app is started, so it is restarted here.
+   */
+  async setFitSystemWindows(on) {
+    this.sh(`settings put global em_e2e_fit_system_windows ${on ? 1 : 0}`);
+    await this.relaunch();
+  }
+
+  async relaunch() {
+    this.stop();
+    await sleep(500);
+    this.launch();
+  }
+
+  // --- reading the screen -------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  /** The accessibility tree. uiautomator sometimes cannot reach an idle state on a screen that animates: it is retried, then asked again without waiting. */
+  async dump({ save } = {}) {
+    let lastError = '';
+    // (a live game screen - bots moving, pockets changing - can stay "not idle" for several seconds: the online scenario raises `dumpAttempts` / `dumpGapMs`)
+    for (let attempt = 0; attempt < (this.dumpAttempts ?? 3); attempt++) {
+      try {
+        // (`uiautomator dump /dev/tty` prints only its trailer through `adb shell`, which has no terminal: the tree goes to a file on the phone and is read back.)
+        // The file is REMOVED first and uiautomator's own message is kept (command #30): `dump && cat` used to read whatever file was on the phone when the dump FAILED ("ERROR: could not get
+        // idle state." on a screen that keeps repainting, exit status 0), i.e. the previous screen's tree - the "stale tree" of the game screens. A failed dump now fails, and says why.
+        // (`; true`: the shell's exit status is that of `cat`, which fails when the dump failed - and then uiautomator's own message, the thing worth reading, would be lost with the exception)
+        const out = this.sh('rm -f /sdcard/e2e-ui.xml; uiautomator dump /sdcard/e2e-ui.xml 2>&1; cat /sdcard/e2e-ui.xml 2>/dev/null; true', { timeout: 40_000 });
+        const xml = extractXml(out);
+        if (!xml) this.noteDumpFailure(out);
+        if (xml) {
+          this.last = { xml, nodes: parseHierarchy(xml) };
+          this.fresh = true; // until the next touch
+          if (save) writeFileSync(join(this.outDir, `${save}.xml`), xml);
+          // Android's one-time "Viewing full screen - swipe down to exit" notice (the app hides the navigation bar) sits over the app: "Got it" dismisses it, once.
+          // (and a system "<app> isn't responding" box, which a loaded CI emulator shows for its launcher now and then: "Wait" dismisses it)
+          const gotIt = this.last.nodes.find((n) => (n.text === 'Got it' || (n.text === 'Wait' && this.last.nodes.some((m) => /isn't responding/.test(m.text)))) && n.bounds && n.pkg !== PACKAGE);
+          if (gotIt && !this.dismissing) {
+            this.dismissing = true;
+            this.tap(gotIt.bounds.cx, gotIt.bounds.cy);
+            await sleep(800);
+            this.dismissing = false;
+            attempt = -1; // read the tree again, now without the notice
+            continue;
+          }
+          this.noteGear(this.last.nodes);
+          return this.last.nodes;
+        }
+        lastError = out.slice(0, 200);
+      } catch (e) {
+        lastError = String(e.stderr || e.message).slice(0, 200);
+      }
+      await sleep(this.dumpGapMs ?? 700);
+    }
+    throw new Error(`uiautomator dump failed: ${lastError}`);
+  }
+
+  /**
+   * The floating gear button check (command #34; checks.mjs `gearIssues`): EVERY tree this driver reads, on every screen of every scenario and on both phone profiles, is judged for a tappable
+   * node of the app inside the gear zone. The findings are collected by node and screen words and reported as ONE check at the end of the run (`gearFindings`, `gearDumps`).
+   */
+  noteGear(nodes) {
+    if (!this.display) return;
+    this.gearDumps = (this.gearDumps ?? 0) + 1;
+    const found = gearIssues(nodes, this.display);
+    if (found.length === 0) return;
+    this.gearFindings = this.gearFindings ?? new Map();
+    const screenWords = visibleWords(nodes, 6).join(' / ');
+    for (const issue of found) {
+      const key = `${issue.text}|${issue.detail}`;
+      if (!this.gearFindings.has(key)) this.gearFindings.set(key, `"${issue.text}": ${issue.detail} (screen: ${screenWords})`);
+    }
+  }
+
+  /** Counts the dumps that failed, by uiautomator's own message ("could not get idle state" = the screen never stood still), and prints the first few. */
+  noteDumpFailure(output) {
+    const message = (output.split('\n').find((l) => /ERROR|Exception|could not/i.test(l)) ?? output).trim().slice(0, 120) || '(no output)';
+    this.dumpFailures = this.dumpFailures ?? {};
+    this.dumpFailures[message] = (this.dumpFailures[message] ?? 0) + 1;
+    if (Object.values(this.dumpFailures).reduce((a, b) => a + b, 0) <= 6) this.log(`  [dump failed] ${message}`);
+    // the first failure of a run also says which window the phone thinks is in front (a dialog, the IME, a second window would explain a tree that cannot be read)
+    if (!this.dumpDiagnosed) {
+      this.dumpDiagnosed = true;
+      try {
+        this.log(`  [dump failed] windows: ${this.sh("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp|mInputMethodTarget' | head -5").replace(/\s+/g, ' ').slice(0, 400)}`);
+      } catch {
+        /* no diagnostics */
+      }
+    }
+  }
+
+  screenshot() {
+    return decodePng(this.adb(['exec-out', 'screencap', '-p'], { binary: true, timeout: 30_000 }));
+  }
+
+  /** Saves the screen as <name>.png and its tree as <name>.xml in the output folder (the artifacts). */
+  async snapshot(name) {
+    const buf = this.adb(['exec-out', 'screencap', '-p'], { binary: true, timeout: 30_000 });
+    writeFileSync(join(this.outDir, `${name}.png`), buf);
+    try {
+      writeFileSync(join(this.outDir, `${name}.xml`), this.last.xml);
+    } catch {
+      /* nothing dumped yet */
+    }
+  }
+
+  /** The tree and a screenshot taken straight after it, decoded. */
+  async look() {
+    // The tree, the photograph, the tree again: if the screen moved in between (a list still settling, a bot's move) the two trees differ and the pair is taken again - a photograph and a tree
+    // of different moments would put a cell's bounds over its neighbour's pixels.
+    let nodes = await this.dump();
+    let png = this.screenshot();
+    for (let i = 0; i < 4; i++) {
+      const again = await this.dump();
+      if (fingerprint(again) === fingerprint(nodes)) return { nodes: again, png };
+      nodes = again;
+      png = this.screenshot();
+    }
+    return { nodes, png };
+  }
+
+  // --- touching -------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  tap(x, y) {
+    this.fresh = false;
+    this.sh(`input tap ${Math.round(x)} ${Math.round(y)}`);
+  }
+
+  /**
+   * A touch that LASTS: down, hold, up at the same point (`input swipe x y x y <ms>`). `input tap` sends the up event in the same millisecond as the down; a finger never does (about 50 - 150 ms).
+   * The 2-player board is read with both (command #30), because the first run found that it took no `input tap`.
+   */
+  press(x, y, ms = 90) {
+    this.fresh = false;
+    this.sh(`input swipe ${Math.round(x)} ${Math.round(y)} ${Math.round(x)} ${Math.round(y)} ${ms}`);
+  }
+
+  swipe(x1, y1, x2, y2, ms = 300) {
+    this.fresh = false;
+    this.sh(`input swipe ${Math.round(x1)} ${Math.round(y1)} ${Math.round(x2)} ${Math.round(y2)} ${ms}`);
+  }
+
+  /**
+   * A finger-drawn arrow (command #32): a finger HELD on (x1, y1) for `holdMs`, dragged to (x2, y2) and lifted - the gesture of every board (src/logic/boardArrows.ts: 400 ms hold, then drag).
+   * `input swipe` cannot do it (it starts moving at once, which is a slide); `input motionevent` (API 30+) sends the events one by one, and each `input` process takes its own time to start, so the
+   * finger really stays down. One shell call, so the timing is the phone's and not adb's round trips.
+   */
+  drawArrow(x1, y1, x2, y2, holdMs = 700) {
+    this.fresh = false;
+    const r = Math.round;
+    this.sh(
+      `input motionevent DOWN ${r(x1)} ${r(y1)}; sleep ${(holdMs / 1000).toFixed(1)}; input motionevent MOVE ${r((x1 + x2) / 2)} ${r((y1 + y2) / 2)}; input motionevent MOVE ${r(x2)} ${r(y2)}; input motionevent UP ${r(x2)} ${r(y2)}`,
+      { timeout: 60_000 }
+    );
+  }
+
+  key(code) {
+    this.fresh = false;
+    this.sh(`input keyevent ${code}`);
+  }
+
+  /** The last tree when nothing has touched the phone since (a dump costs several seconds on the CI emulator), else a new one. */
+  async current() {
+    return this.fresh ? this.last.nodes : this.dump();
+  }
+
+  /** Types text into the focused field. Letters, digits and @ . _ - only: nothing the shell or `input` would reinterpret. */
+  type(text) {
+    if (!/^[A-Za-z0-9@._-]+$/.test(text)) throw new Error('type() takes letters, digits and @ . _ - only');
+    this.sh(`input text ${text}`);
+  }
+
+  // slow swipes (700 ms): a quick one leaves the list flinging, and a tap on a moving list lands on whatever passes under the finger
+  scrollDown(x = this.display.w / 2) {
+    const { h } = this.display;
+    this.swipe(x, h * 0.78, x, h * 0.28, 700);
+  }
+
+  scrollUp() {
+    const { w, h } = this.display;
+    this.swipe(w / 2, h * 0.34, w / 2, h * 0.72, 700);
+  }
+
+  // --- waiting and finding --------------------------------------------------------------------------------------------------------------------------------------------------
+
+  /** Calls `test(nodes)` on a fresh tree until it answers truthy; returns that answer. The bound only turns a hang into a failure. */
+  async waitFor(what, test, timeoutMs = 20_000, stepMs = 600) {
+    const t0 = Date.now();
+    let nodes = [];
+    for (;;) {
+      try {
+        nodes = await this.dump();
+        const answer = test(nodes);
+        if (answer) return answer === true ? nodes : answer; // `true` = "the screen is as wanted": hand back the tree it was judged on
+      } catch (e) {
+        if (Date.now() - t0 > timeoutMs) throw e;
+      }
+      if (Date.now() - t0 > timeoutMs) throw new Error(`timed out after ${timeoutMs} ms waiting for ${what}; on screen: ${visibleWords(nodes, 40).join(' | ')}`);
+      await sleep(stepMs);
+    }
+  }
+
+  /** The tree once it stands still: two trees in a row that are the same (a scroll's fling, an animation, a list that is still laying out). */
+  async stable() {
+    let nodes = await this.dump();
+    for (let i = 0; i < 4; i++) {
+      const again = await this.dump();
+      if (fingerprint(again) === fingerprint(nodes)) return again;
+      nodes = again;
+    }
+    return nodes;
+  }
+
+  /**
+   * The node a step names, scrolling down when it is not on screen (the Play menu is longer than a phone). `{ text, below: "Local" }` is the first `text` under the heading `below`: on
+   * the phone only what is on screen exists, so "the second Classic" of the web matrix (document order) is "the Classic under Local" here.
+   */
+  async find(step, { scrolls = 14 } = {}) {
+    if (step.below !== undefined) {
+      await this.find({ text: step.below }, { scrolls });
+      for (let i = 0; i <= scrolls; i++) {
+        const nodes = await this.stable();
+        const heading = findOne(nodes, { text: step.below });
+        const hit = heading ? findNodes(nodes, { text: step.text }).find((n) => n.bounds.y1 >= heading.bounds.y2 - 2) : null;
+        if (hit) return hit;
+        if (i === scrolls) throw new Error(`cannot find ${JSON.stringify(step)}; on screen: ${visibleWords(nodes, 40).join(' | ')}`);
+        this.scrollDown();
+        await sleep(700);
+      }
+    }
+    // `blind`: fast swipes WITHOUT a tree between them to get near a target that is known to be deep in a long list (each tree costs several seconds on the CI emulator): `down` swipes, then `up`.
+    if (step.blind) {
+      for (let i = 0; i < (step.blind.down ?? 0); i++) {
+        this.swipe(this.display.w / 2, this.display.h * 0.8, this.display.w / 2, this.display.h * 0.2, 350);
+        await sleep(120);
+      }
+      for (let i = 0; i < (step.blind.up ?? 0); i++) {
+        this.swipe(this.display.w / 2, this.display.h * 0.3, this.display.w / 2, this.display.h * 0.7, 350);
+        await sleep(120);
+      }
+      await sleep(600);
+    }
+    let nodes = await this.current();
+    let node = findOne(nodes, step);
+    let scrolled = false;
+    for (let i = 0; node === null && i < scrolls; i++) {
+      const before = fingerprint(nodes);
+      this.scrollDown();
+      scrolled = true;
+      await sleep(450);
+      nodes = await this.dump();
+      node = findOne(nodes, step);
+      if (node === null && fingerprint(nodes) === before) {
+        // Nothing moved. The end of the list - or a swipe that a game board's touch layer took (the middle of the screen is a board on a game screen, and a selected piece or a premove makes
+        // the board keep the touch). One more swipe along the left margin, which no board covers, before calling it the end.
+        this.scrollDown(this.display.w * 0.06);
+        await sleep(450);
+        nodes = await this.dump();
+        node = findOne(nodes, step);
+        if (node === null && fingerprint(nodes) === before) break;
+      }
+    }
+    // a blind run to the bottom can overshoot a card that sits a little above it: look back up, half a screen at a time
+    for (let i = 0; node === null && step.blind && i < 5; i++) {
+      this.scrollUp();
+      scrolled = true;
+      await sleep(450);
+      nodes = await this.dump();
+      node = findOne(nodes, step);
+    }
+    if (node === null) throw new Error(`cannot find ${JSON.stringify(step)}; on screen: ${visibleWords(nodes, 40).join(' | ')}`);
+    if (scrolled) {
+      // found while the list may still have been moving: wait until it stands still, and take the node from that tree
+      nodes = await this.stable();
+      node = findOne(nodes, step) ?? node;
+    }
+    return node;
+  }
+
+  async tapStep(step, settleMs = 700) {
+    if (step.wait) return sleep(step.wait);
+    if (step.fill) throw new Error('fill steps are not used on the phone');
+    const node = await this.find(step);
+    this.log(`  tap ${JSON.stringify(step)} -> ${node.cls.split('.').pop()} "${(node.text || node.desc || node.id).slice(0, 30)}" ${node.bounds.w}x${node.bounds.h} at ${node.bounds.cx},${node.bounds.cy}`);
+    const before = fingerprint(this.last.nodes);
+    this.tap(node.bounds.cx, node.bounds.cy);
+    await sleep(settleMs);
+    // A development build fetches a screen's code from Metro the first time it is opened (lazy bundling), which can take many seconds: the next step must not look at the OLD screen (the first
+    // run took the time-control screen for the game it was starting). Wait, up to 8 s, until the tree is not the one the tap was made on.
+    const t0 = Date.now();
+    let nudged = false;
+    for (;;) {
+      // a dump that fails (a screen that never stands still) is not the end of the step: the next screen may still be coming up
+      const nodes = await this.dump().catch(() => null);
+      if (nodes !== null && fingerprint(nodes) !== before) {
+        if (nudged) this.log('  (the tree was stale until the status bar was touched)');
+        break;
+      }
+      if (Date.now() - t0 > 8000) break;
+      // some screens of this app leave uiautomator with the PREVIOUS screen's tree (the photograph shows the new one): a touch on the status bar, which does nothing, is tried once to
+      // make the app send the accessibility events that refresh it
+      if (!nudged && Date.now() - t0 > 2500) {
+        nudged = true;
+        this.tap(this.display.w / 2, 4);
+      }
+      await sleep(500);
+    }
+  }
+
+  async runSteps(steps) {
+    for (const step of steps) await this.tapStep(step);
+  }
+
+  /** Is the app's first screen up (the tab bar's Play)? */
+  async waitHome(timeoutMs = 240_000) {
+    return this.waitFor('the Home screen', (nodes) => (findNodes(nodes, { text: 'Play' }).length > 0 && findNodes(nodes, { text: 'More' }).length > 0 ? nodes : false), timeoutMs, 1500);
+  }
+
+  logcat(lines = 400) {
+    try {
+      return this.adb(['logcat', '-d', '-t', String(lines), '-s', 'ReactNative:V', 'ReactNativeJS:V', 'AndroidRuntime:E', 'DEBUG:E', 'ActivityManager:W'], { timeout: 30_000 });
+    } catch (e) {
+      return `logcat failed: ${e.message}`;
+    }
+  }
+}

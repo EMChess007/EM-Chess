@@ -50,6 +50,7 @@ import { useFourPlayerClock } from '../logic/useFourPlayerClock';
 import { useScoreGains } from '../logic/useScoreGains';
 import { describePremoveCancel } from '../logic/premove';
 import { usePremove } from '../logic/usePremove';
+import { positionEpoch } from '../logic/fourPlayer/annotations';
 import type { TimeControl } from '../types/timeControl';
 
 interface FourPlayerGameScreenProps {
@@ -153,6 +154,7 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
     gameOver: !!game.result,
     resolve: (intent) => (myPremoveSeat === undefined ? null : resolvePremove(game, myPremoveSeat, intent)),
     play: apply,
+    epoch: positionEpoch(game),
   });
 
   const canUndo = past.some((p) => seats[p.state.turn].kind === 'human');
@@ -240,6 +242,7 @@ export default function FourPlayerGameScreen({ variant = 'ffa', seats, timeContr
     <View style={styles.container}>
       <ScreenHeader title={variantTitle(variant)} subtitle={`${variantModeLabel(variant)} · ${timeControl.label}`} onBack={onExit} backLabel="‹ Menu" />
       <GameScreenBody
+        resultShown={!!game.result}
         bottomBar={
           <>
             <View style={styles.controlsWrap}>

@@ -2,19 +2,8 @@ import { StyleSheet, View } from 'react-native';
 import { Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { PieceColor, PieceType } from '../types/chess';
-
-const PIECE_SYMBOLS: Record<string, string> = {
-  wp: '♙',
-  wn: '♘',
-  wb: '♗',
-  wr: '♖',
-  wq: '♕',
-  bp: '♟',
-  bn: '♞',
-  bb: '♝',
-  br: '♜',
-  bq: '♛',
-};
+import { pieceInk } from './pieceArt';
+import PieceIcon from './PieceIcon';
 
 // Lowest value first, matching how chess.com orders a captured-pieces row.
 const DISPLAY_ORDER: PieceType[] = ['p', 'n', 'b', 'r', 'q'];
@@ -40,9 +29,9 @@ export default function CapturedPieces({ pieces, color, advantage }: CapturedPie
   return (
     <View style={styles.row}>
       {sorted.map((type, i) => (
-        <Text key={i} style={styles.icon}>
-          {PIECE_SYMBOLS[`${color}${type}`]}
-        </Text>
+        <View key={i} style={styles.icon} accessibilityLabel={`captured ${color === 'w' ? 'white' : 'black'} ${type}`}>
+          <PieceIcon type={type} ink={pieceInk(color)} size={18} />
+        </View>
       ))}
       {advantage > 0 && <Text style={styles.advantage}>+{advantage}</Text>}
     </View>
@@ -58,9 +47,7 @@ function createStyles(colors: AppColors) {
       maxWidth: 160,
     },
     icon: {
-      fontSize: 16,
       marginRight: -3,
-      color: colors.text,
     },
     advantage: {
       fontSize: 12,

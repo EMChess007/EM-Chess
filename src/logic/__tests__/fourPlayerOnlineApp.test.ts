@@ -150,26 +150,21 @@ describe('spectators', () => {
 });
 
 describe('entry, queue and leaving', () => {
-  it('the Online button on the 4 Player card is behind the login gate, next to the untouched Free-for-All', () => {
+  it('online 4 Player is Quick Match\'s (command #35): the Play menu has no Online button for it, the Online card\'s Quick Match is behind the login gate, and a 4-seat chip routes to its own queue', () => {
     const menu = read('screens/PlayModeSelectScreen.tsx');
-    expect(menu).toContain('const handleFourPlayerOnline = requireLogin(onFourPlayerOnline);');
-    expect(menu).toContain('onPress={handleFourPlayerOnline}');
-    expect(menu).toContain('label="Online"');
+    expect(menu).not.toContain('handleFourPlayerOnline');
+    expect(menu).not.toContain('onFourPlayerOnline');
+    expect(menu).toContain('const handleOnline = requireLogin(onOnline);');
     expect(menu).toContain('onPress={onFourPlayer}');
-    expect(menu).toContain('label="Free-for-All"');
-    expect(app).toContain("onFourPlayerOnline={() => authSession && setScreen({ name: 'fourPlayerOnlineTimeControl', variant: 'ffa', token: authSession.token })}");
+    expect(app).not.toContain('fourPlayerOnlineTimeControl');
+    expect(app).toContain("{ name: 'fourPlayerMatchmaking', variant: fourVariant, token, timeControl }");
   });
 
-  it('the picker leaves out Daily and No time limit, and every preset it does offer is accepted by the server\'s validator', () => {
-    expect(app).toContain("excludeCategories={['daily', 'unlimited']}");
-    const offered = TIME_CONTROLS.filter((tc) => tc.category !== 'daily' && tc.category !== 'unlimited');
-    expect(offered.length).toBeGreaterThanOrEqual(10);
-    for (const tc of offered) {
+  it('the picker leaves out nothing (command #35): EVERY preset of the list is accepted by the server\'s validator, Daily and No time limit included', () => {
+    expect(app).not.toContain('excludeCategories');
+    expect(TIME_CONTROLS).toHaveLength(21);
+    for (const tc of TIME_CONTROLS) {
       expect(validateFourTimeControl({ initialSeconds: tc.initialSeconds, incrementSeconds: tc.incrementSeconds }).ok, tc.id).toBe(true);
-    }
-    // ...and the two that are left out are exactly the ones it would refuse
-    for (const tc of TIME_CONTROLS.filter((t) => t.category === 'daily' || t.category === 'unlimited')) {
-      expect(validateFourTimeControl({ initialSeconds: tc.initialSeconds, incrementSeconds: tc.incrementSeconds }).ok, tc.id).toBe(false);
     }
   });
 

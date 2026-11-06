@@ -16,6 +16,7 @@
     "expo-haptics": "~58.0.7",
     "expo-navigation-bar": "~58.0.4",
     "expo-secure-store": "~58.0.2",
+    "expo-splash-screen": "~58.0.12",
     "expo-status-bar": "~58.0.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -47,6 +48,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check:workflows": "node scripts/check-workflows.mjs",
+    "mutate": "node scripts/mutation/run.cjs",
     "prepare": "node scripts/install-hooks.mjs"
   },
   "overrides": {

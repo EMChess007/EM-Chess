@@ -1,0 +1,843 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Platform, ScrollView, type ScrollViewInstance, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable } from '../components/AppPressable';
+import Text from '../components/BughouseText';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import BughouseBoard from '../components/BughouseBoard';
+import BughouseBoardBlock from '../components/BughouseBoardBlock';
+import BughouseRulesSheet from '../components/BughouseRulesSheet';
+import { getE2ePerf, getTouchDebugOverlay } from '../components/devOverlayRegistry';
+import { createNowStore, NowProvider, useNowMs, type NowSource } from '../components/NowClock';
+import { useBoardMarks } from '../components/useBoardMarks';
+import { useStableCallback } from '../components/useStableCallback';
+import { pieceInk } from '../components/pieceArt';
+import PieceIcon from '../components/PieceIcon';
+import PromotionPicker from '../components/PromotionPicker';
+import ScreenHeader from '../components/ScreenHeader';
+import { firstLegalAction, legalMovesOn, remainingAt, type BughouseMatch, type BughouseTimeControl, type PromotionPiece } from '../logic/bughouse';
+import { BOARD_IDS, BUGHOUSE_SEATS, otherBoard, seatAt, seatPlace, type BoardId, type BughouseColor, type BughouseSeat } from '../logic/bughouse/types';
+import {
+  BUGHOUSE_DUAL_GUTTER,
+  BUGHOUSE_DUAL_MIN_CELL,
+  BUGHOUSE_ROTATE_OVERLAY_DETAIL,
+  BUGHOUSE_ROTATE_OVERLAY_TITLE,
+  BUGHOUSE_THUMB_CELL,
+  dualBoardPlan,
+  fitStackedCell,
+  deriveBughouseLayout,
+  getBughouseDualCellSize,
+  getBughouseMainCellSize,
+  getBughouseSideCellSize,
+  humanBughouseSeats,
+  keepTogether,
+  needsRotateOverlay,
+  seatRowLabel,
+  standardArrangement,
+} from '../logic/bughouseLayout';
+import { BUGHOUSE_FIXTURE_GLOBAL, fixtureMatch, readBughouseFixture } from '../logic/bughouseFixture';
+import { bughouseBotThinkMs, dueBotSeats, localBotAction, localStep, nextDeadline, startLocalGame, type LocalGameState } from '../logic/bughouseLocal';
+import { liveSelection, type BoardPosition, type SelectionInput } from '../logic/bughouseSelection';
+import { boardOrientation, boardStatusLine, dropSquares, dualBoardOrientation, formatBughouseClock, gameOverSummary, kingBadge, mainBoardOf, pocketChips, touchSeat } from '../logic/bughouseView';
+import { useBoardSelection } from '../components/useBoardSelection';
+import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import type { ReservePieceType } from '../logic/crazyhouse';
+import type { SeatConfig } from '../logic/fourPlayer/setup';
+import { botDisplayName } from '../logic/fourPlayerBots';
+import { resultOf, serverNowAt, type BughouseOnlineAction, type BughouseOnlineView } from '../logic/bughouseOnline';
+import type { BughouseConnection } from '../logic/bughouseOnlineSession';
+import { matchIntroLine, seatDisplayName } from '../logic/bughouseOnlineUi';
+import { CANT_REACH } from '../logic/bughouseOnlineSession';
+import { PROMOTION_LABELS } from '../logic/promotion';
+import { GEAR_RESERVE } from '../components/gearReserve';
+import { useExpiringNotice, useTransientNotice } from '../logic/useTransientNotice';
+import type { Premove } from '../logic/bughouse/premove';
+import { isWaiting, liveHalf, premoveMarks, premovePick, premovesAllowed, premoveTap, stepPremove, type PremoveHalf } from '../logic/bughousePremoveInput';
+
+interface BughouseGameScreenProps {
+  seats: SeatConfig;
+  timeControl: BughouseTimeControl;
+  onExit: () => void;
+  /** Injected for tests: the randomness of the bots (and of the room number) and the clock (integer ms, any origin). */
+  rng?: () => number;
+  clock?: () => number;
+  /** Tests only: start from this position instead of the standard one (its clocks must be on the screen's time base, i.e. start at 0). */
+  startFrom?: BughouseMatch;
+  /**
+   * ONLINE (W4): the game is the server's. The binding carries the view (the match as the server last said it), the connection, and what to do with the person's input: an action is SENT
+   * (`onAction`), never played here; there are no bots, no flag timers and no rematch on this screen (the server runs them). `seats` is then `onlineSeatConfig(mySeat)`. Everything that
+   * draws - the layouts, the boards, the touch input, the pockets, the promotion choice, the result card - is this screen's own, not a copy.
+   */
+  online?: BughouseOnlineBinding;
+}
+
+/** What the online wrapper (`BughouseOnlineGameScreen`) gives the game screen. */
+export interface BughouseOnlineBinding {
+  view: BughouseOnlineView;
+  /** The local clock (ms), ticking once a second: the clocks are the server's "now" estimated from it (`serverNowAt`); a seat's offline countdown reads it. */
+  now: number;
+  /**
+   * The local clock at the clocks' rate (250 ms) as a store, so a tick re-renders the clock texts and NOT this screen (command #33). Absent (a test, a fixed `now`): the clocks follow `now`.
+   */
+  nowSource?: NowSource;
+  connection: BughouseConnection;
+  /** Why the room could not be read again ("Can't reach the server"), or why the game is gone; null when all is well. */
+  problem: string | null;
+  onAction: (action: BughouseOnlineAction) => void;
+  /** The wrapper asks "Resign?" and sends it. */
+  onResign: () => void;
+  onRetry: () => void;
+  onPlayAgain: () => void;
+  /** A refusal of the resignation, in words. */
+  resignError: string | null;
+}
+
+const PROMOTION_ORDER: readonly PromotionPiece[] = ['q', 'r', 'b', 'n'];
+
+/** The one empty list every board without targets is given (a fresh `[]` per render would defeat the boards' memo; command #33). */
+const NO_SQUARES: readonly string[] = [];
+
+/** A thumbnail line: the seat, its clock and its pocket. Only the clock moves with the tick, so this is the one part of the thumbnail that subscribes to it (NowClock.tsx). */
+function ThumbLine({ clock, testID, style, lead, tail }: { clock: BughouseMatch['clocks'][BughouseSeat]; testID: string; style: object; lead: string; tail: string }) {
+  const now = useNowMs();
+  return (
+    <Text style={style} testID={testID}>
+      {`${lead}  ${formatBughouseClock(remainingAt(clock, now))}${tail}`}
+    </Text>
+  );
+}
+
+/**
+ * Bughouse, Local (W3a): one human (its board large and the partner's a thumbnail, or two equal boards side by side in landscape) or several humans all on ONE board (pass-and-play: that
+ * board turns to the side to move, only the side to move can touch). The match is the engine's; every action goes through its `settle` with ONE integer clock. Bots are the W2 bot.
+ */
+/** The hit slop of a slim control (28 dp tall): 8 dp above and below, 4 dp to the sides - a 44 dp touch area without the height. */
+const SLIM_HIT_SLOP = { top: 8, bottom: 8, left: 4, right: 4 };
+
+export default function BughouseGameScreen({ seats, timeControl, onExit, rng, clock, startFrom, online }: BughouseGameScreenProps) {
+  const colors = useAppColors();
+  const styles = createStyles(colors);
+  const win = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  // The layouts are sized to the room the app really has: the window without the system bars and the display cutout (the status bar above, the gesture / navigation strip below, a cutout or the
+  // navigation bar at the sides). Sized to the whole window, a phone with a status bar had boards and bars cut off at the bottom.
+  const width = win.width - insets.left - insets.right;
+  const height = win.height - insets.top - insets.bottom;
+  const layout = useMemo(() => deriveBughouseLayout(seats), [seats]);
+  const random = useRef(rng ?? Math.random).current;
+  const readClock = useRef(clock ?? (() => Date.now())).current;
+  const base = useRef(readClock());
+  const lastRead = useRef(0);
+  /** The match's own time base: integer ms since the screen opened, never going back. */
+  const elapsed = useCallback((): number => {
+    lastRead.current = Math.max(lastRead.current, Math.floor(readClock() - base.current));
+    return lastRead.current;
+  }, [readClock]);
+
+  const [localState, setState] = useState<LocalGameState>(() => {
+    const fresh = startLocalGame(timeControl, 0, Math.floor(random() * 1000000));
+    // The device matrix's test-only fixture (bughouseFixture.ts): honoured on the web in a development build only, ignored (with one warning) anywhere else.
+    const fixture = online ? null : readBughouseFixture(typeof __DEV__ !== 'undefined' && __DEV__, Platform.OS, (globalThis as Record<string, unknown>)[BUGHOUSE_FIXTURE_GLOBAL]);
+    const from = startFrom ?? (fixture !== null ? fixtureMatch(fixture, timeControl) : undefined);
+    return from ? { ...fresh, match: from } : fresh;
+  });
+  // ONLINE (W4): the match, the last moves and the bank come from the server's snapshots (the binding's view), never from this screen. A result that `bug_game_over` carried but the
+  // snapshot has not yet is put on the match so the whole screen agrees the game is over.
+  const onlineResult = online ? resultOf(online.view) : null;
+  const state: LocalGameState = online
+    ? { match: online.view.match.result === null && onlineResult !== null ? { ...online.view.match, result: onlineResult } : online.view.match, lastMove: online.view.lastMove, bank: online.view.bank }
+    : localState;
+  const stateRef = useRef(state);
+  if (online) stateRef.current = state;
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
+  // The instant the clocks are drawn at lives in a store, NOT in this screen's state (command #33, the lag): a tick re-renders the clock texts that subscribe to it (NowClock.tsx), not the
+  // screen with its two boards. Local: the screen's own elapsed time; online: the server's "now" estimated from the local clock (below).
+  const clockStore = useRef(createNowStore(online ? serverNowAt(online.view, online.nowSource ? Date.now() : online.now) : 0)).current;
+  const [flagKick, setFlagKick] = useState(0);
+  const [swapped, setSwapped] = useState(false);
+  const [autoFlip, setAutoFlip] = useState(true);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  // DEV ONLY (a development build): the touch-debug overlay, switched on from the controls. A release build has neither the switch nor the overlay's code (BughouseBoard).
+  const devTouchDebug = typeof __DEV__ !== 'undefined' && __DEV__ && getTouchDebugOverlay() !== null;
+  const [touchDebug, setTouchDebug] = useState(false);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
+  const [scrollContentHeight, setScrollContentHeight] = useState(0);
+  const contentOverflows = scrollViewportHeight > 0 && scrollContentHeight > scrollViewportHeight + 1;
+  // What the human has half-way through on a board (a picked-up piece, a picked pocket piece, a promotion choice). Each remembers the position of ITS board it was made in and is
+  // dropped the moment that board changes - not when the match as a whole commits: with bots on the other board a commit lands every few hundred milliseconds, and a selection that
+  // any commit cleared could never be followed by its second tap.
+  const [rawSelected, setSelected] = useState<{ board: BoardId; square: string; fen: string } | null>(null);
+  const [rawPicked, setPicked] = useState<{ board: BoardId; piece: ReservePieceType; fen: string } | null>(null);
+  const [rawPromotion, setPromotion] = useState<{ board: BoardId; from: string; to: string; choices: PromotionPiece[]; fen: string } | null>(null);
+  const match = state.match;
+  // Command #32: the finger-drawn arrows of each board, kept HERE (the board component is remounted when the large board and the thumbnail swap) and cleared by a move on THAT board only
+  // (its FEN: a move or a drop changes it, a pocket change caused by the other board, a clock or a turn passing do not). Local, online and spectator share this screen.
+  const marksA = useBoardMarks(match.boards.A.fen);
+  const marksB = useBoardMarks(match.boards.B.fen);
+  const stillHere = <T extends { board: BoardId; fen: string }>(held: T | null): T | null => (held !== null && match.result === null && held.fen === match.boards[held.board].fen ? held : null);
+  const selected = stillHere(rawSelected);
+  const picked = stillHere(rawPicked);
+  const promotion = stillHere(rawPromotion);
+  // Humans on both boards (W3b): the half-made action of each board lives in a reducer instance of its own (two hooks, one per board; a board's handlers only ever see theirs).
+  const selectionA = useBoardSelection('A');
+  const selectionB = useBoardSelection('B');
+
+  /** The one place the state changes: the engine's funnel at the current instant. */
+  const commit = useCallback(
+    (input: Parameters<typeof localStep>[1]) => {
+      // ONLINE: nothing is played here. A move or a drop is SENT; the board changes when the server's snapshot arrives. (The outcome is only read by the bots and the flag timer, which do not run online.)
+      const bound = onlineRef.current;
+      if (bound) {
+        if (input !== null && (input.action.kind === 'move' || input.action.kind === 'drop')) bound.onAction(input.action);
+        return { kind: 'idle' } as unknown as ReturnType<typeof localStep>['outcome'];
+      }
+      const step = localStep(stateRef.current, input, elapsed());
+      if (step.outcome.kind === 'applied' || step.outcome.kind === 'flag') {
+        stateRef.current = step.state;
+        setState(step.state);
+        clockStore.set(step.state.match.nowMs);
+      }
+      return step.outcome;
+    },
+    [elapsed, clockStore],
+  );
+
+  // The clocks on screen.
+  const over = match.result !== null;
+  useEffect(() => {
+    if (over || online) return; // online, the hook ticks the local clock and the clocks are the server's instant estimated from it
+    const id = setInterval(() => clockStore.set(elapsed()), 200);
+    return () => clearInterval(id);
+  }, [over, online, elapsed, clockStore]);
+  // Online: the displayed instant follows the binding - at once when a snapshot arrives or the coarse clock moves (before the next paint), and on every tick of the binding's own source
+  // (250 ms, no re-render of this screen). The estimate is `serverNowAt`: the server's instant plus the LOCAL time since the snapshot, never the wall clock compared with the server's.
+  const onlineViewForClock = online?.view;
+  const onlineCoarseNow = online?.now;
+  const onlineSource = online?.nowSource;
+  useLayoutEffect(() => {
+    if (onlineViewForClock === undefined || onlineCoarseNow === undefined) return;
+    const publish = () => clockStore.set(serverNowAt(onlineViewForClock, onlineSource ? Date.now() : onlineCoarseNow));
+    publish();
+    return onlineSource ? onlineSource.subscribe(publish) : undefined;
+  }, [onlineViewForClock, onlineCoarseNow, onlineSource, clockStore]);
+
+  // The flag timer: it fires when the earliest running clock would flag; a timer that wakes a hair early is idle and re-armed. Online the SERVER settles flags and says so in a snapshot.
+  useEffect(() => {
+    const deadline = nextDeadline(match);
+    if (deadline === null || online) return;
+    const id = setTimeout(() => {
+      if (commit(null).kind === 'idle') setFlagKick((k) => k + 1);
+    }, Math.max(0, deadline - elapsed()));
+    return () => clearTimeout(id);
+  }, [match, commit, elapsed, flagKick, online]);
+
+  // The bots: one pending move per board, kept while the same seat is still on move (a busy other board must not postpone it).
+  const botTimers = useRef<Record<BoardId, { seat: BughouseSeat; id: ReturnType<typeof setTimeout> } | null>>({ A: null, B: null });
+  useEffect(() => {
+    // Online the other three seats are drawn as bots only so that the layout is the one-human one: the SERVER plays them (and the real humans).
+    if (online) return;
+    const due = dueBotSeats(seats, match);
+    for (const board of BOARD_IDS) {
+      const pending = botTimers.current[board];
+      const seat = due.find((s) => seatPlace(s).board === board) ?? null;
+      if (pending && seat === pending.seat) continue;
+      if (pending) clearTimeout(pending.id);
+      botTimers.current[board] = null;
+      if (seat === null) continue;
+      const id = setTimeout(() => {
+        botTimers.current[board] = null;
+        const current = stateRef.current.match;
+        if (!dueBotSeats(seats, current).includes(seat)) return;
+        const action = localBotAction(seats, current, seat, random) ?? firstLegalAction(current, seat);
+        if (action === null) return;
+        const outcome = commit({ seat, action });
+        if (outcome.kind === 'rejected') {
+          const fallback = firstLegalAction(stateRef.current.match, seat);
+          if (fallback) commit({ seat, action: fallback });
+        }
+      }, bughouseBotThinkMs(timeControl.initialMs));
+      botTimers.current[board] = { seat, id };
+    }
+  }, [match, seats, commit, random, timeControl.initialMs, online]);
+  useEffect(
+    () => () => {
+      for (const board of BOARD_IDS) {
+        const pending = botTimers.current[board];
+        if (pending) clearTimeout(pending.id);
+      }
+    },
+    [],
+  );
+
+  // --- Taps ---------------------------------------------------------------------------------------------------------------------------------
+  // Online, a board is touchable only while the connection is up, no resync is running and none of our actions is waiting for the server's answer (a second one would run ahead of the match).
+  // A SPECTATOR (W4b) never acts: the boards are drawn the same way and no tap, drop or promotion is taken.
+  const spectator = online?.view.spectator === true;
+  const onlineBlocked = online !== undefined && (spectator || online.connection !== 'connected' || online.view.resyncing || online.view.pending !== null);
+  const actors = onlineBlocked ? { A: null, B: null } : { A: touchSeat(seats, match, 'A'), B: touchSeat(seats, match, 'B') };
+
+  // --- Premoves (W5; BUGHOUSE_SPEC.md HP3): ONE slot, client-only, never sent early ------------------------------------------------------------
+  // On while the opponent is to move on my board, with exactly ONE human at the device (the standard layout - Local with one human, and every online seat); off for pass-and-play and for two
+  // boards played at once (B23), for a spectator and after the end. The half-made premove (a picked piece / chip) belongs to the position of its board; the queued one is resolved by
+  // `stepPremove` at the snapshot that gives me the turn, against THAT match, and sent as an ordinary action - or dropped with its reason.
+  const premoveHuman: BughouseSeat | null = layout.kind === 'standard' && !spectator ? layout.seat : null;
+  const premoveSeat: BughouseSeat | null = premoveHuman !== null && premovesAllowed(1, match) && isWaiting(match, premoveHuman) ? premoveHuman : null;
+  const [rawHalf, setHalf] = useState<PremoveHalf | null>(null);
+  const [premove, setPremove] = useState<Premove | null>(null);
+  const [premoveNotice, setPremoveNotice] = useState<string | null>(null);
+  const half = liveHalf(rawHalf, match);
+  useEffect(() => {
+    if (premove === null || premoveHuman === null) return;
+    const step = stepPremove(match, premoveHuman, premove);
+    if (step.kind === 'wait') return;
+    setPremove(null);
+    setHalf(null);
+    if (step.kind === 'play') {
+      setPremoveNotice(null);
+      commit({ seat: premoveHuman, action: step.action });
+    } else {
+      setPremoveNotice(step.notice);
+    }
+  }, [match, premove, premoveHuman, commit]);
+  const cancelPremove = () => {
+    setPremove(null);
+    setHalf(null);
+    setPremoveNotice(null);
+  };
+  // One-off messages (command #34): the cancelled-premove sentence, a refused online action and a refused resignation go at the next move on
+  // EITHER board (the pair of FENs changed) or after a few seconds, whichever comes first (logic/useTransientNotice.ts).
+  const noticeEpoch = `${match.boards.A.fen}|${match.boards.B.fen}`;
+  useTransientNotice(premoveNotice, noticeEpoch, () => setPremoveNotice(null));
+  const shownActionError = useExpiringNotice(online?.view.actionError ?? null, noticeEpoch);
+  const shownResignError = useExpiringNotice(online?.resignError ?? null, noticeEpoch);
+
+  const movesOfSelected = useMemo(() => (selected ? legalMovesOn(match, selected.board).filter((m) => m.from === selected.square) : []), [match, selected]);
+  const selectedTargets = useMemo(() => Array.from(new Set(movesOfSelected.map((m) => m.to))), [movesOfSelected]);
+  const dropTargetsOfPick = useMemo(() => (picked ? dropSquares(match, picked.board, picked.piece) : []), [match, picked]);
+
+  const onTapSquare = (board: BoardId, square: string) => {
+    if (premoveSeat !== null && board === seatPlace(premoveSeat).board) {
+      const next = premoveTap(match, premoveSeat, half, square);
+      setHalf(next.half);
+      setPremoveNotice(null);
+      if (next.queued !== null) setPremove(next.queued);
+      return;
+    }
+    const actor = actors[board];
+    if (actor === null) return;
+    if (picked && picked.board === board) {
+      if (dropSquares(match, board, picked.piece).includes(square)) {
+        commit({ seat: actor, action: { kind: 'drop', board, piece: picked.piece, square } });
+        if (online) setPicked(null); // online the position does not change until the server's snapshot: the half-made action is over now, not then
+        return;
+      }
+      setPicked(null);
+    }
+    if (selected && selected.board === board) {
+      const matching = movesOfSelected.filter((m) => m.to === square);
+      if (matching.length > 0) {
+        if (matching.some((m) => m.promotion)) {
+          const choices = PROMOTION_ORDER.filter((p) => matching.some((m) => m.promotion === p));
+          setPromotion({ board, from: selected.square, to: square, choices, fen: match.boards[board].fen });
+          return;
+        }
+        commit({ seat: actor, action: { kind: 'move', board, from: selected.square, to: square } });
+        if (online) setSelected(null);
+        return;
+      }
+    }
+    const own = legalMovesOn(match, board).some((m) => m.from === square);
+    setSelected(own ? { board, square, fen: match.boards[board].fen } : null);
+  };
+
+  const onPickPocket = (board: BoardId, piece: ReservePieceType) => {
+    if (premoveSeat !== null && board === seatPlace(premoveSeat).board) {
+      setHalf(premovePick(match, premoveSeat, half, piece));
+      setPremoveNotice(null);
+      return;
+    }
+    if (actors[board] === null) return;
+    setSelected(null);
+    setPicked(picked && picked.board === board && picked.piece === piece ? null : { board, piece, fen: match.boards[board].fen });
+  };
+
+  const choosePromotion = (piece: PromotionPiece) => {
+    const pending = promotion;
+    setPromotion(null);
+    const actor = pending ? actors[pending.board] : null;
+    if (pending && actor !== null) commit({ seat: actor, action: { kind: 'move', board: pending.board, from: pending.from, to: pending.to, promotion: piece } });
+    if (online) setSelected(null);
+  };
+
+  // --- Humans on both boards (W3b): each board's taps go to ITS reducer only ------------------------------------------------------------------
+  const positionOf = (current: BughouseMatch, board: BoardId): BoardPosition => {
+    let moves: ReturnType<typeof legalMovesOn> | null = null;
+    const all = () => (moves ??= legalMovesOn(current, board));
+    return {
+      fen: current.boards[board].fen,
+      active: touchSeat(seats, current, board) !== null,
+      movesFrom: (square) => all().filter((m) => m.from === square),
+      dropSquares: (piece) => dropSquares(current, board, piece),
+    };
+  };
+  const selectionOf = (board: BoardId) => (board === 'A' ? selectionA : selectionB);
+  /** One input of one board: through that board's reducer, and a completed selection to the engine's funnel. Reads the LATEST match, so a tap that lands before a re-render is still right. */
+  const dualInput = (board: BoardId, input: SelectionInput) => {
+    const current = stateRef.current.match;
+    const actor = onlineRef.current?.view.spectator ? null : touchSeat(seats, current, board);
+    if (actor === null) return;
+    const done = selectionOf(board).apply(input, positionOf(current, board));
+    if (done === null) return;
+    if (done.kind === 'move') commit({ seat: actor, action: { kind: 'move', board: done.board, from: done.from, to: done.to, promotion: done.promotion } });
+    else commit({ seat: actor, action: { kind: 'drop', board: done.board, piece: done.piece, square: done.square } });
+  };
+
+  const rematch = () => {
+    const fresh = startLocalGame(timeControl, elapsed(), Math.floor(random() * 1000000));
+    stateRef.current = fresh;
+    setState(fresh);
+    clockStore.set(fresh.match.nowMs);
+    setSwapped(false);
+  };
+
+  const resign = () => {
+    if (online) {
+      if (match.result === null) online.onResign();
+      return;
+    }
+    const board = mainBoardOf(layout);
+    const seat = layout.kind === 'standard' ? layout.seat : touchSeat(seats, match, board);
+    if (seat !== null && match.result === null) commit({ seat, action: { kind: 'resign' } });
+  };
+
+  // --- Rendering ----------------------------------------------------------------------------------------------------------------------------
+  const humans = humanBughouseSeats(seats);
+  // (The instant the clocks are drawn at is the `clockStore` above: Local its own elapsed time; online the SERVER's "now" estimated from the last snapshot, never the wall clock compared with
+  // the server's. The clock texts subscribe to it; this render never reads it.)
+  const seatNameNow = (seat: BughouseSeat): string => {
+    if (online) return seatDisplayName(online.view, seat, online.now);
+    const controller = seats[seat];
+    if (controller.kind === 'bot') return botDisplayName(controller.elo);
+    return humans.length === 1 ? 'You' : seatRowLabel(seat).text.replace(/ · Team \d/, '');
+  };
+  // ONE identity that always answers with the latest names, and a key that changes when any name does: the memoized boards re-render for a name, not for a tick (command #33).
+  const seatName = useStableCallback(seatNameNow);
+  const seatNamesKey = BUGHOUSE_SEATS.map(seatNameNow).join('|');
+  // The team badge of a king: the layout is fixed for the screen's life, so one function per board for good.
+  const badgeOfA = useCallback((color: BughouseColor) => kingBadge(layout, 'A', color), [layout]);
+  const badgeOfB = useCallback((color: BughouseColor) => kingBadge(layout, 'B', color), [layout]);
+  const badgeOfBoard = (board: BoardId) => (board === 'A' ? badgeOfA : badgeOfB);
+  // The handlers the boards are given: stable identities that run the latest closure (the screen's state is read at the call, not at the render the board last saw).
+  const tapSquare = useStableCallback((tapped: BoardId, square: string) => {
+    getE2ePerf()?.start('bugTap', `board-${tapped}`); // (end-to-end build only: the latency from this tap to the board's committed state; src/dev/e2ePerf.ts)
+    return dual ? dualInput(tapped, { kind: 'tapSquare', square }) : onTapSquare(tapped, square);
+  });
+  const pickPocket = useStableCallback((tapped: BoardId, piece: ReservePieceType) => (dual ? dualInput(tapped, { kind: 'pickPocket', piece }) : onPickPocket(tapped, piece)));
+  const promotionChoice = useStableCallback((chosen: BoardId, choice: PromotionPiece | 'cancel') => dualInput(chosen, choice === 'cancel' ? { kind: 'cancelPromotion' } : { kind: 'choosePromotion', piece: choice }));
+  const summary = gameOverSummary(match);
+  const mainBoard: BoardId = swapped ? otherBoard(mainBoardOf(layout)) : mainBoardOf(layout);
+  const arrangement = standardArrangement(width, height);
+
+  const dual = layout.kind === 'dual';
+  const dualFit = getBughouseDualCellSize(width, height);
+  // The stacked boards are sized from the room the scroll view REALLY has (fitStackedCell): the table's chrome constant is a calibration, not a measurement. `cellAdjust` is whole cells on top of
+  // the table, 0 until the first measurement and again whenever the window changes. A measurement is only used with the cell it was taken at (`measured.cell`), so a stale one cannot make
+  // the boards step twice; once the game is over the result card joins the content and the boards keep their size.
+  const [cellAdjust, setCellAdjust] = useState(0);
+  const [measured, setMeasured] = useState<{ cell: number; content: number } | null>(null);
+  const stacked = dual && dualFit.arrangement === 'stacked';
+  const dualCell = Math.max(stacked ? dualFit.cell + cellAdjust : dualFit.cell, 1);
+  const renderedCell = useRef(dualCell);
+  renderedCell.current = dualCell;
+  useEffect(() => {
+    setCellAdjust(0);
+    setMeasured(null);
+  }, [width, height, stacked]);
+  useEffect(() => {
+    if (!stacked || over || measured === null || measured.cell !== dualCell || scrollViewportHeight <= 0) return;
+    const next = fitStackedCell(dualCell, scrollViewportHeight, measured.content, Math.floor((width - 16) / 8), Math.min(dualFit.cell, BUGHOUSE_DUAL_MIN_CELL));
+    if (next !== dualCell) setCellAdjust(next - dualFit.cell);
+  }, [stacked, over, measured, dualCell, scrollViewportHeight, width, dualFit.cell]);
+  /** What board `board` shows of its OWN reducer instance (dual layout): the picked piece, its targets, the picked chip, a promotion waiting. */
+  const dualViewOf = (board: BoardId) => {
+    const position = positionOf(match, board);
+    const live = liveSelection(selectionOf(board).selection, position);
+    return {
+      selected: live.selected ? live.selected.square : null,
+      moveTargets: live.selected ? Array.from(new Set(position.movesFrom(live.selected.square).map((m) => m.to))) : [],
+      dropTargets: live.picked ? position.dropSquares(live.picked.piece) : [],
+      picked: live.picked ? live.picked.piece : null,
+      promotionChoices: live.promotion ? live.promotion.choices : undefined,
+    };
+  };
+
+  const blockOf = (board: BoardId, cell: number) => {
+    const own = dual ? dualViewOf(board) : null;
+    const preHere = premoveHuman !== null && seatPlace(premoveHuman).board === board;
+    const preHalf = preHere ? half : null;
+    const preMarks = preHere && premoveHuman !== null ? premoveMarks(match, premoveHuman, premove) : null;
+    return (
+      <BughouseBoardBlock
+        key={board}
+        board={board}
+        match={match}
+        orientation={dual ? dualBoardOrientation(seats, board, match, autoFlip) : boardOrientation(layout, board, match, autoFlip)}
+        cell={cell}
+        lastMove={state.lastMove[board]}
+        seatName={seatName}
+        seatNamesKey={seatNamesKey}
+        badgeOf={badgeOfBoard(board)}
+        actor={actors[board]}
+        selected={own ? own.selected : preHalf?.kind === 'select' ? preHalf.square : selected && selected.board === board ? selected.square : null}
+        moveTargets={own ? own.moveTargets : selected && selected.board === board ? selectedTargets : NO_SQUARES}
+        dropTargets={own ? own.dropTargets : picked && picked.board === board ? dropTargetsOfPick : NO_SQUARES}
+        pickedPiece={own ? own.picked : preHalf?.kind === 'pick' ? preHalf.piece : picked && picked.board === board ? picked.piece : null}
+        premoveSeat={preHere ? premoveSeat : null}
+        premove={preMarks}
+        marks={board === 'A' ? marksA : marksB}
+        bank={state.bank}
+        statusYou={layout.kind === 'standard' ? seatAt(board, match.verdicts[board].turn) === layout.seat : actors[board] !== null}
+        onTapSquare={tapSquare}
+        onPickPocket={pickPocket}
+        outlined={summary !== null && summary.decidingBoard === board}
+        compact={dual || arrangement === 'sideBySide'}
+        sideBySide={dual ? dualFit.arrangement === 'sideBySide' : arrangement === 'sideBySide'}
+        rawTouch={dual}
+        touchDebug={devTouchDebug && touchDebug}
+        shared={dual && match.result === null && dualBoardPlan(seats, board).shared}
+        promotionChoices={own ? own.promotionChoices : undefined}
+        onPromotionChoice={promotionChoice}
+      />
+    );
+  };
+
+  const thumbOf = (board: BoardId) => {
+    const place = boardOrientation(layout, board, match, autoFlip);
+    const seatsOfBoard = [seatAt(board, 'w'), seatAt(board, 'b')] as const;
+    return (
+      <Pressable
+        key={`thumb-${board}`}
+        testID={`thumb-${board}`}
+        accessibilityRole="button"
+        accessibilityLabel={`Swap boards: show board ${board}`}
+        style={styles.thumb}
+        onPress={() => setSwapped((s) => !s)}
+      >
+        <BughouseBoard
+          board={board}
+          fen={match.boards[board].fen}
+          promoted={match.boards[board].promoted}
+          cell={BUGHOUSE_THUMB_CELL}
+          orientation={place}
+          lastMove={state.lastMove[board]}
+          checkedSquare={null}
+          selected={null}
+          moveTargets={NO_SQUARES}
+          dropTargets={NO_SQUARES}
+          badgeOf={badgeOfBoard(board)}
+          interactive={false}
+          outlined={summary !== null && summary.decidingBoard === board}
+        />
+        <View style={styles.thumbInfo}>
+          <Text style={styles.thumbTitle}>{board === mainBoardOf(layout) ? 'Your board' : `Board ${board}`}</Text>
+          {seatsOfBoard.map((seat) => {
+            const word = seatPlace(seat).color === 'w' ? 'white' : 'black';
+            const chips = pocketChips(match, seat, null);
+            return <ThumbLine key={seat} clock={match.clocks[seat]} testID={`thumb-line-${board}-${word}`} style={styles.thumbLine} lead={`${word === 'white' ? '○' : '●'} ${seatName(seat)}`} tail={chips.length ? `  ${chips.map((c) => `${c.piece.toUpperCase()}${c.count}`).join(' ')}` : ''} />;
+          })}
+          <Text style={styles.thumbStatus}>{boardStatusLine(match, board, false).text}</Text>
+          <Text style={styles.thumbHint}>Tap to swap</Text>
+        </View>
+      </Pressable>
+    );
+  };
+
+  const turnBanner =
+    layout.kind === 'passAndPlay' && match.result === null ? (
+      <Text style={styles.banner} testID="turn-banner">
+        {match.verdicts[layout.board].turn === 'w' ? 'White' : 'Black'} to move
+      </Text>
+    ) : null;
+
+  const blockedLayout = layout.kind === 'none';
+
+  // Two equal boards side by side leave no height to spare (BUGHOUSE_SPEC.md 5.6: a compact header), so there the menu link, the title and the controls share ONE slim bar.
+  // The dual layouts (both boards stacked, or side by side) are tight in BOTH arrangements: one slim bar, slim controls, compact blocks.
+  const compact = (dual || arrangement === 'sideBySide') && !blockedLayout;
+  // Side by side there is no height for a second row, so the controls share the bar; stacked (portrait) the bar holds only the menu link and the title - four controls (Rules, turn, two Resign)
+  // do not fit beside them at 360 px - and the controls sit in a slim row of their own, which the stacked boards have the height for (checked in the browser at 360 x 740).
+  const controlsInBar = compact && (dual ? dualFit.arrangement === 'sideBySide' : true);
+  const ctl = dual ? styles.controlSlim : styles.control;
+  // The dual layouts are as tall as the window allows (the spec's cell table): their controls stay slim and reach the 44 dp touch target with hit slop (8 dp above and below a 28 dp control).
+  // `compact` opts out of AppPressable's 44 dp floor (components/AppPressable.tsx; bughouseCompact.dom.test.tsx pins that it takes effect).
+  const slim: object = dual ? { compact: true, hitSlop: SLIM_HIT_SLOP } : {};
+  const ctlText = dual ? styles.controlTextSlim : styles.controlText;
+  const hasSharedBoard = dual && BOARD_IDS.some((board) => dualBoardPlan(seats, board).shared);
+  // Humans on both boards: who resigns is a TEAM matter (any seat's resignation ends the match against its team); one button per team that has a human at the device.
+  const resignTeams = spectator ? [] : ([1, 2] as const).filter((team) => humans.some((seat) => seatPlace(seat).team === team));
+  const resignTeam = (team: 1 | 2) => {
+    const seat = humans.find((s) => seatPlace(s).team === team);
+    if (seat !== undefined && match.result === null) commit({ seat, action: { kind: 'resign' } });
+  };
+  // Two groups (command #34): the stacked dual layout puts the menu link, Rules and the turn switch in the bar (the title gives its room up) and the resignations in the row under it, so
+  // both lines keep the gear button's corner free (GEAR_RESERVE) without a third line of chrome - the 28 dp cells of a 360 x 740 phone have no height to spare.
+  const setupControls = (
+    <>
+      <Pressable accessibilityRole="button" accessibilityLabel="Rules" testID="bughouse-rules" style={ctl} onPress={() => setRulesOpen(true)} {...slim}>
+        <Text style={ctlText}>Rules</Text>
+      </Pressable>
+      {(layout.kind === 'passAndPlay' || hasSharedBoard) && (
+        <Pressable accessibilityRole="button" accessibilityLabel={autoFlip ? 'Auto-turn is on' : 'Auto-turn is off'} testID="bughouse-autoflip" style={ctl} onPress={() => setAutoFlip((a) => !a)} {...slim}>
+          <Text style={ctlText}>{dual ? (autoFlip ? 'Turn: auto' : 'Turn: fixed') : autoFlip ? 'Auto-turn: on' : 'Auto-turn: off'}</Text>
+        </Pressable>
+      )}
+    </>
+  );
+  // (the dev-only touch switch rides with the resignations: in the bar it would push Rules and the turn switch onto a line of their own - a development build only, a release build has none)
+  const resignControls = (
+    <>
+      {devTouchDebug && dual && (
+        <Pressable accessibilityRole="button" accessibilityLabel={touchDebug ? 'Touch debug is on' : 'Touch debug is off'} testID="bughouse-touch-debug" style={ctl} onPress={() => setTouchDebug((on) => !on)} {...slim}>
+          <Text style={ctlText}>{touchDebug ? 'Touch debug: on' : 'Touch debug: off'}</Text>
+        </Pressable>
+      )}
+      {dual ? (
+        resignTeams.map((team) => (
+          <Pressable key={team} accessibilityRole="button" accessibilityLabel={`Team ${team} resigns`} testID={`bughouse-resign-team-${team}`} style={ctl} onPress={() => resignTeam(team)} disabled={over} {...slim}>
+            <Text style={ctlText}>{keepTogether(`Resign ${team === 1 ? '◆' : '●'} Team ${team}`)}</Text>
+          </Pressable>
+        ))
+      ) : spectator ? null : (
+        <Pressable accessibilityRole="button" accessibilityLabel="Resign" testID="bughouse-resign" style={ctl} onPress={resign} disabled={over} {...slim}>
+          <Text style={ctlText}>Resign</Text>
+        </Pressable>
+      )}
+    </>
+  );
+  const controls = (
+    <>
+      {setupControls}
+      {resignControls}
+    </>
+  );
+  // The stacked dual layout: the bar holds the menu link and the setup controls, the row under it the resignations.
+  const splitControls = dual && !controlsInBar && !blockedLayout;
+  // The premove's strip (W5): a Cancel control while one is queued, and the one-sentence reason when one was dropped (a notice for a game that ended is never shown).
+  const premoveBar =
+    premove !== null || premoveNotice !== null ? (
+      <View style={styles.premoveBar} testID="bughouse-premove-bar">
+        {premoveNotice !== null && (
+          <Text style={styles.premoveNotice} testID="bughouse-premove-notice" accessibilityLiveRegion="polite">
+            {premoveNotice}
+          </Text>
+        )}
+        {premove !== null && (
+          <Pressable accessibilityRole="button" accessibilityLabel="Cancel premove" testID="bughouse-premove-cancel" style={styles.control} onPress={cancelPremove}>
+            <Text style={styles.controlText}>Cancel premove ✕</Text>
+          </Pressable>
+        )}
+      </View>
+    ) : null;
+  // Local has no pause: below the minimum the boards are covered, and the clocks keep running (5.6).
+  const rotateOverlay = !over && needsRotateOverlay(seats, width, height);
+
+  return (
+    <NowProvider value={clockStore}>
+    <View style={styles.container} testID="bughouse-game">
+      {compact ? (
+        <View style={[styles.compactBar, { paddingTop: insets.top }]} testID="bughouse-compact-bar">
+          {/* Slim like the controls beside it (28 dp + hit slop = 44 dp): with AppPressable's 44 dp floor the bar grew by 8 dp and two boards side by side no longer fitted a 360 dp high window. */}
+          <Pressable accessibilityRole="button" accessibilityLabel="Back to the menu" onPress={onExit} style={styles.compactBack} compact hitSlop={SLIM_HIT_SLOP}>
+            <Text style={styles.controlText}>‹ Menu</Text>
+          </Pressable>
+          {splitControls ? (
+            <View style={styles.compactControls}>{setupControls}</View>
+          ) : (
+            <Text style={styles.compactTitle}>
+              {layout.kind === 'passAndPlay' ? 'Crazy Bughouse · pass and play' : 'Crazy Bughouse'}
+            </Text>
+          )}
+          {controlsInBar && <View style={styles.compactControls}>{controls}</View>}
+        </View>
+      ) : (
+        <ScreenHeader title="Crazy Bughouse" subtitle={online ? `${online.view.spectator ? 'Watching' : 'Online'} · ${online.view.timeControlLabel}` : layout.kind === 'passAndPlay' ? 'Local · pass and play' : 'Local'} onBack={onExit} backLabel="‹ Menu" />
+      )}
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.content}
+        // The two-board layouts do not scroll while everything fits (a scroll view could take a touch from a board); they DO when the content is taller than the window - large text or a
+        // wide font wraps a control row onto a second line - so nothing is ever cut off (Android device matrix).
+        scrollEnabled={!dual || over || contentOverflows}
+        onLayout={(e) => setScrollViewportHeight(e.nativeEvent.layout.height)}
+        onContentSizeChange={(_w, h) => {
+          setScrollContentHeight(h);
+          setMeasured({ cell: renderedCell.current, content: h });
+          // The result card joins the content UNDER the boards; on a phone it arrived below the visible screen (command #33): show it as soon as it is there.
+          if (summary !== null) scrollRef.current?.scrollToEnd({ animated: false });
+        }}
+      >
+        {splitControls ? (
+          <View style={[styles.controls, styles.controlsUnderBar]}>{resignControls}</View>
+        ) : (
+          !controlsInBar && <View style={styles.controls}>{controls}</View>
+        )}
+
+        {online && (
+          <View style={styles.onlineStatus} testID="bughouse-online-status">
+            <Text style={styles.onlineIntro} testID="bughouse-online-intro">
+              {matchIntroLine(online.view)}
+            </Text>
+            {online.connection === 'reconnecting' && (
+              <Text style={styles.onlineWarning} testID="bughouse-online-reconnecting">
+                Connection lost — trying to reconnect…
+              </Text>
+            )}
+            {online.connection === 'connected' && online.view.resyncing && (
+              <Text style={styles.onlineWarning} testID="bughouse-online-resync">
+                Catching up with the game…
+              </Text>
+            )}
+            {online.connection === 'unavailable' ? (
+              <Text style={styles.onlineError} testID="bughouse-online-unavailable">
+                {online.problem ?? 'This game is no longer available.'}
+              </Text>
+            ) : (
+              online.problem !== null &&
+              !over && (
+                <View style={styles.onlineRetryRow}>
+                  <Text style={styles.onlineError} testID="bughouse-online-problem">
+                    {online.problem === CANT_REACH ? `${CANT_REACH} Your board may be out of date.` : online.problem}
+                  </Text>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Retry" testID="bughouse-online-retry" style={styles.control} onPress={online.onRetry}>
+                    <Text style={styles.controlText}>Retry</Text>
+                  </Pressable>
+                </View>
+              )
+            )}
+            {shownActionError !== null && (
+              <Text style={styles.onlineError} testID="bughouse-online-action-error">
+                {shownActionError}
+              </Text>
+            )}
+            {shownResignError !== null && (
+              <Text style={styles.onlineError} testID="bughouse-online-resign-error">
+                {shownResignError}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {blockedLayout ? (
+          <Text style={styles.banner}>This seat setup is not available yet.</Text>
+        ) : dual ? (
+          <View style={dualFit.arrangement === 'sideBySide' ? styles.dualRow : styles.dualColumn} testID={dualFit.arrangement === 'sideBySide' ? 'layout-dual-side-by-side' : 'layout-dual-stacked'}>
+            {BOARD_IDS.map((board) => blockOf(board, dualCell))}
+          </View>
+        ) : (
+          <>
+            {turnBanner}
+            {premoveBar}
+            {arrangement === 'sideBySide' ? (
+              <View style={styles.sideBySide} testID="layout-side-by-side">
+                {BOARD_IDS.map((board) => blockOf(board, getBughouseSideCellSize(width, height)))}
+              </View>
+            ) : (
+              <View style={styles.portrait} testID="layout-thumbnail">
+                {blockOf(mainBoard, getBughouseMainCellSize(width, height))}
+                {thumbOf(otherBoard(mainBoard))}
+              </View>
+            )}
+          </>
+        )}
+
+        {summary !== null && (
+          <View style={styles.gameOver} testID="game-over">
+            <Text style={styles.gameOverTitle} testID="game-over-headline">
+              {summary.headline}
+            </Text>
+            <Text style={styles.gameOverDetail} testID="game-over-detail">
+              {summary.detail}
+            </Text>
+            <View style={styles.gameOverButtons}>
+              <Pressable accessibilityRole="button" testID="bughouse-rematch" style={styles.primary} onPress={online ? online.onPlayAgain : rematch}>
+                <Text style={styles.primaryText}>{online ? 'Play again' : 'Rematch'}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" testID="bughouse-menu" style={styles.secondary} onPress={onExit}>
+                <Text style={styles.secondaryText}>Back to menu</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+
+      <PromotionPicker
+        visible={promotion !== null}
+        choices={promotion?.choices ?? []}
+        buttonSize={56}
+        labelFor={(p) => PROMOTION_LABELS[p]}
+        renderChoice={(p) => <PieceIcon type={p} ink={pieceInk(promotion ? match.verdicts[promotion.board].turn : 'w')} size={40} />}
+        onChoose={choosePromotion}
+        onCancel={() => setPromotion(null)}
+      />
+      <BughouseRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />
+      {rotateOverlay && (
+        // Over everything, touches included: the boards under it cannot be touched while it shows.
+        <View style={styles.overlay} testID="rotate-overlay" accessibilityViewIsModal accessibilityLabel={BUGHOUSE_ROTATE_OVERLAY_TITLE}>
+          <Text style={styles.overlayTitle}>{BUGHOUSE_ROTATE_OVERLAY_TITLE}</Text>
+          <Text style={styles.overlayDetail}>{BUGHOUSE_ROTATE_OVERLAY_DETAIL}</Text>
+        </View>
+      )}
+    </View>
+    </NowProvider>
+  );
+}
+
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    content: { padding: 8, gap: 8, alignItems: 'center' },
+    controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignSelf: 'stretch', justifyContent: 'center' },
+    // (the row right under the bar of the stacked dual layout is still inside the gear button's corner on a phone: it keeps the reserve too - the content already pads 8 dp)
+    controlsUnderBar: { paddingRight: GEAR_RESERVE - 8 },
+    control: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+    controlText: { fontSize: 14, fontWeight: '700', color: colors.text },
+    controlSlim: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+    controlTextSlim: { fontSize: 13, fontWeight: '700', color: colors.text },
+    // The right GEAR_RESERVE dp stay free (the host's floating gear button: components/gearReserve.ts): the controls wrap onto a second line rather than slip under it.
+    compactBar: { minHeight: 36, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 10, paddingLeft: 8, paddingRight: GEAR_RESERVE },
+    compactBack: { paddingVertical: 4, paddingHorizontal: 6 },
+    compactTitle: { flexGrow: 1, flexShrink: 1, minWidth: 0, fontSize: 16, fontWeight: '800', color: colors.text },
+    compactControls: { flexDirection: 'row', flexWrap: 'wrap', flexShrink: 1, justifyContent: 'flex-end', gap: 6 },
+    banner: { fontSize: 16, fontWeight: '800', color: colors.text, textAlign: 'center' },
+    premoveBar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 8 },
+    premoveNotice: { fontSize: 13, fontWeight: '700', color: colors.danger, textAlign: 'center' },
+    onlineStatus: { alignSelf: 'stretch', gap: 4, alignItems: 'center' },
+    onlineIntro: { fontSize: 13, fontWeight: '700', color: colors.text, textAlign: 'center' },
+    onlineWarning: { fontSize: 13, color: colors.mode === 'dark' ? '#e0c34a' : '#8d6e00', textAlign: 'center' },
+    onlineError: { fontSize: 13, color: colors.danger, textAlign: 'center' },
+    onlineRetryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'center' },
+    portrait: { alignItems: 'center', gap: 8, alignSelf: 'stretch' },
+    sideBySide: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', justifyContent: 'center' },
+    // humans on both boards: the gap between the boards is a dead zone for touches (BUGHOUSE_DUAL_GUTTER)
+    dualColumn: { alignItems: 'center', gap: BUGHOUSE_DUAL_GUTTER, alignSelf: 'stretch' },
+    dualRow: { flexDirection: 'row', gap: BUGHOUSE_DUAL_GUTTER, alignItems: 'flex-start', justifyContent: 'center' },
+    overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, gap: 8, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.88)' },
+    overlayTitle: { fontSize: 22, fontWeight: '800', color: '#fff', textAlign: 'center' },
+    overlayDetail: { fontSize: 15, color: '#ddd', textAlign: 'center' },
+    thumb: { flexDirection: 'row', gap: 10, alignItems: 'center', padding: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignSelf: 'stretch' },
+    thumbInfo: { flex: 1, gap: 2 },
+    thumbTitle: { fontSize: 13, fontWeight: '800', color: colors.text },
+    thumbLine: { fontSize: 12, color: colors.text },
+    thumbStatus: { fontSize: 12, color: colors.textSecondary },
+    thumbHint: { fontSize: 11, color: colors.textSecondary },
+    gameOver: { alignSelf: 'stretch', padding: 14, gap: 6, alignItems: 'center', borderRadius: 12, borderWidth: 2, borderColor: colors.gold, backgroundColor: colors.surface },
+    gameOverTitle: { fontSize: 20, fontWeight: '800', color: colors.text },
+    gameOverDetail: { fontSize: 14, color: colors.textSecondary },
+    gameOverButtons: { flexDirection: 'row', gap: 10, marginTop: 6 },
+    primary: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, backgroundColor: colors.buttonBackground },
+    primaryText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+    secondary: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
+    secondaryText: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  });
+}

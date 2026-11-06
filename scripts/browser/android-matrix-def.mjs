@@ -65,6 +65,23 @@ export const CRITERIA = {
   minBoardCell: { twoPlayer: 24, fourPlayer: 20, chaturaji: 28, bughouse: 28, bughouseStandard: 20 },
 };
 
+/**
+ * THE FLOATING GEAR BUTTON (command #34). On the phone (Expo Go) a round settings button floats over the app's top right corner. It is drawn by the host, not by our code: no test in
+ * the page can see it, and in a release build it does not exist - so the rule is a LAYOUT CONTRACT: no tappable element of ours may intersect the zone it occupies, on any screen.
+ * A game header reserves that corner (src/components/gearReserve.ts) instead of putting a control under it (the Bughouse "Resign" chip was half hidden and not reliably tappable).
+ *
+ * The zone is in window coordinates, anchored to the top-right corner of the window just inside the right system bar: `width` dp wide, from the top of the window down to the
+ * bottom of the top system inset plus `below` dp (the button is 48 dp with margins; the margins are generous because the exact place differs by device and Expo Go version, and
+ * it is UNMEASURED on the real phone - TESTING.md section 46 asks for the first measurement).
+ */
+export const GEAR_ZONE = { width: 72, below: 64 };
+
+/** The gear zone as a rectangle {left, top, right, bottom} in dp for a window and its insets. */
+export function gearZoneRect(viewportWidth, insets) {
+  const right = viewportWidth - insets.right;
+  return { left: right - GEAR_ZONE.width, top: 0, right, bottom: insets.top + GEAR_ZONE.below };
+}
+
 export function orientationOf(size) {
   return size.width > size.height ? 'landscape' : 'portrait';
 }

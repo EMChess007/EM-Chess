@@ -48,10 +48,28 @@ const four: ActiveOnlineGame = {
   timeControl: { id: 'x', label: '5 min', initialSeconds: 300, incrementSeconds: 0, category: 'blitz' } as never,
 };
 
+const bughouse: ActiveOnlineGame = {
+  kind: 'bughouse',
+  userId: 'user-1',
+  match: {
+    roomId: 'room-b',
+    seat: 3,
+    playerToken: TOKEN,
+    seats: [1, 2, 3, 4].map((n) => ({ seat: n - 1, kind: 'human', name: `p${n}`, connected: true })),
+    timeControl: { initialMs: 60000, incrementMs: 0 },
+    timeControlLabel: '1 min',
+    state: 'bughouse-text',
+    serverNowMs: 5,
+    seq: 0,
+  } as never,
+  timeControl: { id: 'bullet-1', label: '1 min', initialSeconds: 60, incrementSeconds: 0, category: 'bullet' } as never,
+};
+
 describe('the record', () => {
-  it('round-trips both kinds, token included', () => {
+  it('round-trips all three kinds, token included', () => {
     expect(parseActiveGame(serializeActiveGame(two))).toEqual(two);
     expect(parseActiveGame(serializeActiveGame(four))).toEqual(four);
+    expect(parseActiveGame(serializeActiveGame(bughouse))).toEqual(bughouse);
     expect(parseActiveGame(serializeActiveGame({ ...two, returnToTournamentId: 't-1' }))).toMatchObject({ returnToTournamentId: 't-1' });
   });
 
@@ -72,6 +90,11 @@ describe('the record', () => {
     ['no room', JSON.stringify({ ...two, match: { ...(two.kind === 'twoPlayer' ? two.match : {}), roomId: undefined } })],
     ['a 2-player record without a starting position', JSON.stringify({ ...two, match: { ...(two.kind === 'twoPlayer' ? two.match : {}), fen: undefined } })],
     ['a 4 Player record without a snapshot', JSON.stringify({ ...four, match: { ...(four.kind === 'fourPlayer' ? four.match : {}), state: undefined } })],
+    ['a Bughouse record without a snapshot', JSON.stringify({ ...bughouse, match: { ...(bughouse.kind === 'bughouse' ? bughouse.match : {}), state: undefined } })],
+    ['a Bughouse record with three seats', JSON.stringify({ ...bughouse, match: { ...(bughouse.kind === 'bughouse' ? bughouse.match : {}), seats: [{}, {}, {}] } })],
+    ['a Bughouse record with a seat of 4', JSON.stringify({ ...bughouse, match: { ...(bughouse.kind === 'bughouse' ? bughouse.match : {}), seat: 4 } })],
+    ['a Bughouse record with a fractional seat', JSON.stringify({ ...bughouse, match: { ...(bughouse.kind === 'bughouse' ? bughouse.match : {}), seat: 1.5 } })],
+    ['a Bughouse record without a time control', JSON.stringify({ ...bughouse, timeControl: undefined })],
     ['an unknown kind', JSON.stringify({ ...two, kind: 'threePlayer' })],
     ['an unknown kind carrying a 4 Player-shaped match', JSON.stringify({ ...four, kind: 'threePlayer' })],
     ['a 2-player record without a colour', JSON.stringify({ ...two, match: { ...(two.kind === 'twoPlayer' ? two.match : {}), color: undefined } })],
@@ -225,7 +248,13 @@ describe('the wiring', () => {
     expect(app).toContain("void saveActiveGame({ kind: 'fourPlayer', userId: authSession.user.id, match: screen.match, timeControl: screen.timeControl });");
     expect(app).toContain('setInterval(() => void touchActiveGame(liveGameRoomId), 20_000)');
     // cleared: game over (both kinds), leaving a 2-player game, a 4 Player exit without a live seat, playing again, logout
-    expect(app.match(/onGameEnded=\{\(\) => void clearActiveGame\(\)\}/g)?.length).toBe(2);
+    expect(app.match(/onGameEnded=\{\(\) => void clearActiveGame\(\)\}/g)?.length).toBe(3);
+    // Bughouse (W4b): restored, saved, offered as "Return to your game" and forgotten like the other two
+    expect(app).toContain("if (game.kind === 'bughouse') return { name: 'bughouseOnlineGame', token: session.token, match: game.match, timeControl: game.timeControl, resume: true };");
+    expect(app).toContain("void saveActiveGame({ kind: 'bughouse', userId: authSession.user.id, match: screen.match, timeControl: screen.timeControl });");
+    expect(app).toContain('void clearActiveGame();\n          setBughouseResume(null);');
+    expect(app).toContain('setBughouseResume(resumable ? { token, match, timeControl } : null);');
+    expect(app).toContain('bughouseResume && authSession?.token === bughouseResume.token');
     expect(app).toContain("void clearActiveGame(); // leaving is a decision: the seat is not kept");
     expect(app).toContain('if (!resumable) void clearActiveGame();');
     expect(app).toContain('void clearActiveGame();\n          setFourResume(null);');
@@ -246,6 +275,14 @@ describe('the wiring', () => {
   it('the 4 Player screen reports the end (a result, or a game the server no longer has)', () => {
     const src = read('src', 'screens', 'FourPlayerOnlineGameScreen.tsx');
     expect(src).toContain("if (ended || connection === 'unavailable') onGameEnded?.();");
+  });
+
+  it('the Bughouse screen reports the end (a result, or a game the server no longer has) and the Play menu offers the way back', () => {
+    const src = read('src', 'screens', 'BughouseOnlineGameScreen.tsx');
+    expect(src).toContain("if (ended || connection === 'unavailable') onGameEnded?.();");
+    const menu = read('src', 'screens', 'PlayModeSelectScreen.tsx');
+    expect(menu).toContain('{onBughouseResume && (');
+    expect(menu).toContain('onPress={onBughouseResume}');
   });
 
   it('nothing logs the token', () => {

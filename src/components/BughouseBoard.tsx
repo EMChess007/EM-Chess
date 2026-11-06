@@ -1,0 +1,260 @@
+import { memo, useMemo, useRef } from 'react';
+import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
+import { Text } from './AppText';
+import { openBoard } from '../logic/bughouse';
+import type { BoardId, BughouseColor } from '../logic/bughouse/types';
+import { boardCellToSquare, boardSquareToCell, type KingBadge } from '../logic/bughouseView';
+import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
+import type { PieceImageMap } from '../types/theme';
+import BoardAnnotations from './BoardAnnotations';
+import Piece from './Piece';
+import { useBoardGestures } from './useBoardGestures';
+import type { BoardMarks } from './useBoardMarks';
+import { getE2eStateProbe, getTouchDebugOverlay } from './devOverlayRegistry';
+import type { BoardTouches, DebugFinger } from './useBoardTouches';
+
+const PIECE_NAMES: Record<string, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
+
+export interface BughouseBoardProps {
+  /** Which board this is: every label and test id of the board says so ("A-e4"), and the touch seam files its gestures under it. */
+  board: BoardId;
+  fen: string;
+  /** The squares holding a promoted piece (drawn with a "~"). */
+  promoted: readonly string[];
+  /** Side of one cell in pixels. */
+  cell: number;
+  /** The colour at the bottom. */
+  orientation: BughouseColor;
+  lastMove: { from: string; to: string } | null;
+  checkedSquare: string | null;
+  selected: string | null;
+  /** Squares a selected piece may move to / a picked pocket piece may be dropped on. */
+  moveTargets: readonly string[];
+  dropTargets: readonly string[];
+  /** The team badge of the king of that colour, if it has one. */
+  badgeOf: (color: BughouseColor) => KingBadge | null;
+  /** Whether a finger may use the board (the side to move is a human at this device). A read-only board (the thumbnail) is not interactive. */
+  interactive: boolean;
+  onTapSquare?: (board: BoardId, square: string) => void;
+  /** The deciding board of a finished match is outlined. */
+  outlined?: boolean;
+  /**
+   * W3b, the dual-board layout: this board takes its input from raw touches of its own (components/useBoardTouches.ts) instead of the PanResponder, so that a finger on the other board
+   * cannot cancel or steal a gesture on this one. Given, the grid is wired to it at all times (the screen decides what a tap means for a side that may not move).
+   */
+  touches?: BoardTouches;
+  /** DEV ONLY: the fingers to draw the touch-debug overlay for (given only in a development build with the overlay switched on). */
+  debugFingers?: readonly DebugFinger[];
+  /** W5: the queued premove of the human at this device on this board - the squares in the premove colour and a ghost of the piece on the target. */
+  premove?: { from: string | null; to: string; ghost: { color: BughouseColor; type: string } } | null;
+  /**
+   * Command #32: this board's finger-drawn arrows and marked squares (hold a finger, drag to another square; logic/boardArrows.ts has the one rule for every board). Given, the board draws them
+   * and takes the gesture ON ANY TURN, interactive or not (a spectator's board, the opponent's turn); a board without it (the thumbnail, which is a button) takes none. The state is the screen's
+   * (useBoardMarks), so it survives the swap of the large board and the thumbnail and is cleared by a move on THIS board only.
+   */
+  marks?: BoardMarks;
+}
+
+/** The premove colour: a blue the other highlights (green selection, yellow last move, red check) are not. A literal on purpose. */
+export const PREMOVE_COLOR = '#7fa8e0';
+
+/**
+ * One Bughouse board. Pieces and squares come from the engine's FEN; this component only DRAWS and reports a tap as (board, square) - the screen decides what a tap means. The board is the
+ * unit the spec's HP9 is about: every cell is board-qualified ("e4, board A, White knight"), and a tap carries its board.
+ */
+function BughouseBoard({ board, fen, promoted, cell, orientation, lastMove, checkedSquare, selected, moveTargets, dropTargets, badgeOf, interactive, onTapSquare, outlined, touches, debugFingers, premove, marks }: BughouseBoardProps) {
+  const theme = useActiveBoardTheme();
+  const pieceTheme = useActivePieceTheme();
+  const grid = useMemo(() => openBoard(fen)?.board() ?? [], [fen]);
+  const promotedSet = useMemo(() => new Set(promoted), [promoted]);
+  const moveSet = useMemo(() => new Set(moveTargets), [moveTargets]);
+  const dropSet = useMemo(() => new Set(dropTargets), [dropTargets]);
+
+  const annotate = marks !== undefined;
+  const gestures = useBoardGestures({
+    squareSize: cell,
+    rows: 8,
+    cols: 8,
+    enableAnnotations: annotate,
+    seamKey: board,
+    onTap: ({ row, col }) => {
+      if (!interactive || !onTapSquare) return;
+      const tapped = boardCellToSquare(board, orientation, row, col);
+      onTapSquare(tapped.board, tapped.square);
+    },
+    onArrow: (from, to) => marks?.drawArrow(boardCellToSquare(board, orientation, from.row, from.col).square, boardCellToSquare(board, orientation, to.row, to.col).square),
+    onHighlight: (at) => marks?.toggleHighlight(boardCellToSquare(board, orientation, at.row, at.col).square),
+  });
+  // The marks as display cells of the orientation in force (they are stored as squares, so a board turned over keeps pointing at the same squares).
+  const markState = marks?.marks;
+  const markCells = useMemo(
+    () =>
+      markState === undefined
+        ? null
+        : {
+            arrows: markState.arrows.map((a) => ({ from: boardSquareToCell(board, orientation, a.from), to: boardSquareToCell(board, orientation, a.to) })),
+            highlights: markState.highlights.map((sq) => boardSquareToCell(board, orientation, sq)),
+          },
+    [markState, board, orientation]
+  );
+  const liveArrow = touches ? touches.liveArrow : gestures.liveArrow;
+  const gridTouched = interactive || annotate;
+
+  const size = cell * 8;
+  const DebugOverlay = getTouchDebugOverlay();
+  const E2eProbe = getE2eStateProbe();
+  // A board nobody may touch (a spectator's) has no gesture container; the end-to-end build still has to measure it, so the grid carries a ref of its own then.
+  const measuredRef = useRef<ViewInstance>(null);
+  // On a phone the grid's touches come through the overlay (below) and carry the grid's own frame; in the browser the grid itself listens.
+  const surface = touches !== undefined && Platform.OS !== 'web';
+  return (
+    <View
+      ref={touches ? touches.gridRef : gridTouched ? gestures.containerRef : measuredRef}
+      onLayout={touches ? undefined : gridTouched ? gestures.onLayout : undefined}
+      {...(touches ? (surface ? {} : touches.gridProps) : gridTouched ? gestures.panHandlers : {})}
+      style={[styles.board, { width: size, height: size }, touches && styles.rawTouch, outlined && styles.outlined]}
+      testID={`board-${board}`}
+      accessibilityLabel={outlined ? `Board ${board}, deciding board` : `Board ${board}`}
+    >
+      {Array.from({ length: 8 }, (_, row) => (
+        <View key={row} style={styles.row}>
+          {Array.from({ length: 8 }, (_, col) => {
+            const { square } = boardCellToSquare(board, orientation, row, col);
+            const file = square.charCodeAt(0) - 97;
+            const rank = Number(square[1]);
+            const piece = grid[8 - rank]?.[file] ?? null;
+            // a1 is a dark square and a8 a light one (file 0-based, rank 1-based: an even sum is light). It was the other way round on every Bughouse board until command #27b.
+            const light = (file + rank) % 2 === 0;
+            const badge = piece && piece.type === 'k' ? badgeOf(piece.color) : null;
+            const isMove = moveSet.has(square);
+            const isDrop = dropSet.has(square);
+            const label = [
+              square,
+              `board ${board}`,
+              piece ? `${piece.color === 'w' ? 'White' : 'Black'} ${PIECE_NAMES[piece.type]}${promotedSet.has(square) ? ' (promoted)' : ''}` : null,
+              isMove ? 'can move here' : null,
+              isDrop ? 'can drop here' : null,
+              premove && premove.from === square ? 'premove from' : null,
+              premove && premove.to === square ? 'premove to' : null,
+              badge ? badge.label : null,
+            ]
+              .filter(Boolean)
+              .join(', ');
+            const background = checkedSquare === square ? '#ef5350' : selected === square ? '#a2d149' : premove && (premove.from === square || premove.to === square) ? PREMOVE_COLOR : lastMove &&(lastMove.from === square || lastMove.to === square) ? '#f7ec74' : light ? theme.lightColor : theme.darkColor;
+            // One MEMOIZED cell per square, fed primitives only (command #33): a render of the board that changes one square's picture re-renders that cell and its piece, not 64 cells and 32 SVG pieces.
+            return (
+              <BoardCell
+                key={col}
+                board={board}
+                square={square}
+                label={label}
+                background={background}
+                cell={cell}
+                dot={isDrop ? 'drop' : isMove ? 'move' : null}
+                pieceColor={piece ? piece.color : null}
+                pieceType={piece ? piece.type : null}
+                ghostColor={premove && premove.to === square ? premove.ghost.color : null}
+                ghostType={premove && premove.to === square ? premove.ghost.type : null}
+                promotedMark={promotedSet.has(square) && piece !== null}
+                badgeTeam={badge ? badge.team : null}
+                badgeShape={badge ? badge.shape : null}
+                images={pieceTheme.images}
+              />
+            );
+          })}
+        </View>
+      ))}
+      {/*
+        The grid's touch surface (a phone): a transparent view over the whole grid, the LAST child so it is the touch target. A touch on it reports `locationX / locationY` in the grid's own frame
+        (useBoardTouches), which needs no origin - no window, status-bar, navigation-bar, header or scroll offset can enter the cell (command #26: on Android every tap landed one rank too low).
+        On web the browser reports page coordinates against the grid's rectangle and the cells stay the hit targets.
+      */}
+      {/* Command #32: the finger-drawn arrows and marked squares of this board (a transparent SVG, no touch of its own), under the touch surface. */}
+      {markCells && <BoardAnnotations squareSize={cell} arrows={markCells.arrows} highlights={markCells.highlights} liveArrow={liveArrow} />}
+      {touches && surface && <View ref={touches.surfaceRef} testID={`board-${board}-surface`} style={StyleSheet.absoluteFill} {...touches.surfaceProps} />}
+      {/* DEV ONLY: the square under each finger. The overlay is registered only in a development build (devOverlayRegistry.ts); in a release build there is none. */}
+      {touches && debugFingers && DebugOverlay ? <DebugOverlay board={board} orientation={orientation} cell={cell} fingers={debugFingers} /> : null}
+      {/* DEV ONLY, the Android end-to-end build: the board's state for the driver (src/dev/E2eStateProbe.tsx). Null everywhere else. */}
+      {E2eProbe ? <E2eProbe channel={`board-${board}`} rectOf={touches ? touches.gridRef : gridTouched ? gestures.containerRef : measuredRef} state={{ fen, selected, orientation, interactive, targets: moveTargets.length, arrows: markState ? markState.arrows.length : 0, marked: markState ? markState.highlights.length : 0 }} /> : null}
+    </View>
+  );
+}
+
+interface BoardCellProps {
+  board: BoardId;
+  square: string;
+  label: string;
+  background: string;
+  cell: number;
+  dot: 'move' | 'drop' | null;
+  pieceColor: BughouseColor | null;
+  pieceType: string | null;
+  ghostColor: BughouseColor | null;
+  ghostType: string | null;
+  promotedMark: boolean;
+  badgeTeam: KingBadge['team'] | null;
+  badgeShape: KingBadge['shape'] | null;
+  images?: PieceImageMap;
+}
+
+/** One square of a Bughouse board: every prop is a string, a number or null (or the theme's image map, stable), so the shallow `memo` is exact. */
+const BoardCell = memo(function BoardCell({ board, square, label, background, cell, dot, pieceColor, pieceType, ghostColor, ghostType, promotedMark, badgeTeam, badgeShape, images }: BoardCellProps) {
+  return (
+    <View testID={`${board}-${square}`} accessibilityLabel={label} style={[styles.cell, { width: cell, height: cell, backgroundColor: background }]}>
+      {dot !== null && <View style={[styles.dot, dot === 'drop' && styles.dropDot, { width: cell * 0.36, height: cell * 0.36, borderRadius: cell * 0.18 }]} />}
+      {pieceColor !== null && pieceType !== null && (
+        <View style={{ width: cell, height: cell, alignItems: 'center', justifyContent: 'center' }}>
+          <PieceArt color={pieceColor} type={pieceType} cell={cell} images={images} />
+        </View>
+      )}
+      {ghostColor !== null && ghostType !== null && (
+        <View pointerEvents="none" testID={`premove-ghost-${board}`} style={[styles.ghost, { width: cell, height: cell }]}>
+          <PieceArt color={ghostColor} type={ghostType} cell={cell} images={images} />
+        </View>
+      )}
+      {promotedMark && <Text maxFontSizeMultiplier={1} style={[styles.promotedMark, { fontSize: Math.max(8, cell * 0.3) }]}>~</Text>}
+      {badgeTeam !== null && badgeShape !== null && <BadgeMark badge={{ team: badgeTeam, shape: badgeShape, label: '' }} cell={cell} board={board} square={square} />}
+    </View>
+  );
+});
+
+function PieceArt({ color, type, cell, images }: { color: BughouseColor; type: string; cell: number; images?: PieceImageMap }) {
+  return (
+    <View style={{ width: cell, height: cell, alignItems: 'center', justifyContent: 'center' }}>
+      <Piece piece={{ color, type } as never} images={images} size={cell} />
+    </View>
+  );
+}
+
+/** The team badge: a diamond (Team 1) or a circle (Team 2), our own shapes, drawn in a cell's top-right corner. */
+function BadgeMark({ badge, cell, board, square }: { badge: KingBadge; cell: number; board: BoardId; square: string }) {
+  const size = Math.max(3, Math.round(cell * 0.18));
+  return (
+    <View
+      testID={`badge-${board}-${square}`}
+      accessibilityLabel={`team ${badge.team} badge`}
+      pointerEvents="none"
+      style={[
+        styles.badge,
+        { width: size, height: size, top: Math.round(cell * 0.04), right: Math.round(cell * 0.04), backgroundColor: badge.team === 1 ? '#1e88e5' : '#f9a825', borderRadius: badge.shape === '●' ? size / 2 : 0 },
+        badge.shape === '◆' && { transform: [{ rotate: '45deg' }] },
+      ]}
+    />
+  );
+}
+
+const styles = StyleSheet.create({
+  board: { flexDirection: 'column', borderWidth: 0 },
+  // web: the browser must not scroll, zoom or select on a board that two fingers play at once (touch events would then end in a cancel)
+  rawTouch: { touchAction: 'none', userSelect: 'none' } as object,
+  outlined: { borderWidth: 3, borderColor: '#e53935' },
+  row: { flexDirection: 'row' },
+  cell: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  dot: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.3)' },
+  dropDot: { backgroundColor: 'rgba(46,125,50,0.55)' },
+  ghost: { position: 'absolute', opacity: 0.55 },
+  promotedMark: { position: 'absolute', top: 0, left: 2, fontWeight: '800', color: '#c62828' },
+  badge: { position: 'absolute', borderWidth: 1, borderColor: '#fff' },
+});
+
+export default memo(BughouseBoard);

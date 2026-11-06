@@ -13,9 +13,11 @@
  *   board-cell   a board cell smaller than the board's minimum (the size gate / scrolling must have applied);
  *   inset        text or a control inside a system bar / display cutout (the insets are emulated with CDP, see android-matrix-def.mjs);
  *   contrast     an icon marked data-matrix-glyph (the tab bar's) whose ink has less than CRITERIA.minGlyphContrast : 1 against what is behind it, or is not drawn as a vector path.
+ *   gear         a control that intersects the zone of the host's floating gear button (top right; android-matrix-def.mjs GEAR_ZONE) - the button would hide part of it;
+ *   movelist     (a screen that declares `moveList`) a move number whose text is not on the same line as its move: the vertical centres of the two texts differ by more than 1 dp.
  */
 export function pageChecks(opts) {
-  const { insets, minTarget, clipTolerance, minBoardCell, boardKind, exempt, minGlyphContrast, expectGlyphs } = opts;
+  const { insets, minTarget, clipTolerance, minBoardCell, boardKind, exempt, minGlyphContrast, expectGlyphs, gearZone } = opts;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const issues = [];
@@ -97,6 +99,11 @@ export function pageChecks(opts) {
       if (nr.width * nr.height >= vw * vh * 0.6 && nr.left <= seen.left + 1 && nr.top <= seen.top + 1 && nr.right >= seen.right - 1 && nr.bottom >= seen.bottom - 1) return true;
     }
     return false;
+  };
+  /** The board cell (an element labelled with a square name) that contains `el`, or null. */
+  const cellOfEl = (el) => {
+    for (let n = el; n && n !== document.body; n = n.parentElement) if (squareLabel.test(n.getAttribute('aria-label') || '')) return n;
+    return null;
   };
   const isExempt = (el) => squareLabel.test(el.getAttribute('aria-label') || '') || exempt.some((selector) => el.closest(selector));
 
@@ -194,6 +201,35 @@ export function pageChecks(opts) {
       if (r.right > vw - insets.right + clipTolerance && r.left < vw && !hs) add('inset', el, 'control ends at ' + Math.round(r.right) + ', inside the right inset ' + insets.right);
     }
   }
+  // The floating gear button (command #34, android-matrix-def.mjs GEAR_ZONE): the host draws a round button over the top right corner; no control of ours may reach under it.
+  // The same rectangle as `gearZoneRect` (this function cannot import).
+  if (gearZone) {
+    const zoneRight = vw - insets.right;
+    const zone = { left: zoneRight - gearZone.width, top: 0, right: zoneRight, bottom: insets.top + gearZone.below };
+    // A control is judged where it stands AT REST (command #35b): a page that scrolls (large text on a 360 x 640 window) was measured after the matrix had scrolled it, and the pass-and-play "Resign"
+    // chip, 140 px down the page, was "under the gear" 128 px of scrolling later - content that scrolls under the host's button is how every long page behaves. The offset of every scrolled
+    // ancestor is added back to the rectangle.
+    const scrolledBy = (el) => {
+      let dx = 0;
+      let dy = 0;
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        dx += p.scrollLeft || 0;
+        dy += p.scrollTop || 0;
+      }
+      return { dx, dy };
+    };
+    for (const { el, r: seen } of boxes) {
+      const { dx, dy } = scrolledBy(el);
+      const r = { left: seen.left + dx, right: seen.right + dx, top: seen.top + dy, bottom: seen.bottom + dy, width: seen.width, height: seen.height };
+      if (r.width >= vw * 0.9 && r.height >= vh * 0.9) continue; // a window-sized layer is not a button
+      if (isExempt(el)) continue;
+      const w = Math.min(r.right, zone.right) - Math.max(r.left, zone.left);
+      const h = Math.min(r.bottom, zone.bottom) - Math.max(r.top, zone.top);
+      // (a corner of a WIDE control is not hidden: reported only when the zone covers more than a quarter of the control or its centre - same rule as scripts/android/lib/checks.mjs)
+      const centreIn = r.left + r.width / 2 >= zone.left && r.left + r.width / 2 <= zone.right && r.top + r.height / 2 >= zone.top && r.top + r.height / 2 <= zone.bottom;
+      if (w > 2 && h > 2 && ((w * h) / (r.width * r.height) > 0.25 || centreIn)) add('gear', el, 'reaches into the floating gear button zone (' + Math.round(zone.left) + '..' + Math.round(zone.right) + ' x 0..' + Math.round(zone.bottom) + '): control ' + Math.round(r.left) + '..' + Math.round(r.right) + ' x ' + Math.round(r.top) + '..' + Math.round(r.bottom));
+    }
+  }
   const overlapArea = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
   /** The part of a box that can be seen: cut by every ancestor that clips or scrolls, and by the window. Null when none of it is on screen. */
   const visibleBox = (el, r) => {
@@ -230,6 +266,9 @@ export function pageChecks(opts) {
       const a = seenTexts[i];
       const b = seenTexts[j];
       if (a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
+      // Two marks drawn inside ONE board cell (a piece glyph and the "~" of a promoted piece, a badge) are board art laid over each other on purpose.
+      const cellA = cellOfEl(a.el);
+      if (cellA && cellA === cellOfEl(b.el)) continue;
       const shared = overlapArea(a.v, b.v);
       if (shared > 8 && shared > Math.min(area(a.v), area(b.v)) * 0.15) add('overlap', a.el, 'text overlaps the text of ' + describe(b.el));
     }
@@ -245,6 +284,66 @@ export function pageChecks(opts) {
     for (const cell of cells.slice(0, 400)) {
       const r = cell.getBoundingClientRect();
       if (r.width > 0 && !covered(cell, r) && Math.min(r.width, r.height) < min - 0.5) add('board-cell', cell, Math.round(r.width) + 'x' + Math.round(r.height) + ' px < ' + min);
+    }
+  }
+
+  // ---- the pockets (Bughouse, command #27b) ----------------------------------------------------------------------------------------------------------
+  // A pocket is ONE row of chips inside its strip and reaches nothing else: not the board grid, the clocks, the status lines, the name beside it, and no chip lies on another or below the first
+  // row (a wrapped chip). On a real phone the chips stacked under one another and the second one was drawn over the top rank of the board: this is the rectangle test that would have said so.
+  if (opts.pockets) {
+    const rectOf = (el) => el.getBoundingClientRect();
+    const within = (r, outer, tol) => r.left >= outer.left - tol && r.right <= outer.right + tol && r.top >= outer.top - tol && r.bottom <= outer.bottom + tol;
+    const forbidden = Array.from(document.querySelectorAll('[data-testid^="board-"],[data-testid^="clock-"],[data-testid^="status-"]')).filter(
+      (el) => !/-surface$/.test(el.getAttribute('data-testid') || '') && !isHidden(el),
+    );
+    // (a pocket under the "rotate the device" layer is not on screen for the person: it is not judged, like every other element under a layer)
+    const pockets = Array.from(document.querySelectorAll('[data-testid^="pocket-"]')).filter(
+      (el) => /^pocket-[AB]-(white|black)$/.test(el.getAttribute('data-testid') || '') && !isHidden(el) && !covered(el, el.getBoundingClientRect()),
+    );
+    for (const pocket of pockets) {
+      const bar = pocket.closest('[data-testid^="bar-"]');
+      const pocketRect = rectOf(pocket);
+      const barRect = bar ? rectOf(bar) : null;
+      if (!barRect || !within(pocketRect, barRect, 1.5)) add('pocket', pocket, 'the pocket leaves its strip');
+      const chips = Array.from(pocket.querySelectorAll('[data-testid^="pocket-"]'));
+      const rects = chips.map(rectOf);
+      rects.forEach((r, i) => {
+        if (!barRect || !within(r, barRect, 1.5)) add('pocket', chips[i], 'a chip leaves its strip');
+        if (!within(r, pocketRect, 1.5)) add('pocket', chips[i], 'a chip leaves its pocket row');
+        if (Math.abs(r.top - rects[0].top) > 1.5) add('pocket', chips[i], 'the chips are not in one row (wrapped)');
+        for (let j = i + 1; j < rects.length; j++) if (overlapArea(r, rects[j]) > 0.5) add('pocket', chips[i], 'overlaps another chip of its pocket');
+        for (const f of forbidden) if (overlapArea(r, rectOf(f)) > 0.5) add('pocket', chips[i], 'covers ' + describe(f));
+      });
+      for (const f of forbidden) if (overlapArea(pocketRect, rectOf(f)) > 0.5) add('pocket', pocket, 'the pocket reaches ' + describe(f));
+      for (const t of textBoxes) {
+        if (bar && bar.contains(t.el) && !pocket.contains(t.el) && overlapArea(t.box, pocketRect) > 0.5) add('pocket', pocket, 'the pocket overlaps the text ' + describe(t.el));
+      }
+    }
+    if (pockets.length === 0 && !blockingLayer) add('pocket', document.body, 'no pocket on a screen that declares pockets');
+  }
+
+  // ---- the move list (command #32) ----------------------------------------------------------------------------------------------------------------
+  // In the strip above the board every move number sits on the SAME line as its move: the vertical centre of the number's text and of the move's text (the rectangle of the text itself, not of
+  // its box) agree within 1 dp. On the phone the moves sat at the top of the strip and the numbers lower (the move's button had a 44 dp floor inside a 36 dp strip).
+  if (opts.moveList) {
+    const textCentre = (el) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const node = walker.nextNode();
+      if (!node) return null;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const box = range.getBoundingClientRect();
+      return box.width > 0 || box.height > 0 ? (box.top + box.bottom) / 2 : null;
+    };
+    const numbers = Array.from(document.querySelectorAll('[data-testid^="movelist-number-"]')).filter((el) => !isHidden(el));
+    if (numbers.length === 0 && !blockingLayer) add('movelist', document.body, 'no move number on a screen that declares a move list');
+    for (const number of numbers) {
+      const ply = (number.getAttribute('data-testid') || '').slice('movelist-number-'.length);
+      const san = document.querySelector('[data-testid="movelist-san-' + ply + '"]');
+      const a = textCentre(number);
+      const b = san ? textCentre(san) : null;
+      if (a === null || b === null) add('movelist', number, 'the move number or its move has no text box');
+      else if (Math.abs(a - b) > 1) add('movelist', number, 'the number and the move are not on one line: centres ' + a.toFixed(1) + ' and ' + b.toFixed(1) + ' (' + Math.abs(a - b).toFixed(1) + ' dp apart)');
     }
   }
 

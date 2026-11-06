@@ -1,0 +1,233 @@
+/**
+ * Bughouse W3a (BUGHOUSE_SPEC.md 5.6, B23): the Local setup's seat labels and presets, the layout that follows from where the humans sit, the cell sizes and the screen-size gate.
+ * Pure: no React, no engine. Every function that names a cell size, a clock or a board takes the BOARD (or a seat, which names its board) as a required argument.
+ *
+ * THE SEAT MODEL IS THE 4-SEAT ONE (`SeatConfig` of fourPlayer/setup.ts: each seat Human or Bot with an ELO). The four seats are the Bughouse seat map of types.ts (0 = Board A White,
+ * 1 = A Black, 2 = B White, 3 = B Black); the 4-seat helpers (`withController`, `humanSeats`, `isStartable`) work on it unchanged because they only index by 0..3.
+ */
+import { DEFAULT_BOT_ELO, type SeatConfig, type SeatController } from './fourPlayer/setup';
+import type { BughouseTimeControl } from './bughouse/rules';
+import { seatAt, seatPlace, type BoardId, type BughouseColor, type BughouseSeat, type BughouseTeam } from './bughouse/types';
+
+/** Shown on the setup screen (and as an overlay mid-game) when a seat setup with humans on both boards does not fit the window. The spec's wording, word for word. */
+export const BUGHOUSE_SIZE_GATE_MESSAGE = 'This seat setup needs a larger screen. Turn the device to landscape, or put every human on one board.';
+/** Shown over a dual-board game (instead of the boards) when the window falls below the minimum mid-game; Local has no pause, so the clocks keep running (BUGHOUSE_SPEC.md 5.6). */
+export const BUGHOUSE_ROTATE_OVERLAY_TITLE = 'Rotate the device to keep playing';
+export const BUGHOUSE_ROTATE_OVERLAY_DETAIL = 'The clocks keep running.';
+export const BUGHOUSE_NO_HUMAN_MESSAGE = 'At least one seat must be a human.';
+
+/** The smallest cell (px) at which two boards played at the same time are tappable at speed (the Chaturaji minimum). */
+export const BUGHOUSE_DUAL_MIN_CELL = 28;
+/** The width from which a tie between the two arrangements goes to side by side (S-U3). */
+export const BUGHOUSE_SIDE_BY_SIDE_MIN_WIDTH = 700;
+
+/** A preset as the engine's integer-millisecond control. */
+export function bughouseTimeControlOf(preset: { initialSeconds: number; incrementSeconds: number }): BughouseTimeControl {
+  return { initialMs: preset.initialSeconds * 1000, incrementMs: preset.incrementSeconds * 1000 };
+}
+
+export interface SeatRowLabel {
+  seat: BughouseSeat;
+  board: BoardId;
+  color: 'White' | 'Black';
+  team: BughouseTeam;
+  /** "Board A · White · Team 1" */
+  text: string;
+  /** Team 1 = a diamond, Team 2 = a circle: the shape carries the team without colour. */
+  shape: '◆' | '●';
+}
+
+/** The four rows of the Local setup, in seat order. */
+export function seatRowLabel(seat: BughouseSeat): SeatRowLabel {
+  const place = seatPlace(seat);
+  const color = place.color === 'w' ? 'White' : 'Black';
+  return { seat, board: place.board, color, team: place.team, text: `Board ${place.board} · ${color} · Team ${place.team}`, shape: place.team === 1 ? '◆' : '●' };
+}
+
+/** U+00A0, built from its code so that no invisible character sits in the source. */
+export const NO_BREAK_SPACE = String.fromCharCode(160);
+
+/**
+ * Display text in which "Team 1" and "Board A" never break across two lines: the space between the word and its letter or number becomes a no-break space (U+00A0). On a real phone the
+ * setup row "Board A · White · Team 1" wrapped as "Team" / "1". Only what is DRAWN goes through this (the setup rows, the resign buttons, the rules sheet); the strings the engine, the
+ * accessibility labels and the tests compare keep their ordinary spaces.
+ */
+export function keepTogether(text: string): string {
+  return text.replace(/\b(Team|Board) (?=[A-Z0-9]\b)/g, '$1' + NO_BREAK_SPACE);
+}
+
+export const BUGHOUSE_TEAM_NAMES: Readonly<Record<BughouseTeam, string>> = { 1: 'Team 1', 2: 'Team 2' };
+export const bughouseTeamShape = (team: BughouseTeam): '◆' | '●' => (team === 1 ? '◆' : '●');
+
+export type BughouseSetupPresetId = 'solo' | 'opponents' | 'teammates' | 'four';
+export interface BughouseSetupPreset {
+  id: BughouseSetupPresetId;
+  label: string;
+  /** The seats that are human in this preset. */
+  humans: readonly BughouseSeat[];
+}
+
+/** The four one-tap presets: shortcuts that fill the same four rows, not modes. */
+export const BUGHOUSE_SETUP_PRESETS: readonly BughouseSetupPreset[] = [
+  { id: 'solo', label: 'You + 3 bots', humans: [0] },
+  { id: 'opponents', label: '2 opponents', humans: [0, 1] },
+  { id: 'teammates', label: '2 teammates', humans: [0, 3] },
+  { id: 'four', label: '4 players', humans: [0, 1, 2, 3] },
+];
+
+/** The seat config of a preset; a seat that is not human is a bot of `elo`. */
+export function presetSeatConfig(id: BughouseSetupPresetId, elo: number = DEFAULT_BOT_ELO): SeatConfig {
+  const preset = BUGHOUSE_SETUP_PRESETS.find((p) => p.id === id);
+  if (!preset) throw new RangeError(`unknown preset ${id}`);
+  const seat = (s: BughouseSeat): SeatController => (preset.humans.includes(s) ? { kind: 'human' } : { kind: 'bot', elo });
+  return [seat(0), seat(1), seat(2), seat(3)];
+}
+
+/** Which preset (if any) a config equals, ignoring the bots' ELOs. */
+export function presetOfConfig(config: SeatConfig): BughouseSetupPresetId | null {
+  const humans = humanBughouseSeats(config);
+  const preset = BUGHOUSE_SETUP_PRESETS.find((p) => p.humans.length === humans.length && p.humans.every((s, i) => s === humans[i]));
+  return preset ? preset.id : null;
+}
+
+export function humanBughouseSeats(config: SeatConfig): BughouseSeat[] {
+  return ([0, 1, 2, 3] as BughouseSeat[]).filter((seat) => config[seat].kind === 'human');
+}
+
+// --- The layout that follows from where the humans sit ----------------------------------------------------------------------------------------
+
+export type BughouseLayout =
+  | { kind: 'none' }
+  /** Exactly one human: its board large, the partner's board a thumbnail (portrait) or two equal boards (landscape). */
+  | { kind: 'standard'; seat: BughouseSeat }
+  /** Two or more humans, all on `board`: that board is shared and turns to the side to move; the other board runs with bots. */
+  | { kind: 'passAndPlay'; board: BoardId }
+  /** Humans on both boards: both boards are playable at once (W3b). */
+  | { kind: 'dual' };
+
+/** The screen the humans' seats call for (B23 / 5.6). Zero humans cannot start. */
+export function deriveBughouseLayout(config: SeatConfig): BughouseLayout {
+  const humans = humanBughouseSeats(config);
+  if (humans.length === 0) return { kind: 'none' };
+  if (humans.length === 1) return { kind: 'standard', seat: humans[0] };
+  const boards = new Set(humans.map((s) => seatPlace(s).board));
+  if (boards.size === 1) return { kind: 'passAndPlay', board: seatPlace(humans[0]).board };
+  return { kind: 'dual' };
+}
+
+// --- Cell sizes and the size gate -------------------------------------------------------------------------------------------------------------
+
+export type DualArrangement = 'stacked' | 'sideBySide';
+
+/** Portrait, two boards stacked: height needs 16c + 288, width 8c + 16. */
+export const stackedDualCell = (width: number, height: number): number => Math.min(Math.floor((height - 288) / 16), Math.floor((width - 16) / 8));
+/** Landscape / tablet, two boards side by side: height needs 8c + 128, width 16c + 24. */
+export const sideBySideDualCell = (width: number, height: number): number => Math.min(Math.floor((height - 128) / 8), Math.floor((width - 24) / 16));
+
+/** Two boards of 8 rows stacked: every cell of the stacked layout counts twice 8 times in its height. */
+export const STACKED_BOARD_ROWS = 16;
+
+/**
+ * The largest stacked cell that fits what was MEASURED (offline-states / Bughouse polish). `stackedDualCell` is a table: its 288 px of chrome (bar, controls, four clock rows, two pocket
+ * rows, the gutter) was calibrated once, and the chrome really measures 300 px at font scale 1 in the browser, more with a bigger text scale or a wider font - and on a real phone the
+ * boards used about 60 % of the width with empty space below. So the screen sizes the boards from the room the scroll view really has: `current` plus whole cells for the free space
+ * (`viewportHeight - contentHeight`, negative when the content overflows), never wider than the window allows (`maxByWidth`) and never below `floor` (the minimum a board may have;
+ * when even that does not fit, the screen scrolls, as it always did). One step reaches the answer, because the chrome does not depend on the cell.
+ */
+export function fitStackedCell(current: number, viewportHeight: number, contentHeight: number, maxByWidth: number, floor: number): number {
+  const wanted = current + Math.floor((viewportHeight - contentHeight) / STACKED_BOARD_ROWS);
+  return Math.max(Math.min(floor, maxByWidth), Math.min(wanted, maxByWidth));
+}
+
+export interface DualFit {
+  arrangement: DualArrangement;
+  /** The cell of the winning arrangement (may be below the minimum, even negative on a tiny window). */
+  cell: number;
+  stacked: number;
+  sideBySide: number;
+  /** Whether the cell reaches BUGHOUSE_DUAL_MIN_CELL. */
+  fits: boolean;
+}
+
+/** `getBughouseDualCellSize(w, h)` of the spec: the arrangement with the larger cell wins; on a tie, side by side from 700 px wide, otherwise stacked. */
+export function getBughouseDualCellSize(width: number, height: number): DualFit {
+  const stacked = stackedDualCell(width, height);
+  const sideBySide = sideBySideDualCell(width, height);
+  let arrangement: DualArrangement;
+  if (sideBySide > stacked) arrangement = 'sideBySide';
+  else if (stacked > sideBySide) arrangement = 'stacked';
+  else arrangement = width >= BUGHOUSE_SIDE_BY_SIDE_MIN_WIDTH ? 'sideBySide' : 'stacked';
+  const cell = arrangement === 'stacked' ? stacked : sideBySide;
+  return { arrangement, cell, stacked, sideBySide, fits: cell >= BUGHOUSE_DUAL_MIN_CELL };
+}
+
+export type SetupGate =
+  | { startable: true }
+  | { startable: false; reason: 'noHuman' | 'tooSmall'; message: string };
+
+/**
+ * Whether the setup may start in this window. One human and "all humans on one board" start anywhere; humans on both boards (W3b) start when two boards of the minimum cell fit, and are
+ * refused with the size message below it (evaluated against the CURRENT window: rotating updates it).
+ */
+export function bughouseSetupGate(config: SeatConfig, width: number, height: number): SetupGate {
+  const layout = deriveBughouseLayout(config);
+  if (layout.kind === 'none') return { startable: false, reason: 'noHuman', message: BUGHOUSE_NO_HUMAN_MESSAGE };
+  if (layout.kind !== 'dual') return { startable: true };
+  if (!getBughouseDualCellSize(width, height).fits) return { startable: false, reason: 'tooSmall', message: BUGHOUSE_SIZE_GATE_MESSAGE };
+  return { startable: true };
+}
+
+/** Whether a game in progress must be covered by the "rotate the device" overlay: a dual-board layout whose window no longer fits two boards of the minimum cell. */
+export function needsRotateOverlay(config: SeatConfig, width: number, height: number): boolean {
+  return deriveBughouseLayout(config).kind === 'dual' && !getBughouseDualCellSize(width, height).fits;
+}
+
+/** Premoves (W5) are on only while exactly one human plays the device: with two or more humans sharing it a queued move would be entered by the wrong hand (BUGHOUSE_SPEC.md 5.5, B23). */
+export function premovesAllowed(config: SeatConfig): boolean {
+  return humanBughouseSeats(config).length === 1;
+}
+
+// --- Humans on both boards: what each board is (W3b) ------------------------------------------------------------------------------------------
+
+export interface DualBoardPlan {
+  board: BoardId;
+  /** The colours a human plays on this board, White first. One or two (never none: a dual layout has a human on each board). */
+  humanColors: readonly BughouseColor[];
+  /** Both colours are human: the board follows the pass-and-play rules (it turns to the side to move, a banner, only the side to move may touch). */
+  shared: boolean;
+}
+
+/** What `board` is in a layout with humans on both boards. The board is required: the two boards of one match are planned separately. */
+export function dualBoardPlan(config: SeatConfig, board: BoardId): DualBoardPlan {
+  const humanColors = (['w', 'b'] as const).filter((color) => config[seatAt(board, color)].kind === 'human');
+  return { board, humanColors, shared: humanColors.length === 2 };
+}
+
+/** The gap in px between the two boards (stacked or side by side): a dead zone for touches, and part of the sizes of the spec's table. */
+export const BUGHOUSE_DUAL_GUTTER = 12;
+
+/** Chrome around the large board of the standard portrait layout: header, controls, four clock rows, a pocket row and the partner strip (calibrated: 36 at 360 x 640, 49 at 412 x 915). */
+export const BUGHOUSE_MAIN_CHROME = 352;
+export const BUGHOUSE_MAIN_MIN_CELL = 28;
+export const BUGHOUSE_MAIN_MAX_CELL = 52;
+/** The thumbnail's cell (an 8 x 12 board is about 96 px). */
+export const BUGHOUSE_THUMB_CELL = 12;
+
+/** The cell of the large board in the portrait layout (one human, or the shared board of pass-and-play). */
+export function getBughouseMainCellSize(width: number, height: number): number {
+  const byWidth = Math.floor((width - 16) / 8);
+  const byHeight = Math.floor((height - BUGHOUSE_MAIN_CHROME) / 8);
+  return Math.max(BUGHOUSE_MAIN_MIN_CELL, Math.min(BUGHOUSE_MAIN_MAX_CELL, byWidth, byHeight));
+}
+
+export type StandardArrangement = 'thumbnail' | 'sideBySide';
+
+/** One human or pass-and-play: landscape and tablets show two equal boards side by side; a portrait phone shows the large board and a thumbnail. */
+export function standardArrangement(width: number, height: number): StandardArrangement {
+  return width >= BUGHOUSE_SIDE_BY_SIDE_MIN_WIDTH || width > height ? 'sideBySide' : 'thumbnail';
+}
+
+/** The cell of EACH board when two are side by side outside the dual setups (the same size for both). */
+export function getBughouseSideCellSize(width: number, height: number): number {
+  return Math.max(BUGHOUSE_MAIN_MIN_CELL - 8, Math.min(BUGHOUSE_MAIN_MAX_CELL + 10, sideBySideDualCell(width, height)));
+}

@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { Pressable } from './AppPressable';
 import { Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import { FOUR_SEAT_GAMES, type FourSeatGame } from '../logic/onlineGames';
 
 export type GameVariant =
   | 'classic'
@@ -17,12 +18,14 @@ export type GameVariant =
   | 'horde'
   | 'crazyhouse';
 
-interface VariantSelectorProps {
-  value: GameVariant;
-  onChange: (variant: GameVariant) => void;
+interface VariantSelectorProps<T extends GameVariant | FourSeatGame = GameVariant> {
+  value: T;
+  onChange: (variant: T) => void;
   /** Hides specific variants from the row — e.g. Tournaments excludes 'setupChess' for now (see
    * its own screen for why), since blind-setup-per-match doesn't have a settled design yet. */
   excludeVariants?: GameVariant[];
+  /** Adds the four 4-seat games (logic/onlineGames.ts) after the 2-player chips: Quick Match and Challenge a Friend (command #35). */
+  includeFourSeat?: boolean;
 }
 
 // A label may embed a literal "\n" at its preferred break point (Text renders it as a forced
@@ -49,16 +52,17 @@ const OPTIONS: { value: GameVariant; label: string }[] = [
  * shared by every online setup screen that used to be a plain Chess960 checkbox
  * (OnlineTimeControlSelectScreen, ChallengeScreen, TournamentScreen), since a game is exactly one
  * of these, never a combination. */
-export default function VariantSelector({ value, onChange, excludeVariants }: VariantSelectorProps) {
+export default function VariantSelector<T extends GameVariant | FourSeatGame = GameVariant>({ value, onChange, excludeVariants, includeFourSeat = false }: VariantSelectorProps<T>) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const options = excludeVariants ? OPTIONS.filter((o) => !excludeVariants.includes(o.value)) : OPTIONS;
+  const twoPlayer: { value: GameVariant | FourSeatGame; label: string }[] = excludeVariants ? OPTIONS.filter((o) => !excludeVariants.includes(o.value)) : OPTIONS;
+  const options = includeFourSeat ? [...twoPlayer, ...FOUR_SEAT_GAMES] : twoPlayer;
   return (
     <View style={styles.row}>
       {options.map((option) => {
         const selected = value === option.value;
         return (
-          <Pressable key={option.value} style={[styles.chip, selected && styles.chipSelected]} onPress={() => onChange(option.value)}>
+          <Pressable key={option.value} accessibilityLabel={option.label.replaceAll('\n', ' ')} style={[styles.chip, selected && styles.chipSelected]} onPress={() => onChange(option.value as T)}>
             <Text style={[styles.chipText, selected && styles.chipTextSelected]} numberOfLines={2}>
               {option.label}
             </Text>

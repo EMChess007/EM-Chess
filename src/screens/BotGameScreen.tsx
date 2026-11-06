@@ -9,7 +9,9 @@ import ChessBoard, { type PremoveIntent } from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import GameScreenBody from '../components/GameScreenBody';
+import { getE2ePerf } from '../components/devOverlayRegistry';
 import MoveListStrip from '../components/MoveListStrip';
+import { useStableCallback } from '../components/useStableCallback';
 import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
@@ -72,6 +74,7 @@ import { THREE_CHECK_TARGET, getThreeCheckCounts, getThreeCheckWinner } from '..
 import { formatTime } from '../logic/time';
 import { parseUciMove, uciMoveToSan } from '../logic/uciMove';
 import { useChessClock } from '../logic/useChessClock';
+import { useTransientNotice } from '../logic/useTransientNotice';
 import { START_FEN } from '../types/chess';
 import type { ColorChoice, Move, PieceColor } from '../types/chess';
 import type { BotPersonality } from '../types/bot';
@@ -669,6 +672,7 @@ export default function BotGameScreen({
         clock.applyIncrement(botColor);
         playMoveSound(move);
         triggerMoveHaptics(move);
+        getE2ePerf()?.start('botReply', 'board-2p'); // (end-to-end build only: the time from the engine's answer to the board showing it; src/dev/e2ePerf.ts)
         setHistory((h) => [
           ...h,
           {
@@ -890,6 +894,10 @@ export default function BotGameScreen({
     setPremoveInvalid(false);
   };
 
+  // The "cancelled" line is a one-off message (command #34: it stayed for dozens of moves on the phone): it goes at the next move by
+  // either side (the FEN changed) or after a few seconds, whichever comes first (logic/useTransientNotice.ts).
+  useTransientNotice(premoveInvalid, fen, () => setPremoveInvalid(false));
+
   useEffect(() => {
     if (!premove || turn !== userColor || gameOver) return;
     setPremove(null);
@@ -967,6 +975,7 @@ export default function BotGameScreen({
 
   // Disabled for Fog of War — see LocalGameScreen's identical handleSelectMove for why (would
   // expose `positions`' real, unredacted fenAfter snapshots).
+  const selectMove = useStableCallback((index: number) => handleSelectMove(index)); // (one identity for the memoized move list: command #33)
   const handleSelectMove = (index: number) => {
     if (fogOfWar) return;
     const next = index + 1;
@@ -1051,7 +1060,7 @@ export default function BotGameScreen({
         }
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
-        onSelectMove={handleSelectMove}
+        onSelectMove={selectMove}
       />
       <GameScreenBody
         compact={spellChess || crazyhouse}

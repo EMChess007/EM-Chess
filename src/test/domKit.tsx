@@ -74,3 +74,87 @@ export function declaredStyle(el: HTMLElement): Record<string, string> {
 
 /** The text of a seat card (the strip's `seat-N` view): name, score, clock, who plays it, status. */
 export const seatCard = (seat: number): HTMLElement => screen.getByTestId(`seat-${seat}`);
+
+// --- Bughouse: several boards on one screen --------------------------------------------------------------------------------------------------
+
+/** Taps `square` on Bughouse board `board`, drawn with `orientation` at the bottom (a finger on that square's cell). The board must be named: the screen has two. */
+export function tapBoardSquare(board: 'A' | 'B', square: string, orientation: 'w' | 'b'): void {
+  const registry = (globalThis as unknown as { __boardGesturesByKey?: Record<string, CapturedGestures> }).__boardGesturesByKey;
+  const options = registry?.[board];
+  if (!options) throw new Error(`no board ${board} has been rendered`);
+  const file = square.charCodeAt(0) - 97;
+  const rank = Number(square[1]);
+  const cell = orientation === 'w' ? { row: 8 - rank, col: file } : { row: rank - 1, col: 7 - file };
+  act(() => options.onTap(cell));
+}
+
+// --- Bughouse, humans on both boards: raw touches with identifiers (W3b) -------------------------------------------------------------------------
+
+export interface FakeTouch {
+  /** The touch identifier (what separates one finger from the other). */
+  id: number;
+  /** Page coordinates. */
+  x: number;
+  y: number;
+  /** A phone also reports the position inside the touch's TARGET view (locationX / locationY); the browser's touches do not. */
+  locationX?: number;
+  locationY?: number;
+}
+
+/**
+ * Delivers a DOM touch event to `element` carrying `touches` in `changedTouches`. jsdom has no `Touch`, so the list is attached to the event itself; react-native-web hands the DOM event
+ * to the view's `onTouchStart` / `Move` / `End` / `Cancel`, which read `changedTouches[i].identifier / pageX / pageY` exactly as they do on a phone.
+ */
+export function fireTouch(type: 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel', element: Element, touches: FakeTouch[]): void {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  const list = touches.map((t) => ({
+    identifier: t.id,
+    pageX: t.x,
+    pageY: t.y,
+    clientX: t.x,
+    clientY: t.y,
+    screenX: t.x,
+    screenY: t.y,
+    target: element,
+    ...(t.locationX !== undefined ? { locationX: t.locationX } : {}),
+    ...(t.locationY !== undefined ? { locationY: t.locationY } : {}),
+  }));
+  Object.defineProperty(event, 'changedTouches', { value: list });
+  Object.defineProperty(event, 'touches', { value: type === 'touchend' || type === 'touchcancel' ? [] : list });
+  act(() => {
+    element.dispatchEvent(event);
+  });
+}
+
+/** A mouse press or release (a pointer event of type "mouse") at page coordinates. */
+export function fireMouse(type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel', element: Element, point: { x: number; y: number }, button = 0, pointerType = 'mouse'): void {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  // (`buttons`: the bit mask of the buttons held while the event fires - a move with the primary button down is a drag; command #32)
+  const buttons = type === 'pointerdown' || type === 'pointermove' ? 1 : 0;
+  for (const [key, value] of Object.entries({ pointerType, pageX: point.x, pageY: point.y, clientX: point.x, clientY: point.y, button, buttons, pointerId: 1 })) Object.defineProperty(event, key, { value });
+  act(() => {
+    element.dispatchEvent(event);
+  });
+}
+
+/** jsdom has no layout: this gives `element` the on-screen rectangle a browser would (its top-left corner at (left, top), `size` px square). */
+export function placeElement(element: Element, left: number, top: number, size: number): void {
+  Object.defineProperty(element, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ left, top, right: left + size, bottom: top + size, x: left, y: top, width: size, height: size, toJSON: () => ({}) }),
+  });
+}
+
+/**
+ * Resizes the jsdom window the screens read their size from. react-native-web's Dimensions reads `document.documentElement.clientWidth / clientHeight` (jsdom reports 0 for both, so
+ * every dom test that does not call this runs in a 0 x 0 window) and follows the `resize` event.
+ */
+export function setWindowSize(width: number, height: number): void {
+  act(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: height });
+    Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: width });
+    Object.defineProperty(document.documentElement, 'clientHeight', { configurable: true, value: height });
+    window.dispatchEvent(new Event('resize'));
+  });
+}

@@ -58,6 +58,7 @@ export default function FourPlayerSpectatorScreen({ authToken, roomId, onExit }:
     <View style={styles.container}>
       <ScreenHeader title="Spectating" subtitle={`${variantTitle(view.variant)} · ${view.timeControlLabel}`} onBack={onExit} backLabel="‹ Back" />
       <GameScreenBody
+        resultShown={!!view.gameOver}
         bottomBar={
           <View style={styles.controlsWrap}>
             <GameControlBar

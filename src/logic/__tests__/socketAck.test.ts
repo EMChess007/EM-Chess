@@ -104,6 +104,13 @@ describe('the screens that wait for a socket answer use it', () => {
 
   it('every one of those events is sent with emitWithin somewhere', () => {
     const all = sources.map((s) => s.text).join('\n');
-    for (const event of waiting) expect(all, event).toMatch(new RegExp(`emitWithin<[^\\n]*>\\(\\s*[^,]+,\\s*'${event}'`));
+    for (const event of waiting) {
+      // (command #35: "join_challenge" is sent by logic/friendCodeJoin.ts through the screen's `ask`, which is ONE emitWithin over the event name it is given)
+      if (event === 'join_challenge') continue;
+      expect(all, event).toMatch(new RegExp(`emitWithin<[^\\n]*>\\(\\s*[^,]+,\\s*'${event}'`));
+    }
+    const challenge = sources.find((s) => s.name === 'ChallengeScreen')!.text;
+    expect(challenge).toMatch(/emitWithin<Ack<\{ room\?: unknown \}>>\(socket, event, payload,/);
+    expect(readFileSync(path.join(root, 'src', 'logic', 'friendCodeJoin.ts'), 'utf8')).toContain("ask('join_challenge', { code })");
   });
 });

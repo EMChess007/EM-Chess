@@ -3,15 +3,16 @@ import { ActivityIndicator, ScrollView, Share, StyleSheet, View } from 'react-na
 import { Pressable } from '../components/AppPressable';
 import { Text, TextInput } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
+import TimeControlSections from '../components/TimeControlSections';
 import VariantSelector, { type GameVariant } from '../components/VariantSelector';
 import { connectSocket, disconnectSocket, getSocket } from '../api/socket';
 import { emitWithin } from '../api/socketAck';
 import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
-import { getTimeControlsByCategory } from '../logic/timeControls';
+import { ONLINE_DAILY_NOTE } from '../logic/timeControls';
 import type { AuthUser } from '../types/auth';
 import type { Ack, TournamentLobbyState } from '../types/multiplayer';
-import type { TimeControl, TimeControlCategory } from '../types/timeControl';
+import type { TimeControl } from '../types/timeControl';
 
 interface TournamentScreenProps {
   authToken: string;
@@ -23,12 +24,6 @@ interface TournamentScreenProps {
 type Phase = 'menu' | 'create' | 'join' | 'lobby';
 
 const MIN_PARTICIPANTS_TO_START = 3;
-
-const CATEGORIES: { category: TimeControlCategory; label: string }[] = [
-  { category: 'bullet', label: 'Bullet' },
-  { category: 'blitz', label: 'Blitz' },
-  { category: 'rapid', label: 'Rapid' },
-];
 
 /**
  * Create/join/lobby flow for a small friend-group round-robin tournament — same overall shape
@@ -190,34 +185,24 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
 
       {phase === 'create' && (
         <View style={styles.setupContainer}>
-          <Text style={styles.sectionTitle}>Tournament name</Text>
-          <TextInput
-            style={styles.nameInput}
-            value={name}
-            onChangeText={setName}
-            placeholder="Friday Night Blitz"
-            placeholderTextColor={colors.textMuted}
-            maxLength={60}
-          />
-          <Text style={styles.sectionTitle}>Variant</Text>
-          {/* Setup Chess needs a per-match blind-setup phase that hasn't been designed for
-              round-robin pairing yet (one army for the whole tournament vs. a new one per match)
-              — excluded here until that's settled, unlike the 1v1 Online/Challenge flows. */}
-          <VariantSelector value={variant} onChange={setVariant} excludeVariants={['setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'crazyhouse']} />
-          {error && <Text style={styles.errorText}>{error}</Text>}
-          <ScrollView contentContainerStyle={styles.setupScrollContent}>
-            {CATEGORIES.map(({ category, label }) => (
-              <View key={category} style={styles.section}>
-                <Text style={styles.sectionTitle}>{label}</Text>
-                <View style={styles.presetGrid}>
-                  {getTimeControlsByCategory(category).map((tc) => (
-                    <Pressable key={tc.id} style={styles.presetButton} onPress={() => handleCreate(tc)}>
-                      <Text style={styles.presetButtonText}>{tc.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            ))}
+          {/* The whole form scrolls (command #35b): the name, the variant chips and the time controls on a 360 x 640 phone at font scale 1.3 did not fit above a scroll view. */}
+          <ScrollView contentContainerStyle={styles.setupScrollContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.sectionTitle}>Tournament name</Text>
+            <TextInput
+              style={styles.nameInput}
+              value={name}
+              onChangeText={setName}
+              placeholder="Friday Night Blitz"
+              placeholderTextColor={colors.textMuted}
+              maxLength={60}
+            />
+            <Text style={styles.sectionTitle}>Variant</Text>
+            {/* Setup Chess needs a per-match blind-setup phase that hasn't been designed for
+                round-robin pairing yet (one army for the whole tournament vs. a new one per match)
+                — excluded here until that's settled, unlike the 1v1 Online/Challenge flows. */}
+            <VariantSelector value={variant} onChange={setVariant} excludeVariants={['setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'crazyhouse']} />
+            {error && <Text style={styles.errorText}>{error}</Text>}
+            <TimeControlSections onSelect={handleCreate} dailyNote={ONLINE_DAILY_NOTE} />
           </ScrollView>
         </View>
       )}

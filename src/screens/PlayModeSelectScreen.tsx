@@ -3,11 +3,11 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
 import { appAlert } from '../components/AppAlert';
-import ChaturajiRulesSheet from '../components/ChaturajiRulesSheet';
 import ModeButtonLabel from '../components/ModeButtonLabel';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { FourVariant } from '../logic/fourPlayer';
+import { variantTitle } from '../logic/fourPlayerVariant';
 import type { AuthUser } from '../types/auth';
 
 interface PlayModeSelectScreenProps {
@@ -37,19 +37,21 @@ interface PlayModeSelectScreenProps {
   onLocalGiveaway: () => void;
   onLocalAtomic: () => void;
   onLocalDuckChess: () => void;
+  /**
+   * THE "4 PLAYER VARIATIONS" CARD (command #35): four buttons, each opens that game's LOCAL setup (a human or a bot per seat) - there is no separate "Local" button. Everything ONLINE for these
+   * games (Quick Match, Challenge a Friend with a room of up to four friends, Join by Code, Spectate) lives in the Online card.
+   */
   onFourPlayer: () => void;
-  /** Online 4 Player (behind the same login gate as every Online entry). */
-  onFourPlayerOnline: () => void;
-  /** 4 Player Giveaway (4-seat Antichess): Local (seat setup, bots allowed) and Online (behind the login gate). */
   onFourPlayerGiveaway: () => void;
-  onFourPlayerGiveawayOnline: () => void;
-  /** Chaturaji (4 players on an 8 x 8 board): Local (seat setup, bots allowed) and Online (behind the login gate). */
   onChaturaji: () => void;
-  onChaturajiOnline: () => void;
+  /** Crazy Bughouse (two teams of two on two boards; a captured piece goes to your partner's pocket). */
+  onBughouse: () => void;
   /** Set while the player has left an online 4 Player game that is still going: offers "Return to your game". */
   onFourPlayerResume?: () => void;
-  /** Which game that left online game is, so the link sits under its card (4 Player Chess when omitted, as before Chaturaji). */
+  /** Which game that left online game is (the link names it). */
   fourPlayerResumeVariant?: FourVariant;
+  /** Set while the player has left an online Crazy Bughouse game that is still going (or the app was restarted in one): offers "Return to your Crazy Bughouse game". */
+  onBughouseResume?: () => void;
   onLocalSpellChess: () => void;
   onLocalHorde: () => void;
   onLocalCrazyhouse: () => void;
@@ -94,13 +96,12 @@ export default function PlayModeSelectScreen({
   onLocalAtomic,
   onLocalDuckChess,
   onFourPlayer,
-  onFourPlayerOnline,
   onFourPlayerGiveaway,
-  onFourPlayerGiveawayOnline,
   onChaturaji,
-  onChaturajiOnline,
+  onBughouse,
   onFourPlayerResume,
   fourPlayerResumeVariant = 'ffa',
+  onBughouseResume,
   onLocalSpellChess,
   onLocalHorde,
   onLocalCrazyhouse,
@@ -132,16 +133,6 @@ export default function PlayModeSelectScreen({
   const handleOnline = requireLogin(onOnline);
   const handleChallengeFriend = requireLogin(onChallengeFriend);
   const handleTournaments = requireLogin(onTournaments);
-  const handleFourPlayerOnline = requireLogin(onFourPlayerOnline);
-  const handleFourPlayerGiveawayOnline = requireLogin(onFourPlayerGiveawayOnline);
-  const handleChaturajiOnline = requireLogin(onChaturajiOnline);
-  const [rulesOpen, setRulesOpen] = useState(false);
-  const resumeLink = (variant: FourVariant) =>
-    onFourPlayerResume && fourPlayerResumeVariant === variant ? (
-      <Pressable style={styles.spectateLink} onPress={onFourPlayerResume}>
-        <Text style={styles.spectateLinkText}>Return to your game ›</Text>
-      </Pressable>
-    ) : null;
 
   return (
     <View style={styles.container}>
@@ -150,7 +141,7 @@ export default function PlayModeSelectScreen({
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={[styles.categoryCard, styles.onlineCard]}>
           <Text style={styles.categoryTitle}>Online</Text>
-          <Text style={styles.categorySubtitle}>Play live against another player</Text>
+          <Text style={styles.categorySubtitle}>Play live against another player - or in a room with up to four friends (4 Player Chess, 4 Player Giveaway, Chaturaji, Crazy Bughouse)</Text>
           <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.onlineSubButton]} onPress={handleOnline}>
               <ModeButtonLabel label="Quick Match" style={styles.subButtonText} />
@@ -269,51 +260,36 @@ export default function PlayModeSelectScreen({
           </View>
         </View>
 
-        <View style={styles.categoryCard}>
-          <Text style={styles.categoryTitle}>4 Player Chess</Text>
-          <Text style={styles.categorySubtitle}>Four players on a cross-shaped board — pass the device, play bots, or play online</Text>
+        <View style={styles.categoryCard} testID="four-player-variations-card">
+          <Text style={styles.categoryTitle}>4 Player Variations</Text>
+          <Text style={styles.categorySubtitle}>Four seats - each a person or a bot. Online play (quick match, a room for up to four friends) is in the Online card above</Text>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onFourPlayer}>
-              <ModeButtonLabel label="Free-for-All" style={styles.subButtonText} />
+            <Pressable accessibilityLabel="4 Player Chess" testID="four-player-chess-button" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onFourPlayer}>
+              <ModeButtonLabel label="4 Player Chess" style={styles.subButtonText} />
             </Pressable>
-            <Pressable style={[styles.subButton, styles.fourPlayerSubButton]} onPress={handleFourPlayerOnline}>
-              <ModeButtonLabel label="Online" style={styles.subButtonText} />
+            <Pressable accessibilityLabel="4 Player Giveaway" testID="four-player-giveaway-button" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onFourPlayerGiveaway}>
+              <ModeButtonLabel label="4 Player Giveaway" style={styles.subButtonText} />
             </Pressable>
           </View>
-          {resumeLink('ffa')}
-        </View>
-
-        <View style={styles.categoryCard}>
-          <Text style={styles.categoryTitle}>4 Player Giveaway</Text>
-          <Text style={styles.categorySubtitle}>Four players, captures are mandatory — lose all your pieces to win. Pass the device, play bots, or play online</Text>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onFourPlayerGiveaway}>
-              <ModeButtonLabel label="Local" style={styles.subButtonText} />
+            <Pressable accessibilityLabel="Chaturaji" testID="chaturaji-button" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onChaturaji}>
+              <ModeButtonLabel label="Chaturaji" style={styles.subButtonText} />
             </Pressable>
-            <Pressable style={[styles.subButton, styles.fourPlayerSubButton]} onPress={handleFourPlayerGiveawayOnline}>
-              <ModeButtonLabel label="Online" style={styles.subButtonText} />
+            <Pressable accessibilityLabel="Crazy Bughouse" testID="bughouse-button" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onBughouse}>
+              <ModeButtonLabel label="Crazy Bughouse" style={styles.subButtonText} />
             </Pressable>
           </View>
-          {resumeLink('giveaway')}
-        </View>
-
-        <View style={styles.categoryCard} testID="chaturaji-card">
-          <Text style={styles.categoryTitle}>Chaturaji</Text>
-          <Text style={styles.categorySubtitle}>Four armies on an 8 × 8 board — capture the kings, most points wins. Pass the device, play bots, or play online</Text>
-          <View style={styles.subButtonRow}>
-            <Pressable accessibilityLabel="Chaturaji local" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={onChaturaji}>
-              <ModeButtonLabel label="Local" style={styles.subButtonText} />
+          {onFourPlayerResume && fourPlayerResumeVariant !== undefined && (
+            <Pressable accessibilityLabel={`Return to your ${variantTitle(fourPlayerResumeVariant)} game`} testID="four-player-resume" style={styles.spectateLink} onPress={onFourPlayerResume}>
+              <Text style={styles.spectateLinkText}>Return to your {variantTitle(fourPlayerResumeVariant)} game ›</Text>
             </Pressable>
-            <Pressable accessibilityLabel="Chaturaji online" style={[styles.subButton, styles.fourPlayerSubButton]} onPress={handleChaturajiOnline}>
-              <ModeButtonLabel label="Online" style={styles.subButtonText} />
+          )}
+          {onBughouseResume && (
+            <Pressable accessibilityLabel="Return to your Crazy Bughouse game" testID="bughouse-resume" style={styles.spectateLink} onPress={onBughouseResume}>
+              <Text style={styles.spectateLinkText}>Return to your Crazy Bughouse game ›</Text>
             </Pressable>
-          </View>
-          <Pressable accessibilityLabel="Chaturaji rules" testID="chaturaji-rules-link" style={styles.spectateLink} onPress={() => setRulesOpen(true)}>
-            <Text style={styles.spectateLinkText}>How to play ›</Text>
-          </Pressable>
-          {resumeLink('chaturaji')}
+          )}
         </View>
-        <ChaturajiRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />
 
         <View style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>Engine vs Engine</Text>

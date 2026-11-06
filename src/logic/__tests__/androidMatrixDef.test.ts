@@ -5,6 +5,15 @@ import * as def from '../../../scripts/browser/android-matrix-def.mjs';
  * The Android device matrix, pinned to the user's requirement (TESTING.md "Android device matrix"). The numbers are LITERALS here: the runner and this test read the same module, so
  * a test that read them from it could never notice the matrix being weakened.
  */
+describe('the floating gear button zone (command #34)', () => {
+  it('is 72 dp wide and reaches 64 dp below the top inset (literals), anchored inside the right system bar', () => {
+    expect(def.GEAR_ZONE).toEqual({ width: 72, below: 64 });
+    expect(def.gearZoneRect(360, { top: 0, bottom: 0, left: 0, right: 0 })).toEqual({ left: 288, top: 0, right: 360, bottom: 64 });
+    expect(def.gearZoneRect(412, { top: 48, bottom: 24, left: 0, right: 0 })).toEqual({ left: 340, top: 0, right: 412, bottom: 112 });
+    expect(def.gearZoneRect(740, { top: 0, bottom: 0, left: 0, right: 48 })).toEqual({ left: 620, top: 0, right: 692, bottom: 64 });
+  });
+});
+
 describe('the matrix axes', () => {
   it('has the ten window sizes of the requirement, in dp', () => {
     expect(def.SCREEN_SIZES.map((s: { width: number; height: number }) => `${s.width}x${s.height}`)).toEqual([

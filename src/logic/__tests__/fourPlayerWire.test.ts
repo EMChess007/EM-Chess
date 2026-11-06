@@ -7,6 +7,8 @@ import {
   FOUR_ID_MAX_LENGTH,
   FOUR_SERVER_EVENT_NAMES,
   FOUR_TC_MAX_INCREMENT_SECONDS,
+  FOUR_TC_MAX_DAILY_DAYS,
+  FOUR_TC_MIN_DAILY_SECONDS,
   FOUR_TC_MAX_INITIAL_SECONDS,
   FOUR_TC_MIN_INITIAL_SECONDS,
   classifyFourRejoinAck,
@@ -40,6 +42,8 @@ describe('limits', () => {
     expect(FOUR_TC_MIN_INITIAL_SECONDS).toBe(60);
     expect(FOUR_TC_MAX_INITIAL_SECONDS).toBe(3600);
     expect(FOUR_TC_MAX_INCREMENT_SECONDS).toBe(30);
+    expect(FOUR_TC_MIN_DAILY_SECONDS).toBe(86_400);
+    expect(FOUR_TC_MAX_DAILY_DAYS).toBe(14);
     expect(FOUR_CHAT_MAX_LENGTH).toBe(500);
     expect(FOUR_ID_MAX_LENGTH).toBeGreaterThanOrEqual(36); // a UUID must fit
   });
@@ -62,11 +66,16 @@ describe('validateFourTimeControl', () => {
     expect(tc(600, -1).ok).toBe(false);
   });
 
-  it('refuses "No time limit" and Daily in every encoding they could arrive in', () => {
-    for (const initial of [0, -1, 86_400, 172_800, Number.MAX_SAFE_INTEGER, Infinity, -Infinity]) expect(tc(initial).ok, String(initial)).toBe(false);
-    const refused = tc(0);
+  it('accepts "No time limit" (0 | 0) and the six Daily controls (command #35) and refuses their near misses in every encoding', () => {
+    expect(tc(0, 0).ok).toBe(true);
+    for (const days of [1, 2, 3, 5, 7, 14]) expect(tc(days * 86_400, 0).ok, `${days} days`).toBe(true);
+    // 0 with an increment, a Daily game with an increment, half days, 15 days, negatives and the unsafe
+    for (const [initial, increment] of [[0, 1], [86_400, 1], [129_600, 0], [15 * 86_400, 0], [86_399, 0], [-1, 0], [Number.MAX_SAFE_INTEGER, 0], [Infinity, 0], [-Infinity, 0]]) {
+      expect(tc(initial, increment).ok, `${initial} | ${increment}`).toBe(false);
+    }
+    const refused = tc(0, 5);
     expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.error).toMatch(/time limit/);
+    if (!refused.ok) expect(refused.error).toMatch(/no increment/);
   });
 
   it('refuses anything that is not a whole number of seconds', () => {
@@ -93,7 +102,8 @@ describe('validateFourJoinQueue', () => {
     expect(validateFourJoinQueue({ timeControl: tc, timeControlLabel: '5 | 3' })).toStrictEqual({ ok: true, value: { timeControl: tc, timeControlLabel: '5 | 3' } });
   });
   it('refuses a bad time control, a non-string or over-long label, and a non-object payload', () => {
-    expect(validateFourJoinQueue({ timeControl: { initialSeconds: 0, incrementSeconds: 0 } }).ok).toBe(false);
+    expect(validateFourJoinQueue({ timeControl: { initialSeconds: 0, incrementSeconds: 2 } }).ok).toBe(false);
+    expect(validateFourJoinQueue({ timeControl: { initialSeconds: 0, incrementSeconds: 0 } }).ok).toBe(true); // "No time limit" (command #35)
     expect(validateFourJoinQueue({ timeControl: tc, timeControlLabel: 5 }).ok).toBe(false);
     expect(validateFourJoinQueue({ timeControl: tc, timeControlLabel: 'x'.repeat(41) }).ok).toBe(false);
     expect(validateFourJoinQueue({ timeControl: tc, timeControlLabel: 'x'.repeat(40) }).ok).toBe(true);

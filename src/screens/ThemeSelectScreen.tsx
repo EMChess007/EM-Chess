@@ -20,6 +20,9 @@ import {
   subscribeActivePieceTheme,
 } from '../logic/themeSettings';
 import type { BoardTheme, PieceTheme } from '../types/theme';
+import { pieceInk } from '../components/pieceArt';
+import { pieceImageSource } from '../components/pieceImageSource';
+import PieceIcon from '../components/PieceIcon';
 
 interface ThemeSelectScreenProps {
   onBack: () => void;
@@ -112,12 +115,16 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
   // --- Piece theme add form ---
   const [pieceAdding, setPieceAdding] = useState(false);
   const [pieceNameInput, setPieceNameInput] = useState('');
+  // The picked images as data URIs are the BYTES of the draft (written to files when the theme is saved, customThemes.ts); what a slot DRAWS is the picker's own file (`piecePreviews`),
+  // so no data URI is ever handed to an Image on a phone (command #27d).
   const [pieceImages, setPieceImages] = useState<Record<string, string>>({});
+  const [piecePreviews, setPiecePreviews] = useState<Record<string, string>>({});
 
   const resetPieceForm = () => {
     setPieceAdding(false);
     setPieceNameInput('');
     setPieceImages({});
+    setPiecePreviews({});
   };
 
   const handlePickPieceImage = async (key: string) => {
@@ -146,6 +153,7 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
     try {
       const dataUri = await readFileAsDataUri(asset.uri);
       setPieceImages((prev) => ({ ...prev, [key]: dataUri }));
+      setPiecePreviews((prev) => ({ ...prev, [key]: asset.uri }));
     } catch {
       appAlert('Failed to load', 'Could not read the image.');
     }
@@ -263,9 +271,9 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
               onPress={() => handleSelectPieceTheme(theme)}
             >
               {theme.images ? (
-                <Image source={{ uri: theme.images.wn }} style={styles.pieceThumb} resizeMode="contain" />
+                <Image source={pieceImageSource(theme.images.wn)} style={styles.pieceThumb} resizeMode="contain" />
               ) : (
-                <Text style={styles.pieceThumbGlyph} maxFontSizeMultiplier={1}>♘</Text>
+                <PieceIcon type="n" ink={pieceInk('w')} size={32} />
               )}
               <View style={styles.rowInfo}>
                 <Text style={styles.rowName}>{theme.name}</Text>
@@ -294,7 +302,7 @@ export default function ThemeSelectScreen({ onBack }: ThemeSelectScreenProps) {
               {PIECE_SLOTS.map((slot) => (
                 <Pressable key={slot.key} style={styles.pieceSlot} onPress={() => handlePickPieceImage(slot.key)}>
                   {pieceImages[slot.key] ? (
-                    <Image source={{ uri: pieceImages[slot.key] }} style={styles.pieceSlotImage} resizeMode="contain" />
+                    <Image source={pieceImageSource(piecePreviews[slot.key] ?? pieceImages[slot.key])} style={styles.pieceSlotImage} resizeMode="contain" />
                   ) : (
                     <Text style={styles.pieceSlotPlus} maxFontSizeMultiplier={1}>
                       +

@@ -127,3 +127,61 @@ PGN/FEN dialect that carries the pockets and the `~` promoted marks (the same di
 Crazyhouse uses it; Duck Chess (`displayDuck`) and Spell Chess (`displaySpellState`) still carry equivalent inline copies in each game screen and
 could migrate to it without any behaviour change.
 
+## Bughouse: what W0, W1 and W2 built, and what is left (BUGHOUSE_SPEC.md sections 7 and 9)
+
+Built (branch `paired/bughouse`, both repos): the mutation harness, the Crazyhouse golden, the four Crazyhouse additions, the generated mirror `sync:bughouse`, the pure engine in `src/logic/bughouse/`
+(match, `settle`, `stuck`, results without a draw, snapshot, premove resolution), and (W2) the SERVER: `BughouseRoomManager`, the matchmaker, the `bug_*` handlers, the wire contract (`wire.ts`, mirrored), the bot
+(`bot.ts`, mirrored), team chat and quick messages. **Nothing is reachable from a menu yet** (the server side is wired in `backend/src/index.ts`, but no client speaks `bug_*`). Left, in order: W3a / W3b the
+screens and the multi-touch layer, W4 the online client, W5 premoves, W6 friend rooms, W7 real-socket scenarios beyond W2's, W8 browser end-to-end, W9 close-out (this is also where `/health/client-ip` may go).
+Known limits of what exists:
+- **`legalMovesOn` / `legalActions` cost about 3 ms a position** (chess.js lists each move with its notation and two FENs). The funnel never calls them (`applyAction` validates one move directly, about 0.2 ms);
+  the bot uses chess.js's string list (~0.25 ms) instead, and a UI that highlights squares should ask for one piece's moves, not the whole list.
+- **The Bughouse bot is NOT partner-aware (v1).** It drops what is in its pocket on its own merits (safe squares, checks, mates, material) and never plans around what its partner could capture, never uses premoves and never
+  sends quick messages. Partner awareness (hold a piece for the partner's coming mate, ask for a piece) is the optional 3-4 day step of BUGHOUSE_SPEC.md section 7. The ELO dial is the chance of using the scored choice;
+  the cost does not grow with it (p99 about 10-16 ms at every tier), so the server does not clamp the strength.
+- **The 8-messages-per-10-s quick-message limit can never refuse anyone while the 1.5 s interval holds** (messages 1.5 s apart: at most 7 fit in 10 s). It is kept as a second line of defence and pinned white-box;
+  if the interval is ever relaxed it becomes the binding rule.
+- **One game at a time is not enforced ACROSS the managers**: a socket seated in a 4-seat game can still queue for Bughouse (and the same already holds between the 2-player and 4-seat servers). The W4 client must keep
+  one active game; if it ever needs a server rule, the three handlers need one shared "seated anywhere" check.
+- **Friend rooms (W6) plug in at two places only**: `BughouseMatchmaker.joinGroup` (a pair is one group that is never split) and `placeGroups` (the one function that assigns seats; today a uniform shuffle).
+- **State is in memory**: a server restart ends every match (the result is not even recorded: nothing is persisted for Bughouse).
+- **The whole-match model test compares full legal lists on a sample** (one commit in 25 of the board that moved, and every commit of every 50th match): every list is also exercised by playing the model's moves
+  and by the per-board differential on thousands of positions. A future change that makes the engine list an EXTRA illegal move which no test plays would be caught by the differential, not by the model.
+- **`Bughouse` text snapshots are canonical-only on read** (the FEN must be exactly what the engine writes): a snapshot written by a future engine that changes the FEN writer must bump `SNAPSHOT_VERSION`.
+
+## Bughouse Local (W3a): what it still leaves out
+
+Built on `paired/bughouse` (TESTING.md section 37, BUGHOUSE_SPEC.md section 9). Open:
+
+- **Humans on both boards: built in W3b** (TESTING.md section 38; the leftovers are in "Bughouse Local (W3b)" below).
+- **No premoves** in Local, also with one human (W5).
+- **Not checked in the browser:** pass-and-play (dom-tested only), dark theme, a human mate or promotion. Not checked on a device (Expo Go): taps on the board and the 36 px landscape bar are web-verified only.
+- **The partner thumbnail shows its pockets as text** ("Q1 R2 N2 P8") and its status as a sentence; a long pocket does not wrap on a 360 px phone beside the 96 px board (it fits in the tests and the browser pass, but a pocket of 20 pieces was not tried).
+- **Bots on the unwatched board play fast** (200 ms bullet / 450 ms): in a 1-minute game the partner board can finish dozens of moves while a human thinks; there is no "slow bots" setting (the spec does not ask for one).
+- **FIXED on `fix/chaturaji-premove-seed` ([EM-Chess PR 25](https://github.com/EMChess007/EM-Chess/pull/25), command #25, not yet merged into this branch - delete this entry when it is):** the Chaturaji premove dom test ("a premove queued while the bots move ...") left a different page on every run because its 400-ELO bots draw from the unseeded `Math.random`; seeded now, with a regression test and a 20-run identical-hash proof.
+- **A game left on the game-over card keeps its two boards mounted** until Rematch or Back; nothing is saved (no history, rating or PGN for Bughouse, B18).
+
+
+## Bughouse Local (W3b): humans on both boards - what it still leaves out
+
+Built on `paired/bughouse` (TESTING.md section 38, BUGHOUSE_SPEC.md section 9). Open:
+
+- **Not verified on a real phone.** Two real fingers on Android (Expo Go) and on an iPhone were never tried; only web (Chromium, CDP touches) is checked. The hand-check list is in the command #25 report. If native `onTouch*` events do not arrive together, the fallback is `react-native-gesture-handler` (a new native dependency: ask first) with the same reducers and tests.
+- **The app is locked to portrait** (`app.json` `"orientation": "portrait"`): on a phone the landscape side-by-side layout and the rotate overlay never show; they matter on tablets and on web. Unlocking is a separate decision.
+- **Accessibility of the dual chips and buttons**: they are plain Views with raw touch handlers (the responder system is not allowed on these boards), so a screen reader's "activate" gesture may not reach them (a Pressable's `onPress` does). Not tried with TalkBack / VoiceOver.
+- **react-native-web logs "Cannot find single active touch"** from its own responder store on some multi-touch sequences in development (seen once in the spike's server log, not in the final browser run); not ours, no effect on play.
+- **Resign has no confirmation** (as in W3a) and, with two teams at the device, sits one tap from the other team's button.
+- **The thumbnail swap, premoves and quick messages do not exist in this layout** (by design: both boards are always visible; premoves are off with 2+ humans; Local has no messages).
+- **One shared device, two people**: no seat-side orientation (a tablet flat on a table, each person facing a board, would want one board rotated 180 degrees); the spec orients to the colour, not to the person.
+
+## Chaturaji bot: a raised `KING_LOSS` is not pinned by any test - FIXED on `fix/chaturaji-premove-seed` (PR 25, not yet merged into this branch: delete this section when it is)
+
+Pinned there by a hand-built position (a knight takes a boat with a triple fork and hands over its king: taken at 14, declined from about 21 up) with the exact score as literals; the mutants 28 / 100 / 1000 / 15 / 20 / 13 / 7 / 0 are all killed. The original note follows.
+
+Found on the cloud VM (command #25-cloud) when the constants mutation set was rebuilt in the repo (`scripts/mutation/configs/chaturaji-bot-constants.config.cjs`, 9 of 9 killed). `KING_LOSS` in `chaturajiBot.ts` LOWERED (14 -> 0, 14 -> 7) is killed by `fourPlayerChaturajiBot.test.ts`; RAISED (14 -> 28, 100, 1000) survives it. Not proven equivalent: a larger loss may change a choice between a big capture and a king at risk, and no hand-built position there pins an upper bound. Start with a position where a capture worth more than 14 points leaves a king attackable, and decide which move the bot must pick.
+
+## Bughouse W4b: what the online client does not have yet (command #28; mostly done in command #29)
+
+**Done in #29:** the spectator screen and Spectate list section, the persisted rejoin + "Return to your game", the Quick grid with its toast, the team-chat panel, W5 premoves (BUGHOUSE_SPEC.md build log). **Still open:** the clock icon with the quick message for 8 s on the partner's clock; the queue / online-game screens in the WEB device matrix (a login fixture; `android-e2e` covers them on the phone); optimistic drops with rollback; chained premoves (spec: optional); a "Return to your game" check in `android-e2e` through the menu link (the restart test walks straight back in).
+
+*The original list (command #28):* the online core is in (BUGHOUSE_SPEC.md build log, TESTING.md section 44). Still to do from the W4 row: the spectator screen and the Spectate list section, the persisted rejoin across an app restart (a third `ActiveOnlineGame` kind in `activeGame.ts`) with the "Return to your game" link, the Quick grid (ten codes) with toast and clock icon, the team-chat panel ("Team chat - only your partner sees this"), and the device-matrix screens for the queue and the online game (they need a login: a fixture or a persisted test session). A game with ONE human never starts by design (two humans minimum): consider a "play against bots now" start for a lone player (a server change, W2 matchmaker) - until then use `npm run bughouseBuddy`.

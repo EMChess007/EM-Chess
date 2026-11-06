@@ -10,6 +10,7 @@
  *   node scripts/browser/android-matrix.mjs --profile sweep            every size under every system-bar profile
  *   node scripts/browser/android-matrix.mjs --self-test                the checks against a fixture with every defect on purpose (no app, no server)
  *   --screens home,game-2p     only these screens          --out DIR   where results.json, the screenshots and the contact sheets go
+ *   --progress FILE.jsonl      resumable: every finished screen of a page group is written to FILE at once, a restart skips them (android-matrix-progress.mjs; not with --sheets)
  *   --workers 3                parallel browser contexts   --sheets    also write the contact sheet of every screen
  *   BASE_URL=http://127.0.0.1:19071 uses a dev server you started (kills nothing); otherwise it starts its OWN `expo start --web` on a free port and kills it by PID.
  *
@@ -28,7 +29,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PAGE_CHECKS_SOURCE } from './android-matrix-checks.mjs';
-import { comboId, CRITERIA, fullCombos, insetSweep, insetsFor, miniCombos, quickCombos, SCREEN_SIZES, viewportFor, FONTS } from './android-matrix-def.mjs';
+import { checkPieceColours } from './android-matrix-pieces.mjs';
+import { comboId, CRITERIA, fullCombos, GEAR_ZONE, insetSweep, insetsFor, miniCombos, quickCombos, SCREEN_SIZES, viewportFor, FONTS } from './android-matrix-def.mjs';
+import { openProgress, progressKey } from './android-matrix-progress.mjs';
 import { allScreens } from './android-matrix-screens.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -45,6 +48,8 @@ const playwrightCore = (() => {
   throw new Error('playwright-core was not found in <app>/backend/node_modules or <app>/node_modules (npm i --no-save playwright-core)');
 })();
 const { chromium } = playwrightCore;
+// pngjs decodes the photographs of the piece-colour check; it is already in the app's node_modules (a dependency of Expo's tooling).
+const { PNG } = createRequire(path.join(appDir, 'package.json'))('pngjs');
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -59,6 +64,23 @@ const ONLY = option('screens', '') ? option('screens', '').split(',') : null;
 mkdirSync(OUT_DIR, { recursive: true });
 
 const NAV_VIEWPORT = { width: 412, height: 915 };
+
+/** The decoded images of a piece theme (src/data/pieceSets.json), or null for the built-in vector theme: what the image judge of the piece-colour check compares a photographed cell with. */
+const pieceSetsCache = { json: null };
+function themeAssets(themeId) {
+  if (!themeId || themeId === 'default') return null;
+  pieceSetsCache.json ??= JSON.parse(readFileSync(path.join(appDir, 'src', 'data', 'pieceSets.json'), 'utf8'));
+  const set = pieceSetsCache.json[themeId];
+  if (!set) throw new Error(`piece theme "${themeId}" is not in src/data/pieceSets.json`);
+  const assets = {};
+  for (const [key, uri] of Object.entries(set)) assets[key] = PNG.sync.read(Buffer.from(uri.replace(/^data:image\/png;base64,/, ''), 'base64'));
+  return assets;
+}
+
+/** A screen that names a `pieceTheme` is about the PIECES, not the layout: a piece's colour does not depend on the window, the text scale, the font or the zoom, so it runs at the base combination only. */
+function isBaseCombo(combo) {
+  return combo.size.id === SCREEN_SIZES[2].id && combo.scale === 1.0 && combo.font.id === 'app' && combo.zoom === 1.0;
+}
 // data-matrix-exempt: a control that is small on purpose (AppPressable `compact`). A native Switch is a platform control: its row is the touch target, the 40 x 20 track is not.
 const exempt = ['[data-matrix-exempt]', 'input[type="checkbox"]', '[data-testid^="thumb-"]'];
 
@@ -117,7 +139,28 @@ function stopServer() {
 }
 
 // --- the page ---------------------------------------------------------------------------------------------------------------------------------------
-const settle = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 120)))));
+// A screen that sizes itself from what it measured (the stacked Bughouse boards, fitStackedCell) takes a few layout passes after a window change; the checks must not see a pass half way. So:
+// two animation frames and 120 ms as before, then wait until the layout stops moving (the bottoms of up to 400 elements unchanged over two samples 80 ms apart, at most 2 s).
+const settle = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const signature = () =>
+          Array.from(document.querySelectorAll('body *'))
+            .slice(0, 400)
+            .map((el) => Math.round(el.getBoundingClientRect().bottom))
+            .join(',');
+        const started = Date.now();
+        let last = '';
+        const poll = () => {
+          const now = signature();
+          if (now === last || Date.now() - started > 2000) return resolve(undefined);
+          last = now;
+          setTimeout(poll, 80);
+        };
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(poll, 120)));
+      }),
+  );
 
 async function applyCombo(page, cdp, combo) {
   const vp = viewportFor(combo.size, combo.zoom);
@@ -139,7 +182,7 @@ async function applyCombo(page, cdp, combo) {
 }
 
 function checkOptions(screen, insets) {
-  return { insets, minTarget: CRITERIA.minTouchTarget, minGlyphContrast: CRITERIA.minGlyphContrast, expectGlyphs: screen.glyphs ?? 0, clipTolerance: CRITERIA.clipTolerance, minBoardCell: CRITERIA.minBoardCell, boardKind: screen.boardKind ?? null, exempt };
+  return { insets, minTarget: CRITERIA.minTouchTarget, minGlyphContrast: CRITERIA.minGlyphContrast, expectGlyphs: screen.glyphs ?? 0, clipTolerance: CRITERIA.clipTolerance, minBoardCell: CRITERIA.minBoardCell, boardKind: screen.boardKind ?? null, pockets: Boolean(screen.pockets), moveList: Boolean(screen.moveList), exempt, gearZone: GEAR_ZONE };
 }
 
 async function runChecks(page, screen, insets) {
@@ -164,13 +207,41 @@ async function openContext(browser, scale, theme) {
 
 async function navigate(page, cdp, baseUrl, screen) {
   await cdp.send('Emulation.setDeviceMetricsOverride', { ...NAV_VIEWPORT, deviceScaleFactor: 1, mobile: false });
+  // The piece theme is the app's own persisted setting (the key themeSettings.ts writes; on the web AsyncStorage is localStorage). Every screen sets it - the built-in theme included - because
+  // the page, and so the storage, is reused from one screen to the next and init scripts run in the order they were added: the last one wins.
+  await page.addInitScript((id) => {
+    try {
+      localStorage.setItem('settings:activePieceTheme', id);
+    } catch {
+      /* storage blocked: the built-in theme is drawn and the piece check says so */
+    }
+  }, screen.pieceTheme ?? 'default');
+  // The board theme the same way (command #28): the squares a piece is photographed on.
+  await page.addInitScript((id) => {
+    try {
+      localStorage.setItem('settings:activeBoardTheme', id);
+    } catch {
+      /* storage blocked: the built-in board is drawn */
+    }
+  }, screen.boardTheme ?? 'default');
   await page.goto(baseUrl, { waitUntil: 'load' });
   await page.getByText('Play', { exact: true }).first().waitFor({ timeout: 240000 });
+  // A screen that needs a fixed position (Bughouse's full pockets, all twelve pieces) names a fixture; the game screen reads it when it opens (src/logic/bughouseFixture.ts: web, dev build only).
+  await page.evaluate((name) => {
+    window.__EM_BUGHOUSE_FIXTURE__ = name ?? undefined;
+  }, screen.fixture ?? null);
   for (const step of screen.steps) {
     if (step.text) await page.getByText(step.text, { exact: true }).nth(step.nth ?? 0).click({ timeout: 15000 });
     else if (step.label) await page.locator(`[aria-label="${step.label}"]`).first().click({ timeout: 15000 });
     else if (step.id) await page.locator(`[data-testid="${step.id}"]`).first().click({ timeout: 15000 });
-    else if (step.wait) await page.waitForTimeout(step.wait);
+    else if (step.board) {
+      // a tap on a square of the 2-player board (White at the bottom), at the centre of its cell: the board's own rectangle, 8 x 8 cells
+      const box = await page.locator('[data-testid="chess-board"]').first().boundingBox();
+      if (!box) throw new Error('step board: no chess board on the page');
+      const file = step.board.charCodeAt(0) - 97;
+      const rank = Number(step.board[1]);
+      await page.mouse.click(box.x + ((file + 0.5) * box.width) / 8, box.y + ((8 - rank + 0.5) * box.height) / 8);
+    } else if (step.wait) await page.waitForTimeout(step.wait);
     await page.waitForTimeout(450);
   }
 }
@@ -212,7 +283,7 @@ function groupByPage(combos) {
   return [...groups.values()];
 }
 
-async function runGroup(browser, baseUrl, group, screens, record, sheets) {
+async function runGroup(browser, baseUrl, group, screens, outerRecord, sheets, progress) {
   const context = await openContext(browser, group.scale, group.theme);
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
@@ -220,6 +291,13 @@ async function runGroup(browser, baseUrl, group, screens, record, sheets) {
   page.on('pageerror', (e) => pageErrors.push(e.message));
   try {
     for (const screen of screens) {
+      // --progress: a screen of this page group that an earlier (killed) run finished is not run again; its results were read back from the file.
+      if (progress?.done.has(progressKey(group, screen.id))) continue;
+      const produced = [];
+      const record = (r) => {
+        produced.push(r);
+        outerRecord(r);
+      };
       try {
         await navigate(page, cdp, baseUrl, screen);
       } catch (error) {
@@ -227,19 +305,29 @@ async function runGroup(browser, baseUrl, group, screens, record, sheets) {
         continue;
       }
       for (const combo of group.combos) {
+        if (screen.pieceTheme && !isBaseCombo(combo)) continue;
         const { insets } = await applyCombo(page, cdp, combo);
         const issues = await runChecks(page, screen, insets);
+        // The pixels of the pieces, on both square colours (android-matrix-pieces.mjs): only for the screens that declare `pieces`, and only at the app's own font and at zoom 1: a piece's colour does
+        // not depend on the system font or the display zoom, and photographing 24 cells in every one of 720 combinations made the full profile take hours (a run of 2.5 h did not finish).
+        if (screen.pieces && combo.font.id === 'app' && combo.zoom === 1.0) issues.push(...(await checkPieceColours(page, PNG, { ...screen.pieces, assets: themeAssets(screen.pieceTheme) })));
         record({ screen: screen.id, combo: comboId(combo), issues });
         if (sheets) {
           const wanted = SHEET.find((s) => s.size.id === combo.size.id && s.scale === combo.scale && s.font.id === combo.font.id && s.zoom === combo.zoom && s.theme === combo.theme && s.insetProfile === combo.insetProfile);
           if (wanted) sheets.push({ screen: screen.id, combo, issues: issues.length, png: await page.screenshot() });
         }
       }
+      progress?.save(progressKey(group, screen.id), produced);
+      if (progress) console.log(`[matrix] progress: ${group.scale}|${group.theme}|${screen.id} saved`);
     }
   } finally {
     await context.close();
   }
-  if (pageErrors.length) record({ screen: '(page)', combo: `${group.scale}|${group.theme}`, issues: [{ kind: 'pageerror', el: '-', detail: pageErrors[0].slice(0, 200) }] });
+  if (pageErrors.length) {
+    const pageError = { screen: '(page)', combo: `${group.scale}|${group.theme}`, issues: [{ kind: 'pageerror', el: '-', detail: pageErrors[0].slice(0, 200) }] };
+    outerRecord(pageError);
+    progress?.save(`${group.scale}|${group.theme}|(page error)|${Date.now()}`, [pageError]);
+  }
 }
 
 async function mainRun() {
@@ -267,13 +355,21 @@ async function mainRun() {
   }
   const results = [];
   const sheets = flag('sheets') ? [] : null;
+  // --progress FILE: resumable run (android-matrix-progress.mjs). The contact sheets are photographs taken during a run and are not kept in the file, so the two do not combine.
+  const progressFile = option('progress', '');
+  if (progressFile && sheets) throw new Error('--progress and --sheets cannot be combined (the sheets are not kept in the progress file)');
+  const progress = progressFile ? openProgress(progressFile, { profile: PROFILE, screens: screens.map((s) => s.id) }) : null;
+  if (progress) {
+    results.push(...progress.results);
+    console.log(`[matrix] progress file ${progressFile}: ${progress.done.size} screen runs already finished, skipped`);
+  }
   const record = (r) => results.push(r);
   let next = 0;
   const started = Date.now();
   const worker = async () => {
     while (next < groups.length) {
       const group = groups[next++];
-      await runGroup(browser, base, group, screens, record, sheets);
+      await runGroup(browser, base, group, screens, record, sheets, progress);
       console.log(`[matrix] page group scale ${group.scale} / ${group.theme} done (${group.combos.length} combos, ${Math.round((Date.now() - started) / 1000)} s)`);
     }
   };
@@ -387,6 +483,9 @@ async function selfTest() {
     expect('a square cell is exempt from the target rule', !kinds(await run('<div role="button" tabindex="0" aria-label="e4, White pawn" style="width:30px;height:30px">x</div>')).has('target'));
     expect('two overlapping controls are reported', kinds(await run('<div role="button" tabindex="0" style="position:absolute;left:10px;top:10px;width:100px;height:50px">a</div><div role="button" tabindex="0" style="position:absolute;left:60px;top:20px;width:100px;height:50px">b</div>')).has('overlap'));
     expect('two overlapping pieces of text are reported', kinds(await run('<div style="position:absolute;left:10px;top:10px">Overlapping words here</div><div style="position:absolute;left:10px;top:12px">Other words here</div>')).has('overlap'));
+    expect('two marks laid over each other inside ONE board cell (a piece and the "~" of a promoted piece) are board art, not an overlap', !kinds(await run('<div aria-label="d1, board B, Black knight (promoted)" style="position:relative;width:40px;height:40px"><div style="position:absolute;left:4px;top:4px">♞</div><div style="position:absolute;left:6px;top:6px">~</div></div>')).has('overlap'));
+    expect('the same two marks outside a board cell are an overlap', kinds(await run('<div style="position:relative;width:40px;height:40px"><div style="position:absolute;left:4px;top:4px">Knight</div><div style="position:absolute;left:6px;top:6px">Promoted</div></div>')).has('overlap'));
+    expect('two marks in two different board cells that overlap are still an overlap', kinds(await run('<div aria-label="d1, board B, Black knight" style="position:absolute;left:10px;top:10px;width:60px;height:30px">Knight</div><div aria-label="e1, board B, Black king" style="position:absolute;left:12px;top:12px;width:60px;height:30px">King here</div>')).has('overlap'));
     expect('a control below the window with nothing to scroll is cut off', kinds(await run('<div role="button" tabindex="0" style="position:fixed;top:620px;width:100px;height:48px">a</div>')).has('offscreen'));
     expect('a control below the window inside a scroller is reachable', !kinds(await run('<div style="height:640px;overflow-y:auto"><div style="height:1200px"><div role="button" tabindex="0" style="margin-top:900px;width:100px;height:48px">a</div></div></div>')).has('offscreen'));
     expect('text under the top inset is reported', kinds(await run('<div style="padding-top:10px">under the notch</div>', {}, { top: 48, bottom: 0, left: 0, right: 0 })).has('inset'));
@@ -396,6 +495,39 @@ async function selfTest() {
     expect('a board cell inside an exempt thumbnail is not judged', !kinds(await run('<div data-testid="thumb-B"><div aria-label="a1" style="width:12px;height:12px">.</div></div>', { boardKind: 'twoPlayer' })).has('board-cell'));
     expect('a board cell under its minimum is reported', kinds(await run('<div aria-label="a1" style="width:12px;height:12px">.</div>', { boardKind: 'twoPlayer' })).has('board-cell'));
     expect('a board cell at its minimum is fine', !kinds(await run('<div aria-label="a1" style="width:24px;height:24px">.</div>', { boardKind: 'twoPlayer' })).has('board-cell'));
+
+    // the move list check (command #32): a number and its move share one line
+    const listItem = (numberStyle, moveStyle) => `<div style="display:flex;align-items:center;min-height:36px"><span data-testid="movelist-number-0" style="${numberStyle}">1.</span><div data-testid="movelist-san-0" style="${moveStyle}"><span>e4</span></div></div>`;
+    expect('a move list whose number and move share one line is clean', !kinds(await run(listItem('line-height:18px', 'line-height:18px'), { moveList: true })).has('movelist'));
+    expect('a number 12 dp below its move (the phone of command #32) is reported', kinds(await run(listItem('line-height:18px;position:relative;top:12px', 'line-height:18px'), { moveList: true })).has('movelist'));
+    expect('a move at the top of a tall button while the number is centred is reported', kinds(await run(listItem('line-height:18px', 'min-height:44px;line-height:18px'), { moveList: true })).has('movelist'));
+    expect('a screen that declares a move list and shows none is reported', kinds(await run('<div>no list</div>', { moveList: true })).has('movelist'));
+    // the gear check (command #34): a 360 x 640 window, no insets -> the zone is x 288..360, y 0..64
+    const chipAt = (left, top) => `<div role="button" tabindex="0" style="position:absolute;left:${left}px;top:${top}px;width:60px;height:48px">Resign</div>`;
+    expect('a control under the top right gear zone is reported', kinds(await run(chipAt(296, 8))).has('gear'));
+    expect('a control that ends 2 dp left of the zone is clean', !kinds(await run(chipAt(226, 8))).has('gear'));
+    expect('a control left of the zone is clean', !kinds(await run(chipAt(100, 8))).has('gear'));
+    expect('a control right below the zone is clean', !kinds(await run(chipAt(296, 70))).has('gear'));
+    expect('the zone moves below the top inset (48): a control at y 60 is under it, at y 120 is not', kinds(await run(chipAt(296, 60), {}, { top: 48, bottom: 0, left: 0, right: 0 })).has('gear') && !kinds(await run(chipAt(296, 120), {}, { top: 48, bottom: 0, left: 0, right: 0 })).has('gear'));
+    expect('the zone sits inside the right inset (48): x 240..312, so a control at 250..310 is under it',kinds(await run(chipAt(250, 8), {}, { top: 0, bottom: 0, left: 0, right: 48 })).has('gear'));
+    expect('a screen that does not declare a move list is not judged',!kinds(await run(listItem('position:relative;top:12px', 'line-height:18px'))).has('movelist'));
+
+    // the pocket check (command #27b): one row inside its strip, reaching no board, clock or status line
+    const chip = (piece, extra = '') => `<div data-testid="pocket-A-white-${piece}" style="width:24px;height:24px;flex-shrink:0;${extra}">1</div>`;
+    const stripFixture = ({ barStyle = '', pocketStyle = '', chips = chip('p') + chip('n') + chip('b'), after = '' }) =>
+      `<div style="width:300px"><div data-testid="bar-A-white" style="display:flex;align-items:center;width:300px;height:36px;${barStyle}"><span>You</span><div data-testid="pocket-A-white" style="display:flex;flex:1;min-width:0;height:28px;${pocketStyle}">${chips}</div><div data-testid="clock-A-white" style="min-width:46px">3:00</div></div><div data-testid="board-A" style="width:300px;height:100px;background:#ccc"></div>${after}<div data-testid="status-A">White to move</div></div>`;
+    const pocketIssues = async (html) => kinds(await run(html, { pockets: true }));
+    expect('a pocket of three chips in one row inside its strip is clean', !(await pocketIssues(stripFixture({ barStyle: 'overflow:hidden' }))).has('pocket'));
+    expect('five chips side by side are clean', !(await pocketIssues(stripFixture({ barStyle: 'overflow:hidden', chips: chip('p') + chip('n') + chip('b') + chip('r') + chip('q') }))).has('pocket'));
+    expect('an empty pocket is clean', !(await pocketIssues(stripFixture({ chips: '' }))).has('pocket'));
+    const wrapped = stripFixture({ pocketStyle: 'flex-wrap:wrap;width:50px;flex:none;align-content:flex-start', chips: chip('p') + chip('n') + chip('b') });
+    expect('chips that wrap onto a second row are reported', await pocketIssues(wrapped).then((k) => k.has('pocket')));
+    expect('a chip that runs out of its strip over the board is reported', (await run(stripFixture({ pocketStyle: 'flex-wrap:wrap;width:50px;flex:none;align-content:flex-start', chips: chip('p') + chip('n') + chip('b') + chip('r') }), { pockets: true })).some((i) => i.kind === 'pocket' && /leaves its strip|covers/.test(i.detail)));
+    expect('a chip drawn over the clock is reported', (await run(stripFixture({ chips: chip('p', 'margin-left:240px') }), { pockets: true })).some((i) => i.kind === 'pocket' && /clock|leaves/.test(i.detail)));
+    expect('a pocket that reaches the status line is reported', (await run(stripFixture({ barStyle: 'height:20px', pocketStyle: 'height:60px' }), { pockets: true })).some((i) => i.kind === 'pocket'));
+    expect('two chips on top of each other are reported', (await run(stripFixture({ chips: chip('p') + chip('n', 'margin-left:-12px') }), { pockets: true })).some((i) => i.kind === 'pocket' && /another chip/.test(i.detail)));
+    expect('a screen that declares pockets and shows none is reported', (await run('<div>no pockets</div>', { pockets: true })).some((i) => i.kind === 'pocket'));
+    expect('a screen that does not declare pockets is not judged', !kinds(await run(wrapped)).has('pocket'));
     const glyph = (ink, background, extra = '') => `<div style="background:${background}"><div data-matrix-glyph="1" style="${extra}"><svg width="24" height="24"><path d="M2 2 L20 20" stroke="${ink}" stroke-width="2" fill="none"/></svg></div></div>`;
     expect('a black icon on the dark bar (the old Home pawn) is a contrast defect', kinds(await run(glyph('#000000', '#121212'))).has('contrast'));
     expect('a light icon on the dark bar is fine', !kinds(await run(glyph('#efe6d8', '#121212'))).has('contrast'));

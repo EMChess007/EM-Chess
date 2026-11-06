@@ -10,6 +10,7 @@ import { loadErrorMessage } from '../logic/loadError';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { getDailyPuzzle } from '../logic/puzzles';
 import { isTodayPuzzleSolved } from '../logic/puzzleStorage';
+import { GEAR_RESERVE } from '../components/gearReserve';
 import { replayPgn } from '../logic/pgnReplay';
 import { useStreak } from '../logic/streakStorage';
 import type { AnalyzeParams } from '../types/history';
@@ -212,6 +213,8 @@ function createStyles(colors: AppColors) {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      // the floating gear button sits over the top right corner: the streak chip stays clear of it (components/gearReserve.ts)
+      paddingRight: GEAR_RESERVE,
     },
     title: {
       fontSize: 32,

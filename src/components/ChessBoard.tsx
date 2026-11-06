@@ -21,6 +21,7 @@ import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { ExplodedPiece, Move, PieceColor, Piece as PieceModel, SpellCast } from '../types/chess';
 import BoardAnnotations, { type BoardArrow, type GridPoint } from './BoardAnnotations';
 import { getBoardSize } from './boardSize';
+import { getE2ePerf, getE2eStateProbe } from './devOverlayRegistry';
 import PromotionPicker from './PromotionPicker';
 import { useBoardGestures } from './useBoardGestures';
 import { useClearAnnotationsOnMove } from './useClearAnnotationsOnMove';
@@ -50,8 +51,10 @@ interface ChessBoardProps {
    * freshly-set-up board with no "last move" to show. */
   lastMove?: Move | null;
   /** Lets the player long-press-drag to draw arrows and tap-and-hold to highlight squares (see
-   * BoardAnnotations) — cleared automatically whenever `fen` changes. Off by default; only
-   * Analysis/Local/Bot screens turn it on today. */
+   * BoardAnnotations) — cleared automatically whenever `fen` changes. Off by default; every game screen that shows a
+   * 2-player board turns it on (Local, Bot, Online, Spectator, Engine vs Engine, Analysis; command #32: Online, Spectator and
+   * Engine vs Engine were missing), and it works on ANY turn - `disabled` gates moves, never the gesture. Puzzles keep it off
+   * (an arrow would be a hint). */
   enableAnnotations?: boolean;
   /** When set (to the local player's own color) and it isn't currently that color's turn, lets
    * the player select one of their own pieces and a destination anyway — instead of attempting a
@@ -441,22 +444,22 @@ function ChessBoard({
   // regardless of whose turn it actually is, which is also what makes this correct in premove mode.
   // Giveaway: the same pseudo-legal primitive, collapsed to mandatory captures when any exist.
   // Duck Chess: while the duck is being placed the "targets" are the squares it may go to instead.
-  const duckTargets = pendingDuck ? getLegalDuckPlacementSquares(engine, duckSquare) : [];
-  const dropTargets = dropPiece ? engine.getLegalDropSquares(dropPiece) : [];
-  const legalTargets = pendingDuck
-    ? duckTargets
-    : dropPiece
-      ? dropTargets
-      : selectedSquare && !isPremoveMode
-      ? giveaway
-        ? getGiveawayMoves(engine, selectedSquare).map((m) => m.to)
-        : fogOfWar || duckChess
-        ? engine
-            .getPseudoLegalMoves(selectableColor)
-            .filter((m) => m.from === selectedSquare)
-            .map((m) => m.to)
-        : engine.getLegalMoves(selectedSquare)
-      : [];
+  // (memoized, command #33: this used to generate the moves again on every render of the board - each touch-move of a drawn arrow, each parent render - on a phone's JavaScript thread)
+  const legalTargets = useMemo(() => {
+    if (pendingDuck) return getLegalDuckPlacementSquares(engine, duckSquare);
+    if (dropPiece) return engine.getLegalDropSquares(dropPiece);
+    if (selectedSquare && !isPremoveMode) {
+      if (giveaway) return getGiveawayMoves(engine, selectedSquare).map((m) => m.to);
+      if (fogOfWar || duckChess) {
+        return engine
+          .getPseudoLegalMoves(selectableColor)
+          .filter((m) => m.from === selectedSquare)
+          .map((m) => m.to);
+      }
+      return engine.getLegalMoves(selectedSquare);
+    }
+    return [];
+  }, [pendingDuck, duckSquare, dropPiece, selectedSquare, isPremoveMode, giveaway, fogOfWar, duckChess, engine, selectableColor]);
 
   // Giveaway: the pieces that can capture, ringed on the board while a capture is mandatory and it is this board's player to move.
   const captureSquares = useMemo(
@@ -515,7 +518,7 @@ function ChessBoard({
       setPendingDuck(null); // the player took the move back
       return;
     }
-    if (!duckTargets.includes(square)) return;
+    if (!legalTargets.includes(square)) return; // (a pending duck: the targets ARE the duck's placement squares)
     const committed: Move = { ...pendingDuck.move, duck: square };
     skipAnimationRef.current = true;
     setPendingDuck(null);
@@ -551,11 +554,12 @@ function ChessBoard({
 
   const handleSquarePress = (square: string) => {
     if (disabled || gameOver || pendingPromotion) return;
+    getE2ePerf()?.start(selectedSquare === null ? 'select' : 'move', 'board-2p'); // (end-to-end build only: the latency from this tap to the committed state; src/dev/e2ePerf.ts)
 
     // Crazyhouse: a reserve piece is picked up — a tap on one of its legal squares drops it; a tap anywhere else puts it
     // back and carries on as an ordinary tap (so tapping one of your own pieces selects it in one go).
     if (dropPiece) {
-      if (dropTargets.includes(square)) {
+      if (legalTargets.includes(square)) {
         handleDrop(dropPiece, square);
         return;
       }
@@ -704,6 +708,8 @@ function ChessBoard({
       ),
   });
 
+  const E2eProbe = getE2eStateProbe();
+
   // Atomic explosion overlay values (see the animation effect): one cell per square the blast cleared.
   const explosionCells = explosion ? [...new Map(explosion.map((e) => [e.square, e])).values()] : [];
   const flashOpacity = explosionProgress.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.9, 0] });
@@ -717,6 +723,8 @@ function ChessBoard({
           ref={boardContainerRef}
           onLayout={onBoardLayout}
           style={[styles.board, { width: boardSize, height: boardSize }]}
+          testID="chess-board"
+          accessibilityLabel="Chess board"
           {...panHandlers}
         >
         {displayRows.map((row, rowIndex) =>
@@ -749,6 +757,9 @@ function ChessBoard({
         {enableAnnotations && (
           <BoardAnnotations squareSize={squareSize} arrows={arrows} highlights={highlights} liveArrow={liveArrow} />
         )}
+
+        {/* DEV ONLY, the Android end-to-end build: the board's state for the driver (src/dev/E2eStateProbe.tsx). Null everywhere else. */}
+        {E2eProbe && <E2eProbe channel="board-2p" rectOf={boardContainerRef} state={{ fen, turn, selected: selectedSquare, orientation, legal: legalTargets.length, lastMove: lastMove ? [lastMove.from, lastMove.to] : null, arrows: arrows.length, marked: highlights.length }} />}
 
         {explosionCells.map(({ square, piece }) => {
           const { row, col } = squareToRowCol(square, orientation);

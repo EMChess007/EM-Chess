@@ -8,6 +8,7 @@ import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
+import { useStableCallback } from '../components/useStableCallback';
 import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
 import { getEngineRuntime } from '../engine/engineRegistry';
@@ -289,6 +290,7 @@ export default function EngineVsEngineGameScreen({
   const selectedMoveIndex = isReviewing ? (viewIndex as number) - 1 : history.length - 1;
   const displayLastMove = selectedMoveIndex >= 0 ? history[selectedMoveIndex].move : null;
 
+  const selectMove = useStableCallback((index: number) => handleSelectMove(index)); // (one identity for the memoized move list: command #33)
   const handleSelectMove = (index: number) => {
     const next = index + 1;
     setViewIndex(next >= positions.length - 1 ? null : next);
@@ -323,7 +325,7 @@ export default function EngineVsEngineGameScreen({
         moves={history.map((h) => ({ san: h.move.san }))}
         selectedIndex={selectedMoveIndex}
         autoScroll={!isReviewing}
-        onSelectMove={handleSelectMove}
+        onSelectMove={selectMove}
       />
       <GameScreenBody
         bottomBar={
@@ -383,6 +385,7 @@ export default function EngineVsEngineGameScreen({
           fen={displayFen}
           onMove={noopMove}
           disabled
+          enableAnnotations
           chess960={chess960}
           initialFen={initialFen}
           orientation={flipped ? 'b' : 'w'}

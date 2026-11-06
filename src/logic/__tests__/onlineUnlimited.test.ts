@@ -47,10 +47,11 @@ describe('No time limit — preset', () => {
 describe('No time limit — wiring (no React Native renderer available)', () => {
   const read = (rel: string) => readFileSync(join(__dirname, '../../', rel), 'utf8').replace(/\r\n/g, '\n');
 
-  it('the Play Online screen offers No time limit but not Daily', () => {
+  it('the Play Online screen offers every control, No time limit and Daily included (command #35: it renders the one shared list)', () => {
     const screen = read('screens/OnlineTimeControlSelectScreen.tsx');
-    expect(screen).toContain("{ category: 'unlimited', label: 'No time limit' }");
+    expect(screen).toContain('<TimeControlSections');
     expect(screen).not.toContain("category: 'daily'");
+    expect(read('components/TimeControlSections.tsx')).toContain('TIME_CONTROL_CATEGORIES.map(');
   });
 
   it('the Online game screen never ticks or formats a clock for an unlimited game', () => {
@@ -68,8 +69,10 @@ describe('No time limit — wiring (no React Native renderer available)', () => 
     expect(spectator).not.toContain('formatTime(');
   });
 
-  it('the Challenge and Tournament screens are unchanged (no unlimited section)', () => {
-    expect(read('screens/ChallengeScreen.tsx')).not.toContain("'unlimited'");
+  it('the Challenge and Tournament screens render the one shared list too (command #35), with no list of their own', () => {
+    expect(read('screens/ChallengeScreen.tsx')).toContain('<TimeControlSections');
+    expect(read('screens/TournamentScreen.tsx')).toContain('<TimeControlSections');
+    expect(read('screens/ChallengeScreen.tsx')).not.toContain("category: 'unlimited'");
     expect(read('screens/TournamentScreen.tsx')).not.toContain("category: 'unlimited'");
   });
 });

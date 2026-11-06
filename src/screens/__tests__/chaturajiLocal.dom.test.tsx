@@ -48,73 +48,53 @@ const renderGame = (props: { seats?: SeatConfig; startFrom?: FourPlayerState; on
 describe('the Play menu', () => {
   // only the callbacks a test presses are given: every other prop is read when its button is pressed, which these tests never do
   const baseProps = (over: Record<string, unknown> = {}): ComponentProps<typeof PlayModeSelectScreen> =>
-    ({ authUser: null, onAuthPress: vi.fn(), onChaturaji: vi.fn(), onChaturajiOnline: vi.fn(), ...over }) as unknown as ComponentProps<typeof PlayModeSelectScreen>;
+    ({ authUser: null, onAuthPress: vi.fn(), onChaturaji: vi.fn(), ...over }) as unknown as ComponentProps<typeof PlayModeSelectScreen>;
 
-  it('lists Chaturaji as a card of its own with Local, Online and a "How to play" link', () => {
+  it('lists Chaturaji as ONE button of the "4 Player Variations" card (command #35): no card of its own, no Local / Online pair', () => {
     render(
       <>
         <PlayModeSelectScreen {...baseProps()} />
         <AppAlertHost />
       </>
     );
-    const card = screen.getByTestId('chaturaji-card');
-    expect(within(card).getByText('Chaturaji')).toBeTruthy();
-    expect(within(card).getByLabelText('Chaturaji local')).toBeTruthy();
-    expect(within(card).getByLabelText('Chaturaji online')).toBeTruthy();
-    expect(within(card).getByText(/How to play/)).toBeTruthy();
-    expect(screen.getByText('4 Player Chess')).toBeTruthy(); // the other cards are still there
-    expect(screen.getByText('4 Player Giveaway')).toBeTruthy();
+    const card = screen.getByTestId('four-player-variations-card');
+    expect(within(card).getByText('4 Player Variations')).toBeTruthy();
+    for (const name of ['4 Player Chess', '4 Player Giveaway', 'Chaturaji', 'Crazy Bughouse']) expect(within(card).getByLabelText(name), name).toBeTruthy();
+    expect(screen.queryByTestId('chaturaji-card')).toBeNull();
+    expect(screen.queryByLabelText('Chaturaji local')).toBeNull();
+    expect(screen.queryByLabelText('Chaturaji online')).toBeNull();
   });
 
-  it('Local goes straight on; Online asks a logged-out player to log in first, and goes on once logged in', () => {
+  it('the button goes straight to the local setup, with no login (online play is in the Online card)', () => {
     const onChaturaji = vi.fn();
-    const onChaturajiOnline = vi.fn();
-    const onAuthPress = vi.fn();
-    const { rerender } = render(
+    render(
       <>
-        <PlayModeSelectScreen {...baseProps({ onChaturaji, onChaturajiOnline, onAuthPress })} />
+        <PlayModeSelectScreen {...baseProps({ onChaturaji })} />
         <AppAlertHost />
       </>
     );
-    fireEvent.click(screen.getByLabelText('Chaturaji local'));
+    fireEvent.click(screen.getByLabelText('Chaturaji'));
     expect(onChaturaji).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByLabelText('Chaturaji online'));
-    expect(onChaturajiOnline).not.toHaveBeenCalled();
-    expect(screen.getByText('Login required')).toBeTruthy();
-    fireEvent.click(screen.getByText('Log in / Sign up'));
-    expect(onAuthPress).toHaveBeenCalledTimes(1);
-    rerender(
-      <>
-        <PlayModeSelectScreen {...baseProps({ onChaturaji, onChaturajiOnline, onAuthPress, authUser: { id: 'u', email: 'e', username: 'u', createdAt: '' } })} />
-        <AppAlertHost />
-      </>
-    );
-    fireEvent.click(screen.getByLabelText('Chaturaji online'));
-    expect(onChaturajiOnline).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Login required')).toBeNull();
   });
 
-  it('the rules sheet opens from the menu card and closes again', () => {
+  it('"How to play" is reachable from the setup screen, not from the menu (the rules sheet itself is tested with the setup screen below)', () => {
     render(<PlayModeSelectScreen {...baseProps()} />);
-    expect(screen.queryByText('How to play Chaturaji')).toBeNull();
-    fireEvent.click(screen.getByLabelText('Chaturaji rules'));
-    expect(screen.getByText('How to play Chaturaji')).toBeTruthy();
-    for (const title of ['The set-up', 'The pieces', 'Capture the King', 'Points', 'Leaving the game', 'The end']) expect(screen.getByText(title), title).toBeTruthy();
-    expect(screen.getByText(/Pawn 1 · Knight 3 · King 3 · Bishop 5 · Boat 5/)).toBeTruthy();
-    fireEvent.click(screen.getByTestId('rules-close'));
-    expect(screen.queryByText('How to play Chaturaji')).toBeNull();
+    expect(screen.queryByLabelText('Chaturaji rules')).toBeNull();
+    expect(screen.queryByTestId('chaturaji-rules-link')).toBeNull();
   });
 
-  it('"Return to your game" sits under the card of the game that was left, and under no other', () => {
+  it('"Return to your game" names the game that was left, once, in the 4 Player Variations card', () => {
     const resume = vi.fn();
     const { unmount } = render(<PlayModeSelectScreen {...baseProps({ onFourPlayerResume: resume, fourPlayerResumeVariant: 'chaturaji' })} />);
-    expect(within(screen.getByTestId('chaturaji-card')).getByText(/Return to your game/)).toBeTruthy();
-    expect(screen.getAllByText(/Return to your game/)).toHaveLength(1);
-    fireEvent.click(screen.getByText(/Return to your game/));
+    expect(within(screen.getByTestId('four-player-variations-card')).getByText('Return to your Chaturaji game ›')).toBeTruthy();
+    expect(screen.getAllByText(/Return to your/)).toHaveLength(1);
+    fireEvent.click(screen.getByText(/Return to your/));
     expect(resume).toHaveBeenCalledTimes(1);
     unmount();
-    render(<PlayModeSelectScreen {...baseProps({ onFourPlayerResume: resume })} />); // no variant named: 4 Player Chess, as before Chaturaji
-    expect(screen.getAllByText(/Return to your game/)).toHaveLength(1);
-    expect(within(screen.getByTestId('chaturaji-card')).queryByText(/Return to your game/)).toBeNull();
+    render(<PlayModeSelectScreen {...baseProps({ onFourPlayerResume: resume, fourPlayerResumeVariant: 'giveaway' })} />);
+    expect(screen.getByText('Return to your 4 Player Giveaway game ›')).toBeTruthy();
+    expect(screen.queryByText(/Return to your Chaturaji/)).toBeNull();
   });
 });
 
