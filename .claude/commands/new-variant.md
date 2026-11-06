@@ -1,0 +1,1 @@
+Build the 2-player variant $ARGUMENTS following CLAUDE.md (rules engine + bots + local + online + time controls + rules sheet + tests copied from the closest existing variant + android-e2e smoke). One variant only. < 1 hour. Report per CLAUDE.md.
