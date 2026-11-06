@@ -12,7 +12,7 @@ Use the Edit / Write tools for every file change. If a change really needs a pro
 
 # Expo HAS CHANGED
 
-Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before writing any code.
+Read the exact versioned docs at https://docs.expo.dev/versions/v58.0.0/ before writing any code.
 
 # Rules learned building Chaturaji (W2-W5): they apply to every later change
 
