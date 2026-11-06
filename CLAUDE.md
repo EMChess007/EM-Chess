@@ -21,7 +21,7 @@ Spell, Horde, Crazyhouse; 4-seat: 4 Player, 4P Giveaway, Chaturaji; Crazy Bughou
 - Never connect to Neon / Render / the deployed backend. `backend/.env` is test-only, git-ignored, never committed, never printed.
 - File edits ONLY with Edit / Write. No heredoc, `sed -i`, `python -c`, `node -e` writes (see AGENTS.md).
 - No `react-native-gesture-handler` (touch handling is our own: `useBoardTouches` / `boardTouches`).
-- Expo changed: check https://docs.expo.dev/versions/v57.0.0/ (SDK 58 notes: TESTING.md 33b) before writing Expo code.
+- Expo changed: check https://docs.expo.dev/versions/v58.0.0/ (SDK 58 notes: TESTING.md 33b) before writing Expo code.
 - Every task finishes in < 1 hour. If it won't, do what fits, push cleanly, report what remains.
 - Grep before reading. Never read a big file whole (TESTING.md is 2000+ lines: `grep -n '^## '` then read one section). Never dump long logs into
   the conversation: write them to a file under the scratchpad, then grep it.
