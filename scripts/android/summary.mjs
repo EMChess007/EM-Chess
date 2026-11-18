@@ -10,6 +10,8 @@
  *                                                             logged for a failing screen / exception, and the `FAILED-*.png` snapshots) as base64 inside collapsed <details>, so a session
  *                                                             can read them from the job summary / the job log without downloading an artifact (`base64 -d`). Nothing is printed on a green run.
  *
+ *   node scripts/android/summary.mjs <output dir> --informational   the INFORMATIONAL (not blocking) section (command #44): the full e2e per slice, passed / failed, first failing scenario, label.
+ *
  * The attempts of a slice: a slice that failed on a slow runner is run once more by run-on-emulator.sh into `<slice>-retry`; the digest shows both and the slice's verdict is the LAST attempt.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -79,6 +81,46 @@ export function buildDigest(dir) {
   return { text: lines.join('\n'), red };
 }
 
+/** The marker lines run-on-emulator.sh wrote for failed full-e2e phases (`e2e-informational-<job>.txt`): { job: [lines] }. */
+export function readMarkers(dir) {
+  const out = {};
+  if (!existsSync(dir)) return out;
+  for (const file of readdirSync(dir).sort()) {
+    const m = /^e2e-informational-(.+)\.txt$/.exec(file);
+    if (!m) continue;
+    out[m[1]] = readFileSync(join(dir, file), 'utf8').split('\n').filter((l) => l.trim() !== '');
+  }
+  return out;
+}
+
+/**
+ * The FULL e2e results as the INFORMATIONAL (not blocking) section of the job summary (command #44): per slice passed / failed, the first failing scenario and the label (RUNNER / APP).
+ * Only the smoke is required; this never decides the verdict. `failed` counts the slices whose last attempt failed or whose phase left a marker line (a crash with no results.json).
+ */
+export function buildInformational(dir) {
+  const lines = ['### INFORMATIONAL (not blocking)', '', 'The required check is the smoke (the app installs, starts and reaches Home without a crash). The full end-to-end results below are read by Claude before every merge (TESTING.md section 45).', ''];
+  const slices = readSlices(dir) ?? [];
+  const markers = readMarkers(dir);
+  let failed = 0;
+  for (const slice of slices) {
+    const last = slice.attempts[slice.attempts.length - 1];
+    const bad = last.run.results.filter((r) => !r.ok);
+    if (bad.length === 0) {
+      lines.push(`- **${slice.name}**: passed (${last.run.results.length} checks)`);
+      continue;
+    }
+    failed++;
+    const label = last.run.label ? ` [${last.run.label}]` : '';
+    lines.push(`- **${slice.name}**: FAILED${label}: ${bad.length} of ${last.run.results.length} checks failed; first failing scenario \`${bad[0].name}\`: ${(bad[0].issues ?? []).slice(0, 1).join('').slice(0, 300)}`);
+  }
+  // The marker lines (one per failed phase, also a phase that crashed before writing results.json) are listed as they are.
+  for (const [job, entries] of Object.entries(markers)) lines.push(`- run-on-emulator.sh marker of **${job}**: ${entries.join(' | ').slice(0, 500)}`);
+  if (slices.length === 0 && Object.keys(markers).length > 0) failed = Object.keys(markers).length;
+  if (slices.length === 0 && Object.keys(markers).length === 0) lines.push('No full end-to-end results were written.');
+  lines.push('', `${failed} slice(s) failed the informational run.`);
+  return { text: lines.join('\n'), failed };
+}
+
 /** The `PNG64 <name> <base64>` lines of a run.log: [{ name, base64 }]. */
 export function pngLines(logText) {
   const out = [];
@@ -146,5 +188,5 @@ export function buildImages(dir, budget = IMAGE_BUDGET) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const dir = process.argv[2] ?? 'android-e2e-out';
-  console.log(process.argv.includes('--images') ? buildImages(dir) : buildDigest(dir).text);
+  console.log(process.argv.includes('--images') ? buildImages(dir) : process.argv.includes('--informational') ? buildInformational(dir).text : buildDigest(dir).text);
 }
