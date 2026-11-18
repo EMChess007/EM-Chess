@@ -22,7 +22,8 @@ export type GameOutcome =
         | 'atomic'
         | 'duckChess'
         | 'spellChess'
-        | 'horde';
+        | 'horde'
+        | 'racingKings';
     };
 
 /**
@@ -50,8 +51,15 @@ export function getGameOutcome(
   duckChessWinner: PieceColor | null = null,
   spellChessWinner: PieceColor | null = null,
   hordeWinner: PieceColor | null = null,
-  repetitionDraw = false
+  repetitionDraw = false,
+  racingKingsOutcome: PieceColor | 'draw' | null = null
 ): GameOutcome {
+  // Racing Kings (see racingKings.ts): a king on the 8th rank ends the game -- a win for that side, or a draw when both
+  // kings made it. Same top tier as the other king-goal variants: chess.js knows nothing about the goal. Stalemate and the
+  // fifty-move draw come in through chessStatus under the usual reasons.
+  if (racingKingsOutcome) {
+    return { over: true, result: racingKingsOutcome === 'w' ? '1-0' : racingKingsOutcome === 'b' ? '0-1' : '1/2-1/2', reason: 'racingKings' };
+  }
   // Checked first of all — Fog of War has no checkmate/stalemate/draw concept whatsoever (see
   // ChessBoard's own fogOfWar doc comment), so king capture is the ONLY way a Fog of War game
   // ever ends; every other branch below is unreachable for it, same as kingOfTheHillWinner/

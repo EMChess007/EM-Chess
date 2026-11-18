@@ -19,7 +19,7 @@ import {
   squareRect,
   textIssues,
 } from '../../../scripts/android/lib/checks.mjs';
-import { byClass, extractXml, findNodes, findOne, parseBounds, parseHierarchy } from '../../../scripts/android/lib/hierarchy.mjs';
+import { byClass, extractXml, findNodes, findOne, parseBounds, parseHierarchy, rowAfterScroll } from '../../../scripts/android/lib/hierarchy.mjs';
 import { crop, decodePng, encodePng, solid } from '../../../scripts/android/lib/png.mjs';
 import { PROFILES } from '../../../scripts/android/lib/device.mjs';
 
@@ -323,5 +323,27 @@ describe('profiles, workflow and the test-only switch', () => {
     expect(workflow).toMatch(/name: android-e2e/);
     expect(workflow).toMatch(/paired\/bughouse/);
     for (const name of ['AUTH_RATE_LIMIT_TEST_OVERRIDE', 'FOUR_TEST_SETUP_ENDPOINT', 'FOUR_TEST_SEED']) expect(workflow).not.toContain(name);
+  });
+});
+
+describe('rowAfterScroll (command #45: the Racing Kings row after the swipe, when the heading "Local" is gone)', () => {
+  const label = (text: string, cy: number) => node({ text, bounds: box(100, cy - 40, 900, cy + 40) });
+  const step = { text: 'Racing Kings', below: 'Local' };
+  // the Play menu before the swipe: the Racing Kings row of the Local card is at y 1969 of 2400, the heading "Local" far above it
+  const before = [label('Play', 200), label('Bots', 300), label('Racing Kings', 700), label('Local', 800), label('Classic', 900), label('Crazyhouse', 1860), label('Racing Kings', 1969), label('4 Player Variations', 2150)];
+  const found = findNodes(before, { text: 'Racing Kings' }).find((n: { bounds: { cy: number } }) => n.bounds.cy === 1969);
+
+  it('finds the Local row again by its shift when "Local" has left the screen (the failure of run 44381325627)', () => {
+    // swiped by 1100 px: Play, Bots, the Bots row and Local are above the window; another Racing Kings row (a later card) has come up from below
+    const after = [label('Classic', -200), label('Crazyhouse', 760), label('Racing Kings', 869), label('4 Player Variations', 1050), label('Racing Kings', 1250), label('Online', 1400)];
+    expect(findOne(after, { text: 'Local' })).toBeNull(); // the old step cannot work here
+    expect(rowAfterScroll(before, after, found, step)?.bounds.cy).toBe(869);
+  });
+
+  it('is also right when "Local" is still visible, and null when the row or every anchor is gone', () => {
+    const near = [label('Bots', 100), label('Racing Kings', 500), label('Local', 600), label('Classic', 700), label('Crazyhouse', 1660), label('Racing Kings', 1769), label('4 Player Variations', 1950)];
+    expect(rowAfterScroll(before, near, found, step)?.bounds.cy).toBe(1769);
+    expect(rowAfterScroll(before, [label('Crazyhouse', 760), label('4 Player Variations', 1050)], found, step)).toBeNull(); // no Racing Kings left
+    expect(rowAfterScroll(before, [label('Settings', 500), label('Racing Kings', 900)], found, step)).toBeNull(); // nothing in common to measure the shift by
   });
 });

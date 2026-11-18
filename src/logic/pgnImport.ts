@@ -116,7 +116,7 @@ export function parsePgn(pgn: string): PgnParseResult {
   // The tag is also read from the raw text: chess.js parses the whole PGN in one go, so movetext it cannot read at all (a
   // Crazyhouse drop such as "P@e5") throws before ANY header is set, and the refusal would then be a vague "could not parse".
   const variant = headers.Variant ?? /^\s*\[Variant\s+"([^"]*)"\s*\]/im.exec(trimmed)?.[1];
-  if (variant && /^\s*(atomic|antichess|duck|duck chess|horde|crazyhouse)\s*$/i.test(variant)) {
+  if (variant && /^\s*(atomic|antichess|duck|duck chess|horde|racing kings|crazyhouse)\s*$/i.test(variant)) {
     return { ok: false, error: `${variant.trim()} games can't be analysed — only standard chess and Chess960.` };
   }
   const initialFen = headers.FEN ?? START_FEN;

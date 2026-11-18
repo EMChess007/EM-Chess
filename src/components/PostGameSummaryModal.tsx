@@ -45,6 +45,8 @@ interface PostGameSummaryModalProps {
   /** Horde only — same reasoning: Stockfish cannot be given a position with no White king, so no accuracy analysis
    * runs and Game Review is not offered. */
   horde?: boolean;
+  /** Racing Kings only — Stockfish does not know that a checking move is illegal, so no accuracy analysis runs and Game Review is not offered. */
+  racingKings?: boolean;
   /** Crazyhouse only — Stockfish has no concept of drops or a reserve, so no accuracy analysis runs and Game Review is not offered. */
   crazyhouse?: boolean;
   history: GameHistoryEntry[];
@@ -79,6 +81,7 @@ export default function PostGameSummaryModal({
   duckChess = false,
   spellChess = false,
   horde = false,
+  racingKings = false,
   crazyhouse = false,
   history,
   players,
@@ -98,8 +101,8 @@ export default function PostGameSummaryModal({
   // first (same reasoning EngineVsEngineGameScreen documents for reusing one runtime across two
   // engines that happen to share an id — except here we specifically want isolation, not sharing).
   const scratchEngine = useMemo(
-    () => (visible && !giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse ? new StockfishEngineAdapter() : null),
-    [visible, giveaway, atomic, duckChess, spellChess, horde, crazyhouse]
+    () => (visible && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !crazyhouse ? new StockfishEngineAdapter() : null),
+    [visible, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse]
   );
   const bridgeRef = useRef<StockfishBridgeHandle>(null);
   const handleBridgeRef = useCallback(
@@ -163,6 +166,7 @@ export default function PostGameSummaryModal({
           !duckChess &&
           !spellChess &&
           !horde &&
+          !racingKings &&
           !crazyhouse &&
           (!summary ? (
             <View style={styles.loadingRow}>
@@ -196,7 +200,7 @@ export default function PostGameSummaryModal({
           ))}
 
         <View style={styles.buttonColumn}>
-          {!giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse && (
+          {!giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !crazyhouse && (
             <Pressable style={styles.primaryButton} onPress={onGameReview}>
               <Text style={styles.primaryButtonText}>Game Review</Text>
             </Pressable>

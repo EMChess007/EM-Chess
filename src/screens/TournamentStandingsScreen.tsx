@@ -48,6 +48,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
         isChess960: payload.isChess960,
         isKingOfTheHill: payload.isKingOfTheHill,
         isThreeCheck: payload.isThreeCheck,
+        isRacingKings: payload.isRacingKings,
         isSetupChess: false, // Tournaments don't support Setup Chess yet
         isFogOfWar: false, // Tournaments don't support Fog of War either
         isGiveaway: false, // ...nor Giveaway
@@ -102,6 +103,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
       isChess960: match.isChess960,
       isKingOfTheHill: match.isKingOfTheHill,
       isThreeCheck: match.isThreeCheck,
+      isRacingKings: match.isRacingKings,
       isSetupChess: false, // Tournaments don't support Setup Chess yet
       isFogOfWar: false, // Tournaments don't support Fog of War either
         isGiveaway: false, // ...nor Giveaway

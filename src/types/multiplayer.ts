@@ -26,7 +26,8 @@ export type GameOverReason =
   | 'atomic'
   | 'duckChess'
   | 'spellChess'
-  | 'horde';
+  | 'horde'
+  | 'racingKings';
 
 export interface JoinQueuePayload {
   timeControl: OnlineTimeControl;
@@ -40,6 +41,7 @@ export interface JoinQueuePayload {
   isDuckChess?: boolean;
   isSpellChess?: boolean;
   isHorde?: boolean;
+  isRacingKings?: boolean;
   /** Crazyhouse — see crazyhouse.ts. Mutually exclusive with every other variant. */
   isCrazyhouse?: boolean;
 }
@@ -101,6 +103,8 @@ export interface MatchFoundPayload {
   isSpellChess: boolean;
   /** Horde — see horde.ts: the room started from the Horde position (36 White pawns, no White king). */
   isHorde: boolean;
+  /** Racing Kings -- see racingKings.ts: a checking move is illegal; a king on rank 8 wins (both kings there = draw). */
+  isRacingKings?: boolean;
   /** Crazyhouse — see crazyhouse.ts: reserves start empty, so match_found needs no state. */
   isCrazyhouse: boolean;
   fen: string;
@@ -174,6 +178,8 @@ export interface RejoinStatePayload {
   isSpellChess: boolean;
   /** Horde — see horde.ts: the room started from the Horde position (36 White pawns, no White king). */
   isHorde: boolean;
+  /** Racing Kings -- see racingKings.ts: a checking move is illegal; a king on rank 8 wins (both kings there = draw). */
+  isRacingKings?: boolean;
   /** Crazyhouse — see crazyhouse.ts: reserves start empty, so match_found needs no state. */
   isCrazyhouse: boolean;
   /** Spell Chess only — charges/cooldowns/pending effects right now. */
@@ -231,6 +237,7 @@ export interface CreateChallengePayload {
   isDuckChess?: boolean;
   isSpellChess?: boolean;
   isHorde?: boolean;
+  isRacingKings?: boolean;
   /** Crazyhouse — see crazyhouse.ts. Mutually exclusive with every other variant. */
   isCrazyhouse?: boolean;
   timeControlLabel?: string;
@@ -274,6 +281,7 @@ export interface CreateTournamentPayload {
   isChess960?: boolean;
   isKingOfTheHill?: boolean;
   isThreeCheck?: boolean;
+  isRacingKings?: boolean;
 }
 
 export interface JoinTournamentPayload {
@@ -297,6 +305,7 @@ export interface TournamentLobbyState {
   isChess960: boolean;
   isKingOfTheHill: boolean;
   isThreeCheck: boolean;
+  isRacingKings: boolean;
   status: TournamentStatus;
   creatorUserId: string;
   participants: TournamentParticipantSummary[];
@@ -316,6 +325,7 @@ export interface TournamentNextMatch {
   isChess960: boolean;
   isKingOfTheHill: boolean;
   isThreeCheck: boolean;
+  isRacingKings: boolean;
   roomId: string | null;
   playerToken: string | null;
   color: PieceColor | null;
@@ -341,6 +351,7 @@ export interface TournamentMatchReadyPayload {
   isChess960: boolean;
   isKingOfTheHill: boolean;
   isThreeCheck: boolean;
+  isRacingKings: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;

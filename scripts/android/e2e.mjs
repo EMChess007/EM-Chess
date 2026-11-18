@@ -27,7 +27,7 @@ import { Chess } from 'chess.js';
 import { Beacon } from './lib/beacon.mjs';
 import { PHONE_BUDGET, judgePerf, latenciesOf, scaledBudget, summarize, windowStats } from './lib/perf.mjs';
 import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
-import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
+import { byClass, findNodes, rowAfterScroll, visibleWords } from './lib/hierarchy.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
@@ -595,6 +595,82 @@ async function touches2p(dev) {
     log(`2-player board touches: ${JSON.stringify(verdicts)} (tap = input tap worked, press = only the 90 ms touch worked, neither = not selected at all)`);
     for (const n of notes) log(`  ${n}`);
     record('touch: 2-player board', issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1} (from the ${source}${rectNote});${JSON.stringify(verdicts)}${destinationMissing ? ' - emulator rendering note: the destination highlight was not drawn (the phone draws both)' : ''}${verdicts.press > 0 ? ' - input tap alone was not understood' : ''}`);
+  });
+}
+
+/**
+ * RACING KINGS, a Local game (command #42; it replaces the step that command #41 put into smoke.mjs, which runs first in EVERY slice and pressed blindly at the square centres of the
+ * accessibility tree). It runs in the slice of "touch: 2-player board" and uses its method exactly: the board rectangle comes from the app's beacon (`state-board-2p`), a touch is
+ * `input tap`, then the lasting 90 ms press when the app did not select the square (waitSelected), and what is judged is what the app SAYS (the beacon), not the tree.
+ * The "Racing Kings" row of the Local card is low in the Play menu (about y 2100 of 2400 on the large phone, below the fold on the small one): it is found with `below: 'Local'` (as "Classic"),
+ * and when it stands in the bottom quarter of the window the menu is scrolled one more swipe so the touch does not land in the zone of the floating gear button.
+ * The move: e2 -> g3 (the white knight of the start position, a legal move that gives no check); then the position has the knight on g3, Black to move, last move [e2, g3].
+ */
+async function racingKings2p(dev) {
+  const name = 'touch: Racing Kings board (Local)';
+  await scenario(dev, name, async () => {
+    await toHome(dev);
+    dev.beacon.forget('state-board-2p');
+    const row = { text: 'Racing Kings', below: 'Local' };
+    await dev.runSteps([{ text: 'Play' }]);
+    const found = await dev.find(row);
+    if (found.bounds.cy > dev.display.h * 0.75) {
+      // The row was resolved BEFORE the swipe (it is the one under the heading "Local"); after the swipe the heading is off the screen (command #45: the run of #31 died with
+      // 'cannot find {"text":"Local"}'), so the row is re-found by its own text and its shift, never by the heading again.
+      log(`  the Racing Kings row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
+      const before = await dev.stable();
+      dev.scrollDown();
+      await sleep(700);
+      const after = await dev.stable();
+      const moved = rowAfterScroll(before, after, found, row);
+      if (!moved) throw new Error(`the Racing Kings row is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
+      log(`  the Racing Kings row is now at y ${moved.bounds.cy}`);
+      dev.tap(moved.bounds.cx, moved.bounds.cy);
+      await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
+      await dev.runSteps([{ text: '5 min' }]);
+    } else {
+      await dev.runSteps([row, { text: '5 min' }]);
+    }
+    const issues = [];
+    const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
+    let state = await dev.beacon.waitFor('state-board-2p', boardReported, 15_000);
+    if (!state) {
+      // The run of command #42 lost the "5 min" touch once (the Select Time Control screen was still up 50 s later, no game was ever started). A touch the screen did not take is repeated
+      // ONCE, and only while that screen is still the one shown (so no second game can be started); the repeat is logged.
+      const tree = await dev.look().then((l) => l.nodes).catch(() => []);
+      if (findNodes(tree, { text: 'Select Time Control' }).length > 0) {
+        log('  the Select Time Control screen is still shown 15 s after the touch on "5 min": touching it once more');
+        await dev.runSteps([{ text: '5 min' }]);
+      }
+      state = await dev.beacon.waitFor('state-board-2p', boardReported, 40_000);
+    }
+    if (!state) return record(name, [`the Racing Kings board reported no state with a rectangle (the app said ${JSON.stringify(dev.beacon.get('state-board-2p'))}); on screen: ${visibleWords(await dev.look().then((l) => l.nodes).catch(() => []), 30).join(' | ')}`]);
+    const board = rectOfState(state);
+    if (Math.abs(board.w - board.h) > 2) issues.push(`the board is not square: ${board.w}x${board.h}`);
+    // the start position of Racing Kings: the white knight on e2 (and nothing on the third rank)
+    if (pieceOnSquare(state.fen, 'e2') !== 'N') issues.push(`the start position is "${state.fen}": no white knight on e2`);
+    await dev.snapshot('racing-kings-start');
+    const orientation = () => dev.beacon.get('state-board-2p')?.orientation ?? 'w';
+    const touch = async (square, until) => {
+      const r = squareRect(board, orientation(), square);
+      for (const method of ['tap', 'press']) {
+        if (method === 'tap') dev.tap(r.cx, r.cy);
+        else dev.press(r.cx, r.cy, 90);
+        if (await until()) return method;
+      }
+      return null;
+    };
+    const first = await touch('e2', () => waitSelected(dev, 'state-board-2p', 'e2', 1800));
+    if (first === null) issues.push(`touched e2 (tap, then a 90 ms press): the app selected ${JSON.stringify(dev.beacon.get('state-board-2p')?.selected ?? null)}`);
+    else {
+      const second = await touch('g3', () => dev.beacon.waitFor('state-board-2p', (s) => pieceOnSquare(s.fen, 'g3') === 'N' && s.turn === 'b', 2500));
+      const after = dev.beacon.get('state-board-2p');
+      if (second === null) issues.push(`after e2 then g3 the app's position is "${after?.fen}", not a knight on g3 with Black to move (selected ${JSON.stringify(after?.selected ?? null)}, legal targets ${after?.legal})`);
+      else if (JSON.stringify(after.lastMove) !== '["e2","g3"]') issues.push(`the app's last move is ${JSON.stringify(after.lastMove)}, not e2-g3`);
+      else log(`Racing Kings board: e2 selected by ${first}, g3 played by ${second}; the app's position "${after.fen}"`);
+    }
+    await dev.snapshot('racing-kings-after-ng3');
+    record(name, issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1} (from the app's beacon)`);
   });
 }
 
@@ -1640,6 +1716,7 @@ try {
     if (PARTS.has('touch2p')) {
       await touches2p(dev);
       await arrows2p(dev); // the same game screen, after e2-e4 (command #32)
+      await racingKings2p(dev); // Racing Kings (Local), same method (command #42)
     }
     if (PARTS.has('touchbug')) await touchesBughouse(dev, false);
     // the same two boards in the frame of the phone of command #26 (root view below the status bar): where the reverted fix fails

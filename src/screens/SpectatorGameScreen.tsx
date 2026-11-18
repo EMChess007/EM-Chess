@@ -177,6 +177,8 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
                             ? ' · Spell Chess'
                             : state.isHorde
                               ? ' · Horde'
+                              : state.isRacingKings
+                                ? ' · Racing Kings'
                               : state.isCrazyhouse
                                 ? ' · Crazyhouse'
                                 : ''}
@@ -204,6 +206,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
           duckSquare={state.duckSquare ?? null}
           spellChess={state.isSpellChess}
           horde={state.isHorde}
+          racingKings={state.isRacingKings === true}
           crazyhouse={state.isCrazyhouse}
           crazyhouseState={state.crazyhouse ?? initialCrazyhouseState()}
           spellState={state.spellState ?? initialSpellChessState()}

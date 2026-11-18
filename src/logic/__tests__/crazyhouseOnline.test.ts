@@ -137,11 +137,11 @@ describe('Online wiring (no React Native renderer available)', () => {
     expect(online).toContain('plyStateAtView(moveList, viewIndex, (m) => m.crazyhouse, initialCrazyhouseState())');
     expect(online).toContain('crazyhouseState={displayCrazyhouse}');
     expect(online).toContain('compact={spellChess || crazyhouse}');
-    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : myColor}');
-    expect(online).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : handleQueuePremove}');
-    expect(online).toContain('!duckChess && !spellChess && !horde && !crazyhouse && openingName');
-    expect(online).toContain('ratingCategory && !giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse');
-    expect(online).toContain('wasMaterialDownRef.current && !giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse');
+    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : myColor}');
+    expect(online).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : handleQueuePremove}');
+    expect(online).toContain('!duckChess && !spellChess && !horde && !racingKings && !crazyhouse && openingName');
+    expect(online).toContain('ratingCategory && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !crazyhouse');
+    expect(online).toContain('wasMaterialDownRef.current && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !crazyhouse');
     expect(online).toContain('crazyhouse={crazyhouse}');
   });
 

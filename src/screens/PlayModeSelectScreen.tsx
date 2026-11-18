@@ -28,6 +28,7 @@ interface PlayModeSelectScreenProps {
   onBotSpellChess: () => void;
   onBotHorde: () => void;
   onBotCrazyhouse: () => void;
+  onBotRacingKings: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
   onLocalKingOfTheHill: () => void;
@@ -55,6 +56,7 @@ interface PlayModeSelectScreenProps {
   onLocalSpellChess: () => void;
   onLocalHorde: () => void;
   onLocalCrazyhouse: () => void;
+  onLocalRacingKings: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
@@ -86,6 +88,7 @@ export default function PlayModeSelectScreen({
   onBotSpellChess,
   onBotHorde,
   onBotCrazyhouse,
+  onBotRacingKings,
   onLocalClassic,
   onLocalChess960,
   onLocalKingOfTheHill,
@@ -105,6 +108,7 @@ export default function PlayModeSelectScreen({
   onLocalSpellChess,
   onLocalHorde,
   onLocalCrazyhouse,
+  onLocalRacingKings,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
@@ -206,6 +210,9 @@ export default function PlayModeSelectScreen({
             <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotCrazyhouse}>
               <ModeButtonLabel label="Crazyhouse" style={styles.subButtonText} />
             </Pressable>
+            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotRacingKings}>
+              <ModeButtonLabel label="Racing Kings" style={styles.subButtonText} />
+            </Pressable>
           </View>
         </View>
 
@@ -256,6 +263,9 @@ export default function PlayModeSelectScreen({
           <View style={styles.subButtonRow}>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalCrazyhouse}>
               <ModeButtonLabel label="Crazyhouse" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalRacingKings}>
+              <ModeButtonLabel label="Racing Kings" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>

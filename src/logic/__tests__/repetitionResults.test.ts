@@ -116,7 +116,7 @@ describe('the screens feed it correctly', () => {
   it('Bot: the rating result comes from the outcome (a repetition is 1/2-1/2 -> 0.5), and only a WIN can unlock Giant Slayer / Comeback', () => {
     const src = read('screens', 'BotGameScreen.tsx');
     expect(src).toContain("const result = outcome.result === '1/2-1/2' ? 0.5 : winnerColor === userColor ? 1 : 0;");
-    expect(src).toContain('if (result === 1 && !giveaway && !atomic && !duckChess && !horde && !crazyhouse) {\n      if (bot.elo >= 2000) unlockAchievement(\'giant_slayer\');');
+    expect(src).toContain('if (result === 1 && !giveaway && !atomic && !duckChess && !horde && !racingKings && !crazyhouse) {\n      if (bot.elo >= 2000) unlockAchievement(\'giant_slayer\');');
     expect(src).toContain('recordRatedGame(ratingCategory, bot.elo, result, authToken)');
   });
 

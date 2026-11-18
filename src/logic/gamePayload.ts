@@ -38,6 +38,11 @@ interface BuildGamePayloadArgs {
   hordeWinner?: PieceColor | null;
   /** Tags the saved PGN [Variant "Horde"] for the same reason as `giveaway`/`atomic`/`duckChess`/`spellChess` above. */
   horde?: boolean;
+  /** Racing Kings (see racingKings.ts): 'w' / 'b' when that king reached rank 8 (and, for White, Black could not follow),
+   * 'draw' when both did. Stalemate / fifty-move / insufficient material come through `chessStatus`. */
+  racingKingsOutcome?: PieceColor | 'draw' | null;
+  /** Tags the saved PGN [Variant "Racing Kings"] (replay and analysis assume ordinary chess, where checks are legal). */
+  racingKings?: boolean;
   /** Tags the saved PGN [Variant "Crazyhouse"]. There is no Crazyhouse winner argument: checkmate/stalemate/timeout come
    * through `chessStatus` (ChessEngine.getStatus is drop-aware), so getGameOutcome needs no new slot. */
   crazyhouse?: boolean;
@@ -72,7 +77,8 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
     args.duckChessWinner ?? null,
     args.spellChessWinner ?? null,
     args.hordeWinner ?? null,
-    args.repetitionDraw ?? false
+    args.repetitionDraw ?? false,
+    args.racingKingsOutcome ?? null
   );
   if (!outcome.over || args.history.length === 0) return null;
 
@@ -84,7 +90,7 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
       args.initialFen,
       args.history,
       outcome.result,
-      args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : args.duckChess ? 'Duck' : args.spellChess ? 'Spell Chess' : args.horde ? 'Horde' : args.crazyhouse ? 'Crazyhouse' : undefined
+      args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : args.duckChess ? 'Duck' : args.spellChess ? 'Spell Chess' : args.horde ? 'Horde' : args.racingKings ? 'Racing Kings' : args.crazyhouse ? 'Crazyhouse' : undefined
     ),
     timeControl: args.timeControl.label,
     isChess960: args.chess960,

@@ -131,9 +131,9 @@ describe('Crazyhouse wiring (no React Native renderer available)', () => {
       expect(src).toContain('plyStateAtView(history, viewIndex, (h) => h.crazyhouse, initialCrazyhouseState())');
       expect(src).toContain('crazyhouseState={displayCrazyhouse}');
       expect(src).toContain('compact={spellChess || crazyhouse}');
-      expect(src).toContain('!spellChess && !horde && !crazyhouse && openingName');
-      expect(src).toContain('spellChess || horde || crazyhouse) return;'); // no hints
-      expect(src).toContain('hordeWinner,\n        horde,\n        crazyhouse,'); // the saved-game payload is tagged
+      expect(src).toContain('!spellChess && !horde && !racingKings && !crazyhouse && openingName');
+      expect(src).toContain('spellChess || horde || racingKings || crazyhouse) return;'); // no hints
+      expect(src).toContain('hordeWinner,\n        horde,\n        racingKingsOutcome,\n        racingKings,\n        crazyhouse,'); // the saved-game payload is tagged
       expect(src).toContain("? 'Crazyhouse'");
       expect(src).toContain('crazyhouse={crazyhouse}'); // the summary modal (and the board) know it is Crazyhouse
     });
@@ -148,10 +148,10 @@ describe('Crazyhouse wiring (no React Native renderer available)', () => {
     expect(bot).toContain('chooseCrazyhouseBotMove(moveEngine, bot.elo)');
     expect(bot).toContain("choice.type === 'drop'");
     expect(bot).toContain('? moveEngine.drop(choice.piece, choice.square)');
-    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : userColor}');
-    expect(bot).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || crazyhouse ? undefined : handleQueuePremove}');
-    expect(bot).toContain('if (ratingCategory && !giveaway && !atomic && !duckChess && !horde && !crazyhouse) recordRatedGame(');
-    expect(bot).toContain('if (result === 1 && !giveaway && !atomic && !duckChess && !horde && !crazyhouse) {');
+    expect(bot).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : userColor}');
+    expect(bot).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : handleQueuePremove}');
+    expect(bot).toContain('if (ratingCategory && !giveaway && !atomic && !duckChess && !horde && !racingKings && !crazyhouse) recordRatedGame(');
+    expect(bot).toContain('if (result === 1 && !giveaway && !atomic && !duckChess && !horde && !racingKings && !crazyhouse) {');
     expect(bot).toContain('crazyhouse,\n          crazyhouseState,'); // the bot's own move engine is built with the state
   });
 
@@ -189,8 +189,8 @@ describe('Crazyhouse wiring (no React Native renderer available)', () => {
 
   it('Game Review is off for Crazyhouse (Stockfish cannot read a reserve)', () => {
     const modal = read('components/PostGameSummaryModal.tsx');
-    expect(modal).toContain('!spellChess && !horde && !crazyhouse ? new StockfishEngineAdapter()');
-    expect(modal).toContain('{!giveaway && !atomic && !duckChess && !spellChess && !horde && !crazyhouse && (');
+    expect(modal).toContain('!spellChess && !horde && !racingKings && !crazyhouse ? new StockfishEngineAdapter()');
+    expect(modal).toContain('{!giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !crazyhouse && (');
   });
 
   it('the pickers: Crazyhouse is a Local and a Bot mode, shown honestly in the bot list, never offered custom UCI engines, and not an Engine-vs-Engine mode', () => {
@@ -199,7 +199,7 @@ describe('Crazyhouse wiring (no React Native renderer available)', () => {
     expect(play).toContain('onPress={onLocalCrazyhouse}');
     const bots = read('screens/BotSelectScreen.tsx');
     expect(bots).toContain("crazyhouse ? 'Crazyhouse bot'");
-    expect(bots).toContain('customEngines.length > 0 && !engineLabel && !horde && !crazyhouse && ('); // !engineLabel: 4 Player Chess; the other two: the heuristic-free variants
+    expect(bots).toContain('customEngines.length > 0 && !engineLabel && !horde && !racingKings && !crazyhouse && ('); // !engineLabel: 4 Player Chess; the other two: the heuristic-free variants
     const app = readFileSync(join(SRC, '../App.tsx'), 'utf8').split(/\r?\n/).join(' ');
     expect(app).toContain("mode.kind !== 'engineVsEngine' && mode.crazyhouse");
     expect(app).not.toMatch(/kind: 'engineVsEngine'[^}]*crazyhouse/);
