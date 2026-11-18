@@ -12,7 +12,7 @@
 #   large-perf                          the performance budget (command #33): taps, bot reply, arrows and the Bughouse clocks timed by the app, the JavaScript thread's lateness (lib/perf.mjs)
 #   online                              the backend + the buddies: register, sign in, spectate, the online Bughouse game, then the backend STOPPED and the offline states (cramped phone)
 #   all                                 every slice, one after the other (a local run)
-# A failing slice never stops the later ones; the exit code is non-zero if any failed.
+# A failing slice never stops the later ones. Exit code: 1 when the SMOKE failed (required); a failure of the full e2e is informational (marker file, exit 0) unless ANDROID_E2E_STRICT=1.
 set -uo pipefail
 
 apk="${1:?usage: run-on-emulator.sh <apk> <output dir> <job>}"
@@ -39,6 +39,19 @@ rc=0
 # runner was SLOW exits with 3 and is run ONCE more (its own folder, `-retry`; the digest shows both attempts and labels them RUNNER / APP). A failure on a healthy runner (exit 1) is an APP
 # finding and is never retried; the slice's verdict is its LAST attempt, so a slow runner that fails twice is red.
 EXIT_RUNNER=3
+# REQUIRED = SMOKE (command #44, temporary until the release-build e2e task lands): the smoke above (app installs, starts, reaches Home without a crash) is the only thing that fails this script.
+# A failure of the FULL e2e is INFORMATIONAL: one line per failed phase goes to the marker file `e2e-informational-<job>.txt` in the output folder (the aggregate job prints it under
+# "INFORMATIONAL (not blocking)") and the script still exits 0 - unless ANDROID_E2E_STRICT=1, which behaves exactly as before (any failure -> exit 1).
+MARKER="$out/e2e-informational-$job.txt"
+e2e_failed() {
+  local what="$1" detail="$2"
+  if [ "${ANDROID_E2E_STRICT:-}" = "1" ]; then
+    rc=1
+  else
+    echo "FAILED $what ($detail)" >> "$MARKER"
+    echo "[run] INFORMATIONAL (not blocking): $what failed ($detail)"
+  fi
+}
 PREPARE=:   # a function the slice needs before EACH attempt (the online slice starts its backend)
 CLEANUP=:   # ... and after each attempt
 phase() {
@@ -58,14 +71,14 @@ phase() {
     fi
     break
   done
-  [ "$code" -eq 0 ] || rc=1
+  [ "$code" -eq 0 ] || e2e_failed "$profile/$name/$tag" "exit $code, attempt $attempt"
   echo "[run] $profile/$name/$tag took $((SECONDS - t0)) s (exit $code, attempt $attempt)"
 }
 
 online_prepare() {
   # the backend and the buddy; the phase stops the backend itself after signing in again, then checks the offline states
   bash scripts/android/backend.sh stop >/dev/null 2>&1 || true
-  bash scripts/android/backend.sh start || { echo "[run] the backend could not start"; rc=1; }
+  bash scripts/android/backend.sh start || { echo "[run] the backend could not start"; e2e_failed "online backend start" "the backend could not start"; }
 }
 online_cleanup() { bash scripts/android/backend.sh stop || true; }
 

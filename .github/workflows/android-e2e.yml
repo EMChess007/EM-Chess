@@ -278,14 +278,17 @@ jobs:
           merge-multiple: true
           path: android-e2e-all
 
+      # INFORMATIONAL (command #44, temporary): the full e2e never decides the verdict; only the smoke does (an emulator slice fails only when its smoke fails). Claude reads this before every merge.
       - name: Summary
         if: needs.changes.outputs.code == 'true'
-        run: node scripts/android/summary.mjs android-e2e-all | tee -a "$GITHUB_STEP_SUMMARY"
+        run: |
+          node scripts/android/summary.mjs android-e2e-all | tee -a "$GITHUB_STEP_SUMMARY"
+          node scripts/android/summary.mjs android-e2e-all --informational | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # On a failure only (command #32): the failing slices' downscaled screenshots as base64, in the job summary AND in the job's log (collapsed), so a session can read them
-      # without downloading an artifact. A slice that passed on its repeat shows nothing here (its first attempt is in the digest above).
+      # Informational too (command #32, #44): the failing slices' downscaled screenshots as base64, in the job summary AND in the job's log (collapsed), so a session can read them
+      # without downloading an artifact. Nothing is printed when every slice passed; a slice that passed on its repeat shows nothing here (its first attempt is in the digest above).
       - name: The failing screenshots
-        if: needs.changes.outputs.code == 'true' && needs.emulator.result != 'success'
+        if: needs.changes.outputs.code == 'true'
         run: |
           node scripts/android/summary.mjs android-e2e-all --images > failing-screenshots.md
           if [ -s failing-screenshots.md ]; then
@@ -305,5 +308,7 @@ jobs:
           echo "changes=$CHANGES code=$CODE apk=$APK emulator=$EMULATOR"
           if [ "$CHANGES" != "success" ]; then echo "the change detection failed"; exit 1; fi
           if [ "$CODE" != "true" ]; then echo "documentation only: nothing to run"; exit 0; fi
-          if [ "$APK" != "success" ] || [ "$EMULATOR" != "success" ]; then echo "android-e2e is RED: a slice or the APK build failed (see the jobs above and the summary)"; exit 1; fi
-          echo "android-e2e is green: every slice passed"
+          # REQUIRED = SMOKE: run-on-emulator.sh exits 1 only when the smoke failed; a full-e2e failure is a marker + exit 0 (INFORMATIONAL above) unless ANDROID_E2E_STRICT=1.
+          # A slice that did not run (cancelled / skipped / failed to start) makes the emulator job's result != success, so it is red here too.
+          if [ "$APK" != "success" ] || [ "$EMULATOR" != "success" ]; then echo "android-e2e is RED: the APK build failed, a slice's smoke failed or a slice did not run (see the jobs above and the summary)"; exit 1; fi
+          echo "android-e2e is green: every slice ran and passed its smoke (full e2e results: INFORMATIONAL, see the summary)"

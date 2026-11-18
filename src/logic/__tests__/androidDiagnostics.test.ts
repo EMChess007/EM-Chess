@@ -164,13 +164,13 @@ describe('the failing screenshots', () => {
 });
 
 describe('the wiring', () => {
-  it('the workflow prints the screenshots on a failure only, to the summary and to the log, before the verdict', () => {
+  it('the workflow prints the screenshots (nothing on a green run), to the summary and to the log, before the verdict (informational since command #44)', () => {
     const wf = read('.github/workflows/android-e2e.yml');
     const step = wf.indexOf('- name: The failing screenshots');
     expect(step).toBeGreaterThan(wf.indexOf('- name: Summary'));
     expect(step).toBeLessThan(wf.indexOf('- name: The verdict'));
     const body = wf.slice(step, wf.indexOf('- name: The verdict'));
-    expect(body).toContain("needs.emulator.result != 'success'");
+    expect(body).not.toContain("needs.emulator.result != 'success'");
     expect(body).toContain('summary.mjs android-e2e-all --images');
     expect(body).toContain('>> "$GITHUB_STEP_SUMMARY"');
     expect(body).toContain('::group::');
@@ -182,7 +182,7 @@ describe('the wiring', () => {
     expect(sh).toContain('for attempt in 1 2; do');
     expect(sh).toContain('--attempt "$attempt"');
     expect(sh).toContain('[ "$code" -eq "$EXIT_RUNNER" ] && [ "$attempt" -eq 1 ]');
-    expect(sh).toContain('[ "$code" -eq 0 ] || rc=1');
+    expect(sh).toContain('[ "$code" -eq 0 ] || e2e_failed "$profile/$name/$tag" "exit $code, attempt $attempt"');
     const e2e = read('scripts/android/e2e.mjs');
     expect(e2e).toContain("ATTEMPT === 2 ? '-retry' : ''");
     expect(e2e).toContain('process.exit(exitStatus({ failed: failed.length > 0, health }))');

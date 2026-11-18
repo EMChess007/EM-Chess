@@ -31,6 +31,7 @@ Spell, Horde, Crazyhouse; 4-seat: 4 Player, 4P Giveaway, Chaturaji; Crazy Bughou
 - Push, then report immediately. Never wait on, poll or watch CI.
 - One branch per task, PR to `master` (backend: `main`). Never merge. Never force-push. Never `SKIP_PREPUSH` on a final commit.
 - The user merges only when `test`, `device-matrix`, `android-e2e` and `security-audit` are all green.
+- android-e2e required = smoke; full e2e informational until the release-build e2e task lands; Claude reviews the informational results (job summary, "INFORMATIONAL (not blocking)") before every merge. `ANDROID_E2E_STRICT=1` restores the old all-or-nothing run (TESTING.md 45).
 - Do not edit generated files: `src/engine/generated/*`, and the backend's `src/game/fourPlayer/*` / `src/game/bughouse/*` (use the sync scripts).
 - Tests: literals for mutation-targeted constants, seeded randomness, no wall-clock assertions, fake timers in rendered tests (AGENTS.md).
 - Phone notes: the round gear in Expo Go is Expo's own button, ignore it. If the phone shows an old version: Expo Go -> Clear storage.
