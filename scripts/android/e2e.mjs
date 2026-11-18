@@ -27,7 +27,7 @@ import { Chess } from 'chess.js';
 import { Beacon } from './lib/beacon.mjs';
 import { PHONE_BUDGET, judgePerf, latenciesOf, scaledBudget, summarize, windowStats } from './lib/perf.mjs';
 import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
-import { byClass, findNodes, visibleWords } from './lib/hierarchy.mjs';
+import { byClass, findNodes, rowAfterScroll, visibleWords } from './lib/hierarchy.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
@@ -615,11 +615,22 @@ async function racingKings2p(dev) {
     await dev.runSteps([{ text: 'Play' }]);
     const found = await dev.find(row);
     if (found.bounds.cy > dev.display.h * 0.75) {
+      // The row was resolved BEFORE the swipe (it is the one under the heading "Local"); after the swipe the heading is off the screen (command #45: the run of #31 died with
+      // 'cannot find {"text":"Local"}'), so the row is re-found by its own text and its shift, never by the heading again.
       log(`  the Racing Kings row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
+      const before = await dev.stable();
       dev.scrollDown();
       await sleep(700);
+      const after = await dev.stable();
+      const moved = rowAfterScroll(before, after, found, row);
+      if (!moved) throw new Error(`the Racing Kings row is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
+      log(`  the Racing Kings row is now at y ${moved.bounds.cy}`);
+      dev.tap(moved.bounds.cx, moved.bounds.cy);
+      await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
+      await dev.runSteps([{ text: '5 min' }]);
+    } else {
+      await dev.runSteps([row, { text: '5 min' }]);
     }
-    await dev.runSteps([row, { text: '5 min' }]);
     const issues = [];
     const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
     let state = await dev.beacon.waitFor('state-board-2p', boardReported, 15_000);

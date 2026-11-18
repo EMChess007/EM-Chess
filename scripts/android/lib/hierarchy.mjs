@@ -95,5 +95,35 @@ export function visibleWords(nodes, limit = 60) {
   return words.slice(0, limit);
 }
 
+/**
+ * Where a row that was found BEFORE a scroll stands AFTER it (command #45). A step like `{ text: 'Racing Kings', below: 'Local' }` needs the heading `Local` on screen, and after a swipe
+ * the heading may have scrolled out of the window, so the row is re-found by its own text: how far the list moved is read from the words that are on screen exactly once in both trees
+ * (the median of their shifts), and of the nodes with the row's text the one nearest to where the row must now be is the answer. Null when the row's text is not on screen any more, or when
+ * the two trees share no word to measure the shift by. (`row` is the node found before the swipe, `step` the step that found it.)
+ */
+export function rowAfterScroll(before, after, row, step) {
+  const once = (nodes, key) => {
+    const counts = new Map();
+    for (const n of nodes) if (n.bounds && sized(n) && n[key]) counts.set(n[key], [...(counts.get(n[key]) ?? []), n]);
+    return new Map([...counts].filter(([, list]) => list.length === 1).map(([word, list]) => [word, list[0]]));
+  };
+  const shifts = [];
+  for (const key of ['text', 'desc']) {
+    const was = once(before, key);
+    const now = once(after, key);
+    for (const [word, node] of was) {
+      const moved = now.get(word);
+      if (moved && word !== step.text) shifts.push(node.bounds.cy - moved.bounds.cy);
+    }
+  }
+  if (shifts.length === 0) return null;
+  shifts.sort((a, b) => a - b);
+  const shift = shifts[Math.floor(shifts.length / 2)];
+  const expected = row.bounds.cy - shift;
+  const candidates = findNodes(after, { text: step.text });
+  if (candidates.length === 0) return null;
+  return candidates.reduce((best, n) => (Math.abs(n.bounds.cy - expected) < Math.abs(best.bounds.cy - expected) ? n : best));
+}
+
 /** A cheap fingerprint of what is on screen (to see whether a scroll moved anything). */
 export const fingerprint = (nodes) => nodes.map((n) => `${n.text}|${n.desc}|${n.bounds ? `${n.bounds.x1},${n.bounds.y1}` : ''}`).join('\n');
