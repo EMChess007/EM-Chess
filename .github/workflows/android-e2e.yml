@@ -6,7 +6,7 @@ name: android-e2e
 # gallery pixels, touches on the 2-player board and on both Bughouse boards (edge-to-edge AND in the frame of the phone that showed the bug of command #26), an online Bughouse game against
 # the run's own backend, and "Can't reach the server" with the backend stopped.
 #
-# SHAPE: `changes` (is there anything but documentation?) -> `apk` (build, or restore, the debug APK once) -> `emulator` (seven jobs side by side, one slice each:
+# SHAPE: `changes` (is there anything but documentation?) -> `apk` (build, or restore, the release-mode APK once; command #46) -> `emulator` (seven jobs side by side, one slice each:
 # scripts/android/run-on-emulator.sh) -> `android-e2e` (the aggregate: THE REQUIRED STATUS CHECK, its name is the check's name; it is green only when every slice is).
 # A docs-only change skips `apk` and `emulator`, and the aggregate still reports "success", so a required check never hangs on "expected" the way a path-filtered workflow does.
 # No secret is used anywhere: the APK is built with `expo prebuild` + Gradle (no EAS), the database is a throw-away service container, the backend is the public chess-app-backend checkout.
@@ -26,6 +26,11 @@ on:
         required: false
         type: boolean
         default: false
+      debug_build:
+        description: 'Command #46: use the old DEBUG APK + Metro instead of the RELEASE-mode APK with the JavaScript embedded (for debugging the run itself)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -37,6 +42,9 @@ concurrency:
 
 env:
   EXPO_NO_TELEMETRY: '1'
+  # command #46: how the APK is built. `release` (CI) = JavaScript bundle embedded, no Metro; `debug` = the old debug APK + Metro, only on a manual run with debug_build. This names a MODE only: the build-time test
+  # switch itself (EXPO_PUBLIC_E2E_BUILD) is set by scripts/android/build-apk.sh on the Gradle process and by nothing in this file (CHECKLIST section 7; e2eBuildSwitch.test.ts scans for it).
+  E2E_APK_MODE: ${{ github.event.inputs.debug_build == 'true' && 'debug' || 'release' }}
 
 jobs:
   changes:
@@ -57,7 +65,7 @@ jobs:
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo "code changed: $code"
 
-  # --- the APK: only rebuilt when the NATIVE side changes (the JavaScript comes from Metro at run time) --------------------------------------------------------------------------------
+  # --- the APK: release mode embeds the JavaScript, so the cache key covers the app's sources AND the build mode (command #46); a debug APK (manual run) only changes with the native side --------------------------------------------------------------------------------
   apk:
     name: apk
     needs: changes
@@ -72,7 +80,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: apk-cache
-          key: apk-v3-${{ hashFiles('package-lock.json', 'app.json', 'app.config.js', 'assets/icon.png', 'assets/splash-icon.png', 'assets/android-icon-*.png','scripts/android/build-apk.sh', 'scripts/android/patch-main-activity.mjs') }}
+          key: apk-${{ env.E2E_APK_MODE }}-e2ebuild1-v4-${{ hashFiles('package-lock.json', 'app.json', 'app.config.js', 'index.ts', 'App.tsx', 'metro.config.js', 'src/**', 'assets/**', 'scripts/build-info.cjs', 'scripts/android/build-apk.sh', 'scripts/android/patch-main-activity.mjs', 'scripts/android/patch-cleartext.mjs') }}
 
       - uses: actions/setup-node@v4
         if: steps.apk.outputs.cache-hit != 'true'
@@ -101,9 +109,9 @@ jobs:
           key: gradle-v1-${{ hashFiles('package-lock.json') }}
           restore-keys: gradle-v1-
 
-      - name: Build the debug APK (expo prebuild + Gradle, x86_64)
+      - name: Build the APK (expo prebuild + Gradle, x86_64; release mode unless debug_build)
         if: steps.apk.outputs.cache-hit != 'true'
-        run: bash scripts/android/build-apk.sh apk-cache
+        run: bash scripts/android/build-apk.sh apk-cache ${{ env.E2E_APK_MODE == 'debug' && '--debug' || '' }}
 
       - name: Save the APK
         if: steps.apk.outputs.cache-hit != 'true'
@@ -125,7 +133,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: apk-cache/app-debug.apk
+          path: apk-cache/app-e2e.apk
           retention-days: 1
 
   # --- seven slices, side by side ---------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -185,7 +193,8 @@ jobs:
           name: apk
           path: apk-cache
 
-      - name: Start Metro
+      - name: Start Metro (debug mode only)
+        if: env.E2E_APK_MODE == 'debug'
         run: bash scripts/android/metro.sh start
 
       - name: Enable KVM
@@ -240,7 +249,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: bash scripts/android/run-on-emulator.sh apk-cache/app-debug.apk android-e2e-out ${{ matrix.job }}
+          script: bash scripts/android/run-on-emulator.sh apk-cache/app-e2e.apk android-e2e-out ${{ matrix.job }}
 
       - name: Keep the screenshots, trees and logs
         if: always()
@@ -252,7 +261,7 @@ jobs:
           retention-days: 14
 
       - name: Stop Metro
-        if: always()
+        if: always() && env.E2E_APK_MODE == 'debug'
         run: bash scripts/android/metro.sh stop
 
   # --- THE REQUIRED CHECK: green only when every slice is green (or when there was nothing but documentation) ---------------------------------------------------------------------------

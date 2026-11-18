@@ -134,7 +134,7 @@ describe('it exists only in the end-to-end build', () => {
     expect(probeImporters).toEqual(['src/dev/registerE2e.ts']);
     const registrationImporters = files.filter((f) => /from\s+'[^']*registerE2e'/.test(code(f)));
     expect(registrationImporters).toEqual([]);
-    expect(code(join(root, 'index.ts'))).toMatch(/if \(__DEV__\) \{\s*require\('\.\/src\/dev\/registerE2e'\);\s*\}/);
+    expect(code(join(root, 'index.ts'))).toMatch(/if \(__DEV__ \|\| process\.env\.EXPO_PUBLIC_E2E_BUILD === '1'\) \{\s*require\('\.\/src\/dev\/registerE2e'\);\s*\}/);
     for (const board of ['src/components/ChessBoard.tsx', 'src/components/BughouseBoard.tsx']) expect(code(join(root, board))).toContain('getE2eStateProbe()');
     expect(code(join(root, 'src/components/useBoardGestures.ts'))).toContain('getE2eGestureCounter()');
   });

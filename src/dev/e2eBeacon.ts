@@ -16,9 +16,12 @@ const ALLOWED_HOSTS = new Set(['10.0.2.2', 'localhost', '127.0.0.1']);
 
 let warned = false;
 
-/** `__DEV__`, read defensively (a test runner without the React Native global is not a development build either). */
+/**
+ * Whether the e2e helpers may run: a development build, OR a build made with the one build-time test switch EXPO_PUBLIC_E2E_BUILD === '1' (command #46: the Android run's release-mode APK, which has no
+ * Metro and `__DEV__` false). `__DEV__` is read defensively (a test runner without the React Native global is not a development build either). Any value of the switch but exactly "1" is off.
+ */
 function isDevBuild(): boolean {
-  return typeof __DEV__ !== 'undefined' && __DEV__;
+  return (typeof __DEV__ !== 'undefined' && __DEV__) || process.env.EXPO_PUBLIC_E2E_BUILD === '1';
 }
 
 /** The beacon's origin, or null when the switch is off, invalid, or this is not a development build. */

@@ -98,6 +98,9 @@ was called "done" — don't repeat that on anything else.
 - **Auth rate-limit override absent/ignored in production**: `AUTH_RATE_LIMIT_TEST_OVERRIDE` (backend
   `src/lib/authRateLimit.ts`) - `npm run test:authRateLimit` in the backend pins all of the above. The same rule
   for the app: `EXPO_PUBLIC_API_URL` is honoured by dev builds only (`src/api/apiBaseUrl.ts`, `apiBaseUrl.test.ts`).
+- **App build-time switch `EXPO_PUBLIC_E2E_BUILD`** (command #46, TESTING.md section 45): opens the e2e helpers in the release-mode Android test APK only. Exact value "1"; set only by `scripts/android/build-apk.sh`;
+  the gate is written out as `process.env.EXPO_PUBLIC_E2E_BUILD === '1'` at each of its four sites (a constant imported from another module is not folded out of a production bundle); `e2eBuildSwitch.test.ts`
+  scans the configs and exports a production bundle to prove no helper and no test URL is in it. A new e2e helper is gated by the same expression, never by a new variable.
 - **A proxy hop count is a measurement, not an assumption** (`TRUSTED_PROXY_HOPS`, backend TESTING.md sections 35-38): any limit that is keyed by client address must be checked on the
   deployed server (`GET /health/client-ip`: `clientIsPrivate` false, `chain` as expected, a spoofed `X-Forwarded-For` changes nothing) before it is trusted.
 
