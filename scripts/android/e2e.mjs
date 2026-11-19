@@ -27,7 +27,7 @@ import { Chess } from 'chess.js';
 import { Beacon } from './lib/beacon.mjs';
 import { PHONE_BUDGET, judgePerf, latenciesOf, scaledBudget, summarize, windowStats } from './lib/perf.mjs';
 import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
-import { byClass, findNodes, fingerprint, rowAfterScroll, tappableNow, visibleWords } from './lib/hierarchy.mjs';
+import { byClass, findNodes, rowAfterScroll, stoodStill, tappableNow, visibleWords } from './lib/hierarchy.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
@@ -808,18 +808,18 @@ const FROM_POSITION_BOT_BUDGET_MS = 90_000;
 
 async function tapReachable(dev, step, what, { listEnd = false } = {}) {
   let previous = null;
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < (listEnd ? 10 : 6); i++) {
     const nodes = await dev.dump();
     const hit = findNodes(nodes, step)[0];
-    // `listEnd` (command #54, the Play menu): a swipe that moved nothing means the list is at its end, where the last card's entry cannot stand in the upper 70 % any more
-    const atEnd = listEnd && previous !== null && fingerprint(nodes) === previous;
+    // `listEnd` (command #54, the Play menu): the entry that did not move after a swipe means the list is at its end, where the last card's entry cannot stand in the upper 70 % any more
+    const atEnd = listEnd && stoodStill(previous, hit);
+    if (listEnd) log(`  ${what}: ${hit ? `y ${hit.bounds.y1}-${hit.bounds.y2} (centre ${hit.bounds.cy}) of ${dev.display.h}` : 'not on the screen'}, list at its end: ${atEnd}`);
     if (tappableNow(hit, dev.display.h, atEnd)) {
-      if (atEnd) log(`  "${what}" at y ${hit.bounds.cy} of ${dev.display.h} after the list stopped moving: tapping it there`);
       dev.tap(hit.bounds.cx, hit.bounds.cy);
       await sleep(700);
       return;
     }
-    previous = fingerprint(nodes);
+    previous = hit ?? null;
     // from above the keyboard (the lowest 40 % of the window may be the soft keyboard), on the page's own buttons
     dev.swipe(dev.display.w / 2, dev.display.h * 0.55, dev.display.w / 2, dev.display.h * 0.2, 600);
     await sleep(700);

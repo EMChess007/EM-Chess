@@ -128,12 +128,18 @@ export function rowAfterScroll(before, after, row, step) {
 /**
  * Whether a control may be tapped now (command #54). The usual rule: it stands in the upper `upper` (0.7) of the window, above a soft keyboard. A control in the LAST card of a menu can
  * never get there (the list ends, so it stays in the lower part of the window: the run on 654c650 listed "From Position" on the screen and still died with "not reachable"), so with
- * `atEnd` (the caller saw that a swipe moved nothing: the list is at its end) it may stand anywhere above the lowest 10 % of the window (the navigation bar). `hit` is a node of `findNodes`.
+ * `atEnd` (the caller saw that a swipe moved the entry by nothing: the list is at its end) it may stand anywhere above the lowest 3 % of the window (the gesture navigation bar; run
+ * 44530171992 had a 2377 px window, where the first version's 90 % limit, y 2139, was above the last card's buttons). `hit` is a node of `findNodes`.
  */
 export function tappableNow(hit, windowHeight, atEnd, upper = 0.7) {
   if (!hit || !hit.bounds) return false;
   if (hit.bounds.cy < windowHeight * upper) return true;
-  return atEnd && hit.bounds.y2 <= windowHeight * 0.9;
+  return atEnd && hit.bounds.y2 <= windowHeight * 0.97;
+}
+
+/** True when the same control stands where it stood before a swipe (within 2 px): the list is at its end. `before` / `after` are nodes of `findNodes`, or null. */
+export function stoodStill(before, after) {
+  return Boolean(before && after && before.bounds && after.bounds && Math.abs(before.bounds.cy - after.bounds.cy) <= 2);
 }
 
 /** A cheap fingerprint of what is on screen (to see whether a scroll moved anything). */

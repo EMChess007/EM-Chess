@@ -19,7 +19,7 @@ import {
   squareRect,
   textIssues,
 } from '../../../scripts/android/lib/checks.mjs';
-import { byClass, extractXml, findNodes, findOne, fingerprint, parseBounds, parseHierarchy, rowAfterScroll, tappableNow } from '../../../scripts/android/lib/hierarchy.mjs';
+import { byClass, extractXml, findNodes, findOne, parseBounds, parseHierarchy, rowAfterScroll, stoodStill, tappableNow } from '../../../scripts/android/lib/hierarchy.mjs';
 import { crop, decodePng, encodePng, solid } from '../../../scripts/android/lib/png.mjs';
 import { PROFILES } from '../../../scripts/android/lib/device.mjs';
 
@@ -351,23 +351,25 @@ describe('rowAfterScroll (command #45: the Racing Kings row after the swipe, whe
 
 describe('tappableNow (command #54: the From Position entry, the last card of the Play menu)', () => {
   const label = (text: string, cy: number) => node({ text, bounds: box(100, cy - 40, 900, cy + 40) });
-  // literals on purpose: a 1080 x 2400 window; "From Position" at the end of the list stands at y 1900 (79 %), above Open Editor (2020) and Import PGN (2140)
-  const end = [label('Board Editor', 1700), label('From Position', 1900), label('Open Editor', 2020), label('Import PGN', 2140)];
-  const hit = findNodes(end, { text: 'From Position' })[0];
+  // literals on purpose: a 2400 px window; at the end of the list the last card's buttons sit low: "From Position" at y 2200 (92 %, y2 2240), which the 90 % limit of the first fix refused
+  const end = findNodes([label('Board Editor', 1900), label('From Position', 2200)], { text: 'From Position' })[0];
 
-  it('refuses the entry below 70 % while the list can still move, and takes it once a swipe moved nothing', () => {
-    expect(tappableNow(hit, 2400, false)).toBe(false); // the old rule: the run on 654c650 never tapped it
-    expect(tappableNow(hit, 2400, true)).toBe(true);
+  it('refuses the entry below 70 % while the list can still move, and takes it once it stood still', () => {
+    expect(tappableNow(end, 2400, false)).toBe(false); // the old rule: the runs on 654c650 and eca841e never tapped it
+    expect(tappableNow(end, 2400, true)).toBe(true);
   });
 
   it('still takes a control in the upper 70 % at once, and never one under the navigation bar or an absent one', () => {
     expect(tappableNow(findNodes([label('Load', 1500)], { text: 'Load' })[0], 2400, false)).toBe(true);
-    expect(tappableNow(findNodes([label('Import PGN', 2300)], { text: 'Import PGN' })[0], 2400, true)).toBe(false); // y2 2340 > 2160
+    expect(tappableNow(findNodes([label('Import PGN', 2300)], { text: 'Import PGN' })[0], 2400, true)).toBe(false); // y2 2340 > 2328
     expect(tappableNow(undefined, 2400, true)).toBe(false);
   });
 
-  it('fingerprint tells a list that stopped moving from one that moved', () => {
-    expect(fingerprint(end)).toBe(fingerprint([label('Board Editor', 1700), label('From Position', 1900), label('Open Editor', 2020), label('Import PGN', 2140)]));
-    expect(fingerprint(end)).not.toBe(fingerprint([label('Board Editor', 1600), label('From Position', 1800), label('Open Editor', 1920), label('Import PGN', 2040)]));
+  it('stoodStill: the entry that did not move after a swipe is at the end of the list', () => {
+    const at = (cy: number) => findNodes([label('From Position', cy)], { text: 'From Position' })[0];
+    expect(stoodStill(at(2200), at(2201))).toBe(true);
+    expect(stoodStill(at(2200), at(1850))).toBe(false); // it moved by a swipe
+    expect(stoodStill(null, at(2200))).toBe(false); // it was not on the screen before
+    expect(stoodStill(at(2200), null)).toBe(false);
   });
 });
