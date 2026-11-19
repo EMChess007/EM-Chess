@@ -5,10 +5,12 @@ import { Pressable } from '../components/AppPressable';
 import { Text, TextInput } from '../components/AppText';
 import { appAlert } from '../components/AppAlert';
 import ScreenHeader from '../components/ScreenHeader';
-import { getBoardSize } from '../components/boardSize';
+import EditorBoardGrid from '../components/EditorBoardGrid';
+import { editorSquareStyle, getEditorSquareSize } from '../components/boardSize';
 import Square from '../components/Square';
 import {
   buildFen,
+  editorSquareLabel,
   emptyBoard,
   boardFromFen,
   editorErrorText,
@@ -50,8 +52,7 @@ const PALETTE_PIECE_ORDER: PieceType[] = ['k', 'q', 'r', 'b', 'n', 'p'];
 
 export default function BoardSetupScreen({ onBack, onAnalyze, onPlay, fromPosition = false, initialFen, onlineAvailable = false }: BoardSetupScreenProps) {
   const { width } = useWindowDimensions();
-  const boardSize = getBoardSize(width);
-  const squareSize = boardSize / 8;
+  const squareSize = getEditorSquareSize(width);
   const colors = useAppColors();
   const boardTheme = useActiveBoardTheme();
   const pieceTheme = useActivePieceTheme();
@@ -217,30 +218,35 @@ export default function BoardSetupScreen({ onBack, onAnalyze, onPlay, fromPositi
             Paste a FEN below (then Load), or set up the pieces, then press Play from here. Standard chess rules, not rated.
           </Text>
         )}
-        <View style={styles.boardWrap}>
-          <View style={styles.boardBorder}>
-            <View style={[styles.board, { width: boardSize, height: boardSize }]}>
-              {board.map((row, rowIndex) =>
-                row.map((squareData, colIndex) => (
-                  <Pressable key={squareData.square} onPress={() => handleSquarePress(squareData.square)}>
-                    <Square
-                      data={squareData}
-                      isLight={(rowIndex + colIndex) % 2 === 0}
-                      isSelected={false}
-                      isLegalTarget={false}
-                      isChecked={false}
-                      isLastMove={false}
-                      size={squareSize}
-                      lightColor={boardTheme.lightColor}
-                      darkColor={boardTheme.darkColor}
-                      pieceImages={pieceTheme.images}
-                    />
-                  </Pressable>
-                ))
-              )}
-            </View>
-          </View>
-        </View>
+        <EditorBoardGrid
+          rows={board}
+          squareSize={squareSize}
+          renderSquare={(squareData, rowIndex, colIndex) => (
+            // `compact`: the square IS the touch target. Without it AppPressable's 44 dp floor grows a 41 dp square and the row no longer fits (command #55).
+            <Pressable
+              compact
+              key={squareData.square}
+              testID={`editor-square-${squareData.square}`}
+              accessibilityRole="button"
+              accessibilityLabel={editorSquareLabel(squareData)}
+              style={editorSquareStyle(squareSize)}
+              onPress={() => handleSquarePress(squareData.square)}
+            >
+              <Square
+                data={squareData}
+                isLight={(rowIndex + colIndex) % 2 === 0}
+                isSelected={false}
+                isLegalTarget={false}
+                isChecked={false}
+                isLastMove={false}
+                size={squareSize}
+                lightColor={boardTheme.lightColor}
+                darkColor={boardTheme.darkColor}
+                pieceImages={pieceTheme.images}
+              />
+            </Pressable>
+          )}
+        />
 
         <View style={styles.toolbarRow}>
           <Pressable style={styles.toolbarButton} onPress={handleStartingPosition}>
@@ -363,17 +369,6 @@ function createStyles(colors: AppColors) {
       paddingHorizontal: 16,
       paddingBottom: 40,
       gap: 18,
-    },
-    boardWrap: {
-      alignItems: 'center',
-    },
-    boardBorder: {
-      borderWidth: 2,
-      borderColor: '#3a2618',
-    },
-    board: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
     },
     toolbarRow: {
       flexDirection: 'row',

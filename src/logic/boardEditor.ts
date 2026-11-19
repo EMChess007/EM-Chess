@@ -10,6 +10,12 @@ export interface CastlingRights {
   q: boolean;
 }
 
+const PIECE_WORDS: Record<PieceType, string> = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' };
+
+/** The accessibility label of an editor square: "e1, white king" / "e4, empty". The Android e2e finds the 64 squares by it (it never depends on a testID being exposed). */
+export const editorSquareLabel = (square: BoardSquare): string =>
+  `${square.square}, ${square.piece ? `${square.piece.color === 'w' ? 'white' : 'black'} ${PIECE_WORDS[square.piece.type]}` : 'empty'}`;
+
 export function emptyBoard(): BoardSquare[][] {
   return Array.from({ length: 8 }, (_, row) =>
     Array.from({ length: 8 }, (_, col) => ({ square: `${FILES[col]}${8 - row}`, piece: null }))

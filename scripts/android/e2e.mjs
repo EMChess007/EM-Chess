@@ -28,6 +28,7 @@ import { Beacon } from './lib/beacon.mjs';
 import { PHONE_BUDGET, judgePerf, latenciesOf, scaledBudget, summarize, windowStats } from './lib/perf.mjs';
 import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
 import { byClass, findNodes, rowAfterScroll, scrollUntilVisible, visibleWords } from './lib/hierarchy.mjs';
+import { checkEditorGrid, editorSquares } from './lib/editorGrid.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
@@ -905,6 +906,29 @@ async function fromPosition2p(dev) {
     }
     await dev.snapshot('from-position-local');
     record(localName, issues, 'Black moved first from the typed position');
+  });
+}
+
+/**
+ * BOARD EDITOR GRID (command #55): Play -> From Position opens the Board Editor. On the 360 dp slice its 64 squares used to wrap after 7 (AppPressable's 44 dp floor grew each 41 dp
+ * square) and the board overlapped "Starting Position / Clear Board". Read from the accessibility tree (the squares' labels "e4, empty" / "e1, white king"): 64 squares forming 8 distinct
+ * columns and 8 rows (rank 8 on top), equal in size, none overlapping another, the board above the two toolbar buttons (lib/editorGrid.mjs `checkEditorGrid`, unit-tested in
+ * androidEditorGrid.test.ts). Not in smoke.mjs (TESTING.md 45-46); proven by the android-e2e run, never by a local run (no emulator in a cloud session).
+ */
+async function boardEditorGrid(dev) {
+  const name = 'Board Editor: the 64 squares are 8 columns x 8 rows and none overlaps the toolbar';
+  await scenario(dev, name, async () => {
+    await toHome(dev);
+    await dev.runSteps([{ text: 'Play' }]);
+    await tapReachable(dev, { text: 'From Position' }, 'the From Position entry of the Play menu');
+    await dev.waitFor('the Board Editor', (list) => findNodes(list, { text: 'Starting Position' }).length > 0, 30_000);
+    const nodes = await dev.dump();
+    const issues = checkEditorGrid(nodes);
+    await dev.snapshot('board-editor-grid');
+    const squares = editorSquares(nodes);
+    const left = Math.min(...squares.map((s) => s.bounds.x1));
+    const right = Math.max(...squares.map((s) => s.bounds.x2));
+    record(name, issues, `${squares.length} squares, the board spans x ${left}..${right} px`);
   });
 }
 
@@ -1954,6 +1978,7 @@ try {
       await racingKings2p(dev); // Racing Kings (Local), same method (command #42)
       await torpedo2p(dev); // Torpedo (Local), same method: the double step from the 3rd rank (Part 2)
       await fromPosition2p(dev); // From Position (command #53): a typed FEN with Black to move, vs the real Stockfish and Local
+      await boardEditorGrid(dev); // the Board Editor's 64 squares are 8 columns x 8 rows (command #55)
     }
     if (PARTS.has('touchbug')) await touchesBughouse(dev, false);
     // the same two boards in the frame of the phone of command #26 (root view below the status bar): where the reverted fix fails
