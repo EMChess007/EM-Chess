@@ -675,6 +675,92 @@ async function racingKings2p(dev) {
 }
 
 /**
+ * TORPEDO, a Local game (Part 2 of the Torpedo task), modelled on racingKings2p: the board rectangle comes from the app's beacon (`state-board-2p`), a touch is `input tap`, then the lasting 90 ms
+ * press when the app did not select the square (waitSelected), and what is judged is what the app SAYS (the beacon). The "Torpedo" row of the Local card is low in the Play menu (the Bots card has
+ * a Torpedo row too): it is found with `below: 'Local'`, and when it stands in the bottom quarter of the window the menu is scrolled one more swipe and the row re-found by its shift
+ * (`rowAfterScroll`), the heading "Local" being off the screen by then (command #45).
+ * The moves prove the ONE new rule on the real board: e2 -> e3 (an ordinary step), a7 -> a6, then e3 -> e5, a pawn two squares from the THIRD rank (standard chess would refuse it: the tap on e5 would not
+ * play). The game screen's board moves down when the strip of moves appears with the first move, so the rectangle is read again from the beacon before every touch.
+ */
+async function torpedo2p(dev) {
+  const name = 'touch: Torpedo board (Local)';
+  await scenario(dev, name, async () => {
+    await toHome(dev);
+    dev.beacon.forget('state-board-2p');
+    const row = { text: 'Torpedo', below: 'Local' };
+    await dev.runSteps([{ text: 'Play' }]);
+    const found = await dev.find(row);
+    if (found.bounds.cy > dev.display.h * 0.75) {
+      log(`  the Torpedo row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
+      const before = await dev.stable();
+      dev.scrollDown();
+      await sleep(700);
+      const after = await dev.stable();
+      const moved = rowAfterScroll(before, after, found, row);
+      if (!moved) throw new Error(`the Torpedo row is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
+      log(`  the Torpedo row is now at y ${moved.bounds.cy}`);
+      dev.tap(moved.bounds.cx, moved.bounds.cy);
+      await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
+      await dev.runSteps([{ text: '5 min' }]);
+    } else {
+      await dev.runSteps([row, { text: '5 min' }]);
+    }
+    const issues = [];
+    const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
+    let state = await dev.beacon.waitFor('state-board-2p', boardReported, 15_000);
+    if (!state) {
+      // a "5 min" touch the screen did not take is repeated ONCE, and only while the Select Time Control screen is still the one shown (so no second game can be started)
+      const tree = await dev.look().then((l) => l.nodes).catch(() => []);
+      if (findNodes(tree, { text: 'Select Time Control' }).length > 0) {
+        log('  the Select Time Control screen is still shown 15 s after the touch on "5 min": touching it once more');
+        await dev.runSteps([{ text: '5 min' }]);
+      }
+      state = await dev.beacon.waitFor('state-board-2p', boardReported, 40_000);
+    }
+    if (!state) return record(name, [`the Torpedo board reported no state with a rectangle (the app said ${JSON.stringify(dev.beacon.get('state-board-2p'))}); on screen: ${visibleWords(await dev.look().then((l) => l.nodes).catch(() => []), 30).join(' | ')}`]);
+    const board0 = rectOfState(state);
+    if (Math.abs(board0.w - board0.h) > 2) issues.push(`the board is not square: ${board0.w}x${board0.h}`);
+    // the start position of Torpedo is the ordinary one: the white pawn on e2 and nothing on e3
+    if (pieceOnSquare(state.fen, 'e2') !== 'P' || pieceOnSquare(state.fen, 'e3')) issues.push(`the start position is "${state.fen}": not the ordinary chess position`);
+    await dev.snapshot('torpedo-start');
+    const latest = () => dev.beacon.get('state-board-2p');
+    // one move: the rectangle and the orientation are read from the latest report of the board each time; the touch is a tap, then a 90 ms press, and the move is judged by the app's own position
+    const playMove = async (from, to, landed) => {
+      const select = async (square, until) => {
+        const current = latest();
+        const r = squareRect(rectOfState(current), current?.orientation ?? 'w', square);
+        for (const method of ['tap', 'press']) {
+          if (method === 'tap') dev.tap(r.cx, r.cy);
+          else dev.press(r.cx, r.cy, 90);
+          if (await until()) return method;
+        }
+        return null;
+      };
+      const first = await select(from, () => waitSelected(dev, 'state-board-2p', from, 1800));
+      if (first === null) return `touched ${from} (tap, then a 90 ms press): the app selected ${JSON.stringify(latest()?.selected ?? null)}`;
+      const second = await select(to, () => dev.beacon.waitFor('state-board-2p', landed, 2500));
+      if (second === null) return `after ${from} then ${to} the app's position is "${latest()?.fen}" (selected ${JSON.stringify(latest()?.selected ?? null)}, legal targets ${latest()?.legal})`;
+      log(`Torpedo board: ${from} selected by ${first}, ${to} played by ${second}; the app's position "${latest()?.fen}"`);
+      return null;
+    };
+    let problem = await playMove('e2', 'e3', (s) => pieceOnSquare(s.fen, 'e3') === 'P' && s.turn === 'b');
+    if (!problem) {
+      await sleep(2500); // the strip of moves appeared with the first move and the board moved down: wait for its last rectangle
+      problem = await playMove('a7', 'a6', (s) => pieceOnSquare(s.fen, 'a6') === 'p' && s.turn === 'w');
+    }
+    if (!problem) {
+      await sleep(1500);
+      // THE RULE: a pawn two squares ahead from the 3rd rank. Standard chess has no such move; the app's own legal targets for e3 must include e5 as well as e4.
+      problem = await playMove('e3', 'e5', (s) => pieceOnSquare(s.fen, 'e5') === 'P' && pieceOnSquare(s.fen, 'e3') === null && s.turn === 'b');
+      if (!problem && JSON.stringify(latest()?.lastMove) !== '["e3","e5"]') problem = `the app's last move is ${JSON.stringify(latest()?.lastMove)}, not e3-e5`;
+    }
+    if (problem) issues.push(problem);
+    await dev.snapshot('torpedo-after-e3-e5');
+    record(name, issues, `board ${board0.w}x${board0.h} px at ${board0.x1},${board0.y1} (from the app's beacon); the double step from the 3rd rank ${problem ? 'was NOT played' : 'was played'}`);
+  });
+}
+
+/**
  * FINGER-DRAWN ARROWS on the 2-player board (command #32), straight after the e2-e4 of the touch check: Black is to move, and two arrows are drawn - one from a Black piece, one from a White
  * piece (ANY turn, several at once) - by a finger held and dragged (`drawArrow`). The app reports the number of arrows on the board (beacon `arrows`): 2 after the drawing, the position and the
  * selection unchanged (drawing never moves or selects), and 0 after a move is played (e7-e5) - the arrows stay until a move.
@@ -1717,6 +1803,7 @@ try {
       await touches2p(dev);
       await arrows2p(dev); // the same game screen, after e2-e4 (command #32)
       await racingKings2p(dev); // Racing Kings (Local), same method (command #42)
+      await torpedo2p(dev); // Torpedo (Local), same method: the double step from the 3rd rank (Part 2)
     }
     if (PARTS.has('touchbug')) await touchesBughouse(dev, false);
     // the same two boards in the frame of the phone of command #26 (root view below the status bar): where the reverted fix fails

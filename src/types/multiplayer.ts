@@ -28,6 +28,7 @@ export type GameOverReason =
   | 'spellChess'
   | 'horde'
   | 'racingKings';
+// Torpedo has no result reason of its own: it ends like standard chess (checkmate, stalemate, draw, repetition ...).
 
 export interface JoinQueuePayload {
   timeControl: OnlineTimeControl;
@@ -42,6 +43,8 @@ export interface JoinQueuePayload {
   isSpellChess?: boolean;
   isHorde?: boolean;
   isRacingKings?: boolean;
+  /** Torpedo -- see torpedo.ts. Mutually exclusive with every other variant. */
+  isTorpedo?: boolean;
   /** Crazyhouse — see crazyhouse.ts. Mutually exclusive with every other variant. */
   isCrazyhouse?: boolean;
 }
@@ -105,6 +108,8 @@ export interface MatchFoundPayload {
   isHorde: boolean;
   /** Racing Kings -- see racingKings.ts: a checking move is illegal; a king on rank 8 wins (both kings there = draw). */
   isRacingKings?: boolean;
+  /** Torpedo -- see torpedo.ts: a pawn may step one or two squares from any rank. */
+  isTorpedo?: boolean;
   /** Crazyhouse — see crazyhouse.ts: reserves start empty, so match_found needs no state. */
   isCrazyhouse: boolean;
   fen: string;
@@ -180,6 +185,8 @@ export interface RejoinStatePayload {
   isHorde: boolean;
   /** Racing Kings -- see racingKings.ts: a checking move is illegal; a king on rank 8 wins (both kings there = draw). */
   isRacingKings?: boolean;
+  /** Torpedo -- see torpedo.ts: a pawn may step one or two squares from any rank. */
+  isTorpedo?: boolean;
   /** Crazyhouse — see crazyhouse.ts: reserves start empty, so match_found needs no state. */
   isCrazyhouse: boolean;
   /** Spell Chess only — charges/cooldowns/pending effects right now. */
@@ -238,6 +245,7 @@ export interface CreateChallengePayload {
   isSpellChess?: boolean;
   isHorde?: boolean;
   isRacingKings?: boolean;
+  isTorpedo?: boolean;
   /** Crazyhouse — see crazyhouse.ts. Mutually exclusive with every other variant. */
   isCrazyhouse?: boolean;
   timeControlLabel?: string;
@@ -282,6 +290,7 @@ export interface CreateTournamentPayload {
   isKingOfTheHill?: boolean;
   isThreeCheck?: boolean;
   isRacingKings?: boolean;
+  isTorpedo?: boolean;
 }
 
 export interface JoinTournamentPayload {
@@ -306,6 +315,7 @@ export interface TournamentLobbyState {
   isKingOfTheHill: boolean;
   isThreeCheck: boolean;
   isRacingKings: boolean;
+  isTorpedo?: boolean;
   status: TournamentStatus;
   creatorUserId: string;
   participants: TournamentParticipantSummary[];
@@ -326,6 +336,7 @@ export interface TournamentNextMatch {
   isKingOfTheHill: boolean;
   isThreeCheck: boolean;
   isRacingKings: boolean;
+  isTorpedo?: boolean;
   roomId: string | null;
   playerToken: string | null;
   color: PieceColor | null;
@@ -352,6 +363,7 @@ export interface TournamentMatchReadyPayload {
   isKingOfTheHill: boolean;
   isThreeCheck: boolean;
   isRacingKings: boolean;
+  isTorpedo?: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;

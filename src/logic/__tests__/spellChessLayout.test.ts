@@ -60,7 +60,7 @@ describe('the room for the Freeze/Jump row comes from tighter spacing, not from 
       expect(src, screen).toContain('!duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName');
       expect(src, screen).toContain('duckChess || spellChess || horde || racingKings || torpedo || crazyhouse) return;');
     }
-    expect(read('screens/OnlineGameScreen.tsx')).toContain('!duckChess && !spellChess && !horde && !racingKings && !crazyhouse && openingName'); // Torpedo is not online yet (Part 2)
+    expect(read('screens/OnlineGameScreen.tsx')).toContain('!duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName');
   });
 });
 

@@ -14,6 +14,7 @@ export interface OnlineVariantFlags {
   isSpellChess: boolean;
   isHorde: boolean;
   isRacingKings: boolean;
+  isTorpedo: boolean;
   isCrazyhouse: boolean;
 }
 
@@ -32,6 +33,7 @@ export function variantWireFlags(variant: GameVariant): OnlineVariantFlags {
     isSpellChess: variant === 'spellChess',
     isHorde: variant === 'horde',
     isRacingKings: variant === 'racingKings',
+    isTorpedo: variant === 'torpedo',
     isCrazyhouse: variant === 'crazyhouse',
   };
 }
@@ -59,6 +61,8 @@ export function variantTitlePrefix(variant: GameVariant): string {
       return 'Spell Chess · ';
     case 'racingKings':
       return 'Racing Kings · ';
+    case 'torpedo':
+      return 'Torpedo · ';
     case 'horde':
       return 'Horde · ';
     case 'crazyhouse':

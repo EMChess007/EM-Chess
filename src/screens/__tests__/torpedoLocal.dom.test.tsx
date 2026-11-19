@@ -74,4 +74,31 @@ describe('Local Torpedo from the real App entry', () => {
     await flush(50);
     expect(screen.getByText(/Last move: e5/)).toBeTruthy();
   });
+
+  it('Options -> Rules opens the Torpedo rules sheet in English, switches to Greek and closes', async () => {
+    render(<App />);
+    await flush(50);
+    fireEvent.click(screen.getByText('Play'));
+    await flush(50);
+    fireEvent.click(localTorpedo());
+    await flush(50);
+    fireEvent.click(screen.getByText('5 min'));
+    await flush(50);
+
+    fireEvent.click(screen.getByText('Options'));
+    await flush(50);
+    fireEvent.click(screen.getByText('Rules'));
+    await flush(50);
+    expect(screen.getByText('How to play Torpedo')).toBeTruthy();
+    expect(screen.getByText('The one new rule')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('rules-lang-el'));
+    await flush(50);
+    expect(screen.getByText('Πώς παίζεται το Torpedo')).toBeTruthy();
+    expect(screen.getByText('Η διπλή κίνηση')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('rules-close'));
+    await flush(50);
+    expect(screen.queryByText('Πώς παίζεται το Torpedo')).toBeNull();
+  });
 });

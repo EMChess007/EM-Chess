@@ -42,6 +42,7 @@ describe('variantWireFlags (what join_queue / create_challenge send)', () => {
       isSpellChess: false,
       isHorde: false,
       isRacingKings: false,
+      isTorpedo: false,
       isCrazyhouse: false,
     });
   });
@@ -103,9 +104,9 @@ describe('Online wiring (no React Native renderer available)', () => {
   });
 
   it('Online Giveaway has no premoves, no opening names, no rating change and no Game Review', () => {
-    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : myColor}');
-    expect(online).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse ? undefined : handleQueuePremove}');
-    expect(online).toContain('!giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !crazyhouse && openingName');
+    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse ? undefined : myColor}');
+    expect(online).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse ? undefined : handleQueuePremove}');
+    expect(online).toContain('!giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName');
     expect(online).toContain('ratingCategory && !giveaway');
     expect(online).toContain('wasMaterialDownRef.current && !giveaway');
     expect(online).toMatch(/PostGameSummaryModal[\s\S]*?giveaway=\{giveaway\}/);
