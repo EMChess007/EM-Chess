@@ -47,6 +47,8 @@ interface PostGameSummaryModalProps {
   horde?: boolean;
   /** Racing Kings only — Stockfish does not know that a checking move is illegal, so no accuracy analysis runs and Game Review is not offered. */
   racingKings?: boolean;
+  /** Torpedo only — Stockfish does not know the double step from any rank, so no accuracy analysis runs and Game Review is not offered. */
+  torpedo?: boolean;
   /** Crazyhouse only — Stockfish has no concept of drops or a reserve, so no accuracy analysis runs and Game Review is not offered. */
   crazyhouse?: boolean;
   history: GameHistoryEntry[];
@@ -82,6 +84,7 @@ export default function PostGameSummaryModal({
   spellChess = false,
   horde = false,
   racingKings = false,
+  torpedo = false,
   crazyhouse = false,
   history,
   players,
@@ -101,8 +104,8 @@ export default function PostGameSummaryModal({
   // first (same reasoning EngineVsEngineGameScreen documents for reusing one runtime across two
   // engines that happen to share an id — except here we specifically want isolation, not sharing).
   const scratchEngine = useMemo(
-    () => (visible && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !crazyhouse ? new StockfishEngineAdapter() : null),
-    [visible, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse]
+    () => (visible && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse ? new StockfishEngineAdapter() : null),
+    [visible, giveaway, atomic, duckChess, spellChess, horde, racingKings, torpedo, crazyhouse]
   );
   const bridgeRef = useRef<StockfishBridgeHandle>(null);
   const handleBridgeRef = useCallback(
@@ -167,6 +170,7 @@ export default function PostGameSummaryModal({
           !spellChess &&
           !horde &&
           !racingKings &&
+          !torpedo &&
           !crazyhouse &&
           (!summary ? (
             <View style={styles.loadingRow}>
@@ -200,7 +204,7 @@ export default function PostGameSummaryModal({
           ))}
 
         <View style={styles.buttonColumn}>
-          {!giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !crazyhouse && (
+          {!giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && (
             <Pressable style={styles.primaryButton} onPress={onGameReview}>
               <Text style={styles.primaryButtonText}>Game Review</Text>
             </Pressable>

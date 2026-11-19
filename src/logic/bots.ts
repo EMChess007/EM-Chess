@@ -9,6 +9,7 @@ import { getCrazyhouseMoves, reserveTotal, type CrazyhouseState, type ReservePie
 import { getGiveawayMoves } from './giveaway';
 import { getHordeMoves, getHordeWinnerFromFen } from './horde';
 import { getRacingKingsMoves, getRacingKingsOutcome } from './racingKings';
+import { getTorpedoMoves } from './torpedo';
 import {
   canCastFreeze,
   canCastJump,
@@ -737,6 +738,86 @@ export function chooseRacingKingsBotMove(engine: ChessEngine, elo: number, rng: 
       worst = Math.max(worst, 1.5 * kingRank(probe, opp) + (reply.captured ? 0.3 * PIECE_VALUES[reply.captured] : 0));
     }
     return { move: candidate.move, score: candidate.score - worst };
+  });
+  const top = Math.max(...scored.map((s) => s.score));
+  const best = scored.filter((s) => s.score === top);
+  return best[Math.floor(rng() * best.length)].move;
+}
+
+// --- Torpedo --------------------------------------------------------------------------------
+
+const TORPEDO_WIN = 1000;
+/** A stalemate or a drawn position is worth less than play on: the side that is ahead (nearly always the one causing it) should mind it. */
+const TORPEDO_DRAW = -30;
+/** How many of the cheaply-scored moves get the (costlier) reply look-ahead. */
+const TORPEDO_LOOKAHEAD_CANDIDATES = 8;
+
+/**
+ * Picks a move for a bot playing Torpedo, on EITHER side. Deliberately NOT Stockfish: the stock UCI engine does not know
+ * that a pawn may step two squares from any rank, so it would neither play those moves nor see the opponent's (a "safe"
+ * square can be reached by a torpedo pawn, and a check can be blocked by one). Same reason as the other custom-rule
+ * bots. Chess.js's legality stays authoritative: every candidate comes from getTorpedoMoves.
+ *
+ *  - Pass 1 scores EVERY legal move on a scratch engine: what it captures, a promotion's gain, a small reward for pawn
+ *    advances (a torpedo pawn gets there twice as fast) and for giving check, and the decisive outcomes outright
+ *    (checkmate +1000, a stalemate or draw mildly penalised).
+ *  - Pass 2 takes the best few and subtracts the opponent's best reply: the most valuable piece it could capture (torpedo
+ *    steps and en passant included, since the replies come from getTorpedoMoves), and a large penalty if ANY reply is
+ *    checkmate.
+ *  - ELO is the only strength dial, like the other custom bots: the chance of using that scored choice rather than a
+ *    random legal move rises from ~20% at 400 ELO to ~90% at 3000. A random pick never under-promotes.
+ *
+ * Returns null only when the bot has no legal move (the game would already be over).
+ */
+export function chooseTorpedoBotMove(engine: ChessEngine, elo: number, rng: () => number = Math.random): Move | null {
+  const moves = getTorpedoMoves(engine);
+  if (moves.length === 0) return null;
+  const queenOrPlain = (m: Move) => !m.promotion || m.promotion === 'q';
+  if (moves.length === 1) return moves[0];
+
+  const bestChance = 0.2 + 0.7 * Math.min(1, Math.max(0, (elo - 400) / 2600));
+  if (rng() >= bestChance) {
+    const plain = moves.filter(queenOrPlain);
+    return plain[Math.floor(rng() * plain.length)];
+  }
+
+  const me = engine.getTurn();
+  const fen = engine.getFen();
+  const options = { torpedo: true } as const;
+
+  // Pass 1: every legal move, scored on its own merits.
+  const pass1 = moves.filter((m) => !m.promotion || m.promotion === 'q' || m.promotion === 'n').map((move) => {
+    const scratch = new ChessEngine(fen, options);
+    const played = scratch.move(move.from, move.to, move.promotion);
+    let score = 0;
+    if (move.captured) score += PIECE_VALUES[move.captured];
+    if (move.promotion) score += PIECE_VALUES[move.promotion] - 1;
+    if (engine.getPieceAt(move.from)?.type === 'p') score += 0.08 * (me === 'w' ? Number(move.to[1]) : 9 - Number(move.to[1]));
+    if (played && /[+#]/.test(played.san)) score += 0.5;
+    const status = scratch.getStatus();
+    if (status === 'checkmate') score += TORPEDO_WIN;
+    else if (status === 'stalemate' || status === 'draw') score += TORPEDO_DRAW;
+    return { move, score, fen: scratch.getFen(), decided: score >= TORPEDO_WIN };
+  });
+  pass1.sort((a, b) => b.score - a.score || rng() - 0.5);
+  if (pass1[0].decided) return pass1[0].move;
+
+  // Pass 2: look one reply ahead for the best few.
+  const scored = pass1.slice(0, TORPEDO_LOOKAHEAD_CANDIDATES).map((candidate) => {
+    const afterMe = new ChessEngine(candidate.fen, options);
+    let bestReply = 0;
+    let matedInOne = false;
+    for (const reply of getTorpedoMoves(afterMe)) {
+      if (reply.captured) bestReply = Math.max(bestReply, PIECE_VALUES[reply.captured]);
+      // Only a reply that could give check can be mate — cheap to try them all: a scratch engine per reply.
+      const probe = new ChessEngine(candidate.fen, options);
+      probe.move(reply.from, reply.to, reply.promotion);
+      if (probe.getStatus() === 'checkmate') {
+        matedInOne = true;
+        break;
+      }
+    }
+    return { move: candidate.move, score: candidate.score - bestReply - (matedInOne ? TORPEDO_WIN : 0) };
   });
   const top = Math.max(...scored.map((s) => s.score));
   const best = scored.filter((s) => s.score === top);

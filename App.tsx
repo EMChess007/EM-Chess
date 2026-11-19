@@ -89,14 +89,14 @@ import type { ActiveGameSummary, MatchFoundPayload, SetupChessPairedPayload } fr
 import type { TimeControl } from './src/types/timeControl';
 
 type TimeControlFlowMode =
-  | { kind: 'local'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; crazyhouse: boolean }
-  | { kind: 'bot'; bot: BotPersonality; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; crazyhouse: boolean }
+  | { kind: 'local'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; torpedo?: boolean; crazyhouse: boolean }
+  | { kind: 'bot'; bot: BotPersonality; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; torpedo?: boolean; crazyhouse: boolean }
   | { kind: 'engineVsEngine'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean };
 
 type Screen =
   | { name: 'main' }
   | { name: 'playModeSelect' }
-  | { name: 'botSelect'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; crazyhouse: boolean }
+  | { name: 'botSelect'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; torpedo?: boolean; crazyhouse: boolean }
   | { name: 'timeControlSelect'; mode: TimeControlFlowMode }
   | {
       name: 'game';
@@ -112,6 +112,7 @@ type Screen =
       spellChess: boolean;
       horde: boolean;
       racingKings?: boolean;
+      torpedo?: boolean;
       crazyhouse: boolean;
       initialFen?: string;
     }
@@ -130,6 +131,7 @@ type Screen =
       spellChess: boolean;
       horde: boolean;
       racingKings?: boolean;
+      torpedo?: boolean;
       crazyhouse: boolean;
       initialFen?: string;
       colorChoice: ColorChoice;
@@ -482,6 +484,9 @@ export default function App() {
         onBotRacingKings={() =>
           setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false, horde: false, racingKings: true, crazyhouse: false })
         }
+        onBotTorpedo={() =>
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false, horde: false, torpedo: true, crazyhouse: false })
+        }
         onBotHorde={() =>
           setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false, horde: true, crazyhouse: false })
         }
@@ -558,6 +563,12 @@ export default function App() {
           setScreen({
             name: 'timeControlSelect',
             mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false, horde: false, racingKings: true, crazyhouse: false },
+          })
+        }
+        onLocalTorpedo={() =>
+          setScreen({
+            name: 'timeControlSelect',
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false, horde: false, torpedo: true, crazyhouse: false },
           })
         }
         onLocalCrazyhouse={() =>
@@ -745,7 +756,7 @@ export default function App() {
       />
     );
   } else if (screen.name === 'botSelect') {
-    const { chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse } = screen;
+    const { chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, torpedo, crazyhouse } = screen;
     content = (
       <BotSelectScreen
         chess960={chess960}
@@ -759,11 +770,12 @@ export default function App() {
         spellChess={spellChess}
         horde={horde}
         racingKings={racingKings}
+        torpedo={torpedo}
         crazyhouse={crazyhouse}
         onSelect={(bot) =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'bot', bot, chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse },
+            mode: { kind: 'bot', bot, chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, torpedo, crazyhouse },
           })
         }
         onBack={() => setScreen({ name: 'playModeSelect' })}
@@ -793,9 +805,11 @@ export default function App() {
                         ? 'Horde'
                         : mode.kind !== 'engineVsEngine' && mode.racingKings
                           ? 'Racing Kings'
-                          : mode.kind !== 'engineVsEngine' && mode.crazyhouse
-                            ? 'Crazyhouse'
-                            : undefined;
+                          : mode.kind !== 'engineVsEngine' && mode.torpedo
+                            ? 'Torpedo'
+                            : mode.kind !== 'engineVsEngine' && mode.crazyhouse
+                              ? 'Crazyhouse'
+                              : undefined;
     const subtitle =
       mode.kind === 'bot'
         ? variantLabel
@@ -839,6 +853,7 @@ export default function App() {
                   spellChess: mode.spellChess,
                   horde: mode.horde,
                   racingKings: mode.racingKings,
+                  torpedo: mode.torpedo,
                   crazyhouse: mode.crazyhouse,
                 }
               : mode.kind === 'bot'
@@ -857,6 +872,7 @@ export default function App() {
                   spellChess: mode.spellChess,
                   horde: mode.horde,
                   racingKings: mode.racingKings,
+                  torpedo: mode.torpedo,
                   crazyhouse: mode.crazyhouse,
                     colorChoice: colorChoice ?? 'random',
                   }
@@ -889,6 +905,7 @@ export default function App() {
                   spellChess: mode.spellChess,
                   horde: mode.horde,
                   racingKings: mode.racingKings,
+                  torpedo: mode.torpedo,
                   crazyhouse: mode.crazyhouse,
                 }
               : { name: 'playModeSelect' }
@@ -1180,6 +1197,7 @@ export default function App() {
         spellChess={screen.spellChess}
         horde={screen.horde}
         racingKings={screen.racingKings}
+        torpedo={screen.torpedo}
         crazyhouse={screen.crazyhouse}
         initialFen={screen.initialFen}
         colorChoice={screen.colorChoice}
@@ -1247,6 +1265,7 @@ export default function App() {
         spellChess={screen.spellChess}
         horde={screen.horde}
         racingKings={screen.racingKings}
+        torpedo={screen.torpedo}
         crazyhouse={screen.crazyhouse}
         initialFen={screen.initialFen}
         authToken={authSession?.token ?? null}
