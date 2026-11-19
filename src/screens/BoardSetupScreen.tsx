@@ -306,6 +306,7 @@ export default function BoardSetupScreen({ onBack, onAnalyze, onPlay, fromPositi
           <Text style={styles.sectionTitle}>FEN</Text>
           <TextInput
             style={styles.fenInput}
+            testID="fen-input"
             value={fenInput}
             onChangeText={setFenInput}
             multiline

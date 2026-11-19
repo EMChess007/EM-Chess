@@ -142,5 +142,32 @@ export function stoodStill(before, after) {
   return Boolean(before && after && before.bounds && after.bounds && Math.abs(before.bounds.cy - after.bounds.cy) <= 2);
 }
 
+/**
+ * ONE generic "scroll until the control can be tapped" (command #54b: the From Position scenario timed out waiting for the FEN field, which sits BELOW the board and the palette in the
+ * Board Editor's ScrollView, and "Play from here" / the Local / vs Bot choice sit below that). `find(nodes)` returns the wanted node of a dump (or a falsy value while it is not on the
+ * screen). Each round: dump, find, log the bounds, and when `tappableNow` accepts it (upper 70 % of the window, or - once a swipe left it where it was, `stoodStill`: the content is at its
+ * end - anywhere above the lowest 3 %) return it; else swipe up from above a soft keyboard (the lowest 40 % of the window may be the keyboard) and look again. At most `maxSwipes` swipes;
+ * then a clear error naming `label` and the words on screen. `dev` needs `dump()`, `swipe()` and `display`; `sleep` / `log` are injected so the helper runs on fake dumps in a unit test.
+ */
+export async function scrollUntilVisible(dev, label, find, options = {}) {
+  /** @type {{ maxSwipes?: number, settleMs?: number, upper?: number, sleep?: (ms: number) => Promise<unknown>, log?: (line: string) => unknown }} */
+  const { maxSwipes = 8, settleMs = 700, upper = 0.7, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), log = () => {} } = options;
+  const h = dev.display.h;
+  let previous = null;
+  for (let swipes = 0; ; swipes++) {
+    const nodes = await dev.dump();
+    const hit = find(nodes) || null;
+    const atEnd = stoodStill(previous, hit);
+    log(`  ${label}: ${hit ? `y ${hit.bounds.y1}-${hit.bounds.y2} (centre ${hit.bounds.cy}) of ${h}` : 'not on the screen'}, content at its end: ${atEnd}, swipes so far ${swipes}/${maxSwipes}`);
+    if (tappableNow(hit, h, atEnd, upper)) return hit;
+    if (swipes >= maxSwipes) {
+      throw new Error(`"${label}" did not become tappable within ${maxSwipes} swipes (${hit ? `last seen at y ${hit.bounds.y1}-${hit.bounds.y2} of ${h}` : 'never on the screen'}); on screen: ${visibleWords(nodes, 40).join(' | ')}`);
+    }
+    previous = hit;
+    dev.swipe(dev.display.w / 2, h * 0.55, dev.display.w / 2, h * 0.2, 600);
+    await sleep(settleMs);
+  }
+}
+
 /** A cheap fingerprint of what is on screen (to see whether a scroll moved anything). */
 export const fingerprint = (nodes) => nodes.map((n) => `${n.text}|${n.desc}|${n.bounds ? `${n.bounds.x1},${n.bounds.y1}` : ''}`).join('\n');

@@ -170,6 +170,22 @@ describe('From Position online: the Board Editor and the challenge screen', () =
     expect(played).toEqual([[QUIET_FEN, 'friend']]);
   });
 
+  it('the FEN field has the testID "fen-input" (the Android driver scrolls to it); a typed FEN + Load + Play from here hands that FEN over', async () => {
+    const played: [string, string][] = [];
+    render(<BoardSetupScreen onBack={() => {}} onAnalyze={() => {}} fromPosition onPlay={(fen, mode) => played.push([fen, mode])} initialFen={QUIET_FEN} />);
+    await flush(50);
+    const field = screen.getByTestId('fen-input') as HTMLTextAreaElement;
+    expect(field.value).toBe(QUIET_FEN);
+    const typed = '4k3/pppp4/8/8/8/8/4PPPP/4K3 b - - 0 7';
+    fireEvent.change(field, { target: { value: typed } });
+    fireEvent.click(screen.getByText('Load'));
+    await flush(50);
+    fireEvent.click(screen.getByTestId('play-from-here'));
+    await flush(50);
+    fireEvent.click(screen.getByTestId('from-position-local'));
+    expect(played).toEqual([[typed, 'local']]);
+  });
+
   it('a refused position never offers the challenge', async () => {
     const played: unknown[] = [];
     render(<BoardSetupScreen onBack={() => {}} onAnalyze={() => {}} fromPosition onlineAvailable onPlay={(fen, mode) => played.push([fen, mode])} initialFen="7k/6Q1/6K1/8/8/8/8/8 b - - 0 1" />);

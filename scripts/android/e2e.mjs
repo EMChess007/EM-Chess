@@ -27,7 +27,7 @@ import { Chess } from 'chess.js';
 import { Beacon } from './lib/beacon.mjs';
 import { PHONE_BUDGET, judgePerf, latenciesOf, scaledBudget, summarize, windowStats } from './lib/perf.mjs';
 import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
-import { byClass, findNodes, rowAfterScroll, stoodStill, tappableNow, visibleWords } from './lib/hierarchy.mjs';
+import { byClass, findNodes, rowAfterScroll, scrollUntilVisible, visibleWords } from './lib/hierarchy.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
@@ -795,54 +795,53 @@ async function torpedo2p(dev) {
 }
 
 /**
- * FROM POSITION (command #53, Part 2), modelled on racingKings2p / torpedo2p: Play -> From Position -> the FEN typed into the Board Editor's field (Black to move) -> Load -> Play from here ->
+ * FROM POSITION (command #53, Part 2), modelled on racingKings2p / torpedo2p: Play -> From Position -> the FEN typed into the Board Editor's field (Black to move) -> Play from here ->
  *  (a) vs Bot (the lowest level, Kiddo; the human is White, so BLACK, the bot, is to move at once): the real Stockfish must answer within the time budget, and its move must be one of the legal
  *      Black moves of the typed position (judged with chess.js on the app's own beacon FEN);
  *  (b) Local: one legal Black move (d7-d5) registers on the real board.
- * The Play menu's "From Position" entry is low in the menu (the Board Editor card), and after typing the soft keyboard may cover the editor's buttons: `tapReachable` scrolls (from above the
- * keyboard) until the wanted control stands in the upper 70 % of the window, then taps it. The field is read back from the accessibility tree after typing (typeFen) and must equal the FEN.
+ * The Play menu's "From Position" entry is low in the menu (the Board Editor card), and in the Board Editor the FEN field, "Play from here" and the Local / vs Bot choice sit below the board and the palette: `scrollUntilVisible` (hierarchy.mjs; swipes from above the
+ * keyboard, bounded, bounds logged) brings each one up before it is touched (command #54b). The field is read back from the accessibility tree after typing (typeFen) and must equal the FEN.
  * Not in smoke.mjs (TESTING.md 45-46); proven by the android-e2e run, never by a local run (no emulator in a cloud session).
  */
 const FROM_POSITION_FEN = '4k3/pppp4/8/8/8/8/4PPPP/4K3 b - - 0 7';
 const FROM_POSITION_BOT_BUDGET_MS = 90_000;
 
-async function tapReachable(dev, step, what, { listEnd = false } = {}) {
-  let previous = null;
-  for (let i = 0; i < (listEnd ? 10 : 6); i++) {
-    const nodes = await dev.dump();
-    const hit = findNodes(nodes, step)[0];
-    // `listEnd` (command #54, the Play menu): the entry that did not move after a swipe means the list is at its end, where the last card's entry cannot stand in the upper 70 % any more
-    const atEnd = listEnd && stoodStill(previous, hit);
-    if (listEnd) log(`  ${what}: ${hit ? `y ${hit.bounds.y1}-${hit.bounds.y2} (centre ${hit.bounds.cy}) of ${dev.display.h}` : 'not on the screen'}, list at its end: ${atEnd}`);
-    if (tappableNow(hit, dev.display.h, atEnd)) {
-      dev.tap(hit.bounds.cx, hit.bounds.cy);
-      await sleep(700);
-      return;
-    }
-    previous = hit ?? null;
-    // from above the keyboard (the lowest 40 % of the window may be the soft keyboard), on the page's own buttons
-    dev.swipe(dev.display.w / 2, dev.display.h * 0.55, dev.display.w / 2, dev.display.h * 0.2, 600);
-    await sleep(700);
-  }
-  throw new Error(`"${what}" is not reachable on the screen; on screen: ${visibleWords(await dev.dump(), 40).join(' | ')}`);
+/** Scrolls (scrollUntilVisible: bounded swipes from above a soft keyboard, bounds logged each step) until `step`'s control is tappable, then taps it. `upper`: how high it must stand (0.55 while a keyboard may be up). */
+async function tapReachable(dev, step, what, { upper = 0.7 } = {}) {
+  const hit = await scrollUntilVisible(dev, what, (nodes) => findNodes(nodes, step)[0], { log, sleep, upper });
+  dev.tap(hit.bounds.cx, hit.bounds.cy);
+  await sleep(700);
 }
 
-/** Home -> Play -> From Position -> type `fen` -> Load -> Play from here: leaves the editor showing its Local / vs Bot choice. */
+/**
+ * Home -> Play -> From Position -> type `fen` -> Play from here: leaves the editor showing its Local / vs Bot choice.
+ * Order of the Board Editor (BoardSetupScreen, one ScrollView): hint, BOARD, Starting Position / Clear Board, PALETTE, Side to move, Castling, FEN field (testID "fen-input"), Copy / Load,
+ * error text, "Play from here", the Local / vs Bot choice (after it), "Analyze this position". So the FEN field, "Play from here" and the choice are all below the first screenful: each is
+ * reached by scrollUntilVisible. "Load" is NOT needed: "Play from here" plays what the FEN box shows (handlePlayFromHere reads fenInput), and a tap on Load with the keyboard up would only
+ * close the keyboard (ScrollView keepTaps "never"): the same holds for the first tap on "Play from here", so that tap is repeated ONCE when the choice did not appear.
+ */
 async function enterFromPosition(dev, fen) {
   await toHome(dev);
   dev.beacon.forget('state-board-2p');
   await dev.runSteps([{ text: 'Play' }]);
-  await tapReachable(dev, { text: 'From Position' }, 'the From Position entry of the Play menu', { listEnd: true });
-  const nodes = await dev.waitFor('the FEN field of the Board Editor', (list) => byClass(list, 'EditText').length >= 1, 30_000);
-  const field = byClass(nodes, 'EditText')[0];
+  await tapReachable(dev, { text: 'From Position' }, 'the From Position entry of the Play menu');
+  await dev.waitFor('the Board Editor', (list) => findNodes(list, { text: 'Starting Position' }).length > 0, 30_000);
+  const fenField = (list) => findNodes(list, { id: 'fen-input' })[0] ?? byClass(list, 'EditText')[0];
+  const field = await scrollUntilVisible(dev, 'the FEN field (fen-input)', fenField, { log, sleep });
   dev.tap(field.bounds.cx, field.bounds.cy);
   await sleep(500);
   dev.typeFen(fen);
   await sleep(800);
   const typed = byClass(await dev.dump(), 'EditText')[0];
   if (!typed || typed.text !== fen) throw new Error(`the FEN field reads "${typed?.text}" after typing, not "${fen}"`);
-  await tapReachable(dev, { text: 'Load' }, 'the Load button');
-  await tapReachable(dev, { text: 'Play from here' }, 'the Play from here button');
+  for (let attempt = 1; ; attempt++) {
+    await tapReachable(dev, { text: 'Play from here' }, `the Play from here button (try ${attempt})`, { upper: 0.55 });
+    await sleep(500);
+    const list = await dev.dump();
+    if (findNodes(list, { text: 'Local (2 players)' }).length > 0) return;
+    if (attempt >= 2) throw new Error(`"Play from here" did not offer the Local / vs Bot choice after ${attempt} taps; on screen: ${visibleWords(list, 40).join(' | ')}`);
+    log('  Play from here: no Local / vs Bot choice yet (the first tap may only have closed the keyboard): tapping once more');
+  }
 }
 
 async function fromPosition2p(dev) {
