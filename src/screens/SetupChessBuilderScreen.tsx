@@ -3,7 +3,9 @@ import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
 import ScreenHeader from '../components/ScreenHeader';
-import { getBoardSize } from '../components/boardSize';
+import EditorBoardGrid from '../components/EditorBoardGrid';
+import { editorSquareStyle, getEditorSquareSize } from '../components/boardSize';
+import { editorSquareLabel } from '../logic/boardEditor';
 import Square from '../components/Square';
 import { emptyBoard } from '../logic/boardEditor';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
@@ -47,8 +49,7 @@ export default function SetupChessBuilderScreen({
   backLabel,
 }: SetupChessBuilderScreenProps) {
   const { width } = useWindowDimensions();
-  const boardSize = getBoardSize(width);
-  const squareSize = boardSize / 8;
+  const squareSize = getEditorSquareSize(width);
   const colors = useAppColors();
   const boardTheme = useActiveBoardTheme();
   const pieceTheme = useActivePieceTheme();
@@ -153,41 +154,46 @@ export default function SetupChessBuilderScreen({
           Points: {cost}/{SETUP_CHESS_BUDGET}
         </Text>
 
-        <View style={styles.boardWrap}>
-          <View style={styles.boardBorder}>
-            <View style={[styles.board, { width: boardSize, height: boardSize }]}>
-              {displayRows.map((row, rowIndex) =>
-                row.map((squareData, colIndex) => {
-                  const rank = parseInt(squareData.square[1], 10);
-                  const interactive = ownRanks.has(rank);
-                  const squareEl = (
-                    <Square
-                      data={squareData}
-                      isLight={(rowIndex + colIndex) % 2 === 0}
-                      isSelected={false}
-                      isLegalTarget={false}
-                      isChecked={false}
-                      isLastMove={false}
-                      size={squareSize}
-                      lightColor={boardTheme.lightColor}
-                      darkColor={boardTheme.darkColor}
-                      pieceImages={pieceTheme.images}
-                    />
-                  );
-                  return interactive ? (
-                    <Pressable key={squareData.square} onPress={() => handleSquarePress(squareData.square)}>
-                      {squareEl}
-                    </Pressable>
-                  ) : (
-                    <View key={squareData.square} style={styles.inertSquare}>
-                      {squareEl}
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          </View>
-        </View>
+        <EditorBoardGrid
+          rows={displayRows}
+          squareSize={squareSize}
+          renderSquare={(squareData, rowIndex, colIndex) => {
+            const rank = parseInt(squareData.square[1], 10);
+            const interactive = ownRanks.has(rank);
+            const squareEl = (
+              <Square
+                data={squareData}
+                isLight={(rowIndex + colIndex) % 2 === 0}
+                isSelected={false}
+                isLegalTarget={false}
+                isChecked={false}
+                isLastMove={false}
+                size={squareSize}
+                lightColor={boardTheme.lightColor}
+                darkColor={boardTheme.darkColor}
+                pieceImages={pieceTheme.images}
+              />
+            );
+            // `compact`: the square IS the touch target (AppPressable's 44 dp floor would grow a 41 dp square and break the row, command #55).
+            return interactive ? (
+              <Pressable
+                compact
+                key={squareData.square}
+                testID={`editor-square-${squareData.square}`}
+                accessibilityRole="button"
+                accessibilityLabel={editorSquareLabel(squareData)}
+                style={editorSquareStyle(squareSize)}
+                onPress={() => handleSquarePress(squareData.square)}
+              >
+                {squareEl}
+              </Pressable>
+            ) : (
+              <View key={squareData.square} style={[editorSquareStyle(squareSize), styles.inertSquare]}>
+                {squareEl}
+              </View>
+            );
+          }}
+        />
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Palette</Text>
@@ -233,17 +239,6 @@ function createStyles(colors: AppColors) {
       fontWeight: '700',
       color: colors.text,
       textAlign: 'center',
-    },
-    boardWrap: {
-      alignItems: 'center',
-    },
-    boardBorder: {
-      borderWidth: 2,
-      borderColor: '#3a2618',
-    },
-    board: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
     },
     inertSquare: {
       opacity: 0.55,

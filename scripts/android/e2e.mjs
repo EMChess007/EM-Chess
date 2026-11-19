@@ -28,6 +28,7 @@ import { Beacon } from './lib/beacon.mjs';
 import { PHONE_BUDGET, judgePerf, latenciesOf, scaledBudget, summarize, windowStats } from './lib/perf.mjs';
 import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
 import { byClass, findNodes, rowAfterScroll, scrollUntilVisible, visibleWords } from './lib/hierarchy.mjs';
+import { checkEditorGrid, editorSquares } from './lib/editorGrid.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
@@ -50,7 +51,7 @@ if (!profile || !['static', 'online', 'offline'].includes(phase)) {
   process.exit(2);
 }
 // --parts: which checks of the static phase this run does (the workflow runs them in parallel jobs); --shard i/n: this run's share of the screens; --tag: a suffix for the output folder
-const PARTS = new Set(arg('parts', 'screens,textfit,gallery,touch2p,touchbug,touchinset,perf').split(','));
+const PARTS = new Set(arg('parts', 'screens,textfit,boardeditor,gallery,touch2p,touchbug,touchinset,perf').split(','));
 const SHARD = (() => {
   const m = /^(\d+)\/(\d+)$/.exec(arg('shard', '1/1'));
   if (!m || Number(m[1]) < 1 || Number(m[1]) > Number(m[2])) {
@@ -186,8 +187,8 @@ async function toHome(dev) {
  * Bughouse (local) games, Puzzles, Analysis, More, Diagnostics - on the small phone, and the board and tab screens on the large one. `--all` (a manual run of the workflow) adds every other
  * screen of the web matrix's lists (rules sheets, the More sub-screens, the other setups).
  */
-const CORE_SCREENS = new Set(['home', 'play-menu', 'time-control', 'game-2p', 'ffa-setup', 'game-ffa', 'giveaway-setup', 'game-giveaway', 'chaturaji-setup', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-passplay', 'bughouse-game-dual']);
-const LARGE_SCREENS = new Set(['home', 'play-menu', 'game-2p', 'ffa-setup', 'game-ffa', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-dual']);
+const CORE_SCREENS = new Set(['home', 'play-menu', 'time-control', 'game-2p', 'setup-chess', 'board-editor','ffa-setup', 'game-ffa', 'giveaway-setup', 'game-giveaway', 'chaturaji-setup', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-passplay', 'bughouse-game-dual']);
+const LARGE_SCREENS = new Set(['home', 'play-menu', 'game-2p', 'setup-chess', 'board-editor','ffa-setup', 'game-ffa', 'game-chaturaji', 'puzzles', 'analysis', 'more', 'more-diagnostics', 'bughouse-setup', 'bughouse-game-single', 'bughouse-game-dual']);
 /** Screens that cannot be driven through the tree: the accessibility tree of the 2-player game screen lags the screen (the photograph is right), so its Options menu cannot be found; the menu's text is checked by the web matrix. */
 const TREE_LAGS = new Set(['game-2p-options']);
 /**
@@ -905,6 +906,29 @@ async function fromPosition2p(dev) {
     }
     await dev.snapshot('from-position-local');
     record(localName, issues, 'Black moved first from the typed position');
+  });
+}
+
+/**
+ * BOARD EDITOR GRID (command #55): Play -> From Position opens the Board Editor. On the 360 dp slice its 64 squares used to wrap after 7 (AppPressable's 44 dp floor grew each 41 dp
+ * square) and the board overlapped "Starting Position / Clear Board". Read from the accessibility tree (the squares' labels "e4, empty" / "e1, white king"): 64 squares forming 8 distinct
+ * columns and 8 rows (rank 8 on top), equal in size, none overlapping another, the board above the two toolbar buttons (lib/editorGrid.mjs `checkEditorGrid`, unit-tested in
+ * androidEditorGrid.test.ts). Not in smoke.mjs (TESTING.md 45-46); proven by the android-e2e run, never by a local run (no emulator in a cloud session).
+ */
+async function boardEditorGrid(dev) {
+  const name = 'Board Editor: the 64 squares are 8 columns x 8 rows and none overlaps the toolbar';
+  await scenario(dev, name, async () => {
+    await toHome(dev);
+    await dev.runSteps([{ text: 'Play' }]);
+    await tapReachable(dev, { text: 'From Position' }, 'the From Position entry of the Play menu');
+    await dev.waitFor('the Board Editor', (list) => findNodes(list, { text: 'Starting Position' }).length > 0, 30_000);
+    const nodes = await dev.dump();
+    const issues = checkEditorGrid(nodes);
+    await dev.snapshot('board-editor-grid');
+    const squares = editorSquares(nodes);
+    const left = Math.min(...squares.map((s) => s.bounds.x1));
+    const right = Math.max(...squares.map((s) => s.bounds.x2));
+    record(name, issues, `${squares.length} squares, the board spans x ${left}..${right} px`);
   });
 }
 
@@ -1955,6 +1979,8 @@ try {
       await torpedo2p(dev); // Torpedo (Local), same method: the double step from the 3rd rank (Part 2)
       await fromPosition2p(dev); // From Position (command #53): a typed FEN with Black to move, vs the real Stockfish and Local
     }
+    // the Board Editor's 64 squares are 8 columns x 8 rows (command #55b): its own part, run on the 360 dp phone (where the bug showed) and the large one
+    if (PARTS.has('boardeditor')) await boardEditorGrid(dev);
     if (PARTS.has('touchbug')) await touchesBughouse(dev, false);
     // the same two boards in the frame of the phone of command #26 (root view below the status bar): where the reverted fix fails
     if (PARTS.has('touchinset')) await touchesBughouse(dev, true);

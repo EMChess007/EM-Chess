@@ -21,6 +21,8 @@ export const SCREENS = [
   { id: 'game-2p-options', title: 'Game: 2-player, Options menu', steps: [PLAY, { text: 'Classic', nth: 1 }, { text: '5 min' }, { text: 'Options' }] },
   { id: 'bot-select', title: 'Setup: 2-player vs a bot', steps: [PLAY, { text: 'Classic', nth: 0 }] },
   { id: 'setup-chess', title: 'Setup: Setup Chess (Local)', steps: [PLAY, { text: 'Setup Chess', nth: 1 }] },
+  // the Board Editor (From Position, command #55b): the 64 squares and the toolbar at every size (it wrapped to 7 columns at 360 dp)
+  { id: 'board-editor', title: 'Board Editor (From Position)', steps: [PLAY, { text: 'From Position' }] },
   { id: 'engine-vs-engine', title: 'Setup: Engine vs Engine', steps: [PLAY, { text: 'Classic', nth: 2 }] },
   { id: 'ffa-setup', title: 'Setup: 4 Player Chess', steps: [PLAY, { label: '4 Player Chess' }] },
   { id: 'ffa-time', title: 'Time control: 4 Player', steps: [PLAY, { label: '4 Player Chess' }, { text: 'Choose time control' }] },
