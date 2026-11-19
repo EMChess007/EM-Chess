@@ -30,6 +30,7 @@ import {
   type ReservePieceType,
 } from './crazyhouse';
 import { racingKingsOutcomeFromFen } from './racingKings';
+import { torpedoExtraDoubleStep } from './torpedo';
 import { HORDE_FIRST_RANK_DOUBLE_STEP_ALLOWS_EN_PASSANT, getHordeWinnerFromFen, hordeFirstRankDoubleStep } from './horde';
 import { castlingRookOrigin, getJumpAugmentedCaptures } from './spellChess';
 import { hideCheckFromPlayers } from './fogOfWarNotation';
@@ -307,6 +308,18 @@ export interface ChessEngineOptions {
    */
   racingKings?: boolean;
   /**
+   * Torpedo only — see torpedo.ts for the rules (a pawn may always move one or two squares forward). chess.js stays
+   * authoritative for every ordinary move and for the home-rank double step; this option adds the double steps from the
+   * other ranks (getLegalMoves / move / getLegalMoveCount), applied through the unvalidated `_makeMove` with chess.js's
+   * BIG_PAWN flag so the en passant square is recorded (rank 4 / 5 as well as 3 / 6), after a make-and-undo probe that the
+   * mover's king is not left attacked. It implies skipValidation: chess.js's FEN loader refuses an en passant square on
+   * rank 4 or 5. getStatus() / isGameOver() are overridden only to look for a legal torpedo step before calling a
+   * position checkmate / stalemate (a double step can block a check or be the only move); a "#" SAN is demoted to "+"
+   * for the same reason. Insufficient material, threefold repetition and the fifty-move rule are chess.js's own and
+   * unchanged. Not combinable with any other variant.
+   */
+  torpedo?: boolean;
+  /**
    * Crazyhouse only — see crazyhouse.ts for the rules and the state it carries. chess.js stays authoritative for every
    * ordinary move; this option adds a DROP (drop(), getLegalDropSquares(), getLegalDrops()) and keeps the reserve and the
    * promoted-piece set (`crazyhouseState`, passed in because it is NOT part of the FEN, like duckSquare) up to date on every
@@ -329,6 +342,7 @@ export class ChessEngine {
   private spellChess: boolean;
   private horde: boolean;
   private racingKings: boolean;
+  private torpedo: boolean;
   private crazyhouse: boolean;
   private crazyhouseState: CrazyhouseState;
   private frozenSquares: string[];
@@ -348,12 +362,13 @@ export class ChessEngine {
     this.spellChess = options?.spellChess ?? false;
     this.horde = options?.horde ?? false;
     this.racingKings = options?.racingKings ?? false;
+    this.torpedo = options?.torpedo ?? false;
     this.crazyhouse = options?.crazyhouse ?? false;
     this.crazyhouseState = cloneCrazyhouseState(options?.crazyhouse ? (options.crazyhouseState ?? initialCrazyhouseState()) : initialCrazyhouseState());
     this.frozenSquares = options?.spellChess ? (options.frozenSquares ?? []) : [];
     this.jumpSquare = options?.spellChess ? (options.jumpSquare ?? null) : null;
     this.freezeEscapeActive = options?.spellChess ? (options.freezeEscapeActive ?? false) : false;
-    const skipValidation = (options?.skipValidation ?? false) || this.atomic || this.horde;
+    const skipValidation = (options?.skipValidation ?? false) || this.atomic || this.horde || this.torpedo;
     this.chess = fen ? (this.giveaway ? loadGiveawayFen(fen) : new Chess(fen, { skipValidation })) : new Chess();
     this.chess960 = options?.chess960 ?? false;
     this.atomicCurrentFen = fen ?? START_FEN;
@@ -400,6 +415,11 @@ export class ChessEngine {
     if (this.racingKings) {
       return this.racingKingsMoves(square).map((move) => move.to as string);
     }
+    if (this.torpedo) {
+      const targets = this.chess.moves({ square: square as ChessJsSquare, verbose: true }).map((move) => move.to as string);
+      const doubleStep = this.torpedoDoubleStepTarget(square);
+      return doubleStep ? [...targets, doubleStep] : targets;
+    }
     const verboseMoves = this.chess.moves({ square: square as ChessJsSquare, verbose: true });
 
     if (!this.chess960) {
@@ -417,6 +437,7 @@ export class ChessEngine {
     if (this.atomic) return this.moveAtomic(from, to, promotion);
     if (this.spellChess) return this.moveSpellChess(from, to, promotion);
     if (this.horde && this.hordeDoubleStepTarget(from) === to) return this.applyHordeDoubleStep(from, to);
+    if (this.torpedo && this.torpedoDoubleStepTarget(from) === to) return this.applyTorpedoDoubleStep(from, to, promotion);
     if (this.chess960) {
       const side = this.matchChess960CastleAttempt(from, to);
       if (side) {
@@ -445,6 +466,7 @@ export class ChessEngine {
         san: result.san,
         captured: result.captured as Move['captured'],
       };
+      if (this.torpedo) played.san = this.torpedoFixMateSuffix(played.san);
       if (!this.crazyhouse) return played;
       // Crazyhouse: bank the capture (a promoted piece becomes a pawn) and carry the promoted status along — see crazyhouse.ts.
       const rank = result.color === 'w' ? '1' : '8';
@@ -491,6 +513,10 @@ export class ChessEngine {
       if (this.racingKingsMoves().length === 0) return 'stalemate';
       return this.chess.isDrawByFiftyMoves() ? 'draw' : 'playing';
     }
+    if (this.torpedo && (this.chess.isCheckmate() || this.chess.isStalemate()) && this.torpedoHasDoubleStep()) {
+      // chess.js sees no move, but a torpedo double step can block the check or simply be playable (see ChessEngineOptions.torpedo).
+      return this.chess.isCheck() ? 'check' : 'playing';
+    }
     if (this.horde) {
       // Never chess.js's isDraw(): its insufficient-material rule misreads Horde (see ChessEngineOptions.horde). The
       // fifty-move rule is the only automatic draw besides stalemate; "White has nothing left" is the callers' win check.
@@ -527,6 +553,10 @@ export class ChessEngine {
       const status = this.getStatus();
       return status === 'checkmate' || status === 'stalemate' || status === 'draw';
     }
+    if (this.torpedo) {
+      const status = this.getStatus();
+      return status === 'checkmate' || status === 'stalemate' || status === 'draw';
+    }
     return this.chess.isGameOver();
   }
 
@@ -556,6 +586,8 @@ export class ChessEngine {
     if (this.atomic) return this.getAtomicLegal().length;
     if (this.crazyhouse) return this.chess.moves().length + this.getLegalDrops().length;
     if (this.racingKings) return this.racingKingsMoves().length;
+    // chess.js counts a promotion once per piece (4), so a promoting double step counts four times as well.
+    if (this.torpedo) return this.chess.moves().length + this.torpedoDoubleSteps().reduce((sum, step) => sum + (step.to[1] === '8' || step.to[1] === '1' ? 4 : 1), 0);
     if (this.horde) {
       let doubleSteps = 0;
       for (const file of FILES) if (this.hordeDoubleStepTarget(`${file}1`)) doubleSteps++;
@@ -781,6 +813,72 @@ export class ChessEngine {
   private racingKingsMoves(square?: string) {
     const all = square ? this.chess.moves({ square: square as ChessJsSquare, verbose: true }) : this.chess.moves({ verbose: true });
     return all.filter((move) => !/[+#]$/.test(move.san));
+  }
+
+  // --- Torpedo (see torpedo.ts) ------------------------------------------
+
+  /** The raw chess.js move for a torpedo double step of the side to move. A step onto the last rank promotes (flags
+   * NORMAL | PROMOTION, no en passant); any other step carries BIG_PAWN (4), which records the en passant square. */
+  private torpedoRawStep(from: string, to: string, promotion: Move['promotion'] = 'q'): InternalMove {
+    const promotes = to[1] === '8' || to[1] === '1';
+    return {
+      color: this.chess.turn(),
+      from: indexFromSquare(from),
+      to: indexFromSquare(to),
+      piece: 'p',
+      promotion: promotes ? promotion : undefined,
+      flags: promotes ? 1 | 16 /* NORMAL | PROMOTION */ : 4 /* BIG_PAWN */,
+    };
+  }
+
+  /** Where the side-to-move's pawn on `square` may go with a torpedo double step chess.js does not generate, or null: the
+   * squares in front must be empty (torpedoExtraDoubleStep) and the move must not leave its own king attacked (probed by
+   * making the move and undoing it). */
+  private torpedoDoubleStepTarget(square: string): string | null {
+    const piece = this.chess.get(square as ChessJsSquare);
+    if (!piece || piece.type !== 'p' || piece.color !== this.chess.turn()) return null;
+    const to = torpedoExtraDoubleStep(square, piece.color, (sq) => this.chess.get(sq as ChessJsSquare) !== undefined);
+    if (!to) return null;
+    const internals = this.chess as unknown as ChessInternals;
+    internals._makeMove(this.torpedoRawStep(square, to));
+    const king = this.chess.findPiece({ type: 'k', color: piece.color })[0];
+    const safe = king === undefined || !this.chess.isAttacked(king, piece.color === 'w' ? 'b' : 'w');
+    this.chess.undo();
+    return safe ? to : null;
+  }
+
+  /** Every legal torpedo double step of the side to move (not the ones chess.js already generates). */
+  private torpedoDoubleSteps(): { from: string; to: string }[] {
+    const steps: { from: string; to: string }[] = [];
+    for (const file of FILES) {
+      for (let rank = 2; rank <= 7; rank++) {
+        const from = `${file}${rank}`;
+        const to = this.torpedoDoubleStepTarget(from);
+        if (to) steps.push({ from, to });
+      }
+    }
+    return steps;
+  }
+
+  private torpedoHasDoubleStep(): boolean {
+    return this.torpedoDoubleSteps().length > 0;
+  }
+
+  /** chess.js writes "#" when IT sees no reply; if a torpedo double step is a legal reply the move is only a check. */
+  private torpedoFixMateSuffix(san: string): string {
+    return san.endsWith('#') && this.torpedoHasDoubleStep() ? `${san.slice(0, -1)}+` : san;
+  }
+
+  /** Plays a torpedo double step chess.js cannot generate (see torpedoRawStep); SAN comes from chess.js's own Move wrapper,
+   * built before the move is made, like applyHordeDoubleStep. */
+  private applyTorpedoDoubleStep(from: string, to: string, promotion?: Move['promotion']): Move | null {
+    const raw = this.torpedoRawStep(from, to, promotion ?? 'q');
+    const internals = this.chess as unknown as ChessInternals;
+    const pretty = new ChessJsMove(this.chess, raw);
+    internals._makeMove(raw);
+    const played = toAppMove(pretty);
+    played.san = this.torpedoFixMateSuffix(played.san);
+    return played;
   }
 
   // --- Horde (see horde.ts) ----------------------------------------------

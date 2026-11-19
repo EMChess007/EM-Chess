@@ -125,6 +125,10 @@ interface ChessBoardProps {
   /** Racing Kings only — see racingKings.ts. Every engine this board builds gets { racingKings: true }, so a move that
    * gives check is simply not offered (no dot, no move). Mutually exclusive with every other variant. */
   racingKings?: boolean;
+  /** Torpedo only — see torpedo.ts. Every engine this board builds gets { torpedo: true }, so a pawn is offered its double step
+   * from any rank (a dot two squares ahead) and en passant works after it. Premoves are not offered (the premove logic knows
+   * only the ordinary pawn). Mutually exclusive with every other variant. */
+  torpedo?: boolean;
   /** Crazyhouse only — see crazyhouse.ts. A turn is ONE action: an ordinary move, or a DROP — tap a piece in the reserve tray under
    * the board, then a highlighted square (the legal squares come from the engine, so pawn ranks and check-blocking are
    * honoured). `crazyhouseState` is the reserves/promoted set for the position shown (carried per ply, not in the fen); the
@@ -203,6 +207,7 @@ function ChessBoard({
   spellChess = false,
   horde = false,
   racingKings = false,
+  torpedo = false,
   crazyhouse = false,
   crazyhouseState,
   spellState,
@@ -273,13 +278,14 @@ function ChessBoard({
         spellChess,
         horde,
         racingKings,
+        torpedo,
         crazyhouse,
         crazyhouseState,
         frozenSquares: spellFrozenSquares,
         jumpSquare: spellJumpSquare,
         freezeEscapeActive: spellFreezeEscapeActive,
       }),
-    [shownFen, chess960, initialFen, needsSkipValidation, giveaway, atomic, duckChess, duckSquare, spellChess, horde, racingKings, crazyhouse, crazyhouseState, spellFrozenSquares, spellJumpSquare, spellFreezeEscapeActive]
+    [shownFen, chess960, initialFen, needsSkipValidation, giveaway, atomic, duckChess, duckSquare, spellChess, horde, racingKings, torpedo, crazyhouse, crazyhouseState, spellFrozenSquares, spellJumpSquare, spellFreezeEscapeActive]
   );
   const board = useMemo(() => engine.getBoard(), [engine]);
   // Reversing both axes together preserves each square's light/dark identity (a 180° rotation
@@ -393,7 +399,7 @@ function ChessBoard({
     // flag through every caller.
     let movingPiece: PieceModel | null = null;
     try {
-      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: needsSkipValidation, giveaway, atomic, duckChess, horde, racingKings }).getPieceAt(lastMove.from);
+      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: needsSkipValidation, giveaway, atomic, duckChess, horde, racingKings, torpedo }).getPieceAt(lastMove.from);
     } catch {
       movingPiece = null;
     }
@@ -489,6 +495,7 @@ function ChessBoard({
       spellChess,
       horde,
       racingKings,
+      torpedo,
       crazyhouse,
       crazyhouseState,
       frozenSquares: spellFrozenSquares,

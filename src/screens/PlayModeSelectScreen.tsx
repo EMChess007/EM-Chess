@@ -29,6 +29,7 @@ interface PlayModeSelectScreenProps {
   onBotHorde: () => void;
   onBotCrazyhouse: () => void;
   onBotRacingKings: () => void;
+  onBotTorpedo: () => void;
   onLocalClassic: () => void;
   onLocalChess960: () => void;
   onLocalKingOfTheHill: () => void;
@@ -57,6 +58,7 @@ interface PlayModeSelectScreenProps {
   onLocalHorde: () => void;
   onLocalCrazyhouse: () => void;
   onLocalRacingKings: () => void;
+  onLocalTorpedo: () => void;
   onEngineVsEngineClassic: () => void;
   onEngineVsEngineChess960: () => void;
   onEngineVsEngineKingOfTheHill: () => void;
@@ -89,6 +91,7 @@ export default function PlayModeSelectScreen({
   onBotHorde,
   onBotCrazyhouse,
   onBotRacingKings,
+  onBotTorpedo,
   onLocalClassic,
   onLocalChess960,
   onLocalKingOfTheHill,
@@ -109,6 +112,7 @@ export default function PlayModeSelectScreen({
   onLocalHorde,
   onLocalCrazyhouse,
   onLocalRacingKings,
+  onLocalTorpedo,
   onEngineVsEngineClassic,
   onEngineVsEngineChess960,
   onEngineVsEngineKingOfTheHill,
@@ -213,6 +217,9 @@ export default function PlayModeSelectScreen({
             <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotRacingKings}>
               <ModeButtonLabel label="Racing Kings" style={styles.subButtonText} />
             </Pressable>
+            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotTorpedo}>
+              <ModeButtonLabel label="Torpedo" style={styles.subButtonText} />
+            </Pressable>
           </View>
         </View>
 
@@ -266,6 +273,9 @@ export default function PlayModeSelectScreen({
             </Pressable>
             <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalRacingKings}>
               <ModeButtonLabel label="Racing Kings" style={styles.subButtonText} />
+            </Pressable>
+            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalTorpedo}>
+              <ModeButtonLabel label="Torpedo" style={styles.subButtonText} />
             </Pressable>
           </View>
         </View>

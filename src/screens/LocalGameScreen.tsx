@@ -9,6 +9,7 @@ import ChessBoard from '../components/ChessBoard';
 import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import RacingKingsRulesSheet from '../components/RacingKingsRulesSheet';
+import TorpedoRulesSheet from '../components/TorpedoRulesSheet';
 import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
 import { useStableCallback } from '../components/useStableCallback';
@@ -74,6 +75,8 @@ interface LocalGameScreenProps {
   horde?: boolean;
   /** Racing Kings — see racingKings.ts. Mutually exclusive with every other variant. */
   racingKings?: boolean;
+  /** Torpedo — see torpedo.ts: a pawn may always move one or two squares. Mutually exclusive with every other variant. */
+  torpedo?: boolean;
   /** Crazyhouse — see crazyhouse.ts. Mutually exclusive with every other variant. */
   crazyhouse?: boolean;
   /** The merged starting position from the Setup Chess builder flow — used instead of
@@ -97,6 +100,7 @@ export default function LocalGameScreen({
   spellChess = false,
   horde = false,
   racingKings = false,
+  torpedo = false,
   crazyhouse = false,
   initialFen: initialFenProp,
   authToken,
@@ -172,7 +176,7 @@ export default function LocalGameScreen({
   // any further named position, no later position will match either, so this naturally stops
   // updating on its own.
   useEffect(() => {
-    if (chess960 || setupChess || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse) return;
+    if (chess960 || setupChess || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
   }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse]);
@@ -200,8 +204,8 @@ export default function LocalGameScreen({
   // the last ply's state (or the empty start), which also makes Undo restore them for free.
   const crazyhouseState = useMemo(() => latestPlyState(history, (h) => h.crazyhouse, initialCrazyhouseState()), [history]);
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess || spellChess || horde, giveaway, atomic, duckChess, duckSquare, horde, racingKings, crazyhouse, crazyhouseState }),
-    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare, spellChess, horde, racingKings, crazyhouse, crazyhouseState]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess || spellChess || horde, giveaway, atomic, duckChess, duckSquare, horde, racingKings, torpedo, crazyhouse, crazyhouseState }),
+    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare, spellChess, horde, racingKings, torpedo, crazyhouse, crazyhouseState]
   );
   const turn = engine.getTurn();
   // Atomic: the engine answers check/mate/stalemate/50-move/insufficient material from atomic.ts. A king
@@ -368,6 +372,7 @@ export default function LocalGameScreen({
         horde,
         racingKingsOutcome,
         racingKings,
+        torpedo,
         crazyhouse,
         repetitionDraw,
         history,
@@ -398,6 +403,7 @@ export default function LocalGameScreen({
       horde,
       racingKingsOutcome,
       racingKings,
+      torpedo,
       crazyhouse,
       repetitionDraw,
       history,
@@ -566,7 +572,7 @@ export default function LocalGameScreen({
   // computed from information Fog of War says they shouldn't have yet would be a straightforward
   // way around the entire variant, so this is disabled outright rather than merely hidden.
   const handleHintPress = () => {
-    if (gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse) return;
+    if (gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse) return;
     setHintText(null);
     setHintLoading(true);
     setHintActive(true);
@@ -657,6 +663,8 @@ export default function LocalGameScreen({
                               ? 'Horde'
                               : racingKings
                                 ? 'Racing Kings'
+                                : torpedo
+                                ? 'Torpedo'
                                 : crazyhouse
                                 ? 'Crazyhouse'
                                 : undefined
@@ -684,7 +692,7 @@ export default function LocalGameScreen({
                   { key: 'options', label: 'Options', onPress: () => setShowOptions((v) => !v), active: showOptions },
                   { key: 'resign', label: 'Resign', onPress: handleResign, disabled: gameOver || awaitingPass },
                   { key: 'draw', label: 'Draw', onPress: handleDrawOffer, disabled: gameOver || awaitingPass },
-                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || crazyhouse },
+                  { key: 'hint', label: 'Hint', onPress: handleHintPress, disabled: gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse },
                   {
                     key: 'undo',
                     label: 'Undo',
@@ -697,10 +705,11 @@ export default function LocalGameScreen({
                 visible={showOptions}
                 items={[
                   { label: 'Flip Board', onPress: () => setFlipped((v) => !v) },
-                  ...(racingKings ? [{ label: 'Rules', onPress: () => setRulesOpen(true) }] : []),
+                  ...(racingKings || torpedo ? [{ label: 'Rules', onPress: () => setRulesOpen(true) }] : []),
                 ]}
               />
               {racingKings && <RacingKingsRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
+              {torpedo && <TorpedoRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
             </View>
 
             <View style={styles.footer}>
@@ -747,7 +756,7 @@ export default function LocalGameScreen({
               <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
             </View>
 
-            {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+            {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
             <ChessBoard
               key={resetCount}
@@ -770,6 +779,7 @@ export default function LocalGameScreen({
               spellChess={spellChess}
               horde={horde}
               racingKings={racingKings}
+              torpedo={torpedo}
               crazyhouse={crazyhouse}
               crazyhouseState={displayCrazyhouse}
               spellState={displaySpellState}
@@ -804,6 +814,7 @@ export default function LocalGameScreen({
         spellChess={spellChess}
         horde={horde}
         racingKings={racingKings}
+        torpedo={torpedo}
         crazyhouse={crazyhouse}
         history={history}
         players={[
