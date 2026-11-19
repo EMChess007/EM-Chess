@@ -98,7 +98,7 @@ export function readMarkers(dir) {
  * Only the smoke is required; this never decides the verdict. `failed` counts the slices whose last attempt failed or whose phase left a marker line (a crash with no results.json).
  */
 export function buildInformational(dir) {
-  const lines = ['### INFORMATIONAL (not blocking)', '', 'The required check is the smoke (the app installs, starts and reaches Home without a crash). The full end-to-end results below are read by Claude before every merge (TESTING.md section 45).', ''];
+  const lines = ['### Full e2e results', '', 'The required check is the smoke plus the full end-to-end run (release-mode APK, ANDROID_E2E_STRICT=1; TESTING.md section 45). The results per slice:', ''];
   const slices = readSlices(dir) ?? [];
   const markers = readMarkers(dir);
   let failed = 0;
@@ -117,7 +117,7 @@ export function buildInformational(dir) {
   for (const [job, entries] of Object.entries(markers)) lines.push(`- run-on-emulator.sh marker of **${job}**: ${entries.join(' | ').slice(0, 500)}`);
   if (slices.length === 0 && Object.keys(markers).length > 0) failed = Object.keys(markers).length;
   if (slices.length === 0 && Object.keys(markers).length === 0) lines.push('No full end-to-end results were written.');
-  lines.push('', `${failed} slice(s) failed the informational run.`);
+  lines.push('', `${failed} slice(s) failed the full e2e run.`);
   return { text: lines.join('\n'), failed };
 }
 
