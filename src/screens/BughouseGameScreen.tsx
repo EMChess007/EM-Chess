@@ -95,6 +95,8 @@ const PROMOTION_ORDER: readonly PromotionPiece[] = ['q', 'r', 'b', 'n'];
 
 /** The one empty list every board without targets is given (a fresh `[]` per render would defeat the boards' memo; command #33). */
 const NO_SQUARES: readonly string[] = [];
+/** When the screen scrolls to the result card again after it appeared (ms): the layout of a fast phone settles within these (command #47). */
+const RESULT_SCROLL_RETRY_MS: readonly number[] = [50, 250, 700, 1500];
 
 /** A thumbnail line: the seat, its clock and its pocket. Only the clock moves with the tick, so this is the one part of the thumbnail that subscribes to it (NowClock.tsx). */
 function ThumbLine({ clock, testID, style, lead, tail }: { clock: BughouseMatch['clocks'][BughouseSeat]; testID: string; style: object; lead: string; tail: string }) {
@@ -436,6 +438,17 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
   const pickPocket = useStableCallback((tapped: BoardId, piece: ReservePieceType) => (dual ? dualInput(tapped, { kind: 'pickPocket', piece }) : onPickPocket(tapped, piece)));
   const promotionChoice = useStableCallback((chosen: BoardId, choice: PromotionPiece | 'cancel') => dualInput(chosen, choice === 'cancel' ? { kind: 'cancelPromotion' } : { kind: 'choosePromotion', piece: choice }));
   const summary = gameOverSummary(match);
+  // The result card must be on the visible screen at once (command #33, #47). One scroll from `onContentSizeChange` is not enough: that event fires only when the content's size CHANGES, and on a
+  // fast phone (release build, command #47) the native scroll ran before the new height was laid out, leaving the card below the fold. So the card scrolls the screen to its end when it appears,
+  // again when it is laid out (its own onLayout) and again a few times while the layout settles; a user scrolling later is not fought (the retries stop after RESULT_SCROLL_RETRY_MS).
+  const resultCardShown = summary !== null;
+  useEffect(() => {
+    if (!resultCardShown) return;
+    const toEnd = () => scrollRef.current?.scrollToEnd({ animated: false });
+    toEnd();
+    const timers = RESULT_SCROLL_RETRY_MS.map((ms) => setTimeout(toEnd, ms));
+    return () => timers.forEach(clearTimeout);
+  }, [resultCardShown]);
   const mainBoard: BoardId = swapped ? otherBoard(mainBoardOf(layout)) : mainBoardOf(layout);
   const arrangement = standardArrangement(width, height);
 
@@ -752,7 +765,7 @@ export default function BughouseGameScreen({ seats, timeControl, onExit, rng, cl
         )}
 
         {summary !== null && (
-          <View style={styles.gameOver} testID="game-over">
+          <View style={styles.gameOver} testID="game-over" onLayout={() => scrollRef.current?.scrollToEnd({ animated: false })}>
             <Text style={styles.gameOverTitle} testID="game-over-headline">
               {summary.headline}
             </Text>
