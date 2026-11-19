@@ -11,20 +11,34 @@ import {
   buildFen,
   emptyBoard,
   boardFromFen,
+  editorErrorText,
   getTurnFromFen,
+  normalizePlayFen,
   parseCastlingFromFen,
+  parseFenExtras,
   validateEditorFen,
+  DEFAULT_FEN_EXTRAS,
   STARTING_EDITOR_FEN,
   type CastlingRights,
+  type FenExtras,
 } from '../logic/boardEditor';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
 import type { BoardSquare, PieceColor, PieceType } from '../types/chess';
 import type { AnalyzeParams } from '../types/history';
 
+/** How a "From Position" game is played (command #50, Part 1): on one device, or against a bot. */
+export type FromPositionMode = 'local' | 'bot';
+
 interface BoardSetupScreenProps {
   onBack: () => void;
   onAnalyze: (params: AnalyzeParams) => void;
+  /** Present => the "Play from here" button is shown. `fen` is already normalised and validated for play (validateEditorFen forPlay). */
+  onPlay?: (fen: string, mode: FromPositionMode) => void;
+  /** Opened from the Play menu's "From Position" entry: the title says so and a line explains the flow. The editor itself is the same screen. */
+  fromPosition?: boolean;
+  /** Re-opens the editor on this position (the way back from the time-control picker keeps what the player had set up). */
+  initialFen?: string;
 }
 
 type PaletteSelection = { type: PieceType; color: PieceColor } | 'eraser' | null;
@@ -32,7 +46,7 @@ type PaletteSelection = { type: PieceType; color: PieceColor } | 'eraser' | null
 // King first, then descending value — the order most chess sites use for a piece palette.
 const PALETTE_PIECE_ORDER: PieceType[] = ['k', 'q', 'r', 'b', 'n', 'p'];
 
-export default function BoardSetupScreen({ onBack, onAnalyze }: BoardSetupScreenProps) {
+export default function BoardSetupScreen({ onBack, onAnalyze, onPlay, fromPosition = false, initialFen }: BoardSetupScreenProps) {
   const { width } = useWindowDimensions();
   const boardSize = getBoardSize(width);
   const squareSize = boardSize / 8;
@@ -41,24 +55,42 @@ export default function BoardSetupScreen({ onBack, onAnalyze }: BoardSetupScreen
   const pieceTheme = useActivePieceTheme();
   const styles = createStyles(colors);
 
-  const [board, setBoard] = useState<BoardSquare[][]>(() => boardFromFen(STARTING_EDITOR_FEN));
-  const [turn, setTurn] = useState<PieceColor>('w');
-  const [castling, setCastling] = useState<CastlingRights>({ K: true, Q: true, k: true, q: true });
+  const startFen = initialFen ?? STARTING_EDITOR_FEN;
+  const [board, setBoard] = useState<BoardSquare[][]>(() => boardFromFen(startFen));
+  const [turn, setTurn] = useState<PieceColor>(() => getTurnFromFen(startFen));
+  const [castling, setCastling] = useState<CastlingRights>(() => parseCastlingFromFen(startFen));
   const [paletteSelection, setPaletteSelection] = useState<PaletteSelection>(null);
-  const [fenInput, setFenInput] = useState(() => buildFen(board, turn, castling));
+  // The en passant square / clocks of a LOADED FEN (the board, side and castling controls cannot express them). Any hand edit puts them back to
+  // the defaults - a position changed by hand has no game history behind it.
+  const [extras, setExtras] = useState<FenExtras>(() => parseFenExtras(startFen));
+  const [fenInput, setFenInput] = useState(() => buildFen(board, turn, castling, extras));
   const [error, setError] = useState<string | null>(null);
+  const [choosingMode, setChoosingMode] = useState(false);
 
   // Keeps the FEN text field showing the board's current state after any placement/toolbar
-  // action. Only fires when board/turn/castling actually change (a placement, Starting Position,
+  // action. Only fires when board/turn/castling/extras actually change (a placement, Starting Position,
   // Clear Board, or a successful Load) — so it never clobbers text the user is still typing in
   // the box before they've pressed Load.
   useEffect(() => {
-    setFenInput(buildFen(board, turn, castling));
-  }, [board, turn, castling]);
+    setFenInput(buildFen(board, turn, castling, extras));
+  }, [board, turn, castling, extras]);
+
+  const changeTurn = (next: PieceColor) => {
+    setTurn(next);
+    setExtras(DEFAULT_FEN_EXTRAS);
+    setChoosingMode(false);
+  };
+  const toggleCastling = (key: keyof CastlingRights) => {
+    setCastling((prev) => ({ ...prev, [key]: !prev[key] }));
+    setExtras(DEFAULT_FEN_EXTRAS);
+    setChoosingMode(false);
+  };
 
   const handleSquarePress = (square: string) => {
     if (!paletteSelection) return;
     setError(null);
+    setExtras(DEFAULT_FEN_EXTRAS);
+    setChoosingMode(false);
     const rowIdx = 8 - parseInt(square[1], 10);
     const colIdx = square.charCodeAt(0) - 97;
     setBoard((prev) => {
@@ -75,25 +107,31 @@ export default function BoardSetupScreen({ onBack, onAnalyze }: BoardSetupScreen
     setBoard(boardFromFen(STARTING_EDITOR_FEN));
     setTurn('w');
     setCastling({ K: true, Q: true, k: true, q: true });
+    setExtras(DEFAULT_FEN_EXTRAS);
+    setChoosingMode(false);
     setError(null);
   };
 
   const handleClearBoard = () => {
     setBoard(emptyBoard());
     setCastling({ K: false, Q: false, k: false, q: false });
+    setExtras(DEFAULT_FEN_EXTRAS);
+    setChoosingMode(false);
     setError(null);
   };
 
   const handleLoadFen = () => {
-    const candidate = fenInput.trim();
+    const candidate = normalizePlayFen(fenInput);
     const validation = validateEditorFen(candidate);
     if (!validation.ok) {
-      setError(validation.error);
+      setError(editorErrorText(validation));
       return;
     }
     setBoard(boardFromFen(candidate));
     setTurn(getTurnFromFen(candidate));
     setCastling(parseCastlingFromFen(candidate));
+    setExtras(parseFenExtras(candidate));
+    setChoosingMode(false);
     setError(null);
   };
 
@@ -107,14 +145,38 @@ export default function BoardSetupScreen({ onBack, onAnalyze }: BoardSetupScreen
   };
 
   const handleAnalyze = () => {
-    const liveFen = buildFen(board, turn, castling);
+    const liveFen = buildFen(board, turn, castling, extras);
     const validation = validateEditorFen(liveFen);
     if (!validation.ok) {
-      setError(validation.error);
+      setError(editorErrorText(validation));
       return;
     }
     setError(null);
     onAnalyze({ initialFen: liveFen, chess960: false, fogOfWar: false, history: [] });
+  };
+
+  // "Play from here": what the FEN box SHOWS is what is played (the box follows every board edit, and a pasted FEN can be played without pressing
+  // Load first). Checked for PLAY before the Local / vs Bot choice appears, so a refused position never reaches the time-control picker.
+  const handlePlayFromHere = () => {
+    const validation = validateEditorFen(normalizePlayFen(fenInput), { forPlay: true });
+    if (!validation.ok) {
+      setError(editorErrorText(validation));
+      setChoosingMode(false);
+      return;
+    }
+    setError(null);
+    setChoosingMode(true);
+  };
+
+  const handlePickMode = (mode: FromPositionMode) => {
+    const fen = normalizePlayFen(fenInput);
+    const validation = validateEditorFen(fen, { forPlay: true });
+    if (!validation.ok) {
+      setError(editorErrorText(validation));
+      setChoosingMode(false);
+      return;
+    }
+    onPlay?.(fen, mode);
   };
 
   const renderPaletteButton = (type: PieceType, color: PieceColor) => {
@@ -146,8 +208,13 @@ export default function BoardSetupScreen({ onBack, onAnalyze }: BoardSetupScreen
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Board Editor" onBack={onBack} backLabel="‹ Menu" />
+      <ScreenHeader title={fromPosition ? 'From Position' : 'Board Editor'} onBack={onBack} backLabel="‹ Menu" />
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {fromPosition && (
+          <Text style={styles.hintText}>
+            Paste a FEN below (then Load), or set up the pieces, then press Play from here. Standard chess rules, not rated.
+          </Text>
+        )}
         <View style={styles.boardWrap}>
           <View style={styles.boardBorder}>
             <View style={[styles.board, { width: boardSize, height: boardSize }]}>
@@ -205,13 +272,13 @@ export default function BoardSetupScreen({ onBack, onAnalyze }: BoardSetupScreen
           <View style={styles.toggleRow}>
             <Pressable
               style={[styles.toggleChip, turn === 'w' && styles.toggleChipActive]}
-              onPress={() => setTurn('w')}
+              onPress={() => changeTurn('w')}
             >
               <Text style={[styles.toggleChipText, turn === 'w' && styles.toggleChipTextActive]}>White</Text>
             </Pressable>
             <Pressable
               style={[styles.toggleChip, turn === 'b' && styles.toggleChipActive]}
-              onPress={() => setTurn('b')}
+              onPress={() => changeTurn('b')}
             >
               <Text style={[styles.toggleChipText, turn === 'b' && styles.toggleChipTextActive]}>Black</Text>
             </Pressable>
@@ -225,7 +292,7 @@ export default function BoardSetupScreen({ onBack, onAnalyze }: BoardSetupScreen
               <Pressable
                 key={key}
                 style={[styles.toggleChip, castling[key] && styles.toggleChipActive]}
-                onPress={() => setCastling((prev) => ({ ...prev, [key]: !prev[key] }))}
+                onPress={() => toggleCastling(key)}
               >
                 <Text style={[styles.toggleChipText, castling[key] && styles.toggleChipTextActive]}>{key}</Text>
               </Pressable>
@@ -255,7 +322,22 @@ export default function BoardSetupScreen({ onBack, onAnalyze }: BoardSetupScreen
 
         {error && <Text style={styles.errorText}>{error}</Text>}
 
-        <Pressable style={styles.analyzeButton} onPress={handleAnalyze}>
+        {onPlay && (
+          <Pressable style={styles.analyzeButton} onPress={handlePlayFromHere} testID="play-from-here">
+            <Text style={styles.analyzeButtonText}>Play from here</Text>
+          </Pressable>
+        )}
+        {onPlay && choosingMode && (
+          <View style={styles.toolbarRow}>
+            <Pressable style={styles.toolbarButton} onPress={() => handlePickMode('local')} testID="from-position-local">
+              <Text style={styles.toolbarButtonText}>Local (2 players)</Text>
+            </Pressable>
+            <Pressable style={styles.toolbarButton} onPress={() => handlePickMode('bot')} testID="from-position-bot">
+              <Text style={styles.toolbarButtonText}>vs Bot</Text>
+            </Pressable>
+          </View>
+        )}
+        <Pressable style={[styles.analyzeButton, onPlay && styles.secondaryButton]} onPress={handleAnalyze}>
           <Text style={styles.analyzeButtonText}>Analyze this position</Text>
         </Pressable>
       </ScrollView>
@@ -389,6 +471,13 @@ function createStyles(colors: AppColors) {
       borderRadius: 10,
       alignItems: 'center',
       backgroundColor: colors.accent,
+    },
+    secondaryButton: {
+      backgroundColor: colors.buttonBackground,
+    },
+    hintText: {
+      fontSize: 13,
+      color: colors.text,
     },
     analyzeButtonText: {
       color: '#fff',
