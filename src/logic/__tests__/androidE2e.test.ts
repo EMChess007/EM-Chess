@@ -384,7 +384,8 @@ describe('scrollUntilVisible (command #54b: the FEN field and Play from here sit
       async dump() {
         state.dumps++;
         const cy = targetY - state.scroll;
-        const nodes = [node({ text: 'Board Editor', bounds: box(0, 100, 1080, 200) })];
+        // a row whose text follows the scroll: the screen's fingerprint changes while the list moves and stays while it stands still
+        const nodes = [node({ text: 'Board Editor', bounds: box(0, 100, 1080, 200) }), node({ text: `Row at ${state.scroll}`, bounds: box(0, 300, 1080, 400) })];
         if (present && cy >= 0 && cy + 40 <= 2400) nodes.push(node({ id: 'fen-input', cls: 'android.widget.EditText', bounds: box(40, cy - 40, 1040, cy + 40) }));
         return nodes;
       },
@@ -407,6 +408,7 @@ describe('scrollUntilVisible (command #54b: the FEN field and Play from here sit
       expect.stringContaining('the FEN field: not on the screen'),
       expect.stringContaining('y 2120-2200 (centre 2160) of 2400'),
       expect.stringContaining('y 1280-1360 (centre 1320) of 2400'),
+      expect.stringContaining('the FEN field: reached after 2 swipes'),
     ]);
   });
 
@@ -427,6 +429,21 @@ describe('scrollUntilVisible (command #54b: the FEN field and Play from here sit
     const { dev, state, options, find } = fakePhone(3000, 10_000, false);
     await expect(scrollUntilVisible(dev, 'the FEN field (fen-input)', find, { ...options, maxSwipes: 3 })).rejects.toThrow(
       /"the FEN field \(fen-input\)" did not become tappable within 3 swipes \(never on the screen\); on screen: Board Editor/
+    );
+    expect(state.swipes).toBe(3);
+  });
+
+  it('a long list (the Play menu at 360 dp): the target is reached after 12 swipes, past the old limit of 8, and the count is logged', async () => {
+    const { dev, state, options, find } = fakePhone(11_000, 100_000); // 11000 - 12 x 840 = 920: tappable on the 13th dump
+    const hit = await scrollUntilVisible(dev, 'From Position', find, options);
+    expect([state.swipes, hit.bounds.cy]).toEqual([12, 920]);
+    expect(state.logs[state.logs.length - 1]).toContain('From Position: reached after 12 swipes');
+  });
+
+  it('the list ends without the target: it stops at once with a clear "list stood still" error, long before the safety cap of 20', async () => {
+    const { dev, state, options, find } = fakePhone(99_000, 1680, false); // the page moves twice, then stands still
+    await expect(scrollUntilVisible(dev, 'From Position', find, options)).rejects.toThrow(
+      /"From Position" is not in the list: the list stood still after 3 swipes \(never on the screen\); on screen: Board Editor/
     );
     expect(state.swipes).toBe(3);
   });

@@ -151,19 +151,30 @@ export function stoodStill(before, after) {
  */
 export async function scrollUntilVisible(dev, label, find, options = {}) {
   /** @type {{ maxSwipes?: number, settleMs?: number, upper?: number, sleep?: (ms: number) => Promise<unknown>, log?: (line: string) => unknown }} */
-  const { maxSwipes = 8, settleMs = 700, upper = 0.7, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), log = () => {} } = options;
+  // maxSwipes is only a SAFETY cap (command #55c: the Play menu is longer at 360 dp than 8 swipes); the normal stop is the list standing still (the target's place, or - while the target is
+  // not on the screen yet - the whole screen's fingerprint, unchanged by a swipe).
+  const { maxSwipes = 20, settleMs = 700, upper = 0.7, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), log = () => {} } = options;
   const h = dev.display.h;
   let previous = null;
+  let previousPrint = null;
   for (let swipes = 0; ; swipes++) {
     const nodes = await dev.dump();
     const hit = find(nodes) || null;
     const atEnd = stoodStill(previous, hit);
+    const print = fingerprint(nodes);
     log(`  ${label}: ${hit ? `y ${hit.bounds.y1}-${hit.bounds.y2} (centre ${hit.bounds.cy}) of ${h}` : 'not on the screen'}, content at its end: ${atEnd}, swipes so far ${swipes}/${maxSwipes}`);
-    if (tappableNow(hit, h, atEnd, upper)) return hit;
+    if (tappableNow(hit, h, atEnd, upper)) {
+      log(`  ${label}: reached after ${swipes} swipes`);
+      return hit;
+    }
+    if (!hit && swipes > 0 && print === previousPrint) {
+      throw new Error(`"${label}" is not in the list: the list stood still after ${swipes} swipes (never on the screen); on screen: ${visibleWords(nodes, 40).join(' | ')}`);
+    }
     if (swipes >= maxSwipes) {
       throw new Error(`"${label}" did not become tappable within ${maxSwipes} swipes (${hit ? `last seen at y ${hit.bounds.y1}-${hit.bounds.y2} of ${h}` : 'never on the screen'}); on screen: ${visibleWords(nodes, 40).join(' | ')}`);
     }
     previous = hit;
+    previousPrint = print;
     dev.swipe(dev.display.w / 2, h * 0.55, dev.display.w / 2, h * 0.2, 600);
     await sleep(settleMs);
   }
