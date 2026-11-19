@@ -30,6 +30,7 @@ import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from
 import { byClass, findNodes, rowAfterScroll, visibleWords } from './lib/hierarchy.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
+import { engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -114,6 +115,39 @@ async function whereIsTheApp(dev, when) {
     log(`  where: the death lines of the log:\n${String(deaths).split('\n').filter(Boolean).slice(-30).map((l) => `    ${l.slice(0, 240)}`).join('\n') || '    (none)'}`);
   } catch (e) {
     log(`  where: could not ask the phone (${String(e.message).slice(0, 120)})`);
+  }
+}
+
+/**
+ * THE BOT DID NOT ANSWER (command #51: "the bot did not answer in 30 s before ply 2" on the CI emulator, cause unknown). Prints, once per run, so the next occurrence names its cause:
+ * a filtered logcat tail (chromium, cr_*, WebView*, ReactNativeJS, AndroidRuntime, libc and the emulator's GPU failure; at most 80 lines) and the engine lines of the app's own
+ * Diagnostics log ("[Engine] ..." / "[EngineBridge] ..." - the bridge watchdog writes there when the WebView process is gone, a remount happens or the engine gave up). Never throws.
+ */
+let botSilenceReported = false;
+async function botSilenceEvidence(dev, when) {
+  if (botSilenceReported) return;
+  botSilenceReported = true;
+  try {
+    const tail = filterEngineLogcat(dev.adb(['logcat', '-d', '-t', '4000'], { timeout: 30_000 }));
+    log(`  bot silence (${when}): logcat tail (${tail.length} lines of chromium / cr_* / WebView* / ReactNativeJS / AndroidRuntime / libc):\n${tail.map((l) => `    ${l}`).join('\n') || '    (none)'}`);
+  } catch (e) {
+    log(`  bot silence (${when}): could not read logcat (${String(e.message).slice(0, 120)})`);
+  }
+  try {
+    // The Diagnostics screen is the app's own log. Opening it leaves the game (the caller has already given up on it); every later scenario starts with toHome.
+    await toHome(dev);
+    await dev.runSteps([{ text: 'More' }, { text: 'Diagnostics' }]);
+    const lines = [];
+    for (let i = 0; i < 4; i++) {
+      await sleep(800);
+      const nodes = await dev.dump();
+      lines.push(...engineDiagnosticLines(nodes.flatMap((n) => [n.text, n.desc]).filter(Boolean)));
+      dev.scrollDown();
+    }
+    const unique = [...new Set(lines)].slice(-40);
+    log(`  bot silence (${when}): the app's Diagnostics log, engine lines (${unique.length}):\n${unique.map((l) => `    ${l}`).join('\n') || '    (none on screen)'}`);
+  } catch (e) {
+    log(`  bot silence (${when}): could not read the Diagnostics log (${String(e.message).slice(0, 120)})`);
   }
 }
 
@@ -954,6 +988,7 @@ async function perf(dev) {
       const state = await dev.beacon.waitFor('state-board-2p', (s) => s.fen.split(' ')[1] === 'w' && s.rect && s.rect.w > 50, 30_000);
       if (!state) {
         notes.push(`the bot did not answer in 30 s before ply ${ply + 1}`);
+        await botSilenceEvidence(dev, `before ply ${ply + 1}`);
         break;
       }
       const moves = game(state).moves({ verbose: true }).filter((m) => m.piece !== 'k' && !m.promotion);

@@ -1,4 +1,6 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { logDiagnostic } from '../logic/diagnosticLog';
+import { createBridgeSupervisor, type BridgeSupervisor } from './bridgeSupervisor';
 import { buildStockfishHtml } from './stockfishHtml';
 
 export interface StockfishBridgeHandle {
@@ -22,6 +24,19 @@ const StockfishBridge = forwardRef<StockfishBridgeHandle, StockfishBridgeProps>(
   ref
 ) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // Remount key + supervisor, same as the native bridge (an iframe has no process-gone event, so only a load error reaches it).
+  const [generation, setGeneration] = useState(0);
+  const onLineRef = useRef(onLine);
+  onLineRef.current = onLine;
+  const supervisorRef = useRef<BridgeSupervisor | null>(null);
+  if (supervisorRef.current === null) {
+    supervisorRef.current = createBridgeSupervisor({
+      remount: () => setGeneration((g) => g + 1),
+      emit: (line) => onLineRef.current(line),
+      log: logDiagnostic,
+    });
+  }
+  const supervisor = supervisorRef.current;
 
   // Empty deps: the handle's behavior never changes (it always forwards through the ref), so
   // without this array React would recreate it — and re-invoke the parent's ref callback with
@@ -48,7 +63,9 @@ const StockfishBridge = forwardRef<StockfishBridgeHandle, StockfishBridgeProps>(
 
   return (
     <iframe
+      key={generation}
       ref={iframeRef}
+      onError={() => supervisor.fail('engine iframe load error')}
       srcDoc={html ?? buildStockfishHtml()}
       sandbox="allow-scripts"
       title="stockfish-engine"
