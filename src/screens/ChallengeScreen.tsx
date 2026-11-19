@@ -35,14 +35,19 @@ interface ChallengeScreenProps {
    * identical prop for why. */
   onSetupChessPaired: (paired: SetupChessPairedPayload) => void;
   onBack: () => void;
+  /** From Position (command #53): the challenge starts from this FEN (already validated for play by the Board Editor; the server judges it again).
+   * The screen opens straight on the time-control picker (no Join, no game chips: it is a direct challenge, never a queue or a tournament) and
+   * the create_challenge payload carries `initialFen` and no variant flag. */
+  fromPositionFen?: string;
 }
 
 type Phase = 'menu' | 'setup' | 'waiting' | 'join';
 
-export default function ChallengeScreen({ authToken, onMatchFound, onFriendRoom, onSetupChessPaired, onBack }: ChallengeScreenProps) {
+export default function ChallengeScreen({ authToken, onMatchFound, onFriendRoom, onSetupChessPaired, onBack, fromPositionFen }: ChallengeScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
-  const [phase, setPhase] = useState<Phase>('menu');
+  const startPhase: Phase = fromPositionFen ? 'setup' : 'menu';
+  const [phase, setPhase] = useState<Phase>(startPhase);
   const [variant, setVariant] = useState<GameVariant | FourSeatGame>('classic');
   const [code, setCode] = useState<string | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState('');
@@ -86,6 +91,8 @@ export default function ChallengeScreen({ authToken, onMatchFound, onFriendRoom,
         timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
         timeControlLabel: timeControl.label,
         ...variantWireFlags(variant),
+        // From Position: the variant is the untouched 'classic' (the game chips are hidden), so every flag above is false and the server accepts the FEN with them
+        ...(fromPositionFen ? { initialFen: fromPositionFen } : {}),
       },
       (result) => {
         if (result.unreachable) {
@@ -116,7 +123,7 @@ export default function ChallengeScreen({ authToken, onMatchFound, onFriendRoom,
     activeRef.current = false;
     disconnectSocket();
     setCode(null);
-    setPhase('menu');
+    setPhase(startPhase);
   };
 
   const handleJoin = () => {
@@ -143,7 +150,12 @@ export default function ChallengeScreen({ authToken, onMatchFound, onFriendRoom,
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Challenge a Friend" onBack={phase === 'menu' ? handleBack : () => setPhase('menu')} backLabel="‹ Back" />
+      <ScreenHeader
+        title="Challenge a Friend"
+        subtitle={fromPositionFen ? 'From Position' : undefined}
+        onBack={phase === startPhase ? handleBack : () => setPhase(startPhase)}
+        backLabel="‹ Back"
+      />
 
       {phase === 'menu' && (
         <View style={styles.centerColumn}>
@@ -162,7 +174,11 @@ export default function ChallengeScreen({ authToken, onMatchFound, onFriendRoom,
         <View style={styles.setupContainer}>
           {/* The game chips scroll with the time controls (command #35b): above the scroll view they left a sliver of a 360 x 640 phone for the controls and could not be swiped past. */}
           <ScrollView contentContainerStyle={styles.setupScrollContent}>
-            <VariantSelector<GameVariant | FourSeatGame> value={variant} onChange={setVariant} includeFourSeat />
+            {fromPositionFen ? (
+              <Text style={styles.sectionTitle} testID="from-position-note">Your friend starts from the position you set up. This game is unrated.</Text>
+            ) : (
+              <VariantSelector<GameVariant | FourSeatGame> value={variant} onChange={setVariant} includeFourSeat />
+            )}
             {error && <Text style={styles.errorText}>{error}</Text>}
             <TimeControlSections onSelect={handleCreate} dailyNote={ONLINE_DAILY_NOTE} />
           </ScrollView>

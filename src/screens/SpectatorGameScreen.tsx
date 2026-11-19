@@ -183,7 +183,9 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
                                   ? ' · Torpedo'
                               : state.isCrazyhouse
                                 ? ' · Crazyhouse'
-                                : ''}
+                                : state.isFromPosition
+                                  ? ' · From Position'
+                                  : ''}
         </Text>
         <Text style={styles.status}>{statusText}</Text>
 

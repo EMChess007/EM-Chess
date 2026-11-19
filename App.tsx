@@ -146,6 +146,8 @@ type Screen =
   // From Position (command #50): the editor's FEN (already validated for play) -> [bot pick] -> the shared time-control picker -> 'game' / 'botGame' with `fromPosition`.
   | { name: 'fromPositionBotSelect'; fen: string }
   | { name: 'fromPositionTimeControl'; fen: string; bot: BotPersonality | null }
+  // From Position online (command #53): ONLY a direct challenge (code to a friend) - the editor's FEN + a time control; never Quick Match, never a tournament.
+  | { name: 'fromPositionChallenge'; token: string; fen: string }
   | { name: 'pgnImport' }
   | { name: 'login' }
   | { name: 'register' }
@@ -929,7 +931,29 @@ export default function App() {
         initialFen={screen.initialFen}
         onBack={() => setScreen({ name: 'playModeSelect' })}
         onAnalyze={(params) => setScreen({ name: 'analysis', params })}
-        onPlay={(fen, mode) => setScreen(mode === 'bot' ? { name: 'fromPositionBotSelect', fen } : { name: 'fromPositionTimeControl', fen, bot: null })}
+        onlineAvailable={authSession !== null}
+        onPlay={(fen, mode) =>
+          setScreen(
+            mode === 'friend' && authSession
+              ? { name: 'fromPositionChallenge', token: authSession.token, fen }
+              : mode === 'bot'
+                ? { name: 'fromPositionBotSelect', fen }
+                : { name: 'fromPositionTimeControl', fen, bot: null }
+          )
+        }
+      />
+    );
+  } else if (screen.name === 'fromPositionChallenge') {
+    const { token, fen } = screen;
+    content = (
+      <ChallengeScreen
+        authToken={token}
+        fromPositionFen={fen}
+        onMatchFound={(match) => setScreen({ name: 'onlineGame', token, match })}
+        // never reached from a From Position challenge (no game chips: the friend-room targets are four-seat / Bughouse only), kept for the shared prop contract
+        onFriendRoom={() => setScreen({ name: 'boardSetup', fromPosition: true, initialFen: fen })}
+        onSetupChessPaired={() => setScreen({ name: 'boardSetup', fromPosition: true, initialFen: fen })}
+        onBack={() => setScreen({ name: 'boardSetup', fromPosition: true, initialFen: fen })}
       />
     );
   } else if (screen.name === 'fromPositionBotSelect') {

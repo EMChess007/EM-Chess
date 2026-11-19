@@ -4,6 +4,7 @@ import { Pressable } from '../components/AppPressable';
 import { Text, TextInput } from '../components/AppText';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { classifyRejoinAck } from '../logic/onlineRejoin';
+import { getTurnFromFen } from '../logic/boardEditor';
 import { appAlert } from '../components/AppAlert';
 import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard, { type PremoveIntent } from '../components/ChessBoard';
@@ -121,6 +122,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // rides in make_move as `drop` (from === to === the square). The reserves/promoted squares are not in the FEN: the server
   // echoes the whole CrazyhouseState back (like spellState), and it is kept next to the FEN and per move for review.
   const crazyhouse = match.isCrazyhouse === true;
+  // From Position (command #53): a direct challenge from the challenger's own FEN. Ordinary chess rules; `match.fen` is the START position (every
+  // replay below already starts from it). Differs only in: the header label, no opening name (the book is keyed on the standard start), and UNRATED
+  // (no rating change, no achievement - an arbitrary start says nothing about strength).
+  const fromPosition = match.isFromPosition === true;
 
   const [fen, setFen] = useState(match.fen);
   const [duckSquare, setDuckSquare] = useState<string | null>(null);
@@ -140,7 +145,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   useEffect(() => {
     crazyhouseRef.current = crazyhouseState;
   }, [crazyhouseState]);
-  const [turn, setTurn] = useState<PieceColor>('w');
+  // The side to move comes from the START FEN: every game before From Position (command #53) began with White, but a challenge from a position can start with Black
+  // to move - a hard-coded 'w' would have left both players waiting for a move that never comes.
+  const [turn, setTurn] = useState<PieceColor>(getTurnFromFen(match.fen));
   const [whiteMs, setWhiteMs] = useState(match.whiteMs);
   const [blackMs, setBlackMs] = useState(match.blackMs);
   // Purely cosmetic local countdown for whichever side's turn it is — whiteMs/blackMs above are
@@ -232,10 +239,11 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // state sync after reconnecting) rather than being threaded through each individual handler
   // below. See LocalGameScreen's identical effect for why a miss here doesn't clear the name.
   useEffect(() => {
+    if (fromPosition) return;
     if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse) return;
     const openingMatch = lookupOpening(fen);
     if (openingMatch) setOpeningName(openingMatch.name);
-  }, [fen, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, torpedo, crazyhouse]);
+  }, [fen, fromPosition, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, torpedo, crazyhouse]);
 
   // Wire up every server -> client event for this game once, for the lifetime of the screen.
   useEffect(() => {
@@ -373,6 +381,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       setPremove(null);
       triggerGameEndHaptics();
 
+      // From Position is unrated and earns no achievement: nothing below applies (a separate early return, so the variant-exclusion lines stay verbatim).
+      if (match.isFromPosition === true) return;
+
       // Online opponents have no calibrated rating of their own to compare against, so this
       // uses the player's own current rating as the "opponent strength" (see updateRating's
       // doc comment) — a common simplifying assumption for a casual, non-competitive rating.
@@ -494,7 +505,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
             // still genuinely real, previously-redacted) fen, never a fabricated or leaked one.
             let replayBroken = false;
             outcome.state.moves.forEach((m, i) => {
-              const mover: PieceColor = i % 2 === 0 ? 'w' : 'b';
+              // The first mover is the START FEN's side to move (Black can start a From Position game); the plies alternate from there.
+              const mover: PieceColor = (i % 2 === 0) === (getTurnFromFen(match.fen) === 'w') ? 'w' : 'b';
               const fenBefore = duckChess ? replayFen : replayEngine.getFen();
 
               if (!m.san || replayBroken) {
@@ -954,7 +966,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                                   ? 'Torpedo'
                               : crazyhouse
                                 ? 'Crazyhouse'
-                                : undefined
+                                : fromPosition
+                                  ? 'From Position'
+                                  : undefined
         }
         onBack={handleExit}
         backLabel="‹ Menu"
@@ -1058,7 +1072,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
         </View>
 
-        {!match.isChess960 && !match.isSetupChess && !match.isFogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!match.isChess960 && !match.isSetupChess && !fromPosition && !match.isFogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={boardKey}

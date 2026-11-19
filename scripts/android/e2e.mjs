@@ -795,6 +795,115 @@ async function torpedo2p(dev) {
 }
 
 /**
+ * FROM POSITION (command #53, Part 2), modelled on racingKings2p / torpedo2p: Play -> From Position -> the FEN typed into the Board Editor's field (Black to move) -> Load -> Play from here ->
+ *  (a) vs Bot (the lowest level, Kiddo; the human is White, so BLACK, the bot, is to move at once): the real Stockfish must answer within the time budget, and its move must be one of the legal
+ *      Black moves of the typed position (judged with chess.js on the app's own beacon FEN);
+ *  (b) Local: one legal Black move (d7-d5) registers on the real board.
+ * The Play menu's "From Position" entry is low in the menu (the Board Editor card), and after typing the soft keyboard may cover the editor's buttons: `tapReachable` scrolls (from above the
+ * keyboard) until the wanted control stands in the upper 70 % of the window, then taps it. The field is read back from the accessibility tree after typing (typeFen) and must equal the FEN.
+ * Not in smoke.mjs (TESTING.md 45-46); proven by the android-e2e run, never by a local run (no emulator in a cloud session).
+ */
+const FROM_POSITION_FEN = '4k3/pppp4/8/8/8/8/4PPPP/4K3 b - - 0 7';
+const FROM_POSITION_BOT_BUDGET_MS = 90_000;
+
+async function tapReachable(dev, step, what) {
+  for (let i = 0; i < 6; i++) {
+    const hit = findNodes(await dev.dump(), step)[0];
+    if (hit && hit.bounds.cy < dev.display.h * 0.7) {
+      dev.tap(hit.bounds.cx, hit.bounds.cy);
+      await sleep(700);
+      return;
+    }
+    // from above the keyboard (the lowest 40 % of the window may be the soft keyboard), on the page's own buttons
+    dev.swipe(dev.display.w / 2, dev.display.h * 0.55, dev.display.w / 2, dev.display.h * 0.2, 600);
+    await sleep(700);
+  }
+  throw new Error(`"${what}" is not reachable on the screen; on screen: ${visibleWords(await dev.dump(), 40).join(' | ')}`);
+}
+
+/** Home -> Play -> From Position -> type `fen` -> Load -> Play from here: leaves the editor showing its Local / vs Bot choice. */
+async function enterFromPosition(dev, fen) {
+  await toHome(dev);
+  dev.beacon.forget('state-board-2p');
+  await dev.runSteps([{ text: 'Play' }]);
+  await tapReachable(dev, { text: 'From Position' }, 'the From Position entry of the Play menu');
+  const nodes = await dev.waitFor('the FEN field of the Board Editor', (list) => byClass(list, 'EditText').length >= 1, 30_000);
+  const field = byClass(nodes, 'EditText')[0];
+  dev.tap(field.bounds.cx, field.bounds.cy);
+  await sleep(500);
+  dev.typeFen(fen);
+  await sleep(800);
+  const typed = byClass(await dev.dump(), 'EditText')[0];
+  if (!typed || typed.text !== fen) throw new Error(`the FEN field reads "${typed?.text}" after typing, not "${fen}"`);
+  await tapReachable(dev, { text: 'Load' }, 'the Load button');
+  await tapReachable(dev, { text: 'Play from here' }, 'the Play from here button');
+}
+
+async function fromPosition2p(dev) {
+  const placementTurnCastling = (fen) => fen.split(' ').slice(0, 3).join(' ');
+  const botName = 'From Position: vs Bot (Black to move), the real Stockfish answers';
+  await scenario(dev, botName, async () => {
+    const issues = [];
+    await enterFromPosition(dev, FROM_POSITION_FEN);
+    await tapReachable(dev, { text: 'vs Bot' }, 'the vs Bot choice');
+    // the lowest level, the human is White: Black (the bot) is to move in the typed position, so the bot opens the game
+    await dev.runSteps([{ text: 'Kiddo' }, { text: 'White' }, { text: '5 min' }]);
+    const legalReplies = new Set(
+      new Chess(FROM_POSITION_FEN).moves({ verbose: true }).map((m) => {
+        const game = new Chess(FROM_POSITION_FEN);
+        game.move(m);
+        return placementTurnCastling(game.fen());
+      })
+    );
+    const answered = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50 && s.fen.split(' ')[1] === 'w', FROM_POSITION_BOT_BUDGET_MS);
+    if (!answered) {
+      await botSilenceEvidence(dev, 'the From Position game (Black to move)');
+      return record(botName, [`Stockfish did not move for Black within ${FROM_POSITION_BOT_BUDGET_MS / 1000} s (the app's last report: ${JSON.stringify(dev.beacon.get('state-board-2p'))})`]);
+    }
+    if (!legalReplies.has(placementTurnCastling(answered.fen))) issues.push(`the app's position after the bot's move is "${answered.fen}": not one of the ${legalReplies.size} legal Black moves of "${FROM_POSITION_FEN}"`);
+    if (findNodes(await dev.dump(), { text: 'From Position' }).length === 0) issues.push('the game screen does not say "From Position"');
+    await dev.snapshot('from-position-bot');
+    record(botName, issues, `Stockfish (Kiddo) moved for Black; the app's position "${answered.fen}"`);
+  });
+
+  const localName = 'From Position: Local (Black to move), one legal move registers';
+  await scenario(dev, localName, async () => {
+    const issues = [];
+    await enterFromPosition(dev, FROM_POSITION_FEN);
+    await tapReachable(dev, { text: 'Local (2 players)' }, 'the Local (2 players) choice');
+    await dev.runSteps([{ text: '5 min' }]);
+    const boardReported = (s) => s.rect && s.rect.w > 50 && placementTurnCastling(s.fen) === placementTurnCastling(FROM_POSITION_FEN);
+    let state = await dev.beacon.waitFor('state-board-2p', boardReported, 20_000);
+    if (!state) {
+      // a "5 min" touch the screen did not take is repeated ONCE, and only while the Select Time Control screen is still the one shown (so no second game can be started)
+      if (findNodes(await dev.dump(), { text: 'Select Time Control' }).length > 0) await dev.runSteps([{ text: '5 min' }]);
+      state = await dev.beacon.waitFor('state-board-2p', boardReported, 40_000);
+    }
+    if (!state) return record(localName, [`the Local From Position board reported no start state with a rectangle (the app said ${JSON.stringify(dev.beacon.get('state-board-2p'))}); on screen: ${visibleWords(await dev.dump(), 30).join(' | ')}`]);
+    const latest = () => dev.beacon.get('state-board-2p');
+    const touch = async (square, until) => {
+      const current = latest();
+      const r = squareRect(rectOfState(current), current?.orientation ?? 'w', square);
+      for (const method of ['tap', 'press']) {
+        if (method === 'tap') dev.tap(r.cx, r.cy);
+        else dev.press(r.cx, r.cy, 90);
+        if (await until()) return method;
+      }
+      return null;
+    };
+    const first = await touch('d7', () => waitSelected(dev, 'state-board-2p', 'd7', 1800));
+    if (first === null) issues.push(`touched d7 (tap, then a 90 ms press): the app selected ${JSON.stringify(latest()?.selected ?? null)}`);
+    else {
+      const second = await touch('d5', () => dev.beacon.waitFor('state-board-2p', (s) => pieceOnSquare(s.fen, 'd5') === 'p' && s.fen.split(' ')[1] === 'w', 2500));
+      if (second === null) issues.push(`after d7 then d5 the app's position is "${latest()?.fen}" (selected ${JSON.stringify(latest()?.selected ?? null)}, legal targets ${latest()?.legal})`);
+      else log(`From Position Local: d7 selected by ${first}, d5 played by ${second}; the app's position "${latest()?.fen}"`);
+    }
+    await dev.snapshot('from-position-local');
+    record(localName, issues, 'Black moved first from the typed position');
+  });
+}
+
+/**
  * FINGER-DRAWN ARROWS on the 2-player board (command #32), straight after the e2-e4 of the touch check: Black is to move, and two arrows are drawn - one from a Black piece, one from a White
  * piece (ANY turn, several at once) - by a finger held and dragged (`drawArrow`). The app reports the number of arrows on the board (beacon `arrows`): 2 after the drawing, the position and the
  * selection unchanged (drawing never moves or selects), and 0 after a move is played (e7-e5) - the arrows stay until a move.
@@ -1839,6 +1948,7 @@ try {
       await arrows2p(dev); // the same game screen, after e2-e4 (command #32)
       await racingKings2p(dev); // Racing Kings (Local), same method (command #42)
       await torpedo2p(dev); // Torpedo (Local), same method: the double step from the 3rd rank (Part 2)
+      await fromPosition2p(dev); // From Position (command #53): a typed FEN with Black to move, vs the real Stockfish and Local
     }
     if (PARTS.has('touchbug')) await touchesBughouse(dev, false);
     // the same two boards in the frame of the phone of command #26 (root view below the status bar): where the reverted fix fails

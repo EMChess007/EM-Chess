@@ -28,7 +28,7 @@ import type { BoardSquare, PieceColor, PieceType } from '../types/chess';
 import type { AnalyzeParams } from '../types/history';
 
 /** How a "From Position" game is played (command #50, Part 1): on one device, or against a bot. */
-export type FromPositionMode = 'local' | 'bot';
+export type FromPositionMode = 'local' | 'bot' | 'friend';
 
 interface BoardSetupScreenProps {
   onBack: () => void;
@@ -39,6 +39,8 @@ interface BoardSetupScreenProps {
   fromPosition?: boolean;
   /** Re-opens the editor on this position (the way back from the time-control picker keeps what the player had set up). */
   initialFen?: string;
+  /** Signed in: "Challenge a friend" (online, by a code, command #53) is offered next to Local / vs Bot. Online From Position is a direct challenge only - never Quick Match, never a tournament. */
+  onlineAvailable?: boolean;
 }
 
 type PaletteSelection = { type: PieceType; color: PieceColor } | 'eraser' | null;
@@ -46,7 +48,7 @@ type PaletteSelection = { type: PieceType; color: PieceColor } | 'eraser' | null
 // King first, then descending value — the order most chess sites use for a piece palette.
 const PALETTE_PIECE_ORDER: PieceType[] = ['k', 'q', 'r', 'b', 'n', 'p'];
 
-export default function BoardSetupScreen({ onBack, onAnalyze, onPlay, fromPosition = false, initialFen }: BoardSetupScreenProps) {
+export default function BoardSetupScreen({ onBack, onAnalyze, onPlay, fromPosition = false, initialFen, onlineAvailable = false }: BoardSetupScreenProps) {
   const { width } = useWindowDimensions();
   const boardSize = getBoardSize(width);
   const squareSize = boardSize / 8;
@@ -335,6 +337,11 @@ export default function BoardSetupScreen({ onBack, onAnalyze, onPlay, fromPositi
             <Pressable style={styles.toolbarButton} onPress={() => handlePickMode('bot')} testID="from-position-bot">
               <Text style={styles.toolbarButtonText}>vs Bot</Text>
             </Pressable>
+            {onlineAvailable && (
+              <Pressable style={styles.toolbarButton} onPress={() => handlePickMode('friend')} testID="from-position-friend">
+                <Text style={styles.toolbarButtonText}>Challenge a friend</Text>
+              </Pressable>
+            )}
           </View>
         )}
         <Pressable style={[styles.analyzeButton, onPlay && styles.secondaryButton]} onPress={handleAnalyze}>

@@ -256,6 +256,17 @@ export class Device {
     this.sh(`input text ${text}`);
   }
 
+  /** Replaces the text of the focused field with a FEN (From Position, command #53). A FEN has spaces and slashes, which `type` refuses: here letters, digits, "/", "-" and SINGLE spaces
+   * are allowed, and a space goes to `input text` as %s (the shell would split it otherwise). The old text is selected (Ctrl+A, `input keycombination`, Android 12+: the emulator is API 34)
+   * and deleted first; the caller reads the field back from the accessibility tree and judges it. */
+  typeFen(fen) {
+    if (!/^[A-Za-z0-9/-]+( [A-Za-z0-9/-]+)*$/.test(fen)) throw new Error('typeFen() takes a FEN: letters, digits, / - and single spaces only');
+    this.fresh = false;
+    this.sh('input keycombination 113 29');
+    this.sh('input keyevent 67');
+    this.sh(`input text ${fen.replace(/ /g, '%s')}`);
+  }
+
   // slow swipes (700 ms): a quick one leaves the list flinging, and a tap on a moving list lands on whatever passes under the finger
   scrollDown(x = this.display.w / 2) {
     const { h } = this.display;
