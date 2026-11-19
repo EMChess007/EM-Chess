@@ -45,7 +45,7 @@ Spell, Horde, Crazyhouse; 4-seat: 4 Player, 4P Giveaway, Chaturaji; Crazy Bughou
 - CI (`.github/workflows`): `ci.yml` (test = tsc + vitest, device-matrix), `android-e2e.yml`, `android-matrix-nightly.yml`, `security-audit.yml`.
   Pre-push hook: `.githooks/pre-push` -> `scripts/pre-push.mjs` (tsc + fast vitest).
 
-### Where a 2-player variant plugs in (Horde/Crazyhouse are the closest models)
+### Where a 2-player variant plugs in (Racing Kings = newest, full pattern; Horde/Crazyhouse also close)
 Frontend (`src/`):
 1. Rules: `logic/<variant>.ts` + hooks inside `logic/ChessEngine.ts` (legal moves, check/result).
 2. `components/VariantSelector.tsx` (`GameVariant` union + entry); `logic/onlineVariants.ts` (`OnlineVariantFlags`, `variantWireFlags`, `variantTitlePrefix`).
@@ -59,7 +59,8 @@ Backend (`src/game/`): `types.ts` (flags), `<variant>.ts`, `RoomChessEngine.ts`,
 Tests to COPY from the closest variant (`horde*`): `hordeEngine`, `hordeOracle`, `hordeBot`, `hordeGame`, `hordeOnline`, `horde.test.ts`
 (frontend `logic/__tests__`) + `gameModes.test.ts`, `repetitionResults.test.ts`, `activeGame.test.ts` entries; backend `scripts/test-horde.mjs`.
 Mutual exclusivity with ALL other variants (4-seat games included) is part of the checklist: CHECKLIST.md "new game variant".
-Android: add the variant to the android-e2e smoke (`scripts/android/smoke.mjs`, TESTING.md §45-46).
+Android: add a scenario in `scripts/android/e2e.mjs` modelled on `racingKings2p` (never in `smoke.mjs`; TESTING.md §45-46).
+BEFORE PUSH: full `npx vitest run --project logic` (source-scan pins break when a variant is added) + typecheck + dom tests of touched screens. Frontend tests never read `backend/`.
 
 ### Other subsystems
 - 4-seat engine (4 Player, 4P Giveaway, Chaturaji): `src/logic/fourPlayer/` (`index.ts`; geometry via `geometryOf(state.rules)`), screens
