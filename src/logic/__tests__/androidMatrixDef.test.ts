@@ -149,6 +149,8 @@ describe('the screens', () => {
       'more',
       'rules-chaturaji',
       'dialog-login',
+      'setup-chess',
+      'board-editor',
     ]) {
       expect(ids).toContain(id);
     }

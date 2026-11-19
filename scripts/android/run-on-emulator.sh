@@ -94,19 +94,19 @@ online() {
 case "$job" in
   small-screens-1) phase small static screens1 --parts screens --shard 1/2 ;;
   small-screens-2) phase small static screens2 --parts screens --shard 2/2 ;;
-  small-gallery) phase small static gallery --parts textfit,gallery,launcher ;;
+  small-gallery) phase small static gallery --parts textfit,boardeditor,gallery,launcher ;;
   large-screens-1) phase large static screens1 --parts screens --shard 1/2 ;;
   large-screens-2) phase large static screens2 --parts screens --shard 2/2 ;;
-  large-touch) phase large static touch --parts textfit,touch2p,touchbug,touchinset ;;
+  large-touch) phase large static touch --parts textfit,touch2p,boardeditor,touchbug,touchinset ;;
   large-perf) phase large static perf --parts perf ;;
   online) online ;;
   all)
     phase small static screens1 --parts screens --shard 1/2
     phase small static screens2 --parts screens --shard 2/2
-    phase small static gallery --parts textfit,gallery,launcher
+    phase small static gallery --parts textfit,boardeditor,gallery,launcher
     phase large static screens1 --parts screens --shard 1/2
     phase large static screens2 --parts screens --shard 2/2
-    phase large static touch --parts textfit,touch2p,touchbug,touchinset
+    phase large static touch --parts textfit,touch2p,boardeditor,touchbug,touchinset
     phase large static perf --parts perf
     online
     ;;
