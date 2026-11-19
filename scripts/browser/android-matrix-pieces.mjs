@@ -333,7 +333,9 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
     // Bots keep playing on a screen with bots: the piece that was in this cell when the cell was chosen may have moved away before the photograph. The marker is read again after it, and a
     // cell whose piece changed meanwhile is not judged (a stale photograph, not a wrong colour).
     // A photograph that shows a problem is taken up to five times: a bot's move landing during it is gone in the next one, a wrong colour is still there.
-    const markerNow = () => handle.getAttribute(attribute).catch(() => null);
+    // A piece element that React unmounted (a bot's capture, a drop) keeps its attributes in memory: `getAttribute` on it still answers the OLD marker while its cell now shows another piece or none.
+    // Only a piece that is still in the document counts as "the same piece" (command #56).
+    const markerNow = () => handle.evaluate((el, attr) => (el.isConnected ? el.getAttribute(attr) : null), attribute).catch(() => null);
     let png = null;
     let problem = null;
     for (let attempt = 0; attempt < 5; attempt++) {

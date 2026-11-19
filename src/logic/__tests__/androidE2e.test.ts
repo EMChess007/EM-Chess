@@ -17,6 +17,7 @@ import {
   SELECTED_RGB,
   selectedSquares,
   squareRect,
+  stableCells,
   textIssues,
 } from '../../../scripts/android/lib/checks.mjs';
 import { byClass, extractXml, findNodes, findOne, parseBounds, parseHierarchy, rowAfterScroll, scrollUntilVisible, stoodStill, tappableNow } from '../../../scripts/android/lib/hierarchy.mjs';
@@ -245,6 +246,35 @@ function pieceCell(square: number[], fill: number[], radius = 14) {
   for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) if ((x - 20) ** 2 + (y - 20) ** 2 <= radius ** 2) image.data.set([...fill, 255], (y * 40 + x) * 4);
   return image;
 }
+
+describe('stableCells: a position that changed while the photograph was taken is not judged (command #56)', () => {
+  const rect = { x: 10, y: 20, w: 40, h: 40 };
+  const a8 = { marker: 'br', rect, where: 'board A br on a8 (from the app\'s position)' };
+  const a7 = { marker: 'bp', rect: { ...rect, y: 60 }, where: 'board A bp on a7 (from the app\'s position)' };
+
+  it('keeps a cell that is the same in both reports and drops one a bot changed between them', () => {
+    // between the two reports a white pawn took a7: the position no longer says "bp on a7"
+    const after = [a8, { ...a7, marker: 'wp', where: 'board A wp on a7 (from the app\'s position)' }];
+    expect(stableCells([a8, a7], after)).toEqual([a8]);
+  });
+
+  it('drops a cell whose rectangle moved (a status line changed above the board) and keeps the rest', () => {
+    expect(stableCells([a8], [{ ...a8, rect: { ...rect, y: 31 } }])).toEqual([]);
+    expect(stableCells([a8, a7], [a8, a7])).toEqual([a8, a7]);
+    expect(stableCells([], [a8])).toEqual([]);
+  });
+
+  it('the stale cell WOULD be reported by the colour judge (it is not loosened): a white pawn where "bp" was expected', () => {
+    const whitePawn = pieceCell([240, 217, 181], [0xfa, 0xfa, 0xfa]);
+    expect(judgePieceCell(whitePawn, { x: 0, y: 0, w: 40, h: 40 }, 'bp')).toMatch(/bp: drawn rgb\(250,250,250\)/);
+  });
+
+  it('e2e.mjs reads the position before and after the photograph on a live-bots screen, and never judges the start position there', () => {
+    const src = readFileSync(join(__dirname, '../../../scripts/android/e2e.mjs'), 'utf8');
+    expect(src).toContain('stableCells(beaconBefore, cellsFromBeacon(dev))');
+    expect(src).toContain("if (cells.length === 0 && !liveBots && ['game-2p', 'bughouse-game-single', 'bughouse-game-passplay']");
+  });
+});
 
 describe('pieces', () => {
   const light = [240, 217, 181];
