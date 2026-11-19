@@ -31,7 +31,7 @@ Spell, Horde, Crazyhouse; 4-seat: 4 Player, 4P Giveaway, Chaturaji; Crazy Bughou
 - Push, then report immediately. Never wait on, poll or watch CI.
 - One branch per task, PR to `master` (backend: `main`). Never merge. Never force-push. Never `SKIP_PREPUSH` on a final commit.
 - The user merges only when `test`, `device-matrix`, `android-e2e` and `security-audit` are all green.
-- android-e2e required = smoke + full e2e (release-mode APK). `ANDROID_E2E_STRICT=1` is set in `android-e2e.yml` (command #49, after 3 consecutive all-green 8/8 release runs: PR #36 attempt 2, PR #36, PR #38); the RUNNER/APP retry and the "Full e2e results" summary section stay (TESTING.md 45, 53).
+- android-e2e required = smoke + full e2e (release-mode APK) for every slice EXCEPT large-perf, whose full e2e is informational (command #52; TODO.md) while its smoke stays required. `ANDROID_E2E_STRICT=1` is set in `android-e2e.yml` (command #49, after 3 consecutive all-green 8/8 release runs: PR #36 attempt 2, PR #36, PR #38); the RUNNER/APP retry and the "Full e2e results" summary section stay (TESTING.md 45, 53).
 - Paired branches: a variant branch is named `paired/<variant-slug>` in BOTH repos (backend CI tests against the same-named frontend branch, so backend tests that import new client logic pass before merge). Merge order: app PR first, then backend PR.
 - Do not edit generated files: `src/engine/generated/*`, and the backend's `src/game/fourPlayer/*` / `src/game/bughouse/*` (use the sync scripts).
 - Tests: literals for mutation-targeted constants, seeded randomness, no wall-clock assertions, fake timers in rendered tests (AGENTS.md).

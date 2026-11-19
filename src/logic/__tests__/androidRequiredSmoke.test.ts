@@ -82,6 +82,14 @@ describe('run-on-emulator.sh: required = smoke, the full e2e is informational', 
     expect(runShell('small-gallery', 1, [0], { ANDROID_E2E_STRICT: '1' }).status).toBe(1);
   });
 
+  it('command #52: under STRICT the large-perf full e2e stays informational (marker, exit 0) but its smoke is still required', () => {
+    const e2e = runShell('large-perf', 0, [1], { ANDROID_E2E_STRICT: '1' });
+    expect(e2e.status).toBe(0);
+    expect(e2e.marker).toBe('FAILED large/static/perf (exit 1, attempt 1)\n');
+    expect(runShell('large-perf', 1, [0], { ANDROID_E2E_STRICT: '1' }).status).toBe(1);
+    expect(runShell('large-touch', 0, [1], { ANDROID_E2E_STRICT: '1' }).status).toBe(1);
+  });
+
   it('ANDROID_E2E_STRICT other than "1" does not make the e2e required', () => {
     expect(runShell('small-gallery', 0, [1], { ANDROID_E2E_STRICT: '0' }).status).toBe(0);
   });
@@ -166,6 +174,18 @@ describe('the INFORMATIONAL digest', () => {
     expect(text).toContain('- **small-static-screens1**: passed (1 checks)');
     expect(text).toContain('- **small-online-online**: FAILED [APP]: 2 of 3 checks failed; first failing scenario `Racing Kings game`: no board after 40 s');
     expect(text).not.toContain('second');
+  });
+
+  it('command #52: a failed large-perf slice is listed under "Informational (not blocking)" and does not count as failed', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'info-'));
+    put(dir, 'small-static-screens1', results(true));
+    put(dir, 'large-static-perf', results(false, 'APP'));
+    writeFileSync(join(dir, 'e2e-informational-large-perf.txt'), 'FAILED large/static/perf (exit 1, attempt 1)\n');
+    const { text, failed } = buildInformational(dir);
+    expect(failed).toBe(0);
+    expect(text).toContain('#### Informational (not blocking)');
+    expect(text.indexOf('#### Informational (not blocking)')).toBeLessThan(text.indexOf('**large-static-perf**: FAILED'));
+    expect(text).toContain('marker of **large-perf**');
   });
 
   it('uses the LAST attempt: a slice that passed on its repeat is passed', () => {
