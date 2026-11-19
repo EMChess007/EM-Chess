@@ -293,6 +293,27 @@ describe('the result', () => {
     expect(onExit).toHaveBeenCalledWith(false);
   });
 
+  it('scrolls to the result card when it appears and again while the layout settles (command #47: one scroll from the content-size event left it below the fold on a fast phone); never in a live game', () => {
+    // react-native-web's scrollToEnd ends in the host node's scroll({ top: scrollHeight, behavior: 'auto' }): that call is what the phone's scroll is here
+    const toEnd = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scroll', { configurable: true, writable: true, value: toEnd });
+    renderGame();
+    advance(5000);
+    expect(toEnd).not.toHaveBeenCalled();
+    fire('bug_state', stateOf(resigned as { match: BughouseMatch; events: unknown[] }, 3000));
+    // at once: the effect that follows the card
+    expect(toEnd.mock.calls.length).toBeGreaterThanOrEqual(1);
+    const atOnce = toEnd.mock.calls.length;
+    advance(60);
+    expect(toEnd.mock.calls.length).toBe(atOnce + 1); // the 50 ms retry
+    advance(2000);
+    expect(toEnd.mock.calls.length).toBe(atOnce + 4); // 250, 700, 1500 ms: four retries in all, then it stops
+    advance(5000);
+    expect(toEnd.mock.calls.length).toBe(atOnce + 4);
+    for (const call of toEnd.mock.calls) expect(call[0]).toMatchObject({ behavior: 'auto' }); // animated: false
+    delete (HTMLElement.prototype as { scroll?: unknown }).scroll;
+  });
+
   it('a result that only bug_game_over carried (no final snapshot yet) still ends the screen', () => {
     renderGame();
     fire('bug_game_over', { roomId: ROOM, result: resigned.match.result!, state: 'unreadable' } satisfies BugGameOverPayload);

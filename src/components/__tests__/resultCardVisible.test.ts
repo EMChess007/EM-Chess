@@ -31,6 +31,12 @@ describe('the result card is brought into view', () => {
     expect(screen).toMatch(/if \(summary !== null\) scrollRef\.current\?\.scrollToEnd\(\{ animated: false \}\)/);
   });
 
+  it('the Bughouse screen ALSO scrolls when the card appears, when it is laid out and on retries (command #47: the size event alone left it below the fold on a fast phone)', () => {
+    const screen = read('src/screens/BughouseGameScreen.tsx');
+    expect(screen).toMatch(/RESULT_SCROLL_RETRY_MS: readonly number\[\] = \[50, 250, 700, 1500\]/);
+    expect(screen).toMatch(/testID="game-over" onLayout=\{\(\) => scrollRef\.current\?\.scrollToEnd\(\{ animated: false \}\)\}/);
+  });
+
   it('the 2-player screens end a game with the summary Modal, not a card under the board', () => {
     for (const file of ['src/screens/BotGameScreen.tsx', 'src/screens/LocalGameScreen.tsx', 'src/screens/OnlineGameScreen.tsx']) expect(read(file), file).toContain('<PostGameSummaryModal');
   });
