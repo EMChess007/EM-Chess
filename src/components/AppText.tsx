@@ -50,7 +50,7 @@ function emulatedScale(): number {
  * its flag and its increments are state, not text, and run as always): a text that never changes sends no event, so the dump can run. (Marking such a text "not important for accessibility"
  * was tried first and did not quiet the stream: the run still got "could not get idle state" on every local game screen.) Nothing else about the text changes.
  */
-const E2E_QUIET_CLOCKS = typeof __DEV__ !== 'undefined' && __DEV__ && process.env.EXPO_PUBLIC_E2E === '1';
+const E2E_QUIET_CLOCKS = (typeof __DEV__ !== 'undefined' && __DEV__ || process.env.EXPO_PUBLIC_E2E_BUILD === '1') && process.env.EXPO_PUBLIC_E2E === '1'; // command #46: or the release-mode e2e APK (EXPO_PUBLIC_E2E_BUILD, one build-time switch)
 // a reading alone ("4:59", "0:05.3", "59.9") or at the END of a label ("White: 4:59", "Black - 1:00:00"): the local screens write the name and the clock in ONE Text
 const CLOCK_READING = /(?:^|[\s:])(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d)?\s*$|^\s*\d{1,2}\.\d\s*$/;
 export function isClockReading(children: unknown): boolean {

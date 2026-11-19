@@ -310,7 +310,8 @@ describe('profiles, workflow and the test-only switch', () => {
 
   it('the log-toast switch is loaded only from index.ts inside `if (__DEV__)`, imported by nothing else, and read from one variable', () => {
     const index = code(read('index.ts'));
-    expect(index).toMatch(/if \(__DEV__\) \{\s*require\('\.\/src\/dev\/registerE2e'\);\s*\}/);
+    // command #46: the gate is (__DEV__ || the one build-time switch), written out in index.ts (e2eBuildSwitch.test.ts pins the switch itself)
+    expect(index).toMatch(/if \(__DEV__ \|\| process\.env\.EXPO_PUBLIC_E2E_BUILD === '1'\) \{\s*require\('\.\/src\/dev\/registerE2e'\);\s*\}/);
     expect(read('App.tsx')).not.toContain('registerE2e');
     const registration = code(read('src/dev/registerE2e.ts'));
     expect(registration).toContain("process.env.EXPO_PUBLIC_E2E === '1'");

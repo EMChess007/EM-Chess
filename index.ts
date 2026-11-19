@@ -7,8 +7,11 @@ import { initSentry, wrapRootComponent } from './src/logic/sentry';
 // unconditionally regardless of whether a Sentry project has been created yet.
 initSentry();
 
-// DEV ONLY (command #29): hides the development build's warning toasts during the Android end-to-end run (src/dev/registerE2e.ts). `__DEV__` is the literal false in a release bundle.
-if (__DEV__) {
+// E2E ONLY (command #29, #46): registers the Android end-to-end run's helpers (src/dev/registerE2e.ts). The gate is (`__DEV__` || the build-time switch EXPO_PUBLIC_E2E_BUILD === '1'): `__DEV__` is the
+// literal false in a release bundle, and the switch is inlined at bundle time, so a production bundle (switch absent) folds the whole condition to false and bundles none of it
+// (src/logic/__tests__/e2eBuildSwitch.test.ts exports a bundle with the switch off and proves it). The comparison is written out here, not imported: a constant imported from another module
+// is not folded, and the require would stay in the bundle.
+if (__DEV__ || process.env.EXPO_PUBLIC_E2E_BUILD === '1') {
   require('./src/dev/registerE2e');
 }
 

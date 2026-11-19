@@ -55,7 +55,10 @@ function detectLanHost(): string | null {
  * bundle time like every EXPO_PUBLIC_ variable; unset = no change. The decision itself is `resolveApiBaseUrl` in apiBaseUrl.ts (pure, tested), where a release build still
  * always wins.
  */
-const API_URL_OVERRIDE = process.env.EXPO_PUBLIC_API_URL;
+// Command #46: honoured by a development build OR by the Android run's release-mode APK (the one build-time switch EXPO_PUBLIC_E2E_BUILD === '1'); in every other bundle the condition folds to false
+// at bundle time, so the variable is not even read and its value (a test URL) is not embedded in a production bundle (proved by e2eBuildSwitch.test.ts).
+const E2E_RELEASE_BUILD = process.env.EXPO_PUBLIC_E2E_BUILD === '1';
+const API_URL_OVERRIDE = __DEV__ || E2E_RELEASE_BUILD ? process.env.EXPO_PUBLIC_API_URL : undefined;
 
 function resolveBaseUrl(): string {
   const lanHost = Platform.OS === 'web' ? null : detectLanHost();
@@ -65,7 +68,7 @@ function resolveBaseUrl(): string {
     );
   }
   return resolveApiBaseUrl({
-    dev: __DEV__,
+    dev: __DEV__ || E2E_RELEASE_BUILD,
     useOnlineBackend: USE_ONLINE_BACKEND_IN_DEV,
     apiUrlOverride: API_URL_OVERRIDE,
     platform: Platform.OS,
