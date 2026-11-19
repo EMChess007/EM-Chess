@@ -1,5 +1,6 @@
 import type { AnalysisLine, AnalyzeOptions, AnalysisResult, BestMoveOptions, EngineEvaluation, UciChessEngine } from './ChessEngine';
 import type { StockfishBridgeHandle } from './StockfishBridge';
+import { BRIDGE_FAILED_PREFIX, BRIDGE_RESTARTED_LINE } from './bridgeSupervisor';
 
 type LineListener = (line: string) => void;
 
@@ -53,18 +54,34 @@ export class StockfishEngineAdapter implements UciChessEngine {
   private uciReadyPromise: Promise<void> | null = null;
   private bridgeReadyPromise: Promise<void> | null = null;
   private resolveBridgeReady: (() => void) | null = null;
+  // Every wait that must fail fast when the bridge is restarted / gone (see bridgeSupervisor.ts).
+  private pendingAborts = new Set<(error: Error) => void>();
+  // Set once the bridge supervisor gave up; cleared by the next attachBridge (a screen remount).
+  private bridgeFailure: string | null = null;
 
   attachBridge(bridge: StockfishBridgeHandle | null): void {
     this.bridge = bridge;
-    // A newly (re)mounted bridge is a fresh WebView/iframe running its own fresh engine
-    // instance, so any previous "engine is ready" handshake no longer applies to it.
+    this.bridgeFailure = null;
+    this.resetHandshake();
+  }
+
+  /** A newly (re)mounted bridge is a fresh WebView/iframe running its own fresh engine
+   * instance, so any previous "engine is ready" handshake no longer applies to it. */
+  private resetHandshake(): void {
     this.uciReadyPromise = null;
     this.resolveBridgeReady = null;
-    this.bridgeReadyPromise = bridge
+    this.bridgeReadyPromise = this.bridge
       ? new Promise((resolve) => {
           this.resolveBridgeReady = resolve;
         })
       : null;
+  }
+
+  private abortPending(reason: string): void {
+    const error = new Error(`StockfishEngineAdapter: ${reason}`);
+    const aborts = Array.from(this.pendingAborts);
+    this.pendingAborts.clear();
+    for (const abort of aborts) abort(error);
   }
 
   isAttached(): boolean {
@@ -77,7 +94,20 @@ export class StockfishEngineAdapter implements UciChessEngine {
     // sent before this arrives would be posted into the iframe/WebView before its message
     // listener even exists, and silently lost. Track it regardless of whether anything is
     // awaiting it yet, since it may well arrive before initEngine() is ever called.
-    if (line.trim() === 'BRIDGE_READY' && this.resolveBridgeReady) {
+    const trimmed = line.trim();
+    if (trimmed === BRIDGE_RESTARTED_LINE) {
+      this.resetHandshake();
+      this.abortPending('engine bridge restarted (the engine WebView process was lost)');
+      return;
+    }
+    if (trimmed.startsWith(BRIDGE_FAILED_PREFIX)) {
+      const reason = trimmed.slice(BRIDGE_FAILED_PREFIX.length) || 'unknown';
+      this.bridgeFailure = reason;
+      this.resetHandshake();
+      this.abortPending(`engine bridge failed (${reason})`);
+      return;
+    }
+    if (trimmed === 'BRIDGE_READY' && this.resolveBridgeReady) {
       this.resolveBridgeReady();
       this.resolveBridgeReady = null;
     }
@@ -96,8 +126,14 @@ export class StockfishEngineAdapter implements UciChessEngine {
 
   private waitForLine(predicate: (line: string) => boolean, timeoutMs: number): Promise<string> {
     return new Promise((resolve, reject) => {
+      const abort = (error: Error) => {
+        clearTimeout(timeout);
+        this.lineListeners.delete(onLine);
+        reject(error);
+      };
       const timeout = setTimeout(() => {
         this.lineListeners.delete(onLine);
+        this.pendingAborts.delete(abort);
         reject(new Error('StockfishEngineAdapter: timed out waiting for engine response'));
       }, timeoutMs);
 
@@ -105,20 +141,47 @@ export class StockfishEngineAdapter implements UciChessEngine {
         if (predicate(line)) {
           clearTimeout(timeout);
           this.lineListeners.delete(onLine);
+          this.pendingAborts.delete(abort);
           resolve(line);
         }
       };
       this.lineListeners.add(onLine);
+      this.pendingAborts.add(abort);
     });
   }
 
-  /** Initializes the engine (UCI handshake). Safe to call multiple times. */
+  /** Waits for the bridge's BRIDGE_READY, but never forever: a WebView that never loads (or whose
+   * process died) used to leave initEngine() — and so the bot — hanging silently. */
+  private waitForBridgeReady(): Promise<void> {
+    const ready = this.bridgeReadyPromise;
+    if (!ready) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const abort = (error: Error) => {
+        clearTimeout(timeout);
+        reject(error);
+      };
+      const timeout = setTimeout(() => {
+        this.pendingAborts.delete(abort);
+        reject(new Error(`StockfishEngineAdapter: engine bridge did not become ready within ${READY_TIMEOUT_MS} ms`));
+      }, READY_TIMEOUT_MS);
+      this.pendingAborts.add(abort);
+      void ready.then(() => {
+        clearTimeout(timeout);
+        this.pendingAborts.delete(abort);
+        resolve();
+      });
+    });
+  }
+
+  /** Initializes the engine (UCI handshake). Safe to call multiple times. A failed or expired
+   * handshake is NOT cached: the next call starts it again (the same bridge may well be ready by then). */
   async initEngine(): Promise<void> {
+    if (this.bridgeFailure !== null) {
+      throw new Error(`StockfishEngineAdapter: engine bridge failed (${this.bridgeFailure})`);
+    }
     if (!this.uciReadyPromise) {
-      this.uciReadyPromise = (async () => {
-        if (this.bridgeReadyPromise) {
-          await this.bridgeReadyPromise;
-        }
+      const attempt = (async () => {
+        await this.waitForBridgeReady();
 
         const uciAck = this.waitForLine((line) => line.trim() === 'uciok', READY_TIMEOUT_MS);
         this.send('uci');
@@ -128,6 +191,10 @@ export class StockfishEngineAdapter implements UciChessEngine {
         this.send('isready');
         await readyAck;
       })();
+      this.uciReadyPromise = attempt;
+      attempt.catch(() => {
+        if (this.uciReadyPromise === attempt) this.uciReadyPromise = null;
+      });
     }
     return this.uciReadyPromise;
   }
