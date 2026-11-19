@@ -29,7 +29,7 @@ import { PHONE_BUDGET, judgePerf, latenciesOf, scaledBudget, summarize, windowSt
 import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
 import { byClass, findNodes, rowAfterScroll, scrollUntilVisible, visibleWords } from './lib/hierarchy.mjs';
 import { checkEditorGrid, editorSquares } from './lib/editorGrid.mjs';
-import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, textIssues, cornerColour } from './lib/checks.mjs';
+import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, stableCells, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
@@ -220,6 +220,8 @@ const POSITION_HEADINGS = { Classic: ['Bots', 'Local', 'Engine vs Engine'], 'Set
  * by looking after each swipe took a minute), then back up to the card. The bottom of the list shows Bughouse, Engine vs Engine and the Board Editor.
  */
 const BLIND = { 'Crazy Bughouse': { down: 9 }, 'Chaturaji': { down: 9 }, '4 Player Chess': { down: 9 }, '4 Player Giveaway': { down: 9 } };
+/** How long the driver waits after a photograph before it reads the app's position again: longer than the beacon's POST lag, shorter than a bot's think time. */
+const BEACON_SETTLE_MS = 400;
 function phoneStep(step) {
   const headings = step.text === undefined ? undefined : POSITION_HEADINGS[step.text];
   const positioned = step.nth !== undefined && headings?.[step.nth] ? { text: step.text, below: headings[step.nth] } : step;
@@ -253,6 +255,9 @@ function cellsFromBeacon(dev) {
 }
 
 async function judgeGamePieces(dev, screen) {
+  // Bots keep playing: the position the app reports and the photograph are different moments. The app's position is read BEFORE the photograph and again after a pause longer than the
+  // beacon's lag, and only the cells that are identical in both are judged (command #56; stableCells).
+  const beaconBefore = screen.pieces?.liveBots ? cellsFromBeacon(dev) : [];
   const { nodes, png } = await dev.look().catch(() => ({ nodes: [], png: dev.screenshot() })); // (a screen with live bots has no readable tree: the app's position stands in for it)
   const cells = [];
   for (const n of nodes) {
@@ -273,8 +278,13 @@ async function judgeGamePieces(dev, screen) {
     }
   }
   // The board is a group for the accessibility service (it takes touches), so its pieces are not in the tree: the APP says where they are (its position and the board's rectangle, the beacon)
-  if (cells.length === 0) cells.push(...cellsFromBeacon(dev));
-  if (cells.length === 0 && ['game-2p', 'bughouse-game-single', 'bughouse-game-passplay'].includes(screen.id)) {
+  const liveBots = screen.pieces?.liveBots === true;
+  if (cells.length === 0 && liveBots) {
+    await sleep(BEACON_SETTLE_MS);
+    cells.push(...stableCells(beaconBefore, cellsFromBeacon(dev)));
+  } else if (cells.length === 0) cells.push(...cellsFromBeacon(dev));
+  // The start position is what a FRESH game shows: with live bots it is stale by the time of the photograph (a8 emptied, a7 recaptured), so it is never used there.
+  if (cells.length === 0 && !liveBots && ['game-2p', 'bughouse-game-single', 'bughouse-game-passplay'].includes(screen.id)) {
     // the tree of this screen can lag the screen: read the board from the PHOTOGRAPH and judge the pieces of the start position where they stand
     const grid = boardFromScreenshot(png);
     if (grid) for (const [square, marker] of Object.entries(startPositionMarkers())) cells.push({ marker, rect: squareRect(grid, 'w', square), where: `${marker} on ${square} (board read from the photograph)` });

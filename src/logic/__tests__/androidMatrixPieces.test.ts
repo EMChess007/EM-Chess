@@ -433,3 +433,38 @@ describe('checkPieceColours on a page that drew fewer pieces than it listed', ()
     await expect(checkPieceColours(page as never, { sync: { read: () => ({}) } } as never, { mode: 'bw' })).resolves.toEqual([]);
   });
 });
+
+describe('checkPieceColours on a board whose piece a bot replaced during the photograph (command #56)', () => {
+  // The board's cell is photographed after a bot's capture: the black pawn's element is UNMOUNTED (it still answers getAttribute with its old marker), the cell shows a white piece.
+  // That is a stale photograph, not a wrong colour; it must not be reported.
+  const listed = [{ index: 0, marker: 'bp', parity: 0, visible: true, board: 'A', rect: { x: 0, y: 0, w: 40, h: 40 } }];
+  const makePage = (connected: boolean) => {
+    const whiteCell = cell(LIGHT, [0xfa, 0xfa, 0xfa]);
+    const cellHandle = { asElement: () => ({ scrollIntoViewIfNeeded: async () => {}, boundingBox: async () => ({ x: 0, y: 0, width: 40, height: 40 }) }) };
+    const piece = {
+      evaluateHandle: async () => cellHandle,
+      // what the old code asked: a detached element still has its attribute
+      getAttribute: async () => 'bp',
+      // what the page itself would answer: null once the element left the document
+      evaluate: async (fn: (el: unknown, attr: string) => unknown, attr: string) => fn({ isConnected: connected, getAttribute: () => 'bp' }, attr),
+    };
+    return {
+      locator: () => ({ count: async () => 0 }),
+      $$eval: async () => listed,
+      $$: async () => [piece],
+      screenshot: async () => 'png',
+      waitForTimeout: async () => {},
+    };
+  };
+  const PNGmock = { sync: { read: () => ({ width: 40, height: 40, data: cell(LIGHT, [0xfa, 0xfa, 0xfa]).data }) } };
+
+  it('an unmounted piece element is not judged, whatever its cell shows now', async () => {
+    await expect(checkPieceColours(makePage(false) as never, PNGmock as never, { mode: 'bw', liveBots: true })).resolves.toEqual([]);
+  });
+
+  it('the same photograph of a piece that IS still mounted is still reported (the judge was not loosened)', async () => {
+    const issues = await checkPieceColours(makePage(true) as never, PNGmock as never, { mode: 'bw', liveBots: true });
+    expect(issues).toHaveLength(1);
+    expect(issues[0].detail).toMatch(/bp: drawn rgb\(250,250,250\), expected rgb\(29,29,29\)/);
+  });
+});

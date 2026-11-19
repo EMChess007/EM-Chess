@@ -206,6 +206,18 @@ export function darkSquareMeasure(png, dark = CLASSIC_DARK, tolerance = 2) {
   return { count, x1, y1, x2, y2, image: `${png.width}x${png.height}` };
 }
 
+/**
+ * The cells that were the SAME before and after a photograph (command #56). On a screen where bots keep playing, the position the app reports (the beacon) and the photograph are
+ * taken at different moments: a bot's capture in between puts a white pawn where the position says "black pawn" (the Android run reported "br on a8: drawn rgb(255,255,255)" and "bp on a7: 18.4 %
+ * of the piece is light" - an emptied or recaptured square, not a wrong colour). A cell is judged only if the same marker stood on the same square, in the same rectangle, in BOTH reports.
+ * A cell is `{ marker, rect: {x, y, w, h}, where }` (e2e.mjs `cellsFromBeacon`); the result keeps the `after` cells.
+ */
+export function stableCells(before, after) {
+  const key = (c) => `${c.where}|${c.marker}|${Math.round(c.rect.x)},${Math.round(c.rect.y)},${Math.round(c.rect.w)},${Math.round(c.rect.h)}`;
+  const was = new Set(before.map(key));
+  return after.filter((c) => was.has(key(c)));
+}
+
 /** The pieces of the standard start position by square, as markers ("wk", "bp"): what a fresh game shows. */
 export function startPositionMarkers() {
   const out = {};
