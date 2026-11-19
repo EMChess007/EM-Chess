@@ -112,6 +112,8 @@ export interface MatchFoundPayload {
   isTorpedo?: boolean;
   /** Crazyhouse — see crazyhouse.ts: reserves start empty, so match_found needs no state. */
   isCrazyhouse: boolean;
+  /** From Position (command #53): a direct challenge that started from the challenger's own FEN (`fen` below IS that start position). Ordinary chess, unrated. Absent otherwise. */
+  isFromPosition?: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;
@@ -167,6 +169,9 @@ export interface ChatMessagePayload {
 
 export interface RejoinStatePayload {
   fen: string;
+  /** From Position rooms only: the position the game STARTED from (`fen` is the live one). Absent otherwise. */
+  initialFen?: string;
+  isFromPosition?: boolean;
   turn: PieceColor;
   color: PieceColor;
   timeControl: OnlineTimeControl;
@@ -249,6 +254,8 @@ export interface CreateChallengePayload {
   /** Crazyhouse — see crazyhouse.ts. Mutually exclusive with every other variant. */
   isCrazyhouse?: boolean;
   timeControlLabel?: string;
+  /** From Position (command #53): the challenger's start position (a direct challenge only; the server refuses it in the queue and in tournaments). */
+  initialFen?: string;
 }
 
 export interface JoinChallengePayload {

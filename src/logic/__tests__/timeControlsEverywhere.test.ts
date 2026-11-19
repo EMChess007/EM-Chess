@@ -74,7 +74,8 @@ describe('every screen that picks a control renders the one list', () => {
     expect(app).not.toContain('BUGHOUSE_TIME_CONTROL_IDS');
     // Bots + Local + Engine vs Engine (one step), 4-seat local and Crazy Bughouse local: three LOCAL steps in App. Everything online picks its control on the Online card's own screens: Quick Match
     // (every game, the 4 Player Variations too), Challenge a Friend, Tournaments - the old per-game online steps are gone (command #35).
-    expect((app.match(/<TimeControlSelectScreen/g) ?? []).length).toBe(3);
+    // + the From Position step (command #50: Local or vs Bot from the Board Editor's FEN) = 4; it is the same shared picker, with no exclusion.
+    expect((app.match(/<TimeControlSelectScreen/g) ?? []).length).toBe(4);
     for (const gone of ['fourPlayerOnlineTimeControl', 'bughouseOnlineTimeControl', 'bughouseRoomTimeControl']) expect(app, gone).not.toContain(gone);
   });
 

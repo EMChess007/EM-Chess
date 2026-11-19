@@ -128,6 +128,10 @@ interface BotGameScreenProps {
    * self-generating one when present. `colorChoice` must already be the concrete color the human
    * built their army as (not 'random') when this is set, see BotSetupChessFlowScreen. */
   initialFen?: string;
+  /** "From Position" (command #50): ordinary chess played from `initialFen` (any legal position, already validated for play); the Stockfish bot plays
+   * it at every level. Not a variant - no flag above may be set with it. Unrated (the opening-strength calibration of a bot's ELO does not hold from an
+   * arbitrary position) and no opening name. `colorChoice` may be 'random' here. */
+  fromPosition?: boolean;
   colorChoice?: ColorChoice;
   authToken: string | null;
   onExit: () => void;
@@ -151,6 +155,7 @@ export default function BotGameScreen({
   torpedo = false,
   crazyhouse = false,
   initialFen: initialFenProp,
+  fromPosition = false,
   colorChoice = 'random',
   authToken,
   onExit,
@@ -198,10 +203,10 @@ export default function BotGameScreen({
   // See LocalGameScreen's identical effect for why a miss here doesn't clear the name — it only
   // ever upgrades to a deeper/more specific match as the game continues.
   useEffect(() => {
-    if (chess960 || setupChess || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse) return;
+    if (chess960 || setupChess || fromPosition || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse]);
+  }, [fen, chess960, setupChess, fromPosition, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse]);
 
   // skipValidation: once a Fog of War game ends via king capture, `fen` genuinely has no king
   // for the losing side — see ChessEngine's own doc comment on the option (this is the exact
@@ -893,6 +898,9 @@ export default function BotGameScreen({
     }
     if (ratingRecordedRef.current) return;
     ratingRecordedRef.current = true;
+    // From Position (command #50) is neither rated nor counted for achievements: the bot's ELO is calibrated on normal games, not on an arbitrary
+    // (possibly lopsided) start. A separate early return, so the exclusion line below (pinned verbatim by the variants' tests) is untouched.
+    if (fromPosition) return;
     const result = outcome.result === '1/2-1/2' ? 0.5 : winnerColor === userColor ? 1 : 0;
     const ratingCategory = toRatingCategory(timeControl.category);
     // Giveaway and Atomic are different games with a heuristic (not ELO-calibrated) opponent — they must
@@ -1119,6 +1127,8 @@ export default function BotGameScreen({
                 ? 'Three-Check'
                 : setupChess
                   ? 'Setup Chess'
+                  : fromPosition
+                    ? 'From Position'
                   : fogOfWar
                     ? 'Fog of War'
                     : giveaway
@@ -1248,7 +1258,7 @@ export default function BotGameScreen({
           <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
 
-        {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!chess960 && !setupChess && !fromPosition && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={resetCount}

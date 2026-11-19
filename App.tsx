@@ -115,6 +115,7 @@ type Screen =
       torpedo?: boolean;
       crazyhouse: boolean;
       initialFen?: string;
+      fromPosition?: boolean;
     }
   | {
       name: 'botGame';
@@ -134,12 +135,19 @@ type Screen =
       torpedo?: boolean;
       crazyhouse: boolean;
       initialFen?: string;
+      fromPosition?: boolean;
       colorChoice: ColorChoice;
     }
   | { name: 'localSetupChessFlow'; timeControl: TimeControl }
   | { name: 'botSetupChessFlow'; timeControl: TimeControl; bot: BotPersonality; colorChoice: ColorChoice }
   | { name: 'analysis'; params: AnalyzeParams }
-  | { name: 'boardSetup' }
+  // `fromPosition`: opened from the Play menu's "From Position" (or reached again by the back button of the flow below), with "Play from here" shown.
+  | { name: 'boardSetup'; fromPosition?: boolean; initialFen?: string }
+  // From Position (command #50): the editor's FEN (already validated for play) -> [bot pick] -> the shared time-control picker -> 'game' / 'botGame' with `fromPosition`.
+  | { name: 'fromPositionBotSelect'; fen: string }
+  | { name: 'fromPositionTimeControl'; fen: string; bot: BotPersonality | null }
+  // From Position online (command #53): ONLY a direct challenge (code to a friend) - the editor's FEN + a time control; never Quick Match, never a tournament.
+  | { name: 'fromPositionChallenge'; token: string; fen: string }
   | { name: 'pgnImport' }
   | { name: 'login' }
   | { name: 'register' }
@@ -603,6 +611,7 @@ export default function App() {
           })
         }
         onBoardEditor={() => setScreen({ name: 'boardSetup' })}
+        onFromPosition={() => setScreen({ name: 'boardSetup', fromPosition: true })}
         onImportPgn={() => setScreen({ name: 'pgnImport' })}
         authUser={authSession?.user ?? null}
         onAuthPress={() => setScreen({ name: 'login' })}
@@ -918,8 +927,74 @@ export default function App() {
   } else if (screen.name === 'boardSetup') {
     content = (
       <BoardSetupScreen
+        fromPosition={screen.fromPosition}
+        initialFen={screen.initialFen}
         onBack={() => setScreen({ name: 'playModeSelect' })}
         onAnalyze={(params) => setScreen({ name: 'analysis', params })}
+        onlineAvailable={authSession !== null}
+        onPlay={(fen, mode) =>
+          setScreen(
+            mode === 'friend' && authSession
+              ? { name: 'fromPositionChallenge', token: authSession.token, fen }
+              : mode === 'bot'
+                ? { name: 'fromPositionBotSelect', fen }
+                : { name: 'fromPositionTimeControl', fen, bot: null }
+          )
+        }
+      />
+    );
+  } else if (screen.name === 'fromPositionChallenge') {
+    const { token, fen } = screen;
+    content = (
+      <ChallengeScreen
+        authToken={token}
+        fromPositionFen={fen}
+        onMatchFound={(match) => setScreen({ name: 'onlineGame', token, match })}
+        // never reached from a From Position challenge (no game chips: the friend-room targets are four-seat / Bughouse only), kept for the shared prop contract
+        onFriendRoom={() => setScreen({ name: 'boardSetup', fromPosition: true, initialFen: fen })}
+        onSetupChessPaired={() => setScreen({ name: 'boardSetup', fromPosition: true, initialFen: fen })}
+        onBack={() => setScreen({ name: 'boardSetup', fromPosition: true, initialFen: fen })}
+      />
+    );
+  } else if (screen.name === 'fromPositionBotSelect') {
+    const { fen } = screen;
+    content = (
+      <BotSelectScreen
+        subtitle="From Position"
+        onSelect={(bot) => setScreen({ name: 'fromPositionTimeControl', fen, bot })}
+        onBack={() => setScreen({ name: 'boardSetup', fromPosition: true, initialFen: fen })}
+      />
+    );
+  } else if (screen.name === 'fromPositionTimeControl') {
+    const { fen, bot } = screen;
+    content = (
+      <TimeControlSelectScreen
+        subtitle={bot ? `${bot.name} · From Position` : 'From Position'}
+        showColorPicker={bot !== null}
+        onSelect={(timeControl, colorChoice) =>
+          setScreen(
+            bot
+              ? {
+                  name: 'botGame',
+                  timeControl,
+                  bot,
+                  chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false,
+                  atomic: false, duckChess: false, spellChess: false, horde: false, crazyhouse: false,
+                  initialFen: fen,
+                  fromPosition: true,
+                  colorChoice: colorChoice ?? 'random',
+                }
+              : {
+                  name: 'game',
+                  timeControl,
+                  chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false,
+                  atomic: false, duckChess: false, spellChess: false, horde: false, crazyhouse: false,
+                  initialFen: fen,
+                  fromPosition: true,
+                }
+          )
+        }
+        onBack={() => setScreen(bot ? { name: 'fromPositionBotSelect', fen } : { name: 'boardSetup', fromPosition: true, initialFen: fen })}
       />
     );
   } else if (screen.name === 'pgnImport') {
@@ -1200,6 +1275,7 @@ export default function App() {
         torpedo={screen.torpedo}
         crazyhouse={screen.crazyhouse}
         initialFen={screen.initialFen}
+        fromPosition={screen.fromPosition}
         colorChoice={screen.colorChoice}
         authToken={authSession?.token ?? null}
         onExit={() => setScreen({ name: 'main' })}
@@ -1268,6 +1344,7 @@ export default function App() {
         torpedo={screen.torpedo}
         crazyhouse={screen.crazyhouse}
         initialFen={screen.initialFen}
+        fromPosition={screen.fromPosition}
         authToken={authSession?.token ?? null}
         onExit={() => setScreen({ name: 'main' })}
         onAnalyze={(params) => setScreen({ name: 'analysis', params })}

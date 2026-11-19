@@ -82,6 +82,10 @@ interface LocalGameScreenProps {
   /** The merged starting position from the Setup Chess builder flow — used instead of
    * self-generating one when present (setupChess games always pass this). */
   initialFen?: string;
+  /** "From Position" (command #50): ordinary chess rules played from `initialFen` (any legal position, already validated for play). Not a
+   * variant - no flag above may be set with it. Only differs from a classical game in the header label and in having no opening name (the
+   * opening book is keyed on the standard start). */
+  fromPosition?: boolean;
   authToken: string | null;
   onExit: () => void;
   onAnalyze: (params: AnalyzeParams) => void;
@@ -103,6 +107,7 @@ export default function LocalGameScreen({
   torpedo = false,
   crazyhouse = false,
   initialFen: initialFenProp,
+  fromPosition = false,
   authToken,
   onExit,
   onAnalyze,
@@ -176,10 +181,10 @@ export default function LocalGameScreen({
   // any further named position, no later position will match either, so this naturally stops
   // updating on its own.
   useEffect(() => {
-    if (chess960 || setupChess || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse) return;
+    if (chess960 || setupChess || fromPosition || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
-  }, [fen, chess960, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse]);
+  }, [fen, chess960, setupChess, fromPosition, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse]);
 
   // skipValidation: once a Fog of War game ends via king capture, `fen` genuinely has no king
   // for the losing side — see ChessEngine's own doc comment on the option (this is the exact
@@ -649,6 +654,8 @@ export default function LocalGameScreen({
                 ? 'Three-Check'
                 : setupChess
                   ? 'Setup Chess'
+                  : fromPosition
+                    ? 'From Position'
                   : fogOfWar
                     ? 'Fog of War'
                     : giveaway
@@ -756,7 +763,7 @@ export default function LocalGameScreen({
               <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
             </View>
 
-            {!chess960 && !setupChess && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+            {!chess960 && !setupChess && !fromPosition && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
             <ChessBoard
               key={resetCount}

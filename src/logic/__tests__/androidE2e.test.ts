@@ -19,7 +19,7 @@ import {
   squareRect,
   textIssues,
 } from '../../../scripts/android/lib/checks.mjs';
-import { byClass, extractXml, findNodes, findOne, parseBounds, parseHierarchy, rowAfterScroll } from '../../../scripts/android/lib/hierarchy.mjs';
+import { byClass, extractXml, findNodes, findOne, parseBounds, parseHierarchy, rowAfterScroll, scrollUntilVisible, stoodStill, tappableNow } from '../../../scripts/android/lib/hierarchy.mjs';
 import { crop, decodePng, encodePng, solid } from '../../../scripts/android/lib/png.mjs';
 import { PROFILES } from '../../../scripts/android/lib/device.mjs';
 
@@ -346,5 +346,94 @@ describe('rowAfterScroll (command #45: the Racing Kings row after the swipe, whe
     expect(rowAfterScroll(before, near, found, step)?.bounds.cy).toBe(1769);
     expect(rowAfterScroll(before, [label('Crazyhouse', 760), label('4 Player Variations', 1050)], found, step)).toBeNull(); // no Racing Kings left
     expect(rowAfterScroll(before, [label('Settings', 500), label('Racing Kings', 900)], found, step)).toBeNull(); // nothing in common to measure the shift by
+  });
+});
+
+describe('tappableNow (command #54: the From Position entry, the last card of the Play menu)', () => {
+  const label = (text: string, cy: number) => node({ text, bounds: box(100, cy - 40, 900, cy + 40) });
+  // literals on purpose: a 2400 px window; at the end of the list the last card's buttons sit low: "From Position" at y 2200 (92 %, y2 2240), which the 90 % limit of the first fix refused
+  const end = findNodes([label('Board Editor', 1900), label('From Position', 2200)], { text: 'From Position' })[0];
+
+  it('refuses the entry below 70 % while the list can still move, and takes it once it stood still', () => {
+    expect(tappableNow(end, 2400, false)).toBe(false); // the old rule: the runs on 654c650 and eca841e never tapped it
+    expect(tappableNow(end, 2400, true)).toBe(true);
+  });
+
+  it('still takes a control in the upper 70 % at once, and never one under the navigation bar or an absent one', () => {
+    expect(tappableNow(findNodes([label('Load', 1500)], { text: 'Load' })[0], 2400, false)).toBe(true);
+    expect(tappableNow(findNodes([label('Import PGN', 2300)], { text: 'Import PGN' })[0], 2400, true)).toBe(false); // y2 2340 > 2328
+    expect(tappableNow(undefined, 2400, true)).toBe(false);
+  });
+
+  it('stoodStill: the entry that did not move after a swipe is at the end of the list', () => {
+    const at = (cy: number) => findNodes([label('From Position', cy)], { text: 'From Position' })[0];
+    expect(stoodStill(at(2200), at(2201))).toBe(true);
+    expect(stoodStill(at(2200), at(1850))).toBe(false); // it moved by a swipe
+    expect(stoodStill(null, at(2200))).toBe(false); // it was not on the screen before
+    expect(stoodStill(at(2200), null)).toBe(false);
+  });
+});
+
+describe('scrollUntilVisible (command #54b: the FEN field and Play from here sit below the first screenful of the Board Editor)', () => {
+  // A fake phone, 1080 x 2400, whose page is taller than the window: `targetY` is where the control stands in the PAGE, a swipe moves the page by 840 px (0.35 of the window) up to `maxScroll`,
+  // and a node whose bounds are not inside the window is not in the dump (like uiautomator). Literals on purpose.
+  const fakePhone = (targetY: number, maxScroll: number, present = true) => {
+    const state = { scroll: 0, swipes: 0, dumps: 0, logs: [] as string[] };
+    const dev = {
+      display: { w: 1080, h: 2400 },
+      async dump() {
+        state.dumps++;
+        const cy = targetY - state.scroll;
+        const nodes = [node({ text: 'Board Editor', bounds: box(0, 100, 1080, 200) })];
+        if (present && cy >= 0 && cy + 40 <= 2400) nodes.push(node({ id: 'fen-input', cls: 'android.widget.EditText', bounds: box(40, cy - 40, 1040, cy + 40) }));
+        return nodes;
+      },
+      swipe() {
+        state.swipes++;
+        state.scroll = Math.min(maxScroll, state.scroll + 840);
+      },
+    };
+    const options = { sleep: async () => {}, log: (line: string) => state.logs.push(line) };
+    const find = (nodes: ReturnType<typeof node>[]) => findNodes(nodes, { id: 'fen-input' })[0];
+    return { dev, state, options, find };
+  };
+
+  it('a target below the fold: not on the screen, then seen low, then tappable after 2 swipes; every step logs its bounds', async () => {
+    const { dev, state, options, find } = fakePhone(3000, 10_000);
+    const hit = await scrollUntilVisible(dev, 'the FEN field', find, options);
+    expect(state.swipes).toBe(2); // 3000 -> 2160 (seen, but below 70 % = 1680) -> 1320 (tappable)
+    expect(hit.bounds.cy).toBe(1320);
+    expect(state.logs).toEqual([
+      expect.stringContaining('the FEN field: not on the screen'),
+      expect.stringContaining('y 2120-2200 (centre 2160) of 2400'),
+      expect.stringContaining('y 1280-1360 (centre 1320) of 2400'),
+    ]);
+  });
+
+  it('a target that is already in the upper 70 % is taken without a swipe', async () => {
+    const { dev, state, options, find } = fakePhone(1500, 10_000);
+    const hit = await scrollUntilVisible(dev, 'the FEN field', find, options);
+    expect([state.swipes, hit.bounds.cy]).toEqual([0, 1500]);
+  });
+
+  it('the content ends with the target low (it stood still after a swipe): taken there, above the navigation bar', async () => {
+    const { dev, state, options, find } = fakePhone(3000, 800); // the page can only move by 800: the target ends at 2200 (92 %)
+    const hit = await scrollUntilVisible(dev, 'Play from here', find, options);
+    expect(hit.bounds.cy).toBe(2200);
+    expect(state.swipes).toBe(2); // the first swipe moves it 3000 -> 2200, the second leaves it at 2200: the end
+  });
+
+  it('a target that never appears: a clear error after the bounded swipes, naming the control and the words on screen', async () => {
+    const { dev, state, options, find } = fakePhone(3000, 10_000, false);
+    await expect(scrollUntilVisible(dev, 'the FEN field (fen-input)', find, { ...options, maxSwipes: 3 })).rejects.toThrow(
+      /"the FEN field \(fen-input\)" did not become tappable within 3 swipes \(never on the screen\); on screen: Board Editor/
+    );
+    expect(state.swipes).toBe(3);
+  });
+
+  it('a target stuck under the navigation bar is an error, not an endless scroll', async () => {
+    const { dev, state, options, find } = fakePhone(2350, 0);
+    await expect(scrollUntilVisible(dev, 'Load', find, { ...options, maxSwipes: 4 })).rejects.toThrow(/did not become tappable within 4 swipes \(last seen at y 2310-2390 of 2400\)/);
+    expect(state.swipes).toBe(4);
   });
 });

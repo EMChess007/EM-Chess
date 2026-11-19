@@ -64,6 +64,8 @@ interface PlayModeSelectScreenProps {
   onEngineVsEngineKingOfTheHill: () => void;
   onEngineVsEngineThreeCheck: () => void;
   onBoardEditor: () => void;
+  /** "From Position" (command #50): the Board Editor with a FEN field, ending in Play from here (Local or vs Bot). */
+  onFromPosition?: () => void;
   onImportPgn: () => void;
   authUser: AuthUser | null;
   onAuthPress: () => void;
@@ -118,6 +120,7 @@ export default function PlayModeSelectScreen({
   onEngineVsEngineKingOfTheHill,
   onEngineVsEngineThreeCheck,
   onBoardEditor,
+  onFromPosition,
   onImportPgn,
   authUser,
   onAuthPress,
@@ -332,8 +335,13 @@ export default function PlayModeSelectScreen({
 
         <View style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>Board Editor</Text>
-          <Text style={styles.categorySubtitle}>Set up a custom position and analyze it</Text>
+          <Text style={styles.categorySubtitle}>Set up a custom position, then analyze it or play it</Text>
           <View style={styles.subButtonRow}>
+            {onFromPosition && (
+              <Pressable style={[styles.subButton, styles.editorSubButton]} onPress={onFromPosition}>
+                <ModeButtonLabel label="From Position" style={styles.subButtonText} />
+              </Pressable>
+            )}
             <Pressable style={[styles.subButton, styles.editorSubButton]} onPress={onBoardEditor}>
               <ModeButtonLabel label="Open Editor" style={styles.subButtonText} />
             </Pressable>
