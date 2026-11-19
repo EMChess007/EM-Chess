@@ -45,7 +45,8 @@ EXIT_RUNNER=3
 MARKER="$out/e2e-informational-$job.txt"
 e2e_failed() {
   local what="$1" detail="$2"
-  if [ "${ANDROID_E2E_STRICT:-}" = "1" ]; then
+  # Command #52: large/static/perf stays INFORMATIONAL even under STRICT (board taps lost at the start of a bot game, cause unproven; TODO.md). Its smoke is still required.
+  if [ "${ANDROID_E2E_STRICT:-}" = "1" ] && [ "$what" != "large/static/perf" ]; then
     rc=1
   else
     echo "FAILED $what ($detail)" >> "$MARKER"

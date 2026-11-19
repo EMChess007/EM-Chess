@@ -1,5 +1,8 @@
 Build the 2-player variant $ARGUMENTS following CLAUDE.md and CHECKLIST.md. One variant, one branch, two sessions. Closest models: Racing Kings (newest, full pattern) and Horde. Report per CLAUDE.md (Greek).
 
+## BRANCHES (paired)
+Name the branch `paired/<variant-slug>` in BOTH repos (app and backend), e.g. `paired/torpedo`. Backend CI then tests against the same-named frontend branch, so backend tests that import new client logic pass before merge. Merge order: the app PR first, then the backend PR.
+
 ## STEP 0 - RESEARCH (before any code)
 Web-search the rules on Lichess, chess.com, pychess and chessvariants.org.
 - If they agree: write the exact rules at the top of your work: start FEN, legal-move limits, win/draw conditions incl. stalemate, repetition, 50-move rule, insufficient material (differs per variant, e.g. Racing Kings has NO insufficient-material draw), plus the test list.

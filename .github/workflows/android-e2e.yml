@@ -42,6 +42,8 @@ concurrency:
 
 env:
   EXPO_NO_TELEMETRY: '1'
+  # command #49: the full e2e (release-mode APK) is REQUIRED again: a failure of any phase (after the RUNNER / APP retry) exits 1, so the required "android-e2e" check goes red. Smoke stays required too.
+  ANDROID_E2E_STRICT: '1'
   # command #46: how the APK is built. `release` (CI) = JavaScript bundle embedded, no Metro; `debug` = the old debug APK + Metro, only on a manual run with debug_build. This names a MODE only: the build-time test
   # switch itself (EXPO_PUBLIC_E2E_BUILD) is set by scripts/android/build-apk.sh on the Gradle process and by nothing in this file (CHECKLIST section 7; e2eBuildSwitch.test.ts scans for it).
   E2E_APK_MODE: ${{ github.event.inputs.debug_build == 'true' && 'debug' || 'release' }}
@@ -287,7 +289,7 @@ jobs:
           merge-multiple: true
           path: android-e2e-all
 
-      # INFORMATIONAL (command #44, temporary): the full e2e never decides the verdict; only the smoke does (an emulator slice fails only when its smoke fails). Claude reads this before every merge.
+      # Command #49: the full e2e is REQUIRED (ANDROID_E2E_STRICT=1 above): an emulator slice fails when its smoke OR its full e2e fails. This section only lists the results.
       - name: Summary
         if: needs.changes.outputs.code == 'true'
         run: |
@@ -317,7 +319,7 @@ jobs:
           echo "changes=$CHANGES code=$CODE apk=$APK emulator=$EMULATOR"
           if [ "$CHANGES" != "success" ]; then echo "the change detection failed"; exit 1; fi
           if [ "$CODE" != "true" ]; then echo "documentation only: nothing to run"; exit 0; fi
-          # REQUIRED = SMOKE: run-on-emulator.sh exits 1 only when the smoke failed; a full-e2e failure is a marker + exit 0 (INFORMATIONAL above) unless ANDROID_E2E_STRICT=1.
+          # REQUIRED = SMOKE + FULL E2E: with ANDROID_E2E_STRICT=1 run-on-emulator.sh exits 1 when the smoke or the full e2e failed.
           # A slice that did not run (cancelled / skipped / failed to start) makes the emulator job's result != success, so it is red here too.
-          if [ "$APK" != "success" ] || [ "$EMULATOR" != "success" ]; then echo "android-e2e is RED: the APK build failed, a slice's smoke failed or a slice did not run (see the jobs above and the summary)"; exit 1; fi
-          echo "android-e2e is green: every slice ran and passed its smoke (full e2e results: INFORMATIONAL, see the summary)"
+          if [ "$APK" != "success" ] || [ "$EMULATOR" != "success" ]; then echo "android-e2e is RED: the APK build failed, a slice's smoke or full e2e failed or a slice did not run (see the jobs above and the summary)"; exit 1; fi
+          echo "android-e2e is green: every slice ran and passed its smoke and its full e2e"

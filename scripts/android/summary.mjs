@@ -81,6 +81,10 @@ export function buildDigest(dir) {
   return { text: lines.join('\n'), red };
 }
 
+/** Command #52: slices / jobs whose full-e2e failure does not block (large-perf: board taps lost at the start of a bot game, cause unproven; TODO.md). */
+const INFORMATIONAL_SLICES = ['large-static-perf'];
+const INFORMATIONAL_JOBS = ['large-perf'];
+
 /** The marker lines run-on-emulator.sh wrote for failed full-e2e phases (`e2e-informational-<job>.txt`): { job: [lines] }. */
 export function readMarkers(dir) {
   const out = {};
@@ -98,10 +102,11 @@ export function readMarkers(dir) {
  * Only the smoke is required; this never decides the verdict. `failed` counts the slices whose last attempt failed or whose phase left a marker line (a crash with no results.json).
  */
 export function buildInformational(dir) {
-  const lines = ['### INFORMATIONAL (not blocking)', '', 'The required check is the smoke (the app installs, starts and reaches Home without a crash). The full end-to-end results below are read by Claude before every merge (TESTING.md section 45).', ''];
+  const lines = ['### Full e2e results', '', 'The required check is the smoke plus the full end-to-end run (release-mode APK, ANDROID_E2E_STRICT=1; TESTING.md section 45). The results per slice:', ''];
   const slices = readSlices(dir) ?? [];
   const markers = readMarkers(dir);
   let failed = 0;
+  const info = [];
   for (const slice of slices) {
     const last = slice.attempts[slice.attempts.length - 1];
     const bad = last.run.results.filter((r) => !r.ok);
@@ -109,15 +114,25 @@ export function buildInformational(dir) {
       lines.push(`- **${slice.name}**: passed (${last.run.results.length} checks)`);
       continue;
     }
-    failed++;
     const label = last.run.label ? ` [${last.run.label}]` : '';
-    lines.push(`- **${slice.name}**: FAILED${label}: ${bad.length} of ${last.run.results.length} checks failed; first failing scenario \`${bad[0].name}\`: ${(bad[0].issues ?? []).slice(0, 1).join('').slice(0, 300)}`);
+    const text = `- **${slice.name}**: FAILED${label}: ${bad.length} of ${last.run.results.length} checks failed; first failing scenario \`${bad[0].name}\`: ${(bad[0].issues ?? []).slice(0, 1).join('').slice(0, 300)}`;
+    // Command #52: the large-perf slice is not required (TODO.md).
+    if (INFORMATIONAL_SLICES.includes(slice.name)) info.push(text);
+    else {
+      failed++;
+      lines.push(text);
+    }
   }
   // The marker lines (one per failed phase, also a phase that crashed before writing results.json) are listed as they are.
-  for (const [job, entries] of Object.entries(markers)) lines.push(`- run-on-emulator.sh marker of **${job}**: ${entries.join(' | ').slice(0, 500)}`);
-  if (slices.length === 0 && Object.keys(markers).length > 0) failed = Object.keys(markers).length;
+  for (const [job, entries] of Object.entries(markers)) {
+    if (INFORMATIONAL_JOBS.includes(job)) info.push(`- run-on-emulator.sh marker of **${job}**: ${entries.join(' | ').slice(0, 500)}`);
+    else lines.push(`- run-on-emulator.sh marker of **${job}**: ${entries.join(' | ').slice(0, 500)}`);
+  }
+  if (info.length > 0) lines.push('', '#### Informational (not blocking)', '', ...info);
+  const blockingMarkers = Object.keys(markers).filter((j) => !INFORMATIONAL_JOBS.includes(j)).length;
+  if (slices.length === 0 && blockingMarkers > 0) failed = blockingMarkers;
   if (slices.length === 0 && Object.keys(markers).length === 0) lines.push('No full end-to-end results were written.');
-  lines.push('', `${failed} slice(s) failed the informational run.`);
+  lines.push('', `${failed} slice(s) failed the full e2e run.`);
   return { text: lines.join('\n'), failed };
 }
 

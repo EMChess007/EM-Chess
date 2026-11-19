@@ -8,6 +8,10 @@ what is wrong, how it was verified, and where to start fixing. Remove an entry w
 **Proved (tests):** `initEngine` rejects after 10 s when BRIDGE_READY never comes and a failed init is not cached (`engineBridgeWatchdog.test.ts`); a lost WebView (synthetic `__EM_BRIDGE_RESTARTED__` / `__EM_BRIDGE_FAILED__:` lines from `bridgeSupervisor.ts`) fails pending waits at once, the restarted bridge re-handshakes, a second loss surfaces an error; `BotGameScreen` retries once on a fresh bridge, then shows the error + Retry (`botGameEngineWatchdog.dom.test.tsx`); the Android harness prints a filtered logcat + the app's engine Diagnostics lines when the bot does not answer (`androidEngineEvidence.test.ts`).
 **UNPROVEN:** that the CI hang ("bot did not answer in 30 s") IS a dead/never-loaded WebView (the next red run's log will say: look for `bot silence (...)` in the job log); that the real `react-native-webview` fires `onRenderProcessGone` / `onContentProcessDidTerminate` / `onError` in that case (not exercised on a device); the 10 s READY timeout on a very slow phone (a spurious timeout costs one automatic retry, then Retry). `EngineVsEngineGameScreen` / Analysis / hints get the adapter timeout and the bridge remount (an error instead of a hang) but no Retry button.
 
+## large-perf: board taps lost at the start of a bot game (#39, #40)
+
+large-perf: board taps lost at the start of a bot game (#39, #40) — investigate (engine WebView load vs. input), then make it required. Until then its full e2e is informational (command #52; TESTING.md 45); its smoke stays required.
+
 ## Giveaway bot picker still says "Stockfish 11"
 
 **What's wrong.** `BotSelectScreen` prints `getEngineName(getEngineIdForElo(bot.elo))` on every bot card, so in

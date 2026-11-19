@@ -82,6 +82,14 @@ describe('run-on-emulator.sh: required = smoke, the full e2e is informational', 
     expect(runShell('small-gallery', 1, [0], { ANDROID_E2E_STRICT: '1' }).status).toBe(1);
   });
 
+  it('command #52: under STRICT the large-perf full e2e stays informational (marker, exit 0) but its smoke is still required', () => {
+    const e2e = runShell('large-perf', 0, [1], { ANDROID_E2E_STRICT: '1' });
+    expect(e2e.status).toBe(0);
+    expect(e2e.marker).toBe('FAILED large/static/perf (exit 1, attempt 1)\n');
+    expect(runShell('large-perf', 1, [0], { ANDROID_E2E_STRICT: '1' }).status).toBe(1);
+    expect(runShell('large-touch', 0, [1], { ANDROID_E2E_STRICT: '1' }).status).toBe(1);
+  });
+
   it('ANDROID_E2E_STRICT other than "1" does not make the e2e required', () => {
     expect(runShell('small-gallery', 0, [1], { ANDROID_E2E_STRICT: '0' }).status).toBe(0);
   });
@@ -119,7 +127,11 @@ describe('the aggregate job: red only when the smoke failed or a slice did not r
     expect(verdict({ ...ok, CHANGES: 'failure' }).status).toBe(1);
     expect(verdict({ CODE: 'false', CHANGES: 'success', APK: 'skipped', EMULATOR: 'skipped' }).status).toBe(0);
   });
-  it('prints the informational section in the summary step and runs the screenshots step on every code change', () => {
+  it('sets ANDROID_E2E_STRICT=1 for every CI run (command #49: the full e2e is required again)', () => {
+    const wf = read('.github/workflows/android-e2e.yml');
+    expect(wf).toContain("\n  ANDROID_E2E_STRICT: '1'\n");
+  });
+  it('prints the full e2e results section in the summary step and runs the screenshots step on every code change', () => {
     const wf = read('.github/workflows/android-e2e.yml');
     expect(wf).toContain('node scripts/android/summary.mjs android-e2e-all --informational | tee -a "$GITHUB_STEP_SUMMARY"');
     const shots = wf.slice(wf.indexOf('- name: The failing screenshots'), wf.indexOf('- name: The verdict'));
@@ -157,10 +169,23 @@ describe('the INFORMATIONAL digest', () => {
     put(dir, 'small-online-online', results(false, 'APP'));
     const { text, failed } = buildInformational(dir);
     expect(failed).toBe(1);
-    expect(text).toContain('### INFORMATIONAL (not blocking)');
+    expect(text).toContain('### Full e2e results');
+    expect(text).not.toContain('INFORMATIONAL');
     expect(text).toContain('- **small-static-screens1**: passed (1 checks)');
     expect(text).toContain('- **small-online-online**: FAILED [APP]: 2 of 3 checks failed; first failing scenario `Racing Kings game`: no board after 40 s');
     expect(text).not.toContain('second');
+  });
+
+  it('command #52: a failed large-perf slice is listed under "Informational (not blocking)" and does not count as failed', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'info-'));
+    put(dir, 'small-static-screens1', results(true));
+    put(dir, 'large-static-perf', results(false, 'APP'));
+    writeFileSync(join(dir, 'e2e-informational-large-perf.txt'), 'FAILED large/static/perf (exit 1, attempt 1)\n');
+    const { text, failed } = buildInformational(dir);
+    expect(failed).toBe(0);
+    expect(text).toContain('#### Informational (not blocking)');
+    expect(text.indexOf('#### Informational (not blocking)')).toBeLessThan(text.indexOf('**large-static-perf**: FAILED'));
+    expect(text).toContain('marker of **large-perf**');
   });
 
   it('uses the LAST attempt: a slice that passed on its repeat is passed', () => {
