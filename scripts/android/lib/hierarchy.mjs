@@ -125,5 +125,16 @@ export function rowAfterScroll(before, after, row, step) {
   return candidates.reduce((best, n) => (Math.abs(n.bounds.cy - expected) < Math.abs(best.bounds.cy - expected) ? n : best));
 }
 
+/**
+ * Whether a control may be tapped now (command #54). The usual rule: it stands in the upper `upper` (0.7) of the window, above a soft keyboard. A control in the LAST card of a menu can
+ * never get there (the list ends, so it stays in the lower part of the window: the run on 654c650 listed "From Position" on the screen and still died with "not reachable"), so with
+ * `atEnd` (the caller saw that a swipe moved nothing: the list is at its end) it may stand anywhere above the lowest 10 % of the window (the navigation bar). `hit` is a node of `findNodes`.
+ */
+export function tappableNow(hit, windowHeight, atEnd, upper = 0.7) {
+  if (!hit || !hit.bounds) return false;
+  if (hit.bounds.cy < windowHeight * upper) return true;
+  return atEnd && hit.bounds.y2 <= windowHeight * 0.9;
+}
+
 /** A cheap fingerprint of what is on screen (to see whether a scroll moved anything). */
 export const fingerprint = (nodes) => nodes.map((n) => `${n.text}|${n.desc}|${n.bounds ? `${n.bounds.x1},${n.bounds.y1}` : ''}`).join('\n');
