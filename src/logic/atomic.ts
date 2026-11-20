@@ -48,7 +48,9 @@ const QUEEN = 5;
 const KING = 6;
 
 const TYPE_BY_CODE: PieceType[] = ['p', 'n', 'b', 'r', 'q', 'k'];
-const CODE_BY_TYPE: Record<PieceType, number> = { p: PAWN, n: KNIGHT, b: BISHOP, r: ROOK, q: QUEEN, k: KING, m: KING };
+/** The six FIDE pieces: Atomic never has a Commoner ('m' is Knightmate only), so the code map covers these and nothing else. */
+type FidePiece = 'p' | 'n' | 'b' | 'r' | 'q' | 'k';
+const CODE_BY_TYPE: Record<FidePiece, number> = { p: PAWN, n: KNIGHT, b: BISHOP, r: ROOK, q: QUEEN, k: KING };
 const FILES = 'abcdefgh';
 
 /** Castling-right bits. */
@@ -107,7 +109,7 @@ export function parseAtomicFen(fen: string): AtomicPosition {
         file += ch.charCodeAt(0) - 48;
         continue;
       }
-      const type = ch.toLowerCase() as PieceType;
+      const type = ch.toLowerCase() as FidePiece;
       const code = CODE_BY_TYPE[type];
       if (!code || file > 7) throw new Error(`Invalid Atomic FEN (piece): ${fen}`);
       squares[(7 - r) * 8 + file] = ch === type ? -code : code;

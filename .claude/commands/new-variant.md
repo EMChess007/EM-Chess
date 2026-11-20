@@ -18,6 +18,7 @@ Online (matchmaking, challenges, all time controls) + tournaments + rules sheet 
 ## BEFORE EVERY PUSH
 - Run the FULL `npx vitest run --project logic` (source-scan pins break when a variant is added) + `npm run typecheck`; dom tests of the touched screens.
 - Frontend tests never read `backend/` files (CI checks out the app only).
+- If the variant touches shared types or app logic (e.g. widens `PieceType` in `src/types/chess.ts`, or edits any file a backend twin copies verbatim, such as `atomic.ts`), run ALL backend `test:*` scripts (plus `test-tournament.mjs`, `sync:* --check` and backend `npx tsc --noEmit`) against the paired app branch before pushing. Knightmate's `m` widening broke the Atomic twin check in CI (command #57) because only the Knightmate script had been run. A new piece type must be handled only where the variant can reach it: keep the shared twin blocks on the six FIDE pieces (local `FidePiece` type), never add a fake `m` mapping.
 
 ## ANDROID
 Add a scenario in `scripts/android/e2e.mjs` modelled on `racingKings2p`: beacon board rect, `waitSelected`, tap -> press, re-find a low Play-menu row by its shift after the swipe. NEVER add variant steps to `smoke.mjs`.
