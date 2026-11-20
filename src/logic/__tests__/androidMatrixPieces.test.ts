@@ -7,6 +7,7 @@ import { decodePng } from '../../../scripts/android/lib/png.mjs';
 import {
   analyseCell,
   checkPieceColours,
+  evidenceSummary,
   expectedCell,
   expectedInk,
   IMAGE_BLOCK,
@@ -466,5 +467,51 @@ describe('checkPieceColours on a board whose piece a bot replaced during the pho
     const issues = await checkPieceColours(makePage(true) as never, PNGmock as never, { mode: 'bw', liveBots: true });
     expect(issues).toHaveLength(1);
     expect(issues[0].detail).toMatch(/bp: drawn rgb\(250,250,250\), expected rgb\(29,29,29\)/);
+  });
+});
+
+describe('evidenceSummary: a failing photograph, readable in the job log (command #60)', () => {
+  const record = {
+    marker: 'bb',
+    board: 'A',
+    parity: 1,
+    problem: 'bb: the body reads light (median luminance 201, limit 90)',
+    expected: { ink: [29, 29, 29] },
+    measured: { square: [181, 136, 99], piece: [240, 217, 181], fraction: 0.41, bodyLuminance: 200.6, lightShare: 0.9 },
+    box: { x: 10.2, y: 20.7, width: 40, height: 40 },
+    handleState: { isConnected: true, marker: 'bb' },
+    dom: {
+      label: 'c8, board A, Black bishop',
+      connected: true,
+      msSinceBoardChange: 37,
+      pieces: [{ marker: 'bb', isConnected: true, opacity: '1', transform: 'none', rect: [10, 21, 36, 36] }],
+      stackAtCentre: Array.from({ length: 9 }, (_, i) => ({ tag: 'div', testid: i === 0 ? 'A-c8' : null, insideCell: i < 3, marker: i === 1 ? 'bb' : null, opacity: '1', bg: 'rgb(181, 136, 99)', label: '' })),
+      recentChanges: Array.from({ length: 12 }, (_, i) => ({ ago: 100 - i, board: 'A', attr: 'aria-label', label: 'c8, board A' })),
+    },
+  };
+  it('names the board, the square, the problem, expected against measured, the handle, the ms since the last change and what is over the cell centre', () => {
+    const text = evidenceSummary('bughouse-game-single', '393x852|1|app|1|light|none', record).join('\n');
+    expect(text).toContain('bb on board A, square c8 (parity 1)');
+    expect(text).toContain('problem: bb: the body reads light (median luminance 201, limit 90)');
+    expect(text).toContain('expected ink [29,29,29]; measured square [181,136,99] piece [240,217,181] fraction 0.41 body 201 light 0.9');
+    expect(text).toContain('photographed handle: marker=bb isConnected=true; clip 10,21,40,40');
+    expect(text).toContain('ms since last change on board A: 37');
+    expect(text).toContain('piece[0] bb connected=true opacity=1 transform=none rect=10,21,36,36');
+    expect(text).toContain('over centre[0] div#A-c8 inside=true marker=-');
+    expect(text).toContain('over centre[1] div inside=true marker=bb');
+  });
+  it('is at most 40 lines, the stack and the change log cut to their last entries', () => {
+    const lines = evidenceSummary('s', 'c', record);
+    expect(lines.length).toBeLessThanOrEqual(40);
+    expect(lines.filter((l) => l.startsWith('over centre')).length).toBe(6);
+    expect(lines.filter((l) => l.startsWith('change ')).length).toBe(8);
+    const huge = { ...record, dom: { ...record.dom, pieces: Array.from({ length: 50 }, () => record.dom.pieces[0]) } };
+    expect(evidenceSummary('s', 'c', huge).length).toBeLessThanOrEqual(40);
+  });
+  it('a DOM that could not be read still gives the verdict and says why', () => {
+    const lines = evidenceSummary('s', 'c', { ...record, dom: { error: 'Error: element detached' }, handleState: null });
+    expect(lines.join('\n')).toContain('square ?');
+    expect(lines.join('\n')).toContain('photographed handle: unreadable');
+    expect(lines.join('\n')).toContain('dom read failed: Error: element detached');
   });
 });

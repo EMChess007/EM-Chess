@@ -29,7 +29,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PAGE_CHECKS_SOURCE } from './android-matrix-checks.mjs';
-import { checkPieceColours } from './android-matrix-pieces.mjs';
+import { checkPieceColours, evidenceSummary } from './android-matrix-pieces.mjs';
 import { comboId, CRITERIA, fullCombos, GEAR_ZONE, insetSweep, insetsFor, miniCombos, quickCombos, SCREEN_SIZES, viewportFor, FONTS } from './android-matrix-def.mjs';
 import { openProgress, progressKey } from './android-matrix-progress.mjs';
 import { allScreens } from './android-matrix-screens.mjs';
@@ -89,6 +89,7 @@ function pieceEvidence(screenId, combo) {
     const { cellPng, page, ...rest } = record;
     writeFileSync(`${base}.json`, JSON.stringify({ screen: screenId, combo, ...rest }, null, 1));
     console.log(`[matrix] piece evidence: ${base}.json`);
+    for (const line of evidenceSummary(screenId, combo, record)) console.log(`[matrix] piece evidence | ${line}`);
   };
 }
 
