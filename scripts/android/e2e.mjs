@@ -33,6 +33,7 @@ import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssu
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { diagnosticTail, engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
+import { FAILURE_DIAGNOSTIC_MAX, classifyEvidence, filterFailureLogcat, parsePid } from './lib/failureEvidence.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -84,8 +85,12 @@ function record(name, issues, note = '') {
 /** Runs one scenario; an exception is a failed check with the tree and a screenshot saved, never the end of the run. */
 async function scenario(dev, name, body) {
   const t0 = Date.now();
+  const firstResult = results.length;
+  const pidAtStart = appPid(dev);
+  sliceStartPid ??= pidAtStart;
   try {
     await body();
+    await failureEvidence(dev, name, firstResult);
   } catch (e) {
     record(name, [`exception: ${e.message}`]);
     try {
@@ -94,8 +99,81 @@ async function scenario(dev, name, body) {
       /* no screenshot */
     }
     await dev.snapshot(`FAILED-${name.replace(/[^\w.-]+/g, '_')}`).catch(() => {});
+    await failureEvidence(dev, name, firstResult);
   }
   log(`  (${name}: ${Math.round((Date.now() - t0) / 1000)} s)`);
+}
+
+// --- evidence on EVERY failure (command #59) ------------------------------------------------------------------------------------------------------------------------------------------
+let sliceStartPid = null;
+let evidenceRuns = 0;
+const EVIDENCE_MAX_RUNS = 6; // bounded: each run reads logcat and the Diagnostics screen
+/** The app's pid (number), null when there is no process or the phone cannot be asked. */
+function appPid(dev) {
+  try {
+    return parsePid(dev.sh('pidof com.emchess.app || echo "no process"', { timeout: 10_000 }));
+  } catch {
+    return null;
+  }
+}
+/**
+ * Every scenario that failed (results[firstResult..] with ok === false): prints the screen text, the resumed activity and pid (and whether the pid changed since the slice started),
+ * the filtered logcat tail (<= 80), the Diagnostics tail (<= 40) and the runner-health numbers; stores the classified cause as `evidence` on the result (the job summary prints it). Never throws.
+ */
+async function failureEvidence(dev, name, firstResult) {
+  const failedHere = results.slice(firstResult).filter((r) => !r.ok);
+  if (failedHere.length === 0) return;
+  const issues = failedHere.flatMap((r) => r.issues);
+  let logcat = [];
+  let diagnosticLines = [];
+  let pid = null;
+  if (evidenceRuns < EVIDENCE_MAX_RUNS) {
+    evidenceRuns++;
+    try {
+      const now = await dev.look().then((l) => l.nodes).catch(() => []);
+      log(`  EVIDENCE ${name}: the screen right now shows: ${visibleWords(now, 30).join(' | ') || '(nothing readable)'}`);
+    } catch (e) {
+      log(`  EVIDENCE ${name}: could not read the screen (${String(e.message).slice(0, 120)})`);
+    }
+    pid = appPid(dev);
+    log(`  EVIDENCE ${name}: app pid ${pid ?? 'none'}, at the start of the slice ${sliceStartPid ?? 'none'} -> ${pid !== null && sliceStartPid !== null && pid !== sliceStartPid ? 'CHANGED (the app restarted or crashed)' : 'same'}; relaunches by the harness so far: ${relaunches}`);
+    try {
+      const resumed = dev.sh('dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity" | head -3', { timeout: 20_000 });
+      log(`  EVIDENCE ${name}: resumed: ${String(resumed).trim().replace(/\s+/g, ' ').slice(0, 260)}`);
+    } catch (e) {
+      log(`  EVIDENCE ${name}: could not read the resumed activity (${String(e.message).slice(0, 120)})`);
+    }
+    try {
+      logcat = filterFailureLogcat(dev.adb(['logcat', '-d', '-t', '6000'], { timeout: 30_000 }));
+      log(`  EVIDENCE ${name}: logcat tail (${logcat.length} lines of ReactNativeJS / AndroidRuntime / chromium / WebView / ANR):\n${logcat.map((l) => `    ${l}`).join('\n') || '    (none)'}`);
+    } catch (e) {
+      log(`  EVIDENCE ${name}: could not read logcat (${String(e.message).slice(0, 120)})`);
+    }
+    try {
+      await toHome(dev);
+      await dev.runSteps([{ text: 'More' }, { text: 'Diagnostics' }]);
+      const lines = [];
+      for (let i = 0; i < 4; i++) {
+        await sleep(800);
+        const nodes = await dev.dump();
+        lines.push(...diagnosticTail(nodes.flatMap((n) => [n.text, n.desc]).filter(Boolean), FAILURE_DIAGNOSTIC_MAX));
+        dev.scrollDown();
+      }
+      diagnosticLines = [...new Set(lines)].slice(-FAILURE_DIAGNOSTIC_MAX);
+      log(`  EVIDENCE ${name}: the app's Diagnostics log tail (${diagnosticLines.length}):\n${diagnosticLines.map((l) => `    ${l}`).join('\n') || '    (none on screen)'}`);
+    } catch (e) {
+      log(`  EVIDENCE ${name}: could not read the Diagnostics log (${String(e.message).slice(0, 120)})`);
+    }
+    try {
+      const h = { inputMs: measureInput(dev), dumpMs: await measureDump(dev) };
+      log(`  EVIDENCE ${name}: runner health now: input ${h.inputMs} ms, dump ${h.dumpMs} ms -> ${judgeHealth(h).slow ? 'SLOW' : 'ok'}`);
+    } catch (e) {
+      log(`  EVIDENCE ${name}: could not measure the runner health (${String(e.message).slice(0, 120)})`);
+    }
+  }
+  const cause = classifyEvidence({ startPid: sliceStartPid, pid, logcat, issues, diagnosticLines });
+  for (const r of failedHere) r.evidence = cause;
+  log(`  EVIDENCE: ${cause} (${name})`);
 }
 
 /**
