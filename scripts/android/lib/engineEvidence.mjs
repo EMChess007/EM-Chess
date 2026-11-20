@@ -22,6 +22,26 @@ export function filterEngineLogcat(logcat, max = EVIDENCE_MAX_LINES) {
   return kept.slice(-max);
 }
 
+/** A line of the app's Diagnostics log: an ISO timestamp, then the entry ("2026-11-19T10:00:00.000Z [TextFit] ..."). */
+const DIAGNOSTIC_LINE = /^\d{4}-\d\d-\d\dT[\d:.]+Z\s/;
+
+/**
+ * THE WHOLE TAIL of the app's Diagnostics log (command #58: "text-fit probe" / "piece gallery pixels" failed on a CI emulator and the job log said nothing about the app): every timestamped
+ * entry among the words on the Diagnostics screen, whatever its tag, de-duplicated, order kept, the last `max`. Pure.
+ */
+export function diagnosticTail(words, max = 40) {
+  const seen = new Set();
+  const out = [];
+  for (const word of words) {
+    for (const line of String(word).split('\n')) {
+      if (!DIAGNOSTIC_LINE.test(line) || seen.has(line)) continue;
+      seen.add(line);
+      out.push(line.trim().slice(0, 300));
+    }
+  }
+  return out.slice(-max);
+}
+
 /** The engine's own lines of the app's Diagnostics log ("[Engine] ..." and "[EngineBridge] ..."), from the words on the Diagnostics screen; de-duplicated, order kept, the last `max`. */
 export function engineDiagnosticLines(words, max = 40) {
   const seen = new Set();

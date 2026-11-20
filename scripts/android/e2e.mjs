@@ -31,7 +31,7 @@ import { byClass, findNodes, rowAfterScroll, scrollUntilVisible, visibleWords } 
 import { checkEditorGrid, editorSquares } from './lib/editorGrid.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, stableCells, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
-import { engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
+import { diagnosticTail, engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -149,6 +149,43 @@ async function botSilenceEvidence(dev, when) {
     log(`  bot silence (${when}): the app's Diagnostics log, engine lines (${unique.length}):\n${unique.map((l) => `    ${l}`).join('\n') || '    (none on screen)'}`);
   } catch (e) {
     log(`  bot silence (${when}): could not read the Diagnostics log (${String(e.message).slice(0, 120)})`);
+  }
+}
+
+/**
+ * A DIAGNOSTICS-SCREEN CHECK FAILED (command #58: "text-fit probe" and "piece gallery pixels" were red on a CI emulator, the job log named no cause). Prints, in this order and each guarded:
+ * what the screen shows RIGHT NOW (was it still Diagnostics, the Piece gallery, the Home tab or the launcher?), where the app is (resumed activity, pid, the death lines of the log), the filtered
+ * logcat (ReactNativeJS, AndroidRuntime, chromium, ...: the same filter as the bot-silence evidence) and the tail of the app's own Diagnostics log (every timestamped entry). It leaves the
+ * screen (the Diagnostics log is read through More); every later scenario starts with toHome. Never throws.
+ */
+async function diagnosticsCheckEvidence(dev, what) {
+  try {
+    const now = await dev.look().then((l) => l.nodes).catch(() => []);
+    log(`  ${what}: the screen right now shows: ${visibleWords(now, 30).join(' | ') || '(nothing readable)'}`);
+  } catch (e) {
+    log(`  ${what}: could not read the screen (${String(e.message).slice(0, 120)})`);
+  }
+  await whereIsTheApp(dev, what);
+  try {
+    const tail = filterEngineLogcat(dev.adb(['logcat', '-d', '-t', '4000'], { timeout: 30_000 }));
+    log(`  ${what}: logcat tail (${tail.length} lines of chromium / cr_* / WebView* / ReactNativeJS / AndroidRuntime / libc):\n${tail.map((l) => `    ${l}`).join('\n') || '    (none)'}`);
+  } catch (e) {
+    log(`  ${what}: could not read logcat (${String(e.message).slice(0, 120)})`);
+  }
+  try {
+    await toHome(dev);
+    await dev.runSteps([{ text: 'More' }, { text: 'Diagnostics' }]);
+    const lines = [];
+    for (let i = 0; i < 4; i++) {
+      await sleep(800);
+      const nodes = await dev.dump();
+      lines.push(...diagnosticTail(nodes.flatMap((n) => [n.text, n.desc]).filter(Boolean)));
+      dev.scrollDown();
+    }
+    const unique = [...new Set(lines)].slice(-40);
+    log(`  ${what}: the app's Diagnostics log, last entries (${unique.length}):\n${unique.map((l) => `    ${l}`).join('\n') || '    (none on screen)'}`);
+  } catch (e) {
+    log(`  ${what}: could not read the Diagnostics log (${String(e.message).slice(0, 120)})`);
   }
 }
 
@@ -355,7 +392,10 @@ async function textFit(dev) {
       if (!verdict) dev.scrollDown();
     }
     await dev.snapshot('text-fit');
-    if (!verdict) return record('text-fit probe', ['the probe never wrote its lines to the diagnostic log']);
+    if (!verdict) {
+      record('text-fit probe', ['the probe never wrote its lines to the diagnostic log']);
+      return diagnosticsCheckEvidence(dev, 'text-fit probe');
+    }
     const issues = [...verdict.mismatches.map((l) => l.trim())];
     if (verdict.bundledFontMissing) issues.push('the bundled font is NOT loaded on the phone');
     record('text-fit probe', issues, verdict.lines[0]?.replace('[TextFit] ', ''));
@@ -480,7 +520,10 @@ async function gallery(dev) {
     log(`gallery: the largest light share of a BLACK piece per theme, as photographed: ${JSON.stringify(Object.fromEntries(Object.entries(lightByTheme).map(([k, v]) => [k, Number(v.toFixed(3))])))} (limits ${JSON.stringify(LIGHT_SHARE_BY_THEME)})`);
     if (judged.size < GALLERY_CELLS) issues.push(`only ${judged.size} of ${GALLERY_CELLS} gallery cells were seen and judged`);
     if (Object.keys(failuresBy).length > 0) issues.unshift(`failed cells by group: ${JSON.stringify(failuresBy)}`);
-    record('piece gallery pixels', issues, `${judged.size} cells judged: ${JSON.stringify(perTheme)}; largest light share of a black piece per theme ${JSON.stringify(Object.fromEntries(Object.entries(lightByTheme).map(([k, v]) => [k, Number(v.toFixed(3))])))} against the limits ${JSON.stringify(LIGHT_SHARE_BY_THEME)}`);
+    const incomplete = judged.size < GALLERY_CELLS;
+    if (incomplete) log(`  piece gallery pixels: ${judged.size} of ${GALLERY_CELLS} cells judged; evidence follows`);
+    if (incomplete) await diagnosticsCheckEvidence(dev, 'piece gallery pixels');
+    record('piece gallery pixels', issues, `${judged.size} cells judged:${JSON.stringify(perTheme)}; largest light share of a black piece per theme ${JSON.stringify(Object.fromEntries(Object.entries(lightByTheme).map(([k, v]) => [k, Number(v.toFixed(3))])))} against the limits ${JSON.stringify(LIGHT_SHARE_BY_THEME)}`);
   });
 }
 
