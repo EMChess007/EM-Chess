@@ -77,6 +77,21 @@ function themeAssets(themeId) {
   return assets;
 }
 
+/** Every failing piece photograph is kept (command #60): <out>/piece-evidence/<n>-<screen>-<marker>.{cell.png,page.png,json}. */
+let evidenceCount = 0;
+function pieceEvidence(screenId, combo) {
+  return async (record) => {
+    const dir = path.join(OUT_DIR, 'piece-evidence');
+    mkdirSync(dir, { recursive: true });
+    const base = path.join(dir, `${Date.now()}-${++evidenceCount}-${screenId}-${record.marker}-${record.board}`);
+    writeFileSync(`${base}.cell.png`, record.cellPng);
+    if (record.page) writeFileSync(`${base}.page.png`, record.page);
+    const { cellPng, page, ...rest } = record;
+    writeFileSync(`${base}.json`, JSON.stringify({ screen: screenId, combo, ...rest }, null, 1));
+    console.log(`[matrix] piece evidence: ${base}.json`);
+  };
+}
+
 /** A screen that names a `pieceTheme` is about the PIECES, not the layout: a piece's colour does not depend on the window, the text scale, the font or the zoom, so it runs at the base combination only. */
 function isBaseCombo(combo) {
   return combo.size.id === SCREEN_SIZES[2].id && combo.scale === 1.0 && combo.font.id === 'app' && combo.zoom === 1.0;
@@ -310,7 +325,7 @@ async function runGroup(browser, baseUrl, group, screens, outerRecord, sheets, p
         const issues = await runChecks(page, screen, insets);
         // The pixels of the pieces, on both square colours (android-matrix-pieces.mjs): only for the screens that declare `pieces`, and only at the app's own font and at zoom 1: a piece's colour does
         // not depend on the system font or the display zoom, and photographing 24 cells in every one of 720 combinations made the full profile take hours (a run of 2.5 h did not finish).
-        if (screen.pieces && combo.font.id === 'app' && combo.zoom === 1.0) issues.push(...(await checkPieceColours(page, PNG, { ...screen.pieces, assets: themeAssets(screen.pieceTheme) })));
+        if (screen.pieces && combo.font.id === 'app' && combo.zoom === 1.0) issues.push(...(await checkPieceColours(page, PNG, { ...screen.pieces, assets: themeAssets(screen.pieceTheme), evidence: pieceEvidence(screen.id, comboId(combo)) })));
         record({ screen: screen.id, combo: comboId(combo), issues });
         if (sheets) {
           const wanted = SHEET.find((s) => s.size.id === combo.size.id && s.scale === combo.scale && s.font.id === combo.font.id && s.zoom === combo.zoom && s.theme === combo.theme && s.insetProfile === combo.insetProfile);
