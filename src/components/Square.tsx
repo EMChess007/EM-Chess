@@ -63,6 +63,8 @@ interface SquareProps {
   lightColor: string;
   darkColor: string;
   pieceImages?: PieceImageMap;
+  /** Knightmate only: 'k' is the royal knight and 'm' the commoner, drawn with their badge (see Piece.tsx). */
+  knightmate?: boolean;
 }
 
 // Purely presentational — ChessBoard's own PanResponder (on the board container) handles every
@@ -91,6 +93,7 @@ function Square({
   lightColor,
   darkColor,
   pieceImages,
+  knightmate,
 }: SquareProps) {
   return (
     <View
@@ -113,7 +116,7 @@ function Square({
           {isLegalTarget && <View style={styles.legalDot} />}
           {isCapturer && <View pointerEvents="none" style={[styles.capturerOutline, { width: size - 1, height: size - 1, borderRadius: (size - 1) / 2 }]} />}
           {isCapturer && <View pointerEvents="none" style={[styles.capturerRing, { width: size - 5, height: size - 5, borderRadius: (size - 5) / 2 }]} />}
-          {data.piece && !hidePiece && <Piece piece={data.piece} images={pieceImages} size={size} />}
+          {data.piece && !hidePiece && <Piece piece={data.piece} images={pieceImages} size={size} knightmate={knightmate} />}
           {isPromoted && data.piece && !hidePiece && <Text style={[styles.promotedMark, { fontSize: Math.max(10, size * 0.3) }]}>~</Text>}
           {isDuck && (
             <View style={[styles.duck, { width: size * 0.78, height: size * 0.78, borderRadius: size * 0.39 }]}>

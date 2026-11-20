@@ -9,7 +9,7 @@ const SRC = join(__dirname, '../..');
 const hasBackend = existsSync(join(SRC, '../backend/src/game/tournaments.ts'));
 const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8').replace(/\r\n/g, '\n');
 
-const ALL: GameVariant[] = ['classic', 'chess960', 'kingOfTheHill', 'threeCheck', 'setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'racingKings', 'torpedo', 'crazyhouse'];
+const ALL: GameVariant[] = ['classic', 'chess960', 'kingOfTheHill', 'threeCheck', 'setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'racingKings', 'torpedo', 'knightmate', 'crazyhouse'];
 
 describe('Racing Kings wire flags', () => {
   it('maps Racing Kings to isRacingKings only, and no other variant sets it', () => {
@@ -37,8 +37,8 @@ describe('Racing Kings online wiring (source scan; the rendered screens need no 
     expect(online).toContain('const racingKings = match.isRacingKings === true;');
     expect(online.match(/\bracingKings,\n/g)?.length).toBe(2); // the opponent-move replay engine and the rejoin rebuild engine
     expect(online).toContain('racingKings={racingKings}');
-    expect(online).toContain('spellChess || horde || racingKings || torpedo || crazyhouse ? undefined : myColor');
-    expect(online).toContain('!horde && !racingKings && !torpedo && !crazyhouse');
+    expect(online).toContain('spellChess || horde || racingKings || torpedo || knightmate || crazyhouse ? undefined : myColor');
+    expect(online).toContain('!horde && !racingKings && !torpedo && !knightmate && !crazyhouse');
   });
 
   it('SpectatorGameScreen shows the label and passes the flag to the board', () => {

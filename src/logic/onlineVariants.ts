@@ -15,6 +15,7 @@ export interface OnlineVariantFlags {
   isHorde: boolean;
   isRacingKings: boolean;
   isTorpedo: boolean;
+  isKnightmate: boolean;
   isCrazyhouse: boolean;
 }
 
@@ -34,6 +35,7 @@ export function variantWireFlags(variant: GameVariant): OnlineVariantFlags {
     isHorde: variant === 'horde',
     isRacingKings: variant === 'racingKings',
     isTorpedo: variant === 'torpedo',
+    isKnightmate: variant === 'knightmate',
     isCrazyhouse: variant === 'crazyhouse',
   };
 }
@@ -63,6 +65,8 @@ export function variantTitlePrefix(variant: GameVariant): string {
       return 'Racing Kings · ';
     case 'torpedo':
       return 'Torpedo · ';
+    case 'knightmate':
+      return 'Knightmate · ';
     case 'horde':
       return 'Horde · ';
     case 'crazyhouse':

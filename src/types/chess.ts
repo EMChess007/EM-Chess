@@ -4,7 +4,8 @@ export type PieceColor = 'w' | 'b';
 // PieceColor once the game begins (see BotGameScreen).
 export type ColorChoice = PieceColor | 'random';
 
-export type PieceType = 'p' | 'n' | 'b' | 'r' | 'q' | 'k';
+/** 'm' (Commoner) only ever appears in Knightmate, where 'k' is the ROYAL KNIGHT and there is no 'n' -- see knightmate.ts. */
+export type PieceType = 'p' | 'n' | 'b' | 'r' | 'q' | 'k' | 'm';
 
 export interface Piece {
   type: PieceType;
@@ -36,7 +37,7 @@ export interface Move {
   to: Square;
   /** 'k' only ever appears in Giveaway (Antichess), where a pawn may promote to a king — see
    * ChessEngineOptions.giveaway. */
-  promotion?: 'n' | 'b' | 'r' | 'q' | 'k';
+  promotion?: 'n' | 'b' | 'r' | 'q' | 'k' | 'm';
   san: string;
   /** Fog of War only - the notation WITH its '+'/'#' as chess.js computed it on the engine's own board; `san` has them stripped
    * because no Fog of War player is ever told about a check (see fogOfWarNotation.ts). Never show this to a player in a live game. */

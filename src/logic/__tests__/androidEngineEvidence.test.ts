@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { engineDiagnosticLines, EVIDENCE_MAX_LINES, filterEngineLogcat } from '../../../scripts/android/lib/engineEvidence.mjs';
+import { diagnosticTail, engineDiagnosticLines, EVIDENCE_MAX_LINES, filterEngineLogcat } from '../../../scripts/android/lib/engineEvidence.mjs';
 
 /**
  * The evidence the Android harness prints when "the bot did not answer" (command #51; scripts/android/lib/engineEvidence.mjs). Pure, so the filter is proved here and not on the
@@ -59,8 +59,41 @@ describe('engineDiagnosticLines', () => {
   });
 });
 
+describe('diagnosticTail (command #58)', () => {
+  it('takes every timestamped entry of the Diagnostics log whatever its tag, once each, in order, and ignores the screen\'s other words', () => {
+    const words = [
+      'Diagnostic Log',
+      'Run text-fit check',
+      '2026-11-20T10:00:00.000Z [Boot] app started',
+      '2026-11-20T10:00:01.000Z [TextFit] android 34, pixel ratio 2.6\n2026-11-20T10:00:02.000Z [Render] Piece threw: boom',
+      '2026-11-20T10:00:00.000Z [Boot] app started',
+      'Piece gallery',
+    ];
+    expect(diagnosticTail(words)).toEqual([
+      '2026-11-20T10:00:00.000Z [Boot] app started',
+      '2026-11-20T10:00:01.000Z [TextFit] android 34, pixel ratio 2.6',
+      '2026-11-20T10:00:02.000Z [Render] Piece threw: boom',
+    ]);
+  });
+
+  it('keeps the LAST max entries and copes with no words', () => {
+    const words = Array.from({ length: 60 }, (_, i) => `2026-11-20T10:00:${String(i).padStart(2, '0')}.000Z [Boot] entry ${i}`);
+    const kept = diagnosticTail(words);
+    expect(kept).toHaveLength(40);
+    expect(kept[0]).toContain('entry 20');
+    expect(kept[39]).toContain('entry 59');
+    expect(diagnosticTail([])).toEqual([]);
+  });
+});
+
 describe('the harness wiring', () => {
   const e2e = readFileSync(join(__dirname, '../../../scripts/android/e2e.mjs'), 'utf8');
+
+  it('prints the Diagnostics-screen evidence when the text-fit probe or the Piece gallery check fails (command #58)', () => {
+    expect(e2e).toMatch(/record\('text-fit probe', \['the probe never wrote its lines to the diagnostic log'\]\);\s*return diagnosticsCheckEvidence\(dev, 'text-fit probe'\);/);
+    expect(e2e).toMatch(/if \(incomplete\) await diagnosticsCheckEvidence\(dev, 'piece gallery pixels'\);\s*record\('piece gallery pixels'/);
+    expect(e2e).toContain('diagnosticTail(');
+  });
 
   it('prints the evidence at the moment "the bot did not answer in 30 s" is noted', () => {
     expect(e2e).toMatch(/notes\.push\(`the bot did not answer in 30 s before ply \$\{ply \+ 1\}`\);\s*await botSilenceEvidence\(dev, `before ply \$\{ply \+ 1\}`\);\s*break;/);

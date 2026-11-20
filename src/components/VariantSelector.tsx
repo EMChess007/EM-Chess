@@ -18,6 +18,7 @@ export type GameVariant =
   | 'horde'
   | 'racingKings'
   | 'torpedo'
+  | 'knightmate'
   | 'crazyhouse';
 
 interface VariantSelectorProps<T extends GameVariant | FourSeatGame = GameVariant> {
@@ -49,6 +50,7 @@ const OPTIONS: { value: GameVariant; label: string }[] = [
   { value: 'horde', label: 'Horde' },
   { value: 'racingKings', label: 'Racing\nKings' },
   { value: 'torpedo', label: 'Torpedo' },
+  { value: 'knightmate', label: 'Knightmate' },
   { value: 'crazyhouse', label: 'Crazyhouse' },
 ];
 

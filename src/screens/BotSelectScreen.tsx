@@ -27,6 +27,7 @@ interface BotSelectScreenProps {
   horde?: boolean;
   racingKings?: boolean;
   torpedo?: boolean;
+  knightmate?: boolean;
   crazyhouse?: boolean;
 }
 
@@ -61,6 +62,7 @@ export default function BotSelectScreen({
   horde,
   racingKings,
   torpedo,
+  knightmate,
   crazyhouse,
 }: BotSelectScreenProps) {
   const colors = useAppColors();
@@ -90,6 +92,8 @@ export default function BotSelectScreen({
                         ? 'Racing Kings'
                         : torpedo
                           ? 'Torpedo'
+                          : knightmate
+                          ? 'Knightmate'
                           : crazyhouse
                           ? 'Crazyhouse'
                           : undefined;
@@ -113,7 +117,7 @@ export default function BotSelectScreen({
                         transparency, not as something to pick. */}
                     {/* Atomic bots never use a UCI engine (see chooseAtomicBotMove), so naming one here
                         would be wrong. */}
-                    <Text style={styles.cardEngine}>{engineLabel ?? (atomic ? 'Atomic search bot' : duckChess ? 'Duck Chess bot' : horde ? 'Horde bot' : racingKings ? 'Racing Kings bot' : torpedo ? 'Torpedo bot' : crazyhouse ? 'Crazyhouse bot' : getEngineName(getEngineIdForElo(bot.elo)))}</Text>
+                    <Text style={styles.cardEngine}>{engineLabel ?? (atomic ? 'Atomic search bot' : duckChess ? 'Duck Chess bot' : horde ? 'Horde bot' : racingKings ? 'Racing Kings bot' : torpedo ? 'Torpedo bot' : knightmate ? 'Knightmate bot' : crazyhouse ? 'Crazyhouse bot' : getEngineName(getEngineIdForElo(bot.elo)))}</Text>
                   </View>
                 </Pressable>
               ))}
@@ -121,7 +125,7 @@ export default function BotSelectScreen({
           </View>
         ))}
 
-        {customEngines.length > 0 && !engineLabel && !horde && !racingKings && !torpedo && !crazyhouse && (
+        {customEngines.length > 0 && !engineLabel && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>My Engines</Text>
             <View style={styles.cardList}>

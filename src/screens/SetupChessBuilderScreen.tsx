@@ -19,9 +19,10 @@ import {
   pieceCost,
   validateSetupArmy,
   type SetupChessPiece,
+  type SetupChessPieceType,
 } from '../logic/setupChess';
 import { useActiveBoardTheme, useActivePieceTheme } from '../logic/themeHooks';
-import type { BoardSquare, PieceColor, PieceType } from '../types/chess';
+import type { BoardSquare, PieceColor } from '../types/chess';
 
 interface SetupChessBuilderScreenProps {
   /** Which color's army this screen is building — also determines board orientation (this
@@ -37,7 +38,7 @@ interface SetupChessBuilderScreenProps {
   backLabel?: string;
 }
 
-type PaletteSelection = PieceType | 'eraser' | null;
+type PaletteSelection = SetupChessPieceType | 'eraser' | null;
 
 export default function SetupChessBuilderScreen({
   color,
@@ -60,7 +61,7 @@ export default function SetupChessBuilderScreen({
   const [error, setError] = useState<string | null>(null);
 
   const pieces = useMemo<SetupChessPiece[]>(
-    () => board.flat().filter((sq): sq is BoardSquare & { piece: NonNullable<BoardSquare['piece']> } => sq.piece !== null).map((sq) => ({ square: sq.square, type: sq.piece.type })),
+    () => board.flat().filter((sq): sq is BoardSquare & { piece: NonNullable<BoardSquare['piece']> } => sq.piece !== null).map((sq) => ({ square: sq.square, type: sq.piece.type as SetupChessPieceType })),
     [board]
   );
   const cost = computeArmyCost(pieces);
@@ -89,7 +90,7 @@ export default function SetupChessBuilderScreen({
       setError(type === 'p' ? `Pawns must go on rank ${pawnRankFor(color)}.` : `That piece must go on rank ${backRankFor(color)}.`);
       return;
     }
-    const existingCost = existing ? pieceCost(existing.type) : 0;
+    const existingCost = existing ? pieceCost(existing.type as SetupChessPieceType) : 0;
     const nextCost = cost - existingCost + pieceCost(type);
     if (nextCost > SETUP_CHESS_BUDGET) {
       setError(`Not enough budget left (this would cost ${nextCost}/${SETUP_CHESS_BUDGET}).`);
@@ -118,7 +119,7 @@ export default function SetupChessBuilderScreen({
     onFinalize(pieces);
   };
 
-  const renderPaletteButton = (type: PieceType) => {
+  const renderPaletteButton = (type: SetupChessPieceType) => {
     const selected = paletteSelection === type;
     const budgetCost = pieceCost(type);
     return (

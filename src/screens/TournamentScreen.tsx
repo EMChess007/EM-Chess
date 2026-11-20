@@ -69,6 +69,7 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
     const isThreeCheck = variant === 'threeCheck';
     const isRacingKings = variant === 'racingKings';
     const isTorpedo = variant === 'torpedo';
+    const isKnightmate = variant === 'knightmate';
     const socket = connectSocket(authToken);
     emitWithin<Ack<{ code: string; tournamentId: string }>>(
       socket,
@@ -82,6 +83,7 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
         isThreeCheck,
         isRacingKings,
         isTorpedo,
+        isKnightmate,
       },
       (result) => {
         if (result.unreachable) {
@@ -103,6 +105,7 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
           isThreeCheck,
           isRacingKings,
           isTorpedo,
+          isKnightmate,
           status: 'lobby',
           creatorUserId: authUser.id,
           participants: [{ userId: authUser.id, username: authUser.username }],
@@ -236,7 +239,7 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
         <View style={styles.lobbyContainer}>
           <Text style={styles.lobbyName}>{lobby.name}</Text>
           <Text style={styles.lobbySubtitle}>
-            {lobby.isKingOfTheHill ? 'King of the Hill' : lobby.isThreeCheck ? 'Three-Check' : lobby.isRacingKings ? 'Racing Kings' : lobby.isTorpedo ? 'Torpedo' : lobby.isChess960 ? 'Chess960' : 'Classic'}
+            {lobby.isKingOfTheHill ? 'King of the Hill' : lobby.isThreeCheck ? 'Three-Check' : lobby.isRacingKings ? 'Racing Kings' : lobby.isTorpedo ? 'Torpedo' : lobby.isKnightmate ? 'Knightmate' : lobby.isChess960 ? 'Chess960' : 'Classic'}
           </Text>
           <Pressable style={styles.codeBox} onPress={handleShareCode}>
             <Text style={styles.codeText}>{lobby.code}</Text>

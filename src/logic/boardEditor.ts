@@ -10,11 +10,12 @@ export interface CastlingRights {
   q: boolean;
 }
 
-const PIECE_WORDS: Record<PieceType, string> = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' };
+/** The editor only ever holds the six FIDE pieces (boardFromFen reads pnbrqk): no Commoner ('m') here. */
+const PIECE_WORDS: Record<Exclude<PieceType, 'm'>, string> = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' };
 
 /** The accessibility label of an editor square: "e1, white king" / "e4, empty". The Android e2e finds the 64 squares by it (it never depends on a testID being exposed). */
 export const editorSquareLabel = (square: BoardSquare): string =>
-  `${square.square}, ${square.piece ? `${square.piece.color === 'w' ? 'white' : 'black'} ${PIECE_WORDS[square.piece.type]}` : 'empty'}`;
+  `${square.square}, ${square.piece ? `${square.piece.color === 'w' ? 'white' : 'black'} ${PIECE_WORDS[square.piece.type as Exclude<PieceType, 'm'>]}` : 'empty'}`;
 
 export function emptyBoard(): BoardSquare[][] {
   return Array.from({ length: 8 }, (_, row) =>

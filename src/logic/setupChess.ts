@@ -4,7 +4,7 @@ import type { PieceColor, PieceType } from '../types/chess';
  * — the budget every Setup Chess army must fit within. The king is mandatory and free. */
 export const SETUP_CHESS_BUDGET = 39;
 
-export const SETUP_CHESS_PIECE_COST: Record<Exclude<PieceType, 'k'>, number> = {
+export const SETUP_CHESS_PIECE_COST: Record<Exclude<SetupChessPieceType, 'k'>, number> = {
   p: 1,
   n: 3,
   b: 3,
@@ -14,14 +14,17 @@ export const SETUP_CHESS_PIECE_COST: Record<Exclude<PieceType, 'k'>, number> = {
 
 /** King first (free, mandatory), then descending value — same palette order BoardSetupScreen
  * already uses. */
-export const SETUP_CHESS_PALETTE_ORDER: PieceType[] = ['k', 'q', 'r', 'b', 'n', 'p'];
+export const SETUP_CHESS_PALETTE_ORDER: SetupChessPieceType[] = ['k', 'q', 'r', 'b', 'n', 'p'];
+
+/** Setup Chess armies hold the six FIDE pieces only: 'm' (Knightmate's Commoner) can never be in one. */
+export type SetupChessPieceType = Exclude<PieceType, 'm'>;
 
 export interface SetupChessPiece {
   square: string;
-  type: PieceType;
+  type: SetupChessPieceType;
 }
 
-export function pieceCost(type: PieceType): number {
+export function pieceCost(type: SetupChessPieceType): number {
   return type === 'k' ? 0 : SETUP_CHESS_PIECE_COST[type];
 }
 
@@ -120,7 +123,7 @@ export function classicalSetupArmy(color: PieceColor): SetupChessPiece[] {
   const back = backRankFor(color);
   const pawnRank = pawnRankFor(color);
   const files = 'abcdefgh';
-  const backRankTypes: PieceType[] = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
+  const backRankTypes: SetupChessPieceType[] = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
   const pieces: SetupChessPiece[] = backRankTypes.map((type, i) => ({ square: `${files[i]}${back}`, type }));
   for (const file of files) pieces.push({ square: `${file}${pawnRank}`, type: 'p' });
   return pieces;

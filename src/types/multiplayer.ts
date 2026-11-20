@@ -28,7 +28,8 @@ export type GameOverReason =
   | 'spellChess'
   | 'horde'
   | 'racingKings';
-// Torpedo has no result reason of its own: it ends like standard chess (checkmate, stalemate, draw, repetition ...).
+// Torpedo and Knightmate have no result reason of their own: they end like standard chess (checkmate, stalemate, draw, repetition ...). A Knightmate flag fall against
+// an opponent holding only a royal knight arrives as { reason: 'timeout', winner: null }, a draw.
 
 export interface JoinQueuePayload {
   timeControl: OnlineTimeControl;
@@ -45,6 +46,8 @@ export interface JoinQueuePayload {
   isRacingKings?: boolean;
   /** Torpedo -- see torpedo.ts. Mutually exclusive with every other variant. */
   isTorpedo?: boolean;
+  /** Knightmate -- see knightmate.ts. Mutually exclusive with every other variant. */
+  isKnightmate?: boolean;
   /** Crazyhouse — see crazyhouse.ts. Mutually exclusive with every other variant. */
   isCrazyhouse?: boolean;
 }
@@ -53,8 +56,8 @@ export interface MakeMovePayload {
   roomId: string;
   from: string;
   to: string;
-  /** 'k' is only ever legal in Giveaway (a pawn may promote to a king there). */
-  promotion?: 'n' | 'b' | 'r' | 'q' | 'k';
+  /** 'k' is only ever legal in Giveaway (a pawn may promote to a king there); 'm' (the Commoner) only in Knightmate, where 'n' is never legal. */
+  promotion?: 'n' | 'b' | 'r' | 'q' | 'k' | 'm';
   /** Duck Chess only — where the duck goes as the second half of the turn; required with every move that does
    * not capture a king (the server refuses the whole turn otherwise). */
   duckTo?: string;
@@ -110,6 +113,8 @@ export interface MatchFoundPayload {
   isRacingKings?: boolean;
   /** Torpedo -- see torpedo.ts: a pawn may step one or two squares from any rank. */
   isTorpedo?: boolean;
+  /** Knightmate -- see knightmate.ts: the royal piece is a knight ('k'), the ordinary king a Commoner ('m'); a pawn promotes to q / r / b / m, never n. */
+  isKnightmate?: boolean;
   /** Crazyhouse — see crazyhouse.ts: reserves start empty, so match_found needs no state. */
   isCrazyhouse: boolean;
   /** From Position (command #53): a direct challenge that started from the challenger's own FEN (`fen` below IS that start position). Ordinary chess, unrated. Absent otherwise. */
@@ -130,7 +135,7 @@ export interface OpponentMovePayload {
    * arrive, just not what specifically happened. Always present outside Fog of War. */
   from?: string;
   to?: string;
-  promotion?: 'n' | 'b' | 'r' | 'q' | 'k';
+  promotion?: 'n' | 'b' | 'r' | 'q' | 'k' | 'm';
   san?: string;
   /** Duck Chess only — the square the duck was just placed on (absent after a king capture) and where it now
    * stands. */
@@ -192,6 +197,8 @@ export interface RejoinStatePayload {
   isRacingKings?: boolean;
   /** Torpedo -- see torpedo.ts: a pawn may step one or two squares from any rank. */
   isTorpedo?: boolean;
+  /** Knightmate -- see knightmate.ts: the royal piece is a knight ('k'), the ordinary king a Commoner ('m'); a pawn promotes to q / r / b / m, never n. */
+  isKnightmate?: boolean;
   /** Crazyhouse — see crazyhouse.ts: reserves start empty, so match_found needs no state. */
   isCrazyhouse: boolean;
   /** Spell Chess only — charges/cooldowns/pending effects right now. */
@@ -251,6 +258,7 @@ export interface CreateChallengePayload {
   isHorde?: boolean;
   isRacingKings?: boolean;
   isTorpedo?: boolean;
+  isKnightmate?: boolean;
   /** Crazyhouse — see crazyhouse.ts. Mutually exclusive with every other variant. */
   isCrazyhouse?: boolean;
   timeControlLabel?: string;
@@ -298,6 +306,7 @@ export interface CreateTournamentPayload {
   isThreeCheck?: boolean;
   isRacingKings?: boolean;
   isTorpedo?: boolean;
+  isKnightmate?: boolean;
 }
 
 export interface JoinTournamentPayload {
@@ -323,6 +332,7 @@ export interface TournamentLobbyState {
   isThreeCheck: boolean;
   isRacingKings: boolean;
   isTorpedo?: boolean;
+  isKnightmate?: boolean;
   status: TournamentStatus;
   creatorUserId: string;
   participants: TournamentParticipantSummary[];
@@ -344,6 +354,7 @@ export interface TournamentNextMatch {
   isThreeCheck: boolean;
   isRacingKings: boolean;
   isTorpedo?: boolean;
+  isKnightmate?: boolean;
   roomId: string | null;
   playerToken: string | null;
   color: PieceColor | null;
@@ -371,6 +382,7 @@ export interface TournamentMatchReadyPayload {
   isThreeCheck: boolean;
   isRacingKings: boolean;
   isTorpedo?: boolean;
+  isKnightmate?: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;

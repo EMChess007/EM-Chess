@@ -12,6 +12,7 @@ import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import RacingKingsRulesSheet from '../components/RacingKingsRulesSheet';
 import TorpedoRulesSheet from '../components/TorpedoRulesSheet';
+import KnightmateRulesSheet from '../components/KnightmateRulesSheet';
 import GameScreenBody from '../components/GameScreenBody';
 import { initialCrazyhouseState, type CrazyhouseState } from '../logic/crazyhouse';
 import { plyStateAtView } from '../logic/perPlyState';
@@ -118,6 +119,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // Torpedo -- server-owned too (torpedo.ts): ordinary start position, a pawn may step one or two squares from any rank. Every engine
   // this screen builds for it gets { torpedo: true } so the double steps (and en passant after them) are offered and replayed.
   const torpedo = match.isTorpedo === true;
+  const knightmate = match.isKnightmate === true;
   // Crazyhouse — server-owned too (crazyhouse.ts). A turn is ONE action, an ordinary move or a drop from the reserve; a drop
   // rides in make_move as `drop` (from === to === the square). The reserves/promoted squares are not in the FEN: the server
   // echoes the whole CrazyhouseState back (like spellState), and it is kept next to the FEN and per move for review.
@@ -240,10 +242,10 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // below. See LocalGameScreen's identical effect for why a miss here doesn't clear the name.
   useEffect(() => {
     if (fromPosition) return;
-    if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse) return;
+    if (match.isChess960 || match.isSetupChess || match.isFogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse) return;
     const openingMatch = lookupOpening(fen);
     if (openingMatch) setOpeningName(openingMatch.name);
-  }, [fen, fromPosition, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, torpedo, crazyhouse]);
+  }, [fen, fromPosition, match.isChess960, match.isSetupChess, match.isFogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, torpedo, knightmate, crazyhouse]);
 
   // Wire up every server -> client event for this game once, for the lifetime of the screen.
   useEffect(() => {
@@ -306,6 +308,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         horde,
         racingKings,
         torpedo,
+        knightmate,
         crazyhouse,
         crazyhouseState: crazyhouseBeforeOpponentMove,
         frozenSquares: spellFrozenForOpponent,
@@ -390,9 +393,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       const result = payload.winner === null ? 0.5 : payload.winner === myColor ? 1 : 0;
       const ratingCategory = toRatingCategory(categoryForInitialSeconds(match.timeControl.initialSeconds) ?? '');
       // Giveaway and Atomic are different games — they must not move the player's chess rating.
-      if (ratingCategory && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
+      if (ratingCategory && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse) recordRatedGame(ratingCategory, getRatings()[ratingCategory], result, authToken);
 
-      if (result === 1 && wasMaterialDownRef.current && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse) unlockAchievement('comeback_win');
+      if (result === 1 && wasMaterialDownRef.current && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse) unlockAchievement('comeback_win');
     };
 
     const handleDrawOffered = (_payload: DrawOfferedPayload) => {
@@ -485,6 +488,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
               horde,
               racingKings,
               torpedo,
+              knightmate,
               crazyhouse,
             });
             const rebuilt: MoveRecord[] = [];
@@ -964,6 +968,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                                 ? 'Racing Kings'
                                 : torpedo
                                   ? 'Torpedo'
+                                  : knightmate
+                                    ? 'Knightmate'
                               : crazyhouse
                                 ? 'Crazyhouse'
                                 : fromPosition
@@ -1002,11 +1008,12 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                 items={[
                   { label: 'Request Draw', onPress: handleRequestDraw, disabled: !!gameOver || drawOfferPending },
                   { label: 'Resign', onPress: handleResign, destructive: true, disabled: !!gameOver },
-                  ...(racingKings || torpedo ? [{ label: 'Rules', onPress: () => setRulesOpen(true) }] : []),
+                  ...(racingKings || torpedo || knightmate ? [{ label: 'Rules', onPress: () => setRulesOpen(true) }] : []),
                 ]}
               />
               {racingKings && <RacingKingsRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
               {torpedo && <TorpedoRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
+              {knightmate && <KnightmateRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
             </View>
 
             <View style={styles.footer}>
@@ -1072,7 +1079,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           <CapturedPieces pieces={opponentCaptured} color={myColor} advantage={opponentAdvantage} />
         </View>
 
-        {!match.isChess960 && !match.isSetupChess && !fromPosition && !match.isFogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!match.isChess960 && !match.isSetupChess && !fromPosition && !match.isFogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={boardKey}
@@ -1096,6 +1103,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           horde={horde}
           racingKings={racingKings}
           torpedo={torpedo}
+          knightmate={knightmate}
           crazyhouse={crazyhouse}
           crazyhouseState={displayCrazyhouse}
           spellState={displaySpellState}
@@ -1103,8 +1111,8 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
           // No premoves in Giveaway, Atomic or Spell Chess: mandatory capture / explosions / a possible cast
           // change which moves are legal after the opponent's reply, so a queued move is almost never still
           // valid when its turn comes.
-          premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse ? undefined : myColor}
-          onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse ? undefined : handleQueuePremove}
+          premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse ? undefined : myColor}
+          onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse ? undefined : handleQueuePremove}
         />
 
         <View style={styles.playerRow}>
@@ -1157,6 +1165,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         horde={horde}
         racingKings={racingKings}
         torpedo={torpedo}
+        knightmate={knightmate}
         crazyhouse={crazyhouse}
         history={moveList}
         players={[{ label: 'You', color: myColor }]}
