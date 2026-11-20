@@ -266,11 +266,14 @@ export function judgeImageCell(marker, png, assets, rect, lightMax = Infinity) {
  * colour judgement to an image theme (judgeImageCell); `bothSquares`: every kind seen must be seen on two different square colours; `allKinds`: the twelve
  * (bw) kinds must all be on screen. Returns a list of {kind: 'piece-colour', el, detail}. `PNG` is pngjs's.
  */
-export async function checkPieceColours(page, PNG, { mode, bothSquares = false, allKinds = false, liveBots = false, assets = null }) {
+export async function checkPieceColours(page, PNG, { mode, bothSquares = false, allKinds = false, liveBots = false, assets = null, evidence = null }) {
   const attribute = mode === 'seat' ? 'data-seat-piece' : 'data-piece';
   const issues = [];
   // The "rotate the device" layer covers the boards (the window is below the minimum): the person sees no piece, so there is none to judge (the rectangle checks treat it the same way).
   if ((await page.locator('[data-testid="rotate-overlay"]').count()) > 0) return issues;
+  // Evidence (command #60): when a photograph fails, `evidence(record)` receives the photograph, the page, and the DOM of that cell (pieceCellDom), including the ms since the last change of a
+  // square label on that board, which a MutationObserver installed here records.
+  if (evidence) await page.evaluate(INSTALL_CHANGE_CLOCK).catch(() => {});
   const found = await page.$$eval(
     `[${attribute}]`,
     (els, attr) =>
@@ -361,6 +364,13 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
     // On a screen where bots play, a photograph can catch the cell between two renders (an empty cell, never a wrong colour): there "no piece found" is inconclusive. Every screen without bots
     // (the all-pieces fixture, the four-human game) still treats an empty cell as a failure.
     if (liveBots && problem !== null && problem.includes('no piece found')) problem = null;
+    if (problem !== null && evidence) {
+      const dom = await cell.evaluate(PIECE_CELL_DOM, { attr: attribute, handleEl: null }).catch((e) => ({ error: String(e) }));
+      const handleState = await handle.evaluate((el, attr) => ({ isConnected: el.isConnected, marker: el.getAttribute(attr), inThisCell: null }), attribute).catch(() => null);
+      const cellRead = analyseCell(png);
+      const measured = { square: cellRead.background, piece: cellRead.piece, fraction: Number(cellRead.fraction.toFixed(3)), bodyLuminance: bodyLuminance(png), lightShare: Number(lightShare(png).toFixed(3)) };
+      await evidence({ marker: f.marker, board: f.board, parity: f.parity, problem, expected: { ink: expectedInk(f.marker) }, measured, box, cellPng: PNG.sync.write(png), page: await page.screenshot().catch(() => null), dom, handleState });
+    }
     if (problem !== null) issues.push({ kind: 'piece-colour', el: `${f.marker} on board ${f.board}`, detail: `${problem} [cell ${png.width}x${png.height}, at ${Math.round(box.x)},${Math.round(box.y)}]` });
     const bg = analyseCell(png).background.join(',');
     if (!photographed.has(f.marker)) photographed.set(f.marker, []);
@@ -374,4 +384,73 @@ export async function checkPieceColours(page, PNG, { mode, bothSquares = false, 
     }
   }
   return issues;
+}
+
+/** The evidence of one failing photograph as at most 40 short lines for the job log (command #60): readable without downloading the artifact. */
+export const EVIDENCE_MAX_LINES = 40;
+export function evidenceSummary(screenId, combo, record) {
+  const { dom = {}, handleState, expected, measured, box } = record;
+  const square = /^([a-n]\d+)/.exec(dom.label || '')?.[1] ?? '?';
+  const piece = (p) => `${p.marker ?? '-'} connected=${p.isConnected} opacity=${p.opacity} transform=${p.transform} rect=${(p.rect || []).join(',')}`;
+  const body = measured && typeof measured.bodyLuminance === 'number' ? Math.round(measured.bodyLuminance) : 'null';
+  const lines = [
+    `${screenId} ${combo}: ${record.marker} on board ${record.board}, square ${square} (parity ${record.parity})`,
+    `problem: ${record.problem}`,
+    `expected ink ${JSON.stringify(expected?.ink ?? null)}; measured square ${JSON.stringify(measured?.square ?? null)} piece ${JSON.stringify(measured?.piece ?? null)} fraction ${measured?.fraction} body ${body} light ${measured?.lightShare}`,
+    `photographed handle: ${handleState ? `marker=${handleState.marker} isConnected=${handleState.isConnected}` : 'unreadable'}; clip ${box ? [box.x, box.y, box.width, box.height].map(Math.round).join(',') : '?'}`,
+    `cell label: ${(dom.label || '').slice(0, 100)}; cell connected=${dom.connected}; ms since last change on board ${record.board}: ${dom.msSinceBoardChange}`,
+    ...(dom.error ? [`dom read failed: ${String(dom.error).slice(0, 120)}`] : []),
+    ...(dom.pieces || []).slice(0, 4).map((p, i) => `piece[${i}] ${piece(p)}`),
+    ...(dom.stackAtCentre || []).slice(0, 6).map((s, i) => `over centre[${i}] ${s.tag}${s.testid ? `#${s.testid}` : ''} inside=${s.insideCell} marker=${s.marker ?? '-'} opacity=${s.opacity} bg=${s.bg} label=${(s.label || '').slice(0, 40)}`),
+    ...(dom.recentChanges || []).slice(-8).map((c) => `change ${c.ago} ms ago board ${c.board} ${c.attr}: ${(c.label || '').slice(0, 50)}`),
+  ];
+  return lines.slice(0, EVIDENCE_MAX_LINES);
+}
+
+/** Runs in the page: records, per board, the time of the last change of any square's label (a move, a drop, a capture, a highlight) in `window.__emBoardChange` (command #60 evidence). */
+function INSTALL_CHANGE_CLOCK() {
+  if (window.__emBoardChange) return;
+  window.__emBoardChange = { A: 0, B: 0, log: [] };
+  new MutationObserver((records) => {
+    const now = performance.now();
+    for (const r of records) {
+      const el = r.target;
+      if (!(el instanceof Element)) continue;
+      let node = el;
+      while (node && !/^[a-n]\d+(,|$)/.test(node.getAttribute?.('aria-label') || '')) node = node.parentElement;
+      const label = node ? node.getAttribute('aria-label') : '';
+      const board = label.includes('board B') ? 'B' : 'A';
+      window.__emBoardChange[board] = now;
+      window.__emBoardChange.log.push({ t: Math.round(now), board, label: label.slice(0, 60), attr: r.attributeName || r.type });
+      if (window.__emBoardChange.log.length > 80) window.__emBoardChange.log.shift();
+    }
+  }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-label', 'data-piece', 'style'] });
+}
+
+/** Runs in the page on a cell element: what is drawn in it (command #60 evidence). */
+function PIECE_CELL_DOM(cell, { attr }) {
+  const label = cell.getAttribute('aria-label') || '';
+  const board = label.includes('board B') ? 'B' : 'A';
+  const clock = window.__emBoardChange;
+  const describe = (el) => {
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    return { tag: el.tagName.toLowerCase(), testid: el.getAttribute('data-testid'), marker: el.getAttribute(attr), isConnected: el.isConnected, opacity: cs.opacity, transform: cs.transform, bg: cs.backgroundColor, rect: [r.x, r.y, r.width, r.height].map(Math.round) };
+  };
+  const all = [cell, ...cell.querySelectorAll('*')].filter((el) => el.tagName !== 'path' && el.tagName !== 'g');
+  // anything of the page that is not inside the cell but overlaps it (an overlay, a drag ghost, a modal)
+  const cr = cell.getBoundingClientRect();
+  const cx = cr.x + cr.width / 2;
+  const cy = cr.y + cr.height / 2;
+  const stack = document.elementsFromPoint(cx, cy).slice(0, 8).map((el) => ({ ...describe(el), insideCell: cell.contains(el), label: (el.getAttribute('aria-label') || '').slice(0, 60) }));
+  return {
+    label,
+    connected: cell.isConnected,
+    pieces: [...cell.querySelectorAll(`[${attr}]`)].map(describe),
+    nodes: all.slice(0, 30).map(describe),
+    stackAtCentre: stack,
+    msSinceBoardChange: clock ? Math.round(performance.now() - clock[board]) : null,
+    recentChanges: clock ? clock.log.slice(-12).map((e) => ({ ...e, ago: Math.round(performance.now() - e.t) })) : null,
+    html: cell.outerHTML.replace(/<path[^>]*>/g, '<path/>').slice(0, 3000),
+  };
 }
