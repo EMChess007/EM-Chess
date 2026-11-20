@@ -89,14 +89,14 @@ import type { ActiveGameSummary, MatchFoundPayload, SetupChessPairedPayload } fr
 import type { TimeControl } from './src/types/timeControl';
 
 type TimeControlFlowMode =
-  | { kind: 'local'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; torpedo?: boolean; crazyhouse: boolean }
-  | { kind: 'bot'; bot: BotPersonality; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; torpedo?: boolean; crazyhouse: boolean }
+  | { kind: 'local'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; torpedo?: boolean; knightmate?: boolean; crazyhouse: boolean }
+  | { kind: 'bot'; bot: BotPersonality; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; torpedo?: boolean; knightmate?: boolean; crazyhouse: boolean }
   | { kind: 'engineVsEngine'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean };
 
 type Screen =
   | { name: 'main' }
   | { name: 'playModeSelect' }
-  | { name: 'botSelect'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; torpedo?: boolean; crazyhouse: boolean }
+  | { name: 'botSelect'; chess960: boolean; kingOfTheHill: boolean; threeCheck: boolean; setupChess: boolean; fogOfWar: boolean; giveaway: boolean; atomic: boolean; duckChess: boolean; spellChess: boolean; horde: boolean; racingKings?: boolean; torpedo?: boolean; knightmate?: boolean; crazyhouse: boolean }
   | { name: 'timeControlSelect'; mode: TimeControlFlowMode }
   | {
       name: 'game';
@@ -113,6 +113,7 @@ type Screen =
       horde: boolean;
       racingKings?: boolean;
       torpedo?: boolean;
+      knightmate?: boolean;
       crazyhouse: boolean;
       initialFen?: string;
       fromPosition?: boolean;
@@ -133,6 +134,7 @@ type Screen =
       horde: boolean;
       racingKings?: boolean;
       torpedo?: boolean;
+      knightmate?: boolean;
       crazyhouse: boolean;
       initialFen?: string;
       fromPosition?: boolean;
@@ -492,6 +494,9 @@ export default function App() {
         onBotRacingKings={() =>
           setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false, horde: false, racingKings: true, crazyhouse: false })
         }
+        onBotKnightmate={() =>
+          setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false, horde: false, knightmate: true, crazyhouse: false })
+        }
         onBotTorpedo={() =>
           setScreen({ name: 'botSelect', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false, horde: false, torpedo: true, crazyhouse: false })
         }
@@ -571,6 +576,12 @@ export default function App() {
           setScreen({
             name: 'timeControlSelect',
             mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false, horde: false, racingKings: true, crazyhouse: false },
+          })
+        }
+        onLocalKnightmate={() =>
+          setScreen({
+            name: 'timeControlSelect',
+            mode: { kind: 'local', chess960: false, kingOfTheHill: false, threeCheck: false, setupChess: false, fogOfWar: false, giveaway: false, atomic: false, duckChess: false, spellChess: false, horde: false, knightmate: true, crazyhouse: false },
           })
         }
         onLocalTorpedo={() =>
@@ -765,7 +776,7 @@ export default function App() {
       />
     );
   } else if (screen.name === 'botSelect') {
-    const { chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, torpedo, crazyhouse } = screen;
+    const { chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, torpedo, knightmate, crazyhouse } = screen;
     content = (
       <BotSelectScreen
         chess960={chess960}
@@ -780,11 +791,12 @@ export default function App() {
         horde={horde}
         racingKings={racingKings}
         torpedo={torpedo}
+        knightmate={knightmate}
         crazyhouse={crazyhouse}
         onSelect={(bot) =>
           setScreen({
             name: 'timeControlSelect',
-            mode: { kind: 'bot', bot, chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, torpedo, crazyhouse },
+            mode: { kind: 'bot', bot, chess960, kingOfTheHill, threeCheck, setupChess, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, torpedo, knightmate, crazyhouse },
           })
         }
         onBack={() => setScreen({ name: 'playModeSelect' })}
@@ -816,9 +828,11 @@ export default function App() {
                           ? 'Racing Kings'
                           : mode.kind !== 'engineVsEngine' && mode.torpedo
                             ? 'Torpedo'
-                            : mode.kind !== 'engineVsEngine' && mode.crazyhouse
-                              ? 'Crazyhouse'
-                              : undefined;
+                            : mode.kind !== 'engineVsEngine' && mode.knightmate
+                              ? 'Knightmate'
+                              : mode.kind !== 'engineVsEngine' && mode.crazyhouse
+                                ? 'Crazyhouse'
+                                : undefined;
     const subtitle =
       mode.kind === 'bot'
         ? variantLabel
@@ -863,6 +877,7 @@ export default function App() {
                   horde: mode.horde,
                   racingKings: mode.racingKings,
                   torpedo: mode.torpedo,
+                  knightmate: mode.knightmate,
                   crazyhouse: mode.crazyhouse,
                 }
               : mode.kind === 'bot'
@@ -882,6 +897,7 @@ export default function App() {
                   horde: mode.horde,
                   racingKings: mode.racingKings,
                   torpedo: mode.torpedo,
+                  knightmate: mode.knightmate,
                   crazyhouse: mode.crazyhouse,
                     colorChoice: colorChoice ?? 'random',
                   }
@@ -915,6 +931,7 @@ export default function App() {
                   horde: mode.horde,
                   racingKings: mode.racingKings,
                   torpedo: mode.torpedo,
+                  knightmate: mode.knightmate,
                   crazyhouse: mode.crazyhouse,
                 }
               : { name: 'playModeSelect' }
@@ -1273,6 +1290,7 @@ export default function App() {
         horde={screen.horde}
         racingKings={screen.racingKings}
         torpedo={screen.torpedo}
+        knightmate={screen.knightmate}
         crazyhouse={screen.crazyhouse}
         initialFen={screen.initialFen}
         fromPosition={screen.fromPosition}
@@ -1342,6 +1360,7 @@ export default function App() {
         horde={screen.horde}
         racingKings={screen.racingKings}
         torpedo={screen.torpedo}
+        knightmate={screen.knightmate}
         crazyhouse={screen.crazyhouse}
         initialFen={screen.initialFen}
         fromPosition={screen.fromPosition}

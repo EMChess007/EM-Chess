@@ -45,6 +45,10 @@ interface BuildGamePayloadArgs {
   racingKings?: boolean;
   /** Tags the saved PGN [Variant "Torpedo"] (replay and analysis assume ordinary pawns, which cannot play a double step from the 3rd-6th rank). */
   torpedo?: boolean;
+  /** Tags the saved PGN [Variant "Knightmate"] (replay and analysis assume a king, which Knightmate does not have). */
+  knightmate?: boolean;
+  /** Knightmate only: the flag fell against an opponent with only a royal knight, a draw (knightmateGame.ts); `timeoutWinner` is null then. */
+  timeoutDraw?: boolean;
   /** Tags the saved PGN [Variant "Crazyhouse"]. There is no Crazyhouse winner argument: checkmate/stalemate/timeout come
    * through `chessStatus` (ChessEngine.getStatus is drop-aware), so getGameOutcome needs no new slot. */
   crazyhouse?: boolean;
@@ -80,7 +84,8 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
     args.spellChessWinner ?? null,
     args.hordeWinner ?? null,
     args.repetitionDraw ?? false,
-    args.racingKingsOutcome ?? null
+    args.racingKingsOutcome ?? null,
+    args.timeoutDraw ?? false
   );
   if (!outcome.over || args.history.length === 0) return null;
 
@@ -92,7 +97,7 @@ export function buildGamePayload(args: BuildGamePayloadArgs): GamePayload | null
       args.initialFen,
       args.history,
       outcome.result,
-      args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : args.duckChess ? 'Duck' : args.spellChess ? 'Spell Chess' : args.horde ? 'Horde' : args.racingKings ? 'Racing Kings' : args.torpedo ? 'Torpedo' : args.crazyhouse ? 'Crazyhouse' : undefined
+      args.giveaway ? 'Antichess' : args.atomic ? 'Atomic' : args.duckChess ? 'Duck' : args.spellChess ? 'Spell Chess' : args.horde ? 'Horde' : args.racingKings ? 'Racing Kings' : args.torpedo ? 'Torpedo' : args.knightmate ? 'Knightmate' : args.crazyhouse ? 'Crazyhouse' : undefined
     ),
     timeControl: args.timeControl.label,
     isChess960: args.chess960,

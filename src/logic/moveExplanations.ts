@@ -43,6 +43,7 @@ const PIECE_ACCUSATIVE: Record<PieceType, string> = {
   r: 'your rook',
   q: 'your queen',
   k: 'your king',
+  m: 'your commoner',
 };
 
 const PIECE_NOMINATIVE: Record<PieceType, string> = {
@@ -52,6 +53,7 @@ const PIECE_NOMINATIVE: Record<PieceType, string> = {
   r: 'the rook',
   q: 'the queen',
   k: 'the king',
+  m: 'the commoner',
 };
 
 // --- Deterministic template selection --------------------------------------

@@ -48,7 +48,7 @@ const QUEEN = 5;
 const KING = 6;
 
 const TYPE_BY_CODE: PieceType[] = ['p', 'n', 'b', 'r', 'q', 'k'];
-const CODE_BY_TYPE: Record<PieceType, number> = { p: PAWN, n: KNIGHT, b: BISHOP, r: ROOK, q: QUEEN, k: KING };
+const CODE_BY_TYPE: Record<PieceType, number> = { p: PAWN, n: KNIGHT, b: BISHOP, r: ROOK, q: QUEEN, k: KING, m: KING };
 const FILES = 'abcdefgh';
 
 /** Castling-right bits. */

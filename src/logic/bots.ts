@@ -10,6 +10,8 @@ import { getGiveawayMoves } from './giveaway';
 import { getHordeMoves, getHordeWinnerFromFen } from './horde';
 import { getRacingKingsMoves, getRacingKingsOutcome } from './racingKings';
 import { getTorpedoMoves } from './torpedo';
+import { kmApply, kmLegalMoves, kmParseFen, kmStatus, type KmPosition, type KmType } from './knightmate';
+import { getKnightmateMoves } from './knightmateGame';
 import {
   canCastFreeze,
   canCastJump,
@@ -976,4 +978,78 @@ export function chooseCrazyhouseBotMove(engine: ChessEngine, elo: number, rng: (
   const top = Math.max(...scored.map((s) => s.score));
   const best = scored.filter((s) => s.score === top);
   return best[Math.floor(rng() * best.length)].choice;
+}
+
+// --- Knightmate -----------------------------------------------------------------------------
+
+const KM_WIN = 1000;
+/** A stalemate or a drawn position is worth less than play on (a side that is ahead should mind it) but far more than a loss. */
+const KM_DRAW = -30;
+const KM_LOOKAHEAD_CANDIDATES = 8;
+/** Material in Knightmate, in pawns: the Commoner is worth about a bishop (it steps like a king, it is a short-range piece); the royal knight is not a material. */
+const KM_VALUES: Record<KmType, number> = { p: 1, m: 3, b: 3, r: 5, q: 9, k: 0 };
+
+function knightmateMaterial(pos: KmPosition, color: PieceColor): number {
+  let sum = 0;
+  for (const piece of pos.board) if (piece && piece.color === color) sum += KM_VALUES[piece.type];
+  return sum;
+}
+
+/**
+ * Picks a move for a bot playing Knightmate, on EITHER side. Deliberately NOT Stockfish: the stock UCI engine knows only the royal king, so it
+ * would hang the royal knight and never see a mate against it (same reason as the other custom-rule bots). Every candidate comes from
+ * getKnightmateMoves, i.e. knightmate.kmLegalMoves, so a move that leaves the royal knight attacked can never be picked; a random pick never
+ * under-promotes (queen only).
+ *
+ *  - Pass 1 scores EVERY legal move on the position after it: the material balance (the Commoner counts as a bishop), a promotion's gain, a small
+ *    reward for pawn advances and for giving check, and the decisive outcomes outright (checkmate +1000, a stalemate / draw mildly penalised).
+ *  - Pass 2 takes the best few and subtracts the opponent's best reply: the most valuable piece it could capture, and a large penalty if ANY
+ *    reply is checkmate -- so the bot keeps its royal knight safe (it never walks into a mate in one) and finds the mates against the other side.
+ *  - ELO is the only strength dial: the chance of using the scored choice rather than a random legal move rises from ~20% at 400 ELO to ~90% at 3000.
+ *
+ * Returns null only when the bot has no legal move (the game would already be over).
+ */
+export function chooseKnightmateBotMove(engine: ChessEngine, elo: number, rng: () => number = Math.random): Move | null {
+  const moves = getKnightmateMoves(engine);
+  if (moves.length === 0) return null;
+  if (moves.length === 1) return moves[0];
+
+  const bestChance = 0.2 + 0.7 * Math.min(1, Math.max(0, (elo - 400) / 2600));
+  if (rng() >= bestChance) {
+    const plain = moves.filter((m) => !m.promotion || m.promotion === 'q');
+    return plain[Math.floor(rng() * plain.length)];
+  }
+
+  const pos = kmParseFen(engine.getFen());
+  const me = pos.turn;
+  const legal = kmLegalMoves(pos);
+  const pass1 = legal.map((km, index) => {
+    const next = kmApply(pos, km).position;
+    const nextLegal = kmLegalMoves(next);
+    const status = kmStatus(next, nextLegal);
+    let score = knightmateMaterial(next, me) - knightmateMaterial(next, me === 'w' ? 'b' : 'w');
+    if (pos.board[km.from]?.type === 'p') score += 0.05 * (me === 'w' ? Math.floor(km.to / 8) : 7 - Math.floor(km.to / 8));
+    if (status === 'check') score += 0.5;
+    if (status === 'checkmate') score += KM_WIN;
+    else if (status === 'stalemate' || status === 'draw') score += KM_DRAW;
+    return { move: moves[index], next, nextLegal, score, decided: status === 'checkmate' };
+  });
+  pass1.sort((a, b) => b.score - a.score || rng() - 0.5);
+  if (pass1[0].decided) return pass1[0].move;
+
+  const scored = pass1.slice(0, KM_LOOKAHEAD_CANDIDATES).map((candidate) => {
+    let worstReply = 0;
+    for (const reply of candidate.nextLegal) {
+      const probe = kmApply(candidate.next, reply);
+      if (probe.captured) worstReply = Math.max(worstReply, KM_VALUES[probe.captured]);
+      if (kmStatus(probe.position, kmLegalMoves(probe.position)) === 'checkmate') {
+        worstReply = KM_WIN;
+        break;
+      }
+    }
+    return { move: candidate.move, score: candidate.score - worstReply };
+  });
+  const top = Math.max(...scored.map((s) => s.score));
+  const topMoves = scored.filter((s) => s.score === top);
+  return topMoves[Math.floor(rng() * topMoves.length)].move;
 }

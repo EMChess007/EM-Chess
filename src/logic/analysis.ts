@@ -103,7 +103,7 @@ export interface MoveClassification {
   wasBestMove: boolean;
 }
 
-export const PIECE_VALUES: Record<PieceType, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+export const PIECE_VALUES: Record<PieceType, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0, m: 3 };
 
 /**
  * Heuristic-only "did the mover give up material on purpose" detector: the moved piece (not a

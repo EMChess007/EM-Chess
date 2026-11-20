@@ -31,6 +31,21 @@ import {
 } from './crazyhouse';
 import { racingKingsOutcomeFromFen } from './racingKings';
 import { torpedoExtraDoubleStep } from './torpedo';
+import {
+  KNIGHTMATE_START_FEN,
+  kmApply,
+  kmFen,
+  kmFindMove,
+  kmIsAttacked,
+  kmLegalMoves,
+  kmParseFen,
+  kmSan,
+  kmSquareIndex,
+  kmSquareName,
+  kmStatus,
+  type KmMove,
+  type KmPosition,
+} from './knightmate';
 import { HORDE_FIRST_RANK_DOUBLE_STEP_ALLOWS_EN_PASSANT, getHordeWinnerFromFen, hordeFirstRankDoubleStep } from './horde';
 import { castlingRookOrigin, getJumpAugmentedCaptures } from './spellChess';
 import { hideCheckFromPlayers } from './fogOfWarNotation';
@@ -320,6 +335,14 @@ export interface ChessEngineOptions {
    */
   torpedo?: boolean;
   /**
+   * Knightmate only — see knightmate.ts for the rules (the royal piece is a KNIGHT, the ordinary king is a non-royal Commoner).
+   * Like Atomic this is a self-contained engine: knightmate.ts answers every query (board, legal moves, move, status, FEN,
+   * history, undo) and chess.js is never loaded with the position (it cannot hold a royal knight). Piece.type 'k' is the royal
+   * knight and 'm' the Commoner. The FEN, when given, must be a Knightmate FEN (KNIGHTMATE_START_FEN by default). Threefold
+   * repetition is the callers' (repetition.ts) and a flag fall is knightmate.kmTimeoutResult. Not combinable with any other variant.
+   */
+  knightmate?: boolean;
+  /**
    * Crazyhouse only — see crazyhouse.ts for the rules and the state it carries. chess.js stays authoritative for every
    * ordinary move; this option adds a DROP (drop(), getLegalDropSquares(), getLegalDrops()) and keeps the reserve and the
    * promoted-piece set (`crazyhouseState`, passed in because it is NOT part of the FEN, like duckSquare) up to date on every
@@ -343,6 +366,12 @@ export class ChessEngine {
   private horde: boolean;
   private racingKings: boolean;
   private torpedo: boolean;
+  private knightmate: boolean;
+  /** Knightmate only: the position, the FEN stack for undo() and the SAN list (the source of truth in that mode). */
+  private kmPosition: KmPosition;
+  private kmLegalCache: KmMove[] | null = null;
+  private kmFenStack: string[] = [];
+  private kmSanList: string[] = [];
   private crazyhouse: boolean;
   private crazyhouseState: CrazyhouseState;
   private frozenSquares: string[];
@@ -368,14 +397,26 @@ export class ChessEngine {
     this.frozenSquares = options?.spellChess ? (options.frozenSquares ?? []) : [];
     this.jumpSquare = options?.spellChess ? (options.jumpSquare ?? null) : null;
     this.freezeEscapeActive = options?.spellChess ? (options.freezeEscapeActive ?? false) : false;
+    this.knightmate = options?.knightmate ?? false;
+    this.kmPosition = kmParseFen(this.knightmate ? (fen ?? KNIGHTMATE_START_FEN) : KNIGHTMATE_START_FEN);
     const skipValidation = (options?.skipValidation ?? false) || this.atomic || this.horde || this.torpedo;
-    this.chess = fen ? (this.giveaway ? loadGiveawayFen(fen) : new Chess(fen, { skipValidation })) : new Chess();
+    // Knightmate never loads chess.js with its position (a royal knight / commoner is not a chess.js piece): it keeps a default board.
+    this.chess = fen && !this.knightmate ? (this.giveaway ? loadGiveawayFen(fen) : new Chess(fen, { skipValidation })) : new Chess();
     this.chess960 = options?.chess960 ?? false;
     this.atomicCurrentFen = fen ?? START_FEN;
-    this.files = getChess960BackRankFiles(options?.initialFen ?? fen ?? START_FEN);
+    this.files = getChess960BackRankFiles(this.knightmate ? START_FEN : (options?.initialFen ?? fen ?? START_FEN));
   }
 
   getBoard(): BoardSquare[][] {
+    if (this.knightmate) {
+      return Array.from({ length: 8 }, (_, row) =>
+        Array.from({ length: 8 }, (_, col) => {
+          const index = col + 8 * (7 - row);
+          const cell = this.kmPosition.board[index];
+          return { square: kmSquareName(index), piece: cell ? ({ type: cell.type, color: cell.color } as Piece) : null };
+        })
+      );
+    }
     return this.chess.board().map((row, rowIndex) =>
       row.map((cell, colIndex) => ({
         square: `${String.fromCharCode(97 + colIndex)}${8 - rowIndex}`,
@@ -385,10 +426,15 @@ export class ChessEngine {
   }
 
   getTurn(): 'w' | 'b' {
+    if (this.knightmate) return this.kmPosition.turn;
     return this.chess.turn();
   }
 
   getLegalMoves(square: string): string[] {
+    if (this.knightmate) {
+      const from = kmSquareIndex(square);
+      return [...new Set(this.getKmLegal().filter((m) => m.from === from).map((m) => kmSquareName(m.to)))];
+    }
     if (this.atomic) {
       const from = squareIndex(square);
       return [...new Set(this.getAtomicLegal().filter((m) => m.from === from).map((m) => squareName(m.to)))];
@@ -434,6 +480,7 @@ export class ChessEngine {
   }
 
   move(from: string, to: string, promotion?: Move['promotion']): Move | null {
+    if (this.knightmate) return this.moveKnightmate(from, to, promotion);
     if (this.atomic) return this.moveAtomic(from, to, promotion);
     if (this.spellChess) return this.moveSpellChess(from, to, promotion);
     if (this.horde && this.hordeDoubleStepTarget(from) === to) return this.applyHordeDoubleStep(from, to);
@@ -485,15 +532,30 @@ export class ChessEngine {
   }
 
   undo(): void {
+    if (this.knightmate) {
+      const previous = this.kmFenStack.pop();
+      if (previous) {
+        this.kmSanList.pop();
+        this.setKmFen(previous);
+      }
+      return;
+    }
     this.chess.undo();
   }
 
   reset(): void {
+    if (this.knightmate) {
+      this.kmFenStack = [];
+      this.kmSanList = [];
+      this.setKmFen(KNIGHTMATE_START_FEN);
+      return;
+    }
     this.chess.reset();
     this.setAtomicFen(START_FEN);
   }
 
   getStatus(): GameStatus {
+    if (this.knightmate) return kmStatus(this.kmPosition, this.getKmLegal());
     if (this.atomic) {
       this.atomicStatusCache ??= getAtomicStatus(this.getAtomicPosition(), this.getAtomicLegal());
       return this.atomicStatusCache;
@@ -534,6 +596,10 @@ export class ChessEngine {
   }
 
   isGameOver(): boolean {
+    if (this.knightmate) {
+      const status = this.getStatus();
+      return status === 'checkmate' || status === 'stalemate' || status === 'draw';
+    }
     if (this.atomic) {
       if (getAtomicKingWinner(this.getAtomicPosition())) return true;
       const status = this.getStatus();
@@ -561,6 +627,7 @@ export class ChessEngine {
   }
 
   getFen(): string {
+    if (this.knightmate) return kmFen(this.kmPosition);
     if (this.atomic) return this.atomicCurrentFen;
     // forceEnpassantSquare: chess.js's own .fen() silently omits the ep-target field whenever
     // playing it would expose the capturing side's king (it simulates the capture and checks
@@ -577,12 +644,14 @@ export class ChessEngine {
   }
 
   getHistory(): string[] {
+    if (this.knightmate) return [...this.kmSanList];
     return this.chess.history();
   }
 
   /** Total number of legal moves for the side to move in the current position — used as a
    * cheap "how complex is this position" proxy (e.g. for scaling bot thinking time). */
   getLegalMoveCount(): number {
+    if (this.knightmate) return this.getKmLegal().length;
     if (this.atomic) return this.getAtomicLegal().length;
     if (this.crazyhouse) return this.chess.moves().length + this.getLegalDrops().length;
     if (this.racingKings) return this.racingKingsMoves().length;
@@ -604,13 +673,44 @@ export class ChessEngine {
 
   /** Whether `square` is attacked by any piece of `byColor` in the current position. */
   isSquareAttacked(square: string, byColor: PieceColor): boolean {
+    if (this.knightmate) return kmIsAttacked(this.kmPosition, kmSquareIndex(square), byColor);
     return this.chess.isAttacked(square as ChessJsSquare, byColor);
   }
 
   /** The piece on `square`, or null if empty. */
   getPieceAt(square: string): Piece | null {
+    if (this.knightmate) {
+      const cell = this.kmPosition.board[kmSquareIndex(square)];
+      return cell ? ({ type: cell.type, color: cell.color } as Piece) : null;
+    }
     const piece = this.chess.get(square as ChessJsSquare);
     return piece ? { type: piece.type, color: piece.color } : null;
+  }
+
+  // --- Knightmate (see knightmate.ts) ------------------------------------
+
+  private getKmLegal(): KmMove[] {
+    this.kmLegalCache ??= kmLegalMoves(this.kmPosition);
+    return this.kmLegalCache;
+  }
+
+  private setKmFen(fen: string): void {
+    this.kmPosition = kmParseFen(fen);
+    this.kmLegalCache = null;
+  }
+
+  /** Applies a legal Knightmate move (an omitted promotion is a queen). Returns null for an illegal move, like move(). */
+  private moveKnightmate(from: string, to: string, promotion?: Move['promotion']): Move | null {
+    const legal = this.getKmLegal();
+    const found = kmFindMove(this.kmPosition, from, to, promotion, legal);
+    if (!found) return null;
+    const result = kmApply(this.kmPosition, found);
+    const san = kmSan(this.kmPosition, found, legal, result.position);
+    this.kmFenStack.push(kmFen(this.kmPosition));
+    this.kmSanList.push(san);
+    this.kmPosition = result.position;
+    this.kmLegalCache = null;
+    return { from, to, promotion: found.promotion, san, captured: result.captured };
   }
 
   // --- Atomic (see atomic.ts) --------------------------------------------
@@ -826,7 +926,7 @@ export class ChessEngine {
       from: indexFromSquare(from),
       to: indexFromSquare(to),
       piece: 'p',
-      promotion: promotes ? promotion : undefined,
+      promotion: promotes ? (promotion as InternalMove['promotion']) : undefined,
       flags: promotes ? 1 | 16 /* NORMAL | PROMOTION */ : 4 /* BIG_PAWN */,
     };
   }
@@ -954,8 +1054,8 @@ export class ChessEngine {
       color: piece.color,
       from: indexFromSquare(from),
       to: indexFromSquare(to),
-      piece: piece.type,
-      captured,
+      piece: piece.type as InternalMove['piece'],
+      captured: captured as InternalMove['captured'],
       flags: captured ? 2 /* chess.js's CAPTURE flag */ : 1 /* chess.js's NORMAL flag */,
     };
     const internals = this.chess as unknown as ChessInternals;

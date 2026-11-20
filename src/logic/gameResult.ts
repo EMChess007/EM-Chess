@@ -52,7 +52,8 @@ export function getGameOutcome(
   spellChessWinner: PieceColor | null = null,
   hordeWinner: PieceColor | null = null,
   repetitionDraw = false,
-  racingKingsOutcome: PieceColor | 'draw' | null = null
+  racingKingsOutcome: PieceColor | 'draw' | null = null,
+  timeoutDraw = false
 ): GameOutcome {
   // Racing Kings (see racingKings.ts): a king on the 8th rank ends the game -- a win for that side, or a draw when both
   // kings made it. Same top tier as the other king-goal variants: chess.js knows nothing about the goal. Stalemate and the
@@ -115,6 +116,11 @@ export function getGameOutcome(
   }
   if (resignedBy) {
     return { over: true, result: resignedBy === 'w' ? '0-1' : '1-0', reason: 'resignation' };
+  }
+  // Knightmate's one clock exception (knightmate.kmTimeoutResult): a flag fall against an opponent who has ONLY the royal knight is a
+  // DRAW, still the reason 'timeout'. The screens pass timeoutWinner null and timeoutDraw true for it (see knightmateGame.ts).
+  if (timeoutDraw) {
+    return { over: true, result: '1/2-1/2', reason: 'timeout' };
   }
   if (timeoutWinner) {
     return { over: true, result: timeoutWinner === 'w' ? '1-0' : '0-1', reason: 'timeout' };

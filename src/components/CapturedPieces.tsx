@@ -2,11 +2,11 @@ import { StyleSheet, View } from 'react-native';
 import { Text } from './AppText';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { PieceColor, PieceType } from '../types/chess';
-import { pieceInk } from './pieceArt';
+import { pieceInk, type PieceShapeType } from './pieceArt';
 import PieceIcon from './PieceIcon';
 
 // Lowest value first, matching how chess.com orders a captured-pieces row.
-const DISPLAY_ORDER: PieceType[] = ['p', 'n', 'b', 'r', 'q'];
+const DISPLAY_ORDER: PieceType[] = ['p', 'n', 'b', 'm', 'r', 'q'];
 
 interface CapturedPiecesProps {
   /** Types of the opponent's pieces this player has captured. */
@@ -30,7 +30,8 @@ export default function CapturedPieces({ pieces, color, advantage }: CapturedPie
     <View style={styles.row}>
       {sorted.map((type, i) => (
         <View key={i} style={styles.icon} accessibilityLabel={`captured ${color === 'w' ? 'white' : 'black'} ${type}`}>
-          <PieceIcon type={type} ink={pieceInk(color)} size={18} />
+          {/* A captured Knightmate Commoner (type 'm') is drawn as the king silhouette, the picture it is built from (Piece.knightmateShape). */}
+          <PieceIcon type={(type === 'm' ? 'k' : type) as PieceShapeType} ink={pieceInk(color)} size={18} />
         </View>
       ))}
       {advantage > 0 && <Text style={styles.advantage}>+{advantage}</Text>}

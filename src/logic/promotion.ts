@@ -1,6 +1,6 @@
 import type { Piece, PieceColor } from '../types/chess';
 
-export type PromotionPiece = 'q' | 'r' | 'b' | 'n' | 'k';
+export type PromotionPiece = 'q' | 'r' | 'b' | 'n' | 'k' | 'm';
 
 /** Display order of the promotion picker — queen first since it's by far the most common choice. */
 export const PROMOTION_CHOICES: readonly PromotionPiece[] = ['q', 'r', 'b', 'n'];
@@ -8,9 +8,12 @@ export const PROMOTION_CHOICES: readonly PromotionPiece[] = ['q', 'r', 'b', 'n']
 /** Giveaway (Antichess) additionally lets a pawn promote to a king — see giveaway.ts. */
 export const GIVEAWAY_PROMOTION_CHOICES: readonly PromotionPiece[] = ['q', 'r', 'b', 'n', 'k'];
 
+/** Knightmate: queen, rook, bishop or COMMONER ('m') -- never a knight (see knightmate.ts). */
+export const KNIGHTMATE_PROMOTION_CHOICES: readonly PromotionPiece[] = ['q', 'r', 'b', 'm'];
+
 /** The picker's options for the current game mode. */
-export function getPromotionChoices(giveaway: boolean): readonly PromotionPiece[] {
-  return giveaway ? GIVEAWAY_PROMOTION_CHOICES : PROMOTION_CHOICES;
+export function getPromotionChoices(giveaway: boolean, knightmate = false): readonly PromotionPiece[] {
+  return knightmate ? KNIGHTMATE_PROMOTION_CHOICES : giveaway ? GIVEAWAY_PROMOTION_CHOICES : PROMOTION_CHOICES;
 }
 
 export const PROMOTION_LABELS: Record<PromotionPiece, string> = {
@@ -19,6 +22,7 @@ export const PROMOTION_LABELS: Record<PromotionPiece, string> = {
   b: 'Bishop',
   n: 'Knight',
   k: 'King',
+  m: 'Commoner',
 };
 
 /** The rank a pawn of `color` promotes on. */

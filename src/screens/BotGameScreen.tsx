@@ -28,6 +28,7 @@ import {
   chooseHordeBotMove,
   chooseRacingKingsBotMove,
   chooseTorpedoBotMove,
+  chooseKnightmateBotMove,
   chooseCrazyhouseBotMove,
   chooseSpellChessBotCast,
   getBotThinkTimeMs,
@@ -56,6 +57,8 @@ import { isRepetitionDraw } from '../logic/repetitionHistory';
 import { duckMoveNotation, getDuckChessWinner, hasNoDuckMoves } from '../logic/duckChess';
 import { HORDE_START_FEN, getHordeWinner } from '../logic/horde';
 import { RACING_KINGS_START_FEN, getRacingKingsOutcome } from '../logic/racingKings';
+import { KNIGHTMATE_START_FEN } from '../logic/knightmate';
+import { knightmateTimeoutOutcome } from '../logic/knightmateGame';
 import { initialCrazyhouseState } from '../logic/crazyhouse';
 import { latestPlyState, plyStateAtView } from '../logic/perPlyState';
 import { getGiveawayMoves, getGiveawayWinner } from '../logic/giveaway';
@@ -121,6 +124,9 @@ interface BotGameScreenProps {
   /** Torpedo — see torpedo.ts (a pawn may always move one or two squares). Bots play it with chooseTorpedoBotMove (no Stockfish: it
    * does not know the double step from any rank), on either side. No rating, no premoves. Mutually exclusive with every other variant. */
   torpedo?: boolean;
+  /** Knightmate — see knightmate.ts: the royal piece is a knight, the ordinary king a non-royal Commoner. Bots play it with chooseKnightmateBotMove (no
+   * Stockfish: it knows only the royal king). Unrated, no hints, no Game Review. Mutually exclusive with every other variant. */
+  knightmate?: boolean;
   /** Crazyhouse — see crazyhouse.ts. Bots play it with chooseCrazyhouseBotMove (a move OR a drop), NOT Stockfish (no concept of
    * drops or a reserve). Not rated: a heuristic bot, not an ELO-calibrated engine. Mutually exclusive with every other variant. */
   crazyhouse?: boolean;
@@ -153,6 +159,7 @@ export default function BotGameScreen({
   horde = false,
   racingKings = false,
   torpedo = false,
+  knightmate = false,
   crazyhouse = false,
   initialFen: initialFenProp,
   fromPosition = false,
@@ -176,7 +183,7 @@ export default function BotGameScreen({
   // exception is a synthetic "custom engine" bot card (see BotSelectScreen), which sets
   // `engineId` explicitly to override this.
   const engineId = useMemo(() => bot.engineId ?? getEngineIdForElo(bot.elo), [bot.engineId, bot.elo]);
-  const [initialFen, setInitialFen] = useState(() => initialFenProp ?? (racingKings ? RACING_KINGS_START_FEN : horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN));
+  const [initialFen, setInitialFen] = useState(() => initialFenProp ?? (knightmate ? KNIGHTMATE_START_FEN : racingKings ? RACING_KINGS_START_FEN : horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN));
   const [fen, setFen] = useState(initialFen);
   const [lastMove, setLastMove] = useState<Move | null>(null);
   const [history, setHistory] = useState<GameHistoryEntry[]>([]);
@@ -203,7 +210,7 @@ export default function BotGameScreen({
   // See LocalGameScreen's identical effect for why a miss here doesn't clear the name — it only
   // ever upgrades to a deeper/more specific match as the game continues.
   useEffect(() => {
-    if (chess960 || setupChess || fromPosition || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse) return;
+    if (chess960 || setupChess || fromPosition || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse) return;
     const match = lookupOpening(fen);
     if (match) setOpeningName(match.name);
   }, [fen, chess960, setupChess, fromPosition, fogOfWar, giveaway, atomic, duckChess, spellChess, horde, racingKings, crazyhouse]);
@@ -226,8 +233,8 @@ export default function BotGameScreen({
   // Crazyhouse (see crazyhouse.ts): reserves and promoted squares are not in the FEN — the last ply's state (see LocalGameScreen).
   const crazyhouseState = useMemo(() => latestPlyState(history, (h) => h.crazyhouse, initialCrazyhouseState()), [history]);
   const engine = useMemo(
-    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess || spellChess || horde, giveaway, atomic, duckChess, duckSquare, horde, racingKings, torpedo, crazyhouse, crazyhouseState }),
-    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare, spellChess, horde, racingKings, torpedo, crazyhouse, crazyhouseState]
+    () => new ChessEngine(fen, { chess960, initialFen, skipValidation: fogOfWar || giveaway || duckChess || spellChess || horde, giveaway, atomic, duckChess, duckSquare, horde, racingKings, torpedo, knightmate, crazyhouse, crazyhouseState }),
+    [fen, chess960, initialFen, fogOfWar, giveaway, atomic, duckChess, duckSquare, spellChess, horde, racingKings, torpedo, knightmate, crazyhouse, crazyhouseState]
   );
   const turn = engine.getTurn();
   // Atomic: see LocalGameScreen's identical block — the engine answers status from atomic.ts, a blown-up
@@ -296,6 +303,11 @@ export default function BotGameScreen({
   // down live, second by second, in real wall-clock time while it "thinks" (the engine really
   // does take approximately thinkTimeMs to respond), exactly like the human side already did.
   const clock = useChessClock(timeControl, turn, engineGameOver);
+  // Knightmate's one clock exception: a flag fall against an opponent with only a royal knight is a draw (knightmateGame.ts); every other mode just uses the clock's winner.
+  const timeoutOutcome = useMemo(
+    () => (knightmate ? knightmateTimeoutOutcome(engine.getFen(), clock.timeoutWinner) : { timeoutDraw: false, timeoutWinner: clock.timeoutWinner }),
+    [knightmate, engine, clock.timeoutWinner]
+  );
   const gameOver =
     engineGameOver ||
     clock.timeoutWinner !== null ||
@@ -372,7 +384,9 @@ export default function BotGameScreen({
       buildGamePayload({
         chessStatus,
         turn,
-        timeoutWinner: clock.timeoutWinner,
+        timeoutWinner: timeoutOutcome.timeoutWinner,
+        timeoutDraw: timeoutOutcome.timeoutDraw,
+        knightmate,
         resignedBy,
         kingOfTheHillWinner,
         threeCheckWinner,
@@ -402,7 +416,8 @@ export default function BotGameScreen({
     [
       chessStatus,
       turn,
-      clock.timeoutWinner,
+      timeoutOutcome,
+      knightmate,
       resignedBy,
       kingOfTheHillWinner,
       threeCheckWinner,
@@ -514,6 +529,7 @@ export default function BotGameScreen({
           horde,
           racingKings,
           torpedo,
+          knightmate,
           crazyhouse,
           crazyhouseState,
           frozenSquares: spellFrozenForBot,
@@ -623,6 +639,22 @@ export default function BotGameScreen({
           if (!choice) throw new Error('Torpedo bot has no legal move');
           move = moveEngine.move(choice.from, choice.to, choice.promotion);
           if (!move) throw new Error(`Invalid Torpedo move: ${choice.from}${choice.to}`);
+        }
+
+        // Knightmate: Stockfish is bypassed too (see chooseKnightmateBotMove) — it knows only the royal KING, so it would hang the royal
+        // knight and never see a mate against it. Either side; moveEngine.move validates and applies the legal move.
+        if (knightmate) {
+          const thinkTimeMs = getBotThinkTimeMs({
+            timeControl,
+            remainingSeconds: botColor === 'w' ? clock.whiteSeconds : clock.blackSeconds,
+            legalMoveCount: engine.getLegalMoveCount(),
+          });
+          await new Promise((resolve) => setTimeout(resolve, Math.min(thinkTimeMs, 2500)));
+          if (cancelled) return;
+          const choice = chooseKnightmateBotMove(moveEngine, bot.elo);
+          if (!choice) throw new Error('Knightmate bot has no legal move');
+          move = moveEngine.move(choice.from, choice.to, choice.promotion);
+          if (!move) throw new Error(`Invalid Knightmate move: ${choice.from}${choice.to}`);
         }
 
         // Crazyhouse: Stockfish is bypassed too (see chooseCrazyhouseBotMove) — it cannot read a reserve or play a drop. The bot
@@ -832,6 +864,7 @@ export default function BotGameScreen({
   if (clock.timeoutWinner) {
     statusText = `Win on time: ${clock.timeoutWinner === userColor ? 'You' : bot.name}`;
   }
+  if (timeoutOutcome.timeoutDraw) statusText = 'Draw — time ran out against a bare royal knight';
   if (resignedBy) statusText = `You resigned — ${bot.name} wins`;
   if (kingOfTheHillWinner) {
     statusText = `${kingOfTheHillWinner === userColor ? 'You win' : `${bot.name} wins`} by King of the Hill!`;
@@ -868,7 +901,7 @@ export default function BotGameScreen({
   const outcome = getGameOutcome(
     chessStatus,
     turn,
-    clock.timeoutWinner,
+    timeoutOutcome.timeoutWinner,
     resignedBy,
     false,
     kingOfTheHillWinner,
@@ -880,7 +913,8 @@ export default function BotGameScreen({
     spellChessWinner,
     hordeWinner,
     repetitionDraw,
-    racingKingsOutcome
+    racingKingsOutcome,
+    timeoutOutcome.timeoutDraw
   );
   const winnerColor: PieceColor | null =
     outcome.over && outcome.result !== '1/2-1/2' ? (outcome.result === '1-0' ? 'w' : 'b') : null;
@@ -910,9 +944,9 @@ export default function BotGameScreen({
     // oversight — do not add !spellChess here. Horde, by contrast, IS excluded: its bot is the same kind of heuristic
     // (chooseHordeBotMove, no Stockfish) as Giveaway/Atomic/Duck Chess. Crazyhouse is excluded for the same reason
     // (chooseCrazyhouseBotMove — a heuristic bot, and a different game).
-    if (ratingCategory && !giveaway && !atomic && !duckChess && !horde && !racingKings && !torpedo && !crazyhouse) recordRatedGame(ratingCategory, bot.elo, result, authToken);
+    if (ratingCategory && !giveaway && !atomic && !duckChess && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse) recordRatedGame(ratingCategory, bot.elo, result, authToken);
 
-    if (result === 1 && !giveaway && !atomic && !duckChess && !horde && !racingKings && !torpedo && !crazyhouse) {
+    if (result === 1 && !giveaway && !atomic && !duckChess && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse) {
       if (bot.elo >= 2000) unlockAchievement('giant_slayer');
       if (wasMaterialDownRef.current) unlockAchievement('comeback_win');
     }
@@ -1008,7 +1042,7 @@ export default function BotGameScreen({
   }, [turn, premove]);
 
   const handleReset = () => {
-    const nextInitialFen = initialFenProp ?? (racingKings ? RACING_KINGS_START_FEN : horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN);
+    const nextInitialFen = initialFenProp ?? (knightmate ? KNIGHTMATE_START_FEN : racingKings ? RACING_KINGS_START_FEN : horde ? HORDE_START_FEN : chess960 ? generateChess960Position() : START_FEN);
     setInitialFen(nextInitialFen);
     setFen(nextInitialFen);
     setLastMove(null);
@@ -1052,7 +1086,7 @@ export default function BotGameScreen({
   // Disabled for Fog of War — see LocalGameScreen's identical handleHintPress for why (reads the
   // true, full position, which would just hand the player a way around the whole variant).
   const handleHintPress = () => {
-    if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse) return;
+    if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse) return;
     setHintText(null);
     setHintLoading(true);
     setHintRequestKey((k) => k + 1);
@@ -1143,6 +1177,8 @@ export default function BotGameScreen({
                               ? 'Racing Kings'
                               : torpedo
                               ? 'Torpedo'
+                              : knightmate
+                              ? 'Knightmate'
                             : horde
                               ? 'Horde'
                               : crazyhouse
@@ -1175,7 +1211,7 @@ export default function BotGameScreen({
                     key: 'hint',
                     label: 'Hint',
                     onPress: handleHintPress,
-                    disabled: gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse,
+                    disabled: gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse,
                   },
                   {
                     key: 'undo',
@@ -1208,7 +1244,7 @@ export default function BotGameScreen({
         }
       >
         <Text style={styles.subtitle}>
-          {giveaway ? 'Giveaway bot' : atomic ? 'Atomic bot' : duckChess ? 'Duck Chess bot' : horde ? 'Horde bot' : racingKings ? 'Racing Kings bot' : torpedo ? 'Torpedo bot' : crazyhouse ? 'Crazyhouse bot' : getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
+          {giveaway ? 'Giveaway bot' : atomic ? 'Atomic bot' : duckChess ? 'Duck Chess bot' : horde ? 'Horde bot' : racingKings ? 'Racing Kings bot' : torpedo ? 'Torpedo bot' : knightmate ? 'Knightmate bot' : crazyhouse ? 'Crazyhouse bot' : getEngineName(engineId)} · {bot.name} (ELO {bot.elo}) · {timeControl.label}
         </Text>
         {/* The "bot is thinking" indicator rides inline on the status row instead of its own row --
             giving it a separate row (as before) adds enough height that Spell Chess's extra Freeze/Jump
@@ -1258,7 +1294,7 @@ export default function BotGameScreen({
           <CapturedPieces pieces={top.captured} color={top.iconColor} advantage={top.advantage} />
         </View>
 
-        {!chess960 && !setupChess && !fromPosition && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
+        {!chess960 && !setupChess && !fromPosition && !fogOfWar && !giveaway && !atomic && !duckChess && !spellChess && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse && openingName && <Text style={styles.openingName}>{openingName}</Text>}
 
         <ChessBoard
           key={resetCount}
@@ -1282,7 +1318,8 @@ export default function BotGameScreen({
           horde={horde}
           racingKings={racingKings}
           torpedo={torpedo}
-          crazyhouse={crazyhouse}
+          knightmate={knightmate}
+crazyhouse={crazyhouse}
           crazyhouseState={displayCrazyhouse}
           spellState={displaySpellState}
           visibleSquares={visibleSquares}
@@ -1292,8 +1329,8 @@ export default function BotGameScreen({
           // executor (see the premove effect) builds a plain engine that knows nothing of its rules.
           // Spell Chess: no premoves either, for the same root reason — a queued move can't carry a
           // cast, and frozen squares/an active jump can flip whether it's even still legal.
-          premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse ? undefined : userColor}
-          onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse ? undefined : handleQueuePremove}
+          premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse ? undefined : userColor}
+          onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse ? undefined : handleQueuePremove}
         />
 
         <View style={styles.playerRow}>
@@ -1322,6 +1359,7 @@ export default function BotGameScreen({
         horde={horde}
         racingKings={racingKings}
         torpedo={torpedo}
+        knightmate={knightmate}
         crazyhouse={crazyhouse}
         history={history}
         players={[{ label: 'You', color: userColor }]}

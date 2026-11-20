@@ -4,7 +4,7 @@ import type { PieceColor, PieceType } from '../types/chess';
  * — the budget every Setup Chess army must fit within. The king is mandatory and free. */
 export const SETUP_CHESS_BUDGET = 39;
 
-export const SETUP_CHESS_PIECE_COST: Record<Exclude<PieceType, 'k'>, number> = {
+export const SETUP_CHESS_PIECE_COST: Record<Exclude<PieceType, 'k' | 'm'>, number> = {
   p: 1,
   n: 3,
   b: 3,
@@ -22,7 +22,8 @@ export interface SetupChessPiece {
 }
 
 export function pieceCost(type: PieceType): number {
-  return type === 'k' ? 0 : SETUP_CHESS_PIECE_COST[type];
+  // 'm' (Knightmate's Commoner) never occurs in Setup Chess; it costs nothing like the king.
+  return type === 'k' || type === 'm' ? 0 : SETUP_CHESS_PIECE_COST[type];
 }
 
 export function computeArmyCost(pieces: SetupChessPiece[]): number {

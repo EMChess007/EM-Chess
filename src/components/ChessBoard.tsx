@@ -129,6 +129,10 @@ interface ChessBoardProps {
    * from any rank (a dot two squares ahead) and en passant works after it. Premoves are not offered (the premove logic knows
    * only the ordinary pawn). Mutually exclusive with every other variant. */
   torpedo?: boolean;
+  /** Knightmate only — see knightmate.ts. Every engine this board builds gets { knightmate: true }; the royal knight ('k') and the commoner ('m') are drawn
+   * from the theme's knight / king with a badge (Piece.tsx), and the promotion picker offers queen, rook, bishop and commoner. Premoves are not offered.
+   * Mutually exclusive with every other variant. */
+  knightmate?: boolean;
   /** Crazyhouse only — see crazyhouse.ts. A turn is ONE action: an ordinary move, or a DROP — tap a piece in the reserve tray under
    * the board, then a highlighted square (the legal squares come from the engine, so pawn ranks and check-blocking are
    * honoured). `crazyhouseState` is the reserves/promoted set for the position shown (carried per ply, not in the fen); the
@@ -208,6 +212,7 @@ function ChessBoard({
   horde = false,
   racingKings = false,
   torpedo = false,
+  knightmate = false,
   crazyhouse = false,
   crazyhouseState,
   spellState,
@@ -279,13 +284,14 @@ function ChessBoard({
         horde,
         racingKings,
         torpedo,
+        knightmate,
         crazyhouse,
         crazyhouseState,
         frozenSquares: spellFrozenSquares,
         jumpSquare: spellJumpSquare,
         freezeEscapeActive: spellFreezeEscapeActive,
       }),
-    [shownFen, chess960, initialFen, needsSkipValidation, giveaway, atomic, duckChess, duckSquare, spellChess, horde, racingKings, torpedo, crazyhouse, crazyhouseState, spellFrozenSquares, spellJumpSquare, spellFreezeEscapeActive]
+    [shownFen, chess960, initialFen, needsSkipValidation, giveaway, atomic, duckChess, duckSquare, spellChess, horde, racingKings, torpedo, knightmate, crazyhouse, crazyhouseState, spellFrozenSquares, spellJumpSquare, spellFreezeEscapeActive]
   );
   const board = useMemo(() => engine.getBoard(), [engine]);
   // Reversing both axes together preserves each square's light/dark identity (a 180° rotation
@@ -399,7 +405,7 @@ function ChessBoard({
     // flag through every caller.
     let movingPiece: PieceModel | null = null;
     try {
-      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: needsSkipValidation, giveaway, atomic, duckChess, horde, racingKings, torpedo }).getPieceAt(lastMove.from);
+      movingPiece = new ChessEngine(prevFen, { chess960, initialFen, skipValidation: needsSkipValidation, giveaway, atomic, duckChess, horde, racingKings, torpedo, knightmate }).getPieceAt(lastMove.from);
     } catch {
       movingPiece = null;
     }
@@ -496,6 +502,7 @@ function ChessBoard({
       horde,
       racingKings,
       torpedo,
+      knightmate,
       crazyhouse,
       crazyhouseState,
       frozenSquares: spellFrozenSquares,
@@ -763,6 +770,7 @@ function ChessBoard({
               lightColor={boardTheme.lightColor}
               darkColor={boardTheme.darkColor}
               pieceImages={pieceTheme.images}
+              knightmate={knightmate}
             />
           ))
         )}
@@ -795,7 +803,7 @@ function ChessBoard({
                 ]}
               />
               <Animated.View style={[styles.explosionGhost, { opacity: ghostOpacity }]}>
-                <Piece piece={piece} images={pieceTheme.images} size={squareSize} />
+                <Piece piece={piece} images={pieceTheme.images} size={squareSize} knightmate={knightmate} />
               </Animated.View>
             </Animated.View>
           );
@@ -813,7 +821,7 @@ function ChessBoard({
               },
             ]}
           >
-            <Piece piece={slidingMove.piece} images={pieceTheme.images} size={squareSize} />
+            <Piece piece={slidingMove.piece} images={pieceTheme.images} size={squareSize} knightmate={knightmate} />
           </Animated.View>
         )}
       </View>
@@ -889,10 +897,10 @@ function ChessBoard({
       {/* The shared full-screen picker: a tap anywhere outside the four buttons cancels (see PromotionPicker). */}
       <PromotionPicker
         visible={pendingPromotion !== null}
-        choices={getPromotionChoices(giveaway)}
+        choices={getPromotionChoices(giveaway, knightmate)}
         buttonSize={squareSize * 1.15}
         labelFor={(choice) => PROMOTION_LABELS[choice]}
-        renderChoice={(choice) => <Piece piece={{ type: choice, color: pendingPromotion?.color ?? 'w' }} images={pieceTheme.images} size={squareSize * 1.15} />}
+        renderChoice={(choice) => <Piece piece={{ type: choice, color: pendingPromotion?.color ?? 'w' }} images={pieceTheme.images} size={squareSize * 1.15} knightmate={knightmate} />}
         onChoose={completePromotion}
         onCancel={cancelPromotion}
       />
