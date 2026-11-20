@@ -181,6 +181,8 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
                                 ? ' · Racing Kings'
                                 : state.isTorpedo
                                   ? ' · Torpedo'
+                                  : state.isKnightmate
+                                    ? ' · Knightmate'
                               : state.isCrazyhouse
                                 ? ' · Crazyhouse'
                                 : state.isFromPosition
@@ -212,6 +214,7 @@ export default function SpectatorGameScreen({ authToken, roomId, whiteUsername, 
           horde={state.isHorde}
           racingKings={state.isRacingKings === true}
           torpedo={state.isTorpedo === true}
+          knightmate={state.isKnightmate === true}
           crazyhouse={state.isCrazyhouse}
           crazyhouseState={state.crazyhouse ?? initialCrazyhouseState()}
           spellState={state.spellState ?? initialSpellChessState()}

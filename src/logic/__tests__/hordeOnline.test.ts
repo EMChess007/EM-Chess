@@ -26,6 +26,7 @@ describe('Horde wire flags', () => {
       isHorde: true,
       isRacingKings: false,
       isTorpedo: false,
+      isKnightmate: false,
       isCrazyhouse: false,
     });
     for (const variant of ALL.filter((v) => v !== 'horde')) expect(variantWireFlags(variant).isHorde, variant).toBe(false);
@@ -97,9 +98,9 @@ describe('Online wiring (no React Native renderer available)', () => {
     expect(online).toContain('skipValidation: match.isFogOfWar || giveaway || duckChess || spellChess || horde,');
     expect(online).toContain('skipValidation: match.isFogOfWar || giveaway || duckChess || horde,');
     expect(online.match(/\bhorde,\n/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse ? undefined : myColor}');
-    expect(online).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || crazyhouse ? undefined : handleQueuePremove}');
-    expect(online).toContain('!duckChess && !spellChess && !horde && !racingKings && !torpedo && !crazyhouse && openingName');
+    expect(online).toContain('premoveColor={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse ? undefined : myColor}');
+    expect(online).toContain('onPremove={giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse ? undefined : handleQueuePremove}');
+    expect(online).toContain('!duckChess && !spellChess && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse && openingName');
     expect(online).toContain('ratingCategory && !giveaway && !atomic && !duckChess && !spellChess && !horde');
     expect(online).toContain('wasMaterialDownRef.current && !giveaway && !atomic && !duckChess && !spellChess && !horde');
     expect(online).toContain('horde={horde}');

@@ -10,6 +10,7 @@ import GameControlBar from '../components/GameControlBar';
 import GameOptionsMenu from '../components/GameOptionsMenu';
 import RacingKingsRulesSheet from '../components/RacingKingsRulesSheet';
 import TorpedoRulesSheet from '../components/TorpedoRulesSheet';
+import KnightmateRulesSheet from '../components/KnightmateRulesSheet';
 import GameScreenBody from '../components/GameScreenBody';
 import MoveListStrip from '../components/MoveListStrip';
 import { useStableCallback } from '../components/useStableCallback';
@@ -729,11 +730,12 @@ export default function LocalGameScreen({
                 visible={showOptions}
                 items={[
                   { label: 'Flip Board', onPress: () => setFlipped((v) => !v) },
-                  ...(racingKings || torpedo ? [{ label: 'Rules', onPress: () => setRulesOpen(true) }] : []),
+                  ...(racingKings || torpedo || knightmate ? [{ label: 'Rules', onPress: () => setRulesOpen(true) }] : []),
                 ]}
               />
               {racingKings && <RacingKingsRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
               {torpedo && <TorpedoRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
+              {knightmate && <KnightmateRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />}
             </View>
 
             <View style={styles.footer}>

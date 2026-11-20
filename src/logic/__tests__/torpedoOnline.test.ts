@@ -7,7 +7,7 @@ import { variantTitlePrefix, variantWireFlags } from '../onlineVariants';
 const SRC = join(__dirname, '../..');
 const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8').replace(/\r\n/g, '\n');
 
-const ALL: GameVariant[] = ['classic', 'chess960', 'kingOfTheHill', 'threeCheck', 'setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'racingKings', 'torpedo', 'crazyhouse'];
+const ALL: GameVariant[] = ['classic', 'chess960', 'kingOfTheHill', 'threeCheck', 'setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'racingKings', 'torpedo', 'knightmate', 'crazyhouse'];
 
 describe('Torpedo wire flags', () => {
   it('maps Torpedo to isTorpedo only, and no other variant sets it', () => {
@@ -33,8 +33,8 @@ describe('Torpedo online wiring (source scan; the rendered screens need no RN re
     expect(online.match(/\btorpedo,\n/g)?.length).toBe(2); // the opponent-move replay engine and the rejoin rebuild engine
     expect(online).toContain('torpedo={torpedo}');
     // no premoves (a queued pawn double step is not modelled), no rating, no opening names
-    expect(online).toContain('horde || racingKings || torpedo || crazyhouse ? undefined : myColor');
-    expect(online).toContain('!horde && !racingKings && !torpedo && !crazyhouse');
+    expect(online).toContain('horde || racingKings || torpedo || knightmate || crazyhouse ? undefined : myColor');
+    expect(online).toContain('!horde && !racingKings && !torpedo && !knightmate && !crazyhouse');
     expect(online).toContain('<TorpedoRulesSheet');
     expect(online).toContain("? 'Torpedo'");
   });

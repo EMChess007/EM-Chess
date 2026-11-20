@@ -97,4 +97,36 @@ describe('Local Knightmate from the real App entry', () => {
     expect(document.querySelectorAll('[aria-label="crown badge"]').length).toBe(2);
     expect(document.querySelectorAll('[aria-label="commoner badge"]').length).toBe(4);
   });
+
+  it('Options -> Rules opens the Knightmate sheet with its legend (crown = royal knight, "M" = Commoner, notation K / M / =M), switches to Greek and closes', async () => {
+    await openLocalGame();
+    fireEvent.click(screen.getByText('Options'));
+    await flush(50);
+    fireEvent.click(screen.getByText('Rules'));
+    await flush(50);
+    expect(screen.getByText('How to play Knightmate')).toBeTruthy();
+    expect(screen.getByText('The one big change')).toBeTruthy();
+
+    // The legend draws the real pieces: one more crown badge and one more "M" badge than the board alone shows (2 and 4).
+    const legend = screen.getByTestId('knightmate-legend');
+    expect(legend.querySelectorAll('[aria-label="crown badge"]')).toHaveLength(1);
+    expect(legend.querySelectorAll('[aria-label="commoner badge"]')).toHaveLength(1);
+    expect(legend.querySelectorAll('[data-piece="wk"]')).toHaveLength(1);
+    expect(legend.querySelectorAll('[data-piece="wm"]')).toHaveLength(1);
+    expect(screen.getByText('Crown = royal knight')).toBeTruthy();
+    expect(screen.getByText('“M” = Commoner')).toBeTruthy();
+    expect(screen.getByText('Notation: K / M / =M')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('rules-lang-el'));
+    await flush(50);
+    expect(screen.getByText('Πώς παίζεται το Knightmate')).toBeTruthy();
+    expect(screen.getByText('Υπόμνημα')).toBeTruthy();
+    expect(screen.getByText('Σημειογραφία: K / M / =M')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('rules-close'));
+    await flush(50);
+    expect(screen.queryByText('Πώς παίζεται το Knightmate')).toBeNull();
+    // and the game is where it was
+    expect(screen.getByText('White: 5:00')).toBeTruthy();
+  });
 });

@@ -806,6 +806,88 @@ async function torpedo2p(dev) {
 }
 
 /**
+ * KNIGHTMATE, a Local game (Part 2 of the Knightmate task), modelled on racingKings2p / torpedo2p: the board rectangle comes from the app's beacon (`state-board-2p`), a touch is `input tap`, then the
+ * lasting 90 ms press when the app did not select the square (waitSelected), and what is judged is what the app SAYS (the beacon). The "Knightmate" row of the Local card is the LOWEST row of the Play menu (the
+ * Bots card has one too): it is found with `below: 'Local'`, and when it stands in the bottom quarter of the window the menu is scrolled one more swipe and the row re-found by its shift (`rowAfterScroll`),
+ * the heading "Local" being off the screen by then (command #45).
+ * The moves prove the new pieces on the real board: the start position has the Commoner "M" on b1 (and the royal knight "K" on e1, no king), then e1 -> f3 (the ROYAL KNIGHT jumps over its own pawns: a
+ * king could not move there) and e8 -> f6. The game screen's board moves down when the strip of moves appears with the first move, so the rectangle is read again from the beacon before every touch.
+ */
+async function knightmate2p(dev) {
+  const name = 'touch: Knightmate board (Local)';
+  await scenario(dev, name, async () => {
+    await toHome(dev);
+    dev.beacon.forget('state-board-2p');
+    const row = { text: 'Knightmate', below: 'Local' };
+    await dev.runSteps([{ text: 'Play' }]);
+    const found = await dev.find(row);
+    if (found.bounds.cy > dev.display.h * 0.75) {
+      log(`  the Knightmate row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
+      const before = await dev.stable();
+      dev.scrollDown();
+      await sleep(700);
+      const after = await dev.stable();
+      const moved = rowAfterScroll(before, after, found, row);
+      if (!moved) throw new Error(`the Knightmate row is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
+      log(`  the Knightmate row is now at y ${moved.bounds.cy}`);
+      dev.tap(moved.bounds.cx, moved.bounds.cy);
+      await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
+      await dev.runSteps([{ text: '5 min' }]);
+    } else {
+      await dev.runSteps([row, { text: '5 min' }]);
+    }
+    const issues = [];
+    const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
+    let state = await dev.beacon.waitFor('state-board-2p', boardReported, 15_000);
+    if (!state) {
+      // a "5 min" touch the screen did not take is repeated ONCE, and only while the Select Time Control screen is still the one shown (so no second game can be started)
+      const tree = await dev.look().then((l) => l.nodes).catch(() => []);
+      if (findNodes(tree, { text: 'Select Time Control' }).length > 0) {
+        log('  the Select Time Control screen is still shown 15 s after the touch on "5 min": touching it once more');
+        await dev.runSteps([{ text: '5 min' }]);
+      }
+      state = await dev.beacon.waitFor('state-board-2p', boardReported, 40_000);
+    }
+    if (!state) return record(name, [`the Knightmate board reported no state with a rectangle (the app said ${JSON.stringify(dev.beacon.get('state-board-2p'))}); on screen: ${visibleWords(await dev.look().then((l) => l.nodes).catch(() => []), 30).join(' | ')}`]);
+    const board0 = rectOfState(state);
+    if (Math.abs(board0.w - board0.h) > 2) issues.push(`the board is not square: ${board0.w}x${board0.h}`);
+    // the Knightmate start position: the royal knight "K" on e1 / "k" on e8 and the Commoners "M" / "m" on b1 and g1 (b8 and g8)
+    if (state.fen.split(' ')[0] !== 'rmbqkbmr/pppppppp/8/8/8/8/PPPPPPPP/RMBQKBMR') issues.push(`the start position is "${state.fen}": not the Knightmate position`);
+    await dev.snapshot('knightmate-start');
+    const latest = () => dev.beacon.get('state-board-2p');
+    // one move: the rectangle and the orientation are read from the latest report of the board each time; the touch is a tap, then a 90 ms press, and the move is judged by the app's own position
+    const playMove = async (from, to, landed) => {
+      const select = async (square, until) => {
+        const current = latest();
+        const r = squareRect(rectOfState(current), current?.orientation ?? 'w', square);
+        for (const method of ['tap', 'press']) {
+          if (method === 'tap') dev.tap(r.cx, r.cy);
+          else dev.press(r.cx, r.cy, 90);
+          if (await until()) return method;
+        }
+        return null;
+      };
+      const first = await select(from, () => waitSelected(dev, 'state-board-2p', from, 1800));
+      if (first === null) return `touched ${from} (tap, then a 90 ms press): the app selected ${JSON.stringify(latest()?.selected ?? null)}`;
+      const second = await select(to, () => dev.beacon.waitFor('state-board-2p', landed, 2500));
+      if (second === null) return `after ${from} then ${to} the app's position is "${latest()?.fen}" (selected ${JSON.stringify(latest()?.selected ?? null)}, legal targets ${latest()?.legal})`;
+      log(`Knightmate board: ${from} selected by ${first}, ${to} played by ${second}; the app's position "${latest()?.fen}"`);
+      return null;
+    };
+    // THE RULE: the royal knight (K) jumps e1 -> f3 over its own pawns. A king would never be allowed there.
+    let problem = await playMove('e1', 'f3', (s) => pieceOnSquare(s.fen, 'f3') === 'K' && pieceOnSquare(s.fen, 'e1') === null && s.turn === 'b');
+    if (!problem && JSON.stringify(latest()?.lastMove) !== '["e1","f3"]') problem = `the app's last move is ${JSON.stringify(latest()?.lastMove)}, not e1-f3`;
+    if (!problem) {
+      await sleep(2500); // the strip of moves appeared with the first move and the board moved down: wait for its last rectangle
+      problem = await playMove('e8', 'f6', (s) => pieceOnSquare(s.fen, 'f6') === 'k' && s.turn === 'w');
+    }
+    if (problem) issues.push(problem);
+    await dev.snapshot('knightmate-after-kf3-kf6');
+    record(name, issues, `board ${board0.w}x${board0.h} px at ${board0.x1},${board0.y1} (from the app's beacon); the royal knight's jump e1-f3 ${problem ? 'was NOT played' : 'was played'}`);
+  });
+}
+
+/**
  * FROM POSITION (command #53, Part 2), modelled on racingKings2p / torpedo2p: Play -> From Position -> the FEN typed into the Board Editor's field (Black to move) -> Play from here ->
  *  (a) vs Bot (the lowest level, Kiddo; the human is White, so BLACK, the bot, is to move at once): the real Stockfish must answer within the time budget, and its move must be one of the legal
  *      Black moves of the typed position (judged with chess.js on the app's own beacon FEN);
@@ -1987,6 +2069,7 @@ try {
       await arrows2p(dev); // the same game screen, after e2-e4 (command #32)
       await racingKings2p(dev); // Racing Kings (Local), same method (command #42)
       await torpedo2p(dev); // Torpedo (Local), same method: the double step from the 3rd rank (Part 2)
+      await knightmate2p(dev); // Knightmate (Local), same method: the royal knight's jump e1-f3 (Part 2)
       await fromPosition2p(dev); // From Position (command #53): a typed FEN with Black to move, vs the real Stockfish and Local
     }
     // the Board Editor's 64 squares are 8 columns x 8 rows (command #55b): its own part, run on the 360 dp phone (where the bug showed) and the large one
