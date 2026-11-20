@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { decodePng } from './png.mjs';
 import { extractXml, findNodes, findOne, fingerprint, parseHierarchy, visibleWords } from './hierarchy.mjs';
 import { gearIssues, PACKAGE } from './checks.mjs';
+import { tapAndVerify, waitBudgets, waitSettled } from './settledTap.mjs';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -377,30 +378,33 @@ export class Device {
   async tapStep(step, settleMs = 700) {
     if (step.wait) return sleep(step.wait);
     if (step.fill) throw new Error('fill steps are not used on the phone');
-    const node = await this.find(step);
+    const found = await this.find(step);
+    // SETTLED TAP (command #61): the target's bounds and the screen's words must be the same in two dumps in a row before the touch (a list still flinging takes it on whatever passes
+    // under the finger). Bounded by the runner's dump time. `step.noRetap`: a step whose screen may legitimately stay the same is never repeated.
+    const budgets = waitBudgets(this.runnerDumpMs);
+    const waited = await waitSettled({ dump: () => this.dump(), step, budgetMs: budgets.settleMs, previous: this.fresh ? this.last.nodes : null, sleep });
+    const node = waited.node ?? found;
+    if (!waited.settled) this.log(`  (the screen was still moving after ${budgets.settleMs} ms: tapping anyway, and a lost tap will not be repeated)`);
     this.log(`  tap ${JSON.stringify(step)} -> ${node.cls.split('.').pop()} "${(node.text || node.desc || node.id).slice(0, 30)}" ${node.bounds.w}x${node.bounds.h} at ${node.bounds.cx},${node.bounds.cy}`);
-    const before = fingerprint(this.last.nodes);
-    this.tap(node.bounds.cx, node.bounds.cy);
-    await sleep(settleMs);
     // A development build fetches a screen's code from Metro the first time it is opened (lazy bundling), which can take many seconds: the next step must not look at the OLD screen (the first
-    // run took the time-control screen for the game it was starting). Wait, up to 8 s, until the tree is not the one the tap was made on.
-    const t0 = Date.now();
-    let nudged = false;
-    for (;;) {
-      // a dump that fails (a screen that never stands still) is not the end of the step: the next screen may still be coming up
-      const nodes = await this.dump().catch(() => null);
-      if (nodes !== null && fingerprint(nodes) !== before) {
-        if (nudged) this.log('  (the tree was stale until the status bar was touched)');
-        break;
-      }
-      if (Date.now() - t0 > 8000) break;
-      // some screens of this app leave uiautomator with the PREVIOUS screen's tree (the photograph shows the new one): a touch on the status bar, which does nothing, is tried once to
-      // make the app send the accessibility events that refresh it
-      if (!nudged && Date.now() - t0 > 2500) {
-        nudged = true;
-        this.tap(this.display.w / 2, 4);
-      }
-      await sleep(500);
+    // run took the time-control screen for the game it was starting). Wait until the screen's words are not the ones the tap was made on; a tap that changed nothing is LOST.
+    // (a touch on the status bar, which does nothing, is tried once after 2.5 s: some screens leave uiautomator with the PREVIOUS screen's tree until the app sends new accessibility events)
+    const result = await tapAndVerify({
+      node,
+      settled: waited.settled,
+      before: waited.nodes ?? this.last.nodes,
+      tap: (x, y) => this.tap(x, y),
+      dump: () => this.dump(),
+      changeMs: budgets.changeMs,
+      settleMs,
+      sleep,
+      nudge: () => this.tap(this.display.w / 2, 4),
+      log: (m) => this.log(m),
+      retap: !step.noRetap,
+    });
+    if (result.lost) {
+      this.tapsLost = this.tapsLost ?? [];
+      this.tapsLost.push({ step: JSON.stringify(step), settled: waited.settled, retapped: result.retapped });
     }
   }
 

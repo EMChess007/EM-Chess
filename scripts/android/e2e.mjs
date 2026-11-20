@@ -33,7 +33,7 @@ import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssu
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { diagnosticTail, engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
-import { FAILURE_DIAGNOSTIC_MAX, classifyEvidence, filterFailureLogcat, parsePid } from './lib/failureEvidence.mjs';
+import { FAILURE_DIAGNOSTIC_MAX, FAILURE_LOGCAT_MAX, classifyEvidence, filterFailureLogcat, parsePid } from './lib/failureEvidence.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -88,9 +88,10 @@ async function scenario(dev, name, body) {
   const firstResult = results.length;
   const pidAtStart = appPid(dev);
   sliceStartPid ??= pidAtStart;
+  const firstLostTap = dev.tapsLost?.length ?? 0;
   try {
     await body();
-    await failureEvidence(dev, name, firstResult);
+    await failureEvidence(dev, name, firstResult, firstLostTap);
   } catch (e) {
     record(name, [`exception: ${e.message}`]);
     try {
@@ -99,9 +100,9 @@ async function scenario(dev, name, body) {
       /* no screenshot */
     }
     await dev.snapshot(`FAILED-${name.replace(/[^\w.-]+/g, '_')}`).catch(() => {});
-    await failureEvidence(dev, name, firstResult);
+    await failureEvidence(dev, name, firstResult, firstLostTap);
   }
-  log(`  (${name}: ${Math.round((Date.now() - t0) / 1000)} s)`);
+  log(`  (${name}:${Math.round((Date.now() - t0) / 1000)} s)`);
 }
 
 // --- evidence on EVERY failure (command #59) ------------------------------------------------------------------------------------------------------------------------------------------
@@ -120,7 +121,7 @@ function appPid(dev) {
  * Every scenario that failed (results[firstResult..] with ok === false): prints the screen text, the resumed activity and pid (and whether the pid changed since the slice started),
  * the filtered logcat tail (<= 80), the Diagnostics tail (<= 40) and the runner-health numbers; stores the classified cause as `evidence` on the result (the job summary prints it). Never throws.
  */
-async function failureEvidence(dev, name, firstResult) {
+async function failureEvidence(dev, name, firstResult, firstLostTap = 0) {
   const failedHere = results.slice(firstResult).filter((r) => !r.ok);
   if (failedHere.length === 0) return;
   const issues = failedHere.flatMap((r) => r.issues);
@@ -144,8 +145,9 @@ async function failureEvidence(dev, name, firstResult) {
       log(`  EVIDENCE ${name}: could not read the resumed activity (${String(e.message).slice(0, 120)})`);
     }
     try {
-      logcat = filterFailureLogcat(dev.adb(['logcat', '-d', '-t', '6000'], { timeout: 30_000 }));
-      log(`  EVIDENCE ${name}: logcat tail (${logcat.length} lines of ReactNativeJS / AndroidRuntime / chromium / WebView / ANR):\n${logcat.map((l) => `    ${l}`).join('\n') || '    (none)'}`);
+      // only the APP's lines (its pids: the slice start, now, and those the log names); the harness's uiautomator / shell AndroidRuntime lines are dropped (command #61)
+      logcat = filterFailureLogcat(dev.adb(['logcat', '-d', '-t', '6000'], { timeout: 30_000 }), FAILURE_LOGCAT_MAX, [sliceStartPid, pid]);
+      log(`  EVIDENCE ${name}: logcat tail of the app's pids (${logcat.length} lines of ReactNativeJS / AndroidRuntime / chromium / WebView / ANR / process death):\n${logcat.map((l) => `    ${l}`).join('\n') || '    (none)'}`);
     } catch (e) {
       log(`  EVIDENCE ${name}: could not read logcat (${String(e.message).slice(0, 120)})`);
     }
@@ -171,7 +173,9 @@ async function failureEvidence(dev, name, firstResult) {
       log(`  EVIDENCE ${name}: could not measure the runner health (${String(e.message).slice(0, 120)})`);
     }
   }
-  const cause = classifyEvidence({ startPid: sliceStartPid, pid, logcat, issues, diagnosticLines });
+  const tapsLost = (dev.tapsLost ?? []).slice(firstLostTap);
+  for (const t of tapsLost) log(`  EVIDENCE ${name}: tap lost ${t.step} (settled before tap: ${t.settled ? 'yes' : 'no'}, repeated: ${t.retapped ? 'yes' : 'no'})`);
+  const cause = classifyEvidence({ startPid: sliceStartPid, pid, logcat, issues, diagnosticLines, tapsLost });
   for (const r of failedHere) r.evidence = cause;
   log(`  EVIDENCE: ${cause} (${name})`);
 }
@@ -2174,6 +2178,7 @@ try {
   dev.applyProfile(profile);
   // the runner's health at the start of the slice (command #32): the input path and one dump of the idle screen the slice starts from
   health.start = { inputMs: measureInput(dev), dumpMs: await measureDump(dev) };
+  dev.runnerDumpMs = health.start.dumpMs; // scales the settled-tap waits (scripts/android/lib/settledTap.mjs)
   log(`runner health at the start: input ${health.start.inputMs} ms, dump ${health.start.dumpMs} ms -> ${judgeHealth(health.start).slow ? `SLOW (${judgeHealth(health.start).reasons.join('; ')})` : 'ok'}`);
   if (phase === 'static') {
     dev.clearData();
