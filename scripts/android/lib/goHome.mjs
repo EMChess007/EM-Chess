@@ -48,14 +48,20 @@ export async function readUntil({ read, test, budgetMs, gapMs = 400, now = Date.
  * `relaunch()` then `waitHome()` (which throws when Home never comes: the scenario fails with that message, it does not run on the wrong screen).
  * @param {{ current: () => Promise<any[]>, read: () => Promise<any[]>, tap: (x: number, y: number) => void, relaunch: () => Promise<void>, waitHome: () => Promise<any>,
  *   sleep: (ms: number) => Promise<void>, now?: () => number, log?: (m: string) => void, onTabLost?: (lost: { node: any, tapAt: number }) => any, tabTries?: number, backTries?: number,
- *   tabBudgetMs?: number, backSettleMs?: number, ensureApp?: () => Promise<boolean>, frontTries?: number, backBudgetMs?: number }} verbs (`onTabLost`: called for each Home tab tap that did not show Home, to print the lost-tap evidence)
+ *   tabBudgetMs?: number, backSettleMs?: number, ensureApp?: () => Promise<boolean>, frontTries?: number, backBudgetMs?: number, backChain?: number }} verbs (`onTabLost`: called for each Home tab tap that did not show Home, to print the lost-tap evidence)
  *   (`ensureApp`: brings a backgrounded app to the front and says so with true; called before every decision, at most `frontTries` times - command #67b)
  * @returns {Promise<{ how: 'already' | 'tab' | 'back' | 'front' | 'relaunch', tabTaps: number, backTaps: number, broughtBack: number }>}
  */
-export async function goHome({ current, read, tap, relaunch, waitHome, sleep, now = Date.now, log = () => {}, onTabLost = () => {}, ensureApp = async () => false, tabTries = 3, backTries = 3, frontTries = 2, tabBudgetMs = 10_000, backSettleMs = 800, backBudgetMs = 6_000 }) {
+export async function goHome({ current, read, tap, relaunch, waitHome, sleep, now = Date.now, log = () => {}, onTabLost = () => {}, ensureApp = async () => false, tabTries = 3, backTries = 2, backChain = 6, frontTries = 2, tabBudgetMs = 10_000, backSettleMs = 800, backBudgetMs = 15_000 }) {
+  // (command #67c) `backTries` counts taps on ONE back link (the first tap + re-presses of a link whose screen did not leave), `backChain` the screens left by a back link. #67b had one shared cap
+  // of 3 taps and a 6 s wait: on PR #51 small-screens-1 every "‹ Back" screen reached through the scrolled Play menu (Select Time Control, the 4-seat and Bughouse setups) answered later than
+  // 6 s, was pressed again, the Play menu's "‹ Menu" answered late as well, and the third tap ended the 2-screen chain in "starting the app afresh" (5 relaunches in one slice).
   let tabTaps = 0;
   let backTaps = 0;
   let broughtBack = 0;
+  let linkTaps = 0; // taps on the back link now on the screen
+  let screensLeft = 0;
+  let lastLink = null;
   let nodes = await current().catch(() => null);
   for (;;) {
     // (command #67b) The app in the BACKGROUND (the launcher resumed) is brought to the front before anything is judged or touched: a tree read then may still show the app's last frame, and a
@@ -83,14 +89,20 @@ export async function goHome({ current, read, tap, relaunch, waitHome, sleep, no
       continue;
     }
     const back = backLink(nodes);
-    if (!back || backTaps >= backTries) break;
+    if (!back) break;
+    if (!sameLink(back, lastLink)) linkTaps = 0; // a new screen: its own taps
+    if (linkTaps >= backTries || screensLeft >= backChain) break;
     tap(back.bounds.cx, back.bounds.cy);
     backTaps++;
+    linkTaps++;
+    lastLink = back;
     // (command #67b) Wait for the screen to LEAVE the back link's screen (a condition, bounded) before looking again: the 800 ms sleep read the Diagnostics screen's last frame and tapped its
     // "‹ Back" a second time, on whatever had replaced it. Only when the screen never changes within the budget is the link tapped again.
     await sleep(backSettleMs);
     const left = (list) => onTabs(list) || sameLink(backLink(list), back) === false;
-    nodes = (await readUntil({ read, test: left, budgetMs: backBudgetMs, now, sleep })) ?? (await read().catch(() => null));
+    const after = await readUntil({ read, test: left, budgetMs: backBudgetMs, now, sleep });
+    if (after) screensLeft++;
+    nodes = after ?? (await read().catch(() => null));
   }
   log(`  toHome: starting the app afresh (tab taps ${tabTaps}, back taps ${backTaps}, brought to the front ${broughtBack})`);
   await relaunch();

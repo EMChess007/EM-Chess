@@ -160,10 +160,10 @@ describe('goHome taps a back link ONCE while its screen is still leaving (the ru
       now: () => t,
       sleep: async (ms: number) => void (t += ms),
     });
-    expect(out).toEqual({ how: 'relaunch', tabTaps: 0, backTaps: 3, broughtBack: 0 });
+    // (command #67c) at most 2 taps on ONE link (backTries), each re-press after the settle (800 ms) + the 15000 ms wait for the screen to leave
+    expect(out).toEqual({ how: 'relaunch', tabTaps: 0, backTaps: 2, broughtBack: 0 });
     expect(relaunched).toBe(1);
-    // the gaps between two back taps are the settle (800 ms) + the wait for the screen to leave (6000 ms budget) at least
-    for (let i = 1; i < taps.length; i++) expect(taps[i] - taps[i - 1]).toBeGreaterThanOrEqual(6800);
+    for (let i = 1; i < taps.length; i++) expect(taps[i] - taps[i - 1]).toBeGreaterThanOrEqual(15800);
   });
 });
 

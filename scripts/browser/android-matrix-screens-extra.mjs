@@ -15,7 +15,12 @@ import { PIECE_THEME_IDS } from './android-matrix-screens.mjs';
 
 const PLAY = { text: 'Play' };
 const SETUP = [PLAY, { label: 'Crazy Bughouse' }];
-const startWith = (preset) => [...SETUP, { id: preset }, { id: 'bughouse-start' }, { text: '3 min' }];
+/**
+ * The LONGEST clock the time-control picker offers (src/logic/timeControls.ts, the Daily "14 days"; command #67c). PR #51 small-screens-1 tapped "3 min" at 11:43:15 and judged the pass-and-play
+ * screen at 11:46:30: the 3-minute game had ended (board B's bots had played 193 moves, "Rematch" on the screen). A judged game must never race its own clock.
+ */
+export const BUGHOUSE_GAME_CLOCK = '14 days';
+const startWith = (preset) => [...SETUP, { id: preset }, { id: 'bughouse-start' }, { text: BUGHOUSE_GAME_CLOCK }];
 const BW_PIECES = { mode: 'bw', allKinds: true };
 /** A screen where bots keep playing: a photograph can catch a cell between two renders, so an empty cell is inconclusive there (android-matrix-pieces.mjs `liveBots`); a wrong colour still fails. */
 const BW_PIECES_BOTS = { ...BW_PIECES, liveBots: true };

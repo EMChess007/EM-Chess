@@ -30,7 +30,7 @@ import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from
 import { byClass, findNodes, scrollUntilVisible, visibleWords } from './lib/hierarchy.mjs';
 import { FROM_POSITION_ROW, isLowRow, playRow } from './lib/playMenu.mjs';
 import { checkEditorGrid, editorSquares } from './lib/editorGrid.mjs';
-import { boardFromScreenshot, darkSquareMeasure, gameOverShown, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, stableCells, textIssues, cornerColour } from './lib/checks.mjs';
+import { boardFromScreenshot, darkSquareMeasure, gameAgeS, gameOverShown,startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, stableCells, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { diagnosticTail, engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
@@ -485,9 +485,20 @@ async function screens(dev) {
     await scenario(dev, `screen ${s.id}`, async () => {
       await toHome(dev);
       dev.beacon.forgetAll(); // what the boards report from here on is this screen's
+      dev.lastAppTapAt = null;
       await dev.runSteps(s.steps.map(phoneStep));
-      const startedAt = Date.now(); // the last step started the game (a timed one: "3 min")
+      // (command #67c) the game's age counts from the TAP that started it (the last step, the time-control tap), not from the end of runSteps: that step's wait for a settled tree took 182 s
+      // on a live-bots screen and the message said "13 s" when 195 s had passed
+      const tappedAt = dev.lastAppTapAt;
+      const stepsDoneAt = Date.now();
       await sleep(600);
+      // (command #67c) a game screen's pieces are judged FIRST, before the text checks read and scroll the tree: the photograph must not wait behind them
+      let verdict = null;
+      let judgedAt = null;
+      if (s.pieces && s.pieces.mode === 'bw') {
+        verdict = await judgeGamePieces(dev, s);
+        judgedAt = Date.now();
+      }
       // A screen where bots keep playing never gives uiautomator an idle UI ("could not get idle state"): its tree cannot be read, and the check says so instead of failing for it - the pieces are judged
       // from the app's own position (the beacon), the text by the on-device text-fit probe and the web matrix.
       // (command #67b, PR #51 small-screens-2: the photograph of "bughouse-game-single" came 196 s after "3 min" was tapped - the human seat never moves, so its clock ran out at 180 s, the game
@@ -512,10 +523,9 @@ async function screens(dev) {
         const said = await dev.find({ startsWith: s.expectText }).then(() => true, () => false);
         if (!said) issues.push(`the screen does not say "${s.expectText}"`);
       }
-      if (s.pieces && s.pieces.mode === 'bw') {
-        const verdict = await judgeGamePieces(dev, s);
-        const ageS = Math.round((Date.now() - startedAt) / 1000);
-        note += ` | pieces read ${ageS} s after the game started`;
+      if (verdict) {
+        const ageS = gameAgeS({ tappedAt, fallbackAt: stepsDoneAt, now: judgedAt });
+        note += ` | pieces read ${ageS} s after the game started (its time-control tap)`;
         if (gameOverShown(nodes) || verdict.gameOver) {
           // a FINISHED game is not what the scenario checks: its colours are not judged, and the run says why (never a colour failure)
           issues.push(`the game had ended before its pieces could be judged (result card on the screen, ${ageS} s after the game started): the check came too late, the pieces were not judged`);

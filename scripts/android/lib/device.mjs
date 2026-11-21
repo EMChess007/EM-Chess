@@ -251,6 +251,7 @@ export class Device {
   async tapApp(x, y, why = `a tap at ${Math.round(x)},${Math.round(y)}`) {
     await this.ensureForeground(why);
     this.tap(x, y);
+    this.lastAppTapAt = Date.now(); // (command #67c) when the last navigation tap went in: a game's age is measured from its time-control tap, not from the end of runSteps
   }
 
   /**
