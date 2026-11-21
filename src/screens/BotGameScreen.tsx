@@ -17,7 +17,8 @@ import MoveListStrip from '../components/MoveListStrip';
 import { useStableCallback } from '../components/useStableCallback';
 import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
-import { ENGINE_BRIDGE_ERROR_PREFIX } from '../engine/bridgeSupervisor';
+import EngineErrorRow from '../components/EngineErrorRow';
+import { useEngineRetry } from '../logic/useEngineRetry';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { unlockAchievement } from '../logic/achievementStorage';
@@ -189,13 +190,13 @@ export default function BotGameScreen({
   const [lastMove, setLastMove] = useState<Move | null>(null);
   const [history, setHistory] = useState<GameHistoryEntry[]>([]);
   const [botThinking, setBotThinking] = useState(false);
-  const [engineError, setEngineError] = useState<string | null>(null);
-  // Engine watchdog: a bridge failure (WebView never ready / died) gets ONE automatic retry on a freshly
-  // mounted bridge (bridgeKey remounts <StockfishBridge>; engineRetryNonce re-runs the bot-move effect). A second
-  // failure shows engineError with a Retry button instead of waiting silently forever.
-  const [bridgeKey, setBridgeKey] = useState(0);
-  const [engineRetryNonce, setEngineRetryNonce] = useState(0);
-  const engineAttemptRef = useRef(0);
+  // Engine watchdog (logic/useEngineRetry.ts, shared with the other engine screens): a bridge failure gets ONE
+  // automatic retry on a freshly mounted bridge; a second failure shows the error with a Retry button.
+  // `hintRetry` is the same for the Hint request (no automatic retry: the player just taps Retry).
+  const botRetry = useEngineRetry();
+  const hintRetry = useEngineRetry(false);
+  const { engineError, retryNonce: engineRetryNonce } = botRetry;
+  const bridgeKey = `${botRetry.bridgeKey}-${hintRetry.bridgeKey}`;
   const [resetCount, setResetCount] = useState(0);
   const [openingName, setOpeningName] = useState<string | null>(null);
   const [flipped, setFlipped] = useState(false);
@@ -480,8 +481,11 @@ export default function BotGameScreen({
         const uci = await engineRuntime.engine.getBestMove({ ...getBotStrengthOptions(bot.elo), movetimeMs: 800 });
         if (cancelled) return;
         setHintText(uciMoveToSan(uci, fen, { chess960, initialFen }));
-      } catch {
-        if (!cancelled) setHintText(null);
+      } catch (err) {
+        if (!cancelled) {
+          setHintText(null);
+          hintRetry.fail(err, `${getEngineName(engineId)} hint`);
+        }
       } finally {
         if (!cancelled) setHintLoading(false);
       }
@@ -498,7 +502,7 @@ export default function BotGameScreen({
 
     let cancelled = false;
     setBotThinking(true);
-    setEngineError(null);
+    botRetry.clearError();
     setHintText(null);
 
     (async () => {
@@ -751,7 +755,7 @@ export default function BotGameScreen({
           if (!move) throw new Error(`Invalid move from engine: "${uciMove}"`);
         }
         if (cancelled) return;
-        engineAttemptRef.current = 0;
+        botRetry.succeeded();
 
         // Spell Chess: attach the cast (if any) to the move that actually landed, then advance
         // cooldowns/expire whatever was still pending — same castFreeze/castJump-then-
@@ -794,17 +798,8 @@ export default function BotGameScreen({
         }
       } catch (err) {
         if (!cancelled) {
-          const message = err instanceof Error ? err.message : String(err);
-          console.log('[BotGame] engine error:', message);
-          if (message.startsWith(ENGINE_BRIDGE_ERROR_PREFIX) && engineAttemptRef.current < 1) {
-            engineAttemptRef.current += 1;
-            logDiagnostic(`[Engine] ${getEngineName(engineId)} bridge failure (${message}) - retrying once on a fresh bridge`);
-            setBridgeKey((k) => k + 1);
-            setEngineRetryNonce((n) => n + 1);
-          } else {
-            logDiagnostic(`[Engine] ${getEngineName(engineId)} engine error shown to the player: ${message}`);
-            setEngineError(message);
-          }
+          console.log('[BotGame] engine error:', err instanceof Error ? err.message : String(err));
+          botRetry.fail(err, getEngineName(engineId));
         }
       } finally {
         if (!cancelled) setBotThinking(false);
@@ -820,11 +815,12 @@ export default function BotGameScreen({
   }, [fen, gameOver, engineRetryNonce]);
 
   // "Retry" under the engine error: a fresh bridge and a full new retry budget.
-  const handleEngineRetry = () => {
-    engineAttemptRef.current = 0;
-    setEngineError(null);
-    setBridgeKey((k) => k + 1);
-    setEngineRetryNonce((n) => n + 1);
+  const handleEngineRetry = botRetry.retry;
+  // "Retry" under a failed hint: a fresh bridge, then the hint is asked again.
+  const handleHintRetry = () => {
+    hintRetry.retry();
+    setHintLoading(true);
+    setHintRequestKey((k) => k + 1);
   };
 
   const { whiteCaptured, blackCaptured } = useMemo(
@@ -1048,7 +1044,8 @@ export default function BotGameScreen({
     setFen(nextInitialFen);
     setLastMove(null);
     setHistory([]);
-    setEngineError(null);
+    botRetry.clearError();
+    hintRetry.clearError();
     setResetCount((c) => c + 1);
     setOpeningName(null);
     setResignedBy(null);
@@ -1089,6 +1086,7 @@ export default function BotGameScreen({
   const handleHintPress = () => {
     if (gameOver || hintLoading || botThinking || turn !== userColor || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse) return;
     setHintText(null);
+    hintRetry.clearError();
     setHintLoading(true);
     setHintRequestKey((k) => k + 1);
   };
@@ -1268,14 +1266,8 @@ export default function BotGameScreen({
           </View>
         )}
         {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
-        {engineError && (
-          <View style={styles.premoveRow}>
-            <Text style={styles.errorText} testID="bot-engine-error">Engine error: {engineError}</Text>
-            <Pressable style={styles.premoveCancelButton} onPress={handleEngineRetry} testID="bot-engine-retry" accessibilityRole="button">
-              <Text style={styles.premoveCancelButtonText}>Retry</Text>
-            </Pressable>
-          </View>
-        )}
+        {engineError && <EngineErrorRow message={engineError} onRetry={handleEngineRetry} testIDPrefix="bot-engine" />}
+        {hintRetry.engineError && <EngineErrorRow message={hintRetry.engineError} onRetry={handleHintRetry} testIDPrefix="bot-hint" />}
         {premoveInvalid && <Text style={styles.errorText}>Premove was no longer legal — cancelled.</Text>}
         {premove && turn === botColor && (
           <View style={styles.premoveRow}>

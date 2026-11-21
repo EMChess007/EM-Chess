@@ -3,6 +3,8 @@ import { StyleSheet, View } from 'react-native';
 import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
 import { useSaveGameOnEnd } from '../api/useSaveGameOnEnd';
+import EngineErrorRow from '../components/EngineErrorRow';
+import { useEngineRetry } from '../logic/useEngineRetry';
 import { appAlert } from '../components/AppAlert';
 import CapturedPieces from '../components/CapturedPieces';
 import ChessBoard from '../components/ChessBoard';
@@ -134,6 +136,7 @@ export default function LocalGameScreen({
   const [hintText, setHintText] = useState<string | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
   const [hintActive, setHintActive] = useState(false);
+  const hintRetry = useEngineRetry(false);
   const [hintRequestKey, setHintRequestKey] = useState(0);
   const [viewIndex, setViewIndex] = useState<number | null>(null); // null = live position
   const [fogOfWarWinner, setFogOfWarWinner] = useState<PieceColor | null>(null);
@@ -168,8 +171,11 @@ export default function LocalGameScreen({
         const uci = await hintRuntime.engine.getBestMove({ movetimeMs: 800 });
         if (cancelled) return;
         setHintText(uciMoveToSan(uci, fen, { chess960, initialFen }));
-      } catch {
-        if (!cancelled) setHintText(null);
+      } catch (err) {
+        if (!cancelled) {
+          setHintText(null);
+          hintRetry.fail(err, 'Hint');
+        }
       } finally {
         if (!cancelled) setHintLoading(false);
       }
@@ -595,8 +601,16 @@ export default function LocalGameScreen({
   const handleHintPress = () => {
     if (gameOver || hintLoading || isReviewing || fogOfWar || giveaway || atomic || duckChess || spellChess || horde || racingKings || torpedo || knightmate || crazyhouse) return;
     setHintText(null);
+    hintRetry.clearError();
     setHintLoading(true);
     setHintActive(true);
+    setHintRequestKey((k) => k + 1);
+  };
+
+  // "Retry" under a failed hint: a fresh bridge, then the hint is asked again.
+  const handleHintRetry = () => {
+    hintRetry.retry();
+    setHintLoading(true);
     setHintRequestKey((k) => k + 1);
   };
 
@@ -770,7 +784,7 @@ export default function LocalGameScreen({
             {isReviewing && <Text style={styles.reviewingText}>Reviewing move history (not live)</Text>}
 
             {hintActive && (
-              <StockfishBridge ref={handleHintBridgeRef} onLine={handleHintBridgeLine} html={hintRuntime.buildHtml()} />
+              <StockfishBridge key={hintRetry.bridgeKey} ref={handleHintBridgeRef} onLine={handleHintBridgeLine} html={hintRuntime.buildHtml()} />
             )}
 
             <View style={styles.playerRow}>
@@ -824,6 +838,7 @@ export default function LocalGameScreen({
 
             {hintLoading && <Text style={styles.hintText}>Thinking of a hint...</Text>}
             {!hintLoading && hintText && <Text style={styles.hintText}>Hint: {hintText}</Text>}
+            {hintRetry.engineError && <EngineErrorRow message={hintRetry.engineError} onRetry={handleHintRetry} testIDPrefix="local-hint" />}
           </>
         )}
       </GameScreenBody>

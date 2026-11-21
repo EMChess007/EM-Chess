@@ -11,6 +11,8 @@ import MoveListStrip from '../components/MoveListStrip';
 import { useStableCallback } from '../components/useStableCallback';
 import PostGameSummaryModal from '../components/PostGameSummaryModal';
 import ScreenHeader from '../components/ScreenHeader';
+import EngineErrorRow from '../components/EngineErrorRow';
+import { useEngineRetry } from '../logic/useEngineRetry';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import { getBotThinkTimeMs } from '../logic/bots';
@@ -104,7 +106,8 @@ export default function EngineVsEngineGameScreen({
   const [lastMove, setLastMove] = useState<Move | null>(null);
   const [history, setHistory] = useState<GameHistoryEntry[]>([]);
   const [thinking, setThinking] = useState(false);
-  const [engineError, setEngineError] = useState<string | null>(null);
+  const engineRetry = useEngineRetry();
+  const { engineError } = engineRetry;
   const [resetCount, setResetCount] = useState(0);
   const [openingName, setOpeningName] = useState<string | null>(null);
   const [flipped, setFlipped] = useState(false);
@@ -172,7 +175,7 @@ export default function EngineVsEngineGameScreen({
 
     let cancelled = false;
     setThinking(true);
-    setEngineError(null);
+    engineRetry.clearError();
 
     (async () => {
       try {
@@ -206,11 +209,11 @@ export default function EngineVsEngineGameScreen({
         setHistory((h) => [...h, { move, fenBefore: fen, fenAfter: moveEngine.getFen() }]);
         setLastMove(move);
         setFen(moveEngine.getFen());
+        engineRetry.succeeded();
       } catch (err) {
         if (!cancelled) {
-          const message = err instanceof Error ? err.message : String(err);
-          console.log('[EngineVsEngineGame] engine error:', message);
-          setEngineError(message);
+          console.log('[EngineVsEngineGame] engine error:', err instanceof Error ? err.message : String(err));
+          engineRetry.fail(err, activeBot.name);
         }
       } finally {
         if (!cancelled) setThinking(false);
@@ -223,7 +226,7 @@ export default function EngineVsEngineGameScreen({
     // engine1/engine2/runtime1/runtime2/c1/timeControl are stable for this screen's lifetime;
     // fen+gameOver are the real triggers — same pattern as BotGameScreen's identical effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fen, gameOver]);
+  }, [fen, gameOver, engineRetry.retryNonce]);
 
   const { whiteCaptured, blackCaptured } = useMemo(
     () => computeCapturedMaterial(history.map((h, i) => ({ captured: h.move.captured, moverColor: i % 2 === 0 ? 'w' : 'b' }))),
@@ -269,7 +272,7 @@ export default function EngineVsEngineGameScreen({
     setFen(nextInitialFen);
     setLastMove(null);
     setHistory([]);
-    setEngineError(null);
+    engineRetry.clearError();
     setResetCount((c) => c + 1);
     setOpeningName(null);
     setStopped(false);
@@ -313,8 +316,8 @@ export default function EngineVsEngineGameScreen({
 
   return (
     <View style={styles.container}>
-      <StockfishBridge ref={handleBridgeRef1} onLine={handleEngineLine1} html={runtime1.buildHtml()} />
-      {!sameEngine && <StockfishBridge ref={handleBridgeRef2} onLine={handleEngineLine2} html={runtime2.buildHtml()} />}
+      <StockfishBridge key={`b1-${engineRetry.bridgeKey}`} ref={handleBridgeRef1} onLine={handleEngineLine1} html={runtime1.buildHtml()} />
+      {!sameEngine && <StockfishBridge key={`b2-${engineRetry.bridgeKey}`} ref={handleBridgeRef2} onLine={handleEngineLine2} html={runtime2.buildHtml()} />}
       <ScreenHeader
         title="Chess — Engine vs Engine"
         subtitle={chess960 ? 'Chess960' : kingOfTheHill ? 'King of the Hill' : threeCheck ? 'Three-Check' : undefined}
@@ -368,7 +371,7 @@ export default function EngineVsEngineGameScreen({
             <Text style={styles.thinkingText}>{turnLabel} is thinking...</Text>
           </View>
         )}
-        {engineError && <Text style={styles.errorText}>Engine error: {engineError}</Text>}
+        {engineError && <EngineErrorRow message={engineError} onRetry={engineRetry.retry} testIDPrefix="eve-engine" />}
 
         <View style={styles.playerRow}>
           <Text style={[styles.clock, turn === topColor && !gameOver && styles.clockActive]}>
