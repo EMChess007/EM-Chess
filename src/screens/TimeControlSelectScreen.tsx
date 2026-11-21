@@ -45,8 +45,13 @@ export default function TimeControlSelectScreen({
             <Text style={styles.sectionTitle}>Play as</Text>
             <View style={styles.presetGrid}>
               {COLOR_OPTIONS.map((option) => (
+                // aria-selected (command #67): choosing a colour changed only a background colour, so no tree of the screen could tell a landed tap from a lost one - every large-perf run
+                // judged `tap {"text":"White"}` LOST while the bot then played Black. The chosen colour is now `selected` for TalkBack and in the Android tree (the VariantSelector rule, #62).
                 <Pressable
                   key={option.value}
+                  testID={`play-as-${option.value}`}
+                  accessibilityRole="button"
+                  aria-selected={colorChoice === option.value}
                   style={[styles.presetButton, colorChoice === option.value && styles.presetButtonActive]}
                   onPress={() => setColorChoice(option.value)}
                 >

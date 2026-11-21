@@ -714,6 +714,9 @@ export default function BotGameScreen({
           });
 
           const thinkStartedAt = Date.now();
+          // Command #67: large-perf's "bot did not answer in 30 s" (3 of the last 5 runs, the game NOT over, the bot to move) left only the finished thinks in this log. The START line
+          // tells "the engine was asked and never answered" from "the engine was never asked"; the error and the cancel below close the other two ways out.
+          logDiagnostic(`[Engine] ${getEngineName(engineId)} think start: requested=${thinkTimeMs}ms ply=${history.length + 1}`);
           const uciMove = await engineRuntime.engine.getBestMove({
             ...getBotStrengthOptions(bot.elo),
             movetimeMs: thinkTimeMs,
@@ -722,7 +725,10 @@ export default function BotGameScreen({
           // Lightweight engine-timing diagnostic — requested movetime vs. actual wall-clock time
           // taken (a large gap would point at the WebView bridge, not the engine itself).
           logDiagnostic(`[Engine] ${getEngineName(engineId)} think: requested=${thinkTimeMs}ms actual=${actualThinkMs}ms -> ${uciMove}`);
-          if (cancelled) return;
+          if (cancelled) {
+            logDiagnostic(`[Engine] ${getEngineName(engineId)} think cancelled (the position changed or the screen closed) -> ${uciMove}`);
+            return;
+          }
 
           const parsed = parseUciMove(uciMove);
           if (!parsed) throw new Error(`Unrecognized move from engine: "${uciMove}"`);
@@ -799,6 +805,7 @@ export default function BotGameScreen({
       } catch (err) {
         if (!cancelled) {
           console.log('[BotGame] engine error:', err instanceof Error ? err.message : String(err));
+          logDiagnostic(`[Engine] ${getEngineName(engineId)} bot move error: ${err instanceof Error ? err.message : String(err)}`);
           botRetry.fail(err, getEngineName(engineId));
         }
       } finally {
