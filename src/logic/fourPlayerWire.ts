@@ -244,6 +244,8 @@ export interface FourServerToClientEvents {
   four_seat_update: (payload: FourSeatUpdatePayload) => void;
   four_game_over: (payload: FourGameOverPayload) => void;
   four_chat_message: (payload: FourChatMessagePayload) => void;
+  /** To the OLD socket of a seat the same account just rejoined from another tab / device (command #68, app `seatTakeover.ts`). */
+  four_seat_taken_over: (payload: FourRoomPayload) => void;
 }
 
 /** The event names as runtime values (a typo in a string literal is a compile error through the two interfaces above; these exist for
@@ -267,6 +269,7 @@ export const FOUR_SERVER_EVENT_NAMES = [
   'four_seat_update',
   'four_game_over',
   'four_chat_message',
+  'four_seat_taken_over',
 ] as const satisfies readonly (keyof FourServerToClientEvents)[];
 
 // --- Validation (pure; the server enforces it on every event, the client uses it to avoid sending what would be refused) --------

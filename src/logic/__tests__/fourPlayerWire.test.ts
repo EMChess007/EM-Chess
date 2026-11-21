@@ -287,7 +287,7 @@ describe('the event surface', () => {
     expect(all.every((n) => /^four_[a-z_]+$/.test(n))).toBe(true);
     expect(new Set(all).size).toBe(all.length);
     expect(FOUR_CLIENT_EVENT_NAMES).toHaveLength(9);
-    expect(FOUR_SERVER_EVENT_NAMES).toHaveLength(6);
+    expect(FOUR_SERVER_EVENT_NAMES).toHaveLength(7); // + four_seat_taken_over (command #68)
   });
 
   it('the runtime lists equal the typed interfaces (adding an event to one and forgetting the other fails here)', () => {

@@ -181,7 +181,7 @@ describe('entry, queue and leaving', () => {
     const game = read('screens/FourPlayerOnlineGameScreen.tsx');
     expect(game).toContain('appAlert(LEAVE_GAME_TITLE, LEAVE_GAME_MESSAGE, [');
     expect(game).toContain("{ text: 'Leave', style: 'destructive', onPress: () => leaveNow(true) },");
-    expect(game).toContain('leave();\n    onExit(resumable);');
+    expect(game).toContain("leave();\n    // Taken over by another tab / device of this account (seatTakeover.ts): not resumable here, and the shared rejoin record is theirs now.\n    if (seatTakenOver) onExit(resumable, 'seatTakenOver');\n    else onExit(resumable);");
     expect(app).toContain('setFourResume(resumable ? { token, match, timeControl } : null);');
     expect(app).toContain('fourResume && authSession?.token === fourResume.token');
     expect(app).toContain('resume: true');

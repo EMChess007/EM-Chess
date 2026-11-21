@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { bringToFrontCommand, foregroundState, resumedPackages } from '../../../scripts/android/lib/foreground.mjs';
+import { IN_FRONT_PROBE, bringToFrontCommand, focusedPackage, foregroundState, inFrontState, resumedPackages, waitInFront } from '../../../scripts/android/lib/foreground.mjs';
 import { goHome, isHome } from '../../../scripts/android/lib/goHome.mjs';
 import { gameOverShown } from '../../../scripts/android/lib/checks.mjs';
 
@@ -31,6 +31,111 @@ describe('foregroundState', () => {
   it('brings the EXISTING task to the front with the launcher intent (no force-stop, no new process)', () => {
     expect(bringToFrontCommand(PKG)).toBe('am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n com.emchess.app/.MainActivity');
     expect(bringToFrontCommand(PKG)).not.toMatch(/force-stop|pm clear/);
+  });
+});
+
+/**
+ * Command #68b (PR #52 head dd012a3, job 136908537492, slice large-touch): the first tap ("More", 16:33:19) was lost with the launcher holding the INPUT FOCUS while the app was the RESUMED
+ * activity (16:33:41). Resumed alone is not "in front".
+ */
+const LAUNCHER_FOCUS =
+  '  mCurrentFocus=Window{9df87c6 u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}\n  mFocusedApp=ActivityRecord{a417995 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}';
+const APP_FOCUS = '  mCurrentFocus=Window{5e1f2a u0 com.emchess.app/com.emchess.app.MainActivity}\n  mFocusedApp=ActivityRecord{40cafaa u0 com.emchess.app/.MainActivity t9}';
+const RUN_RESUMED = '  topResumedActivity=ActivityRecord{40cafaa u0 com.emchess.app/.MainActivity t9}';
+
+describe('inFrontState: resumed AND focused (command #68b)', () => {
+  it('reads the focused package from mCurrentFocus, else mFocusedApp; null / packageless windows read as nothing', () => {
+    expect(focusedPackage(LAUNCHER_FOCUS)).toBe('com.google.android.apps.nexuslauncher');
+    expect(focusedPackage(APP_FOCUS)).toBe('com.emchess.app');
+    expect(focusedPackage('  mCurrentFocus=null\n  mFocusedApp=ActivityRecord{40cafaa u0 com.emchess.app/.MainActivity t9}')).toBe('com.emchess.app');
+    expect(focusedPackage('  mCurrentFocus=Window{1 u0 NotificationShade}')).toBe(null);
+    expect(focusedPackage('')).toBe(null);
+  });
+  it('the run: the app resumed + the launcher focused = NOT in front', () => {
+    const v = inFrontState(`${RUN_RESUMED}\n${LAUNCHER_FOCUS}`, PKG);
+    expect(v.state).toBe('background');
+    expect(v.resumed).toBe('com.emchess.app');
+    expect(v.focused).toBe('com.google.android.apps.nexuslauncher');
+    expect(v.why).toBe('com.google.android.apps.nexuslauncher holds the input focus while com.emchess.app is resumed');
+  });
+  it('resumed + focused = front; the keyboard or a system prompt holding the focus = front; an unreadable focus never blocks; the launcher resumed = background', () => {
+    expect(inFrontState(`${RUN_RESUMED}\n${APP_FOCUS}`, PKG).state).toBe('front');
+    expect(inFrontState(`${RUN_RESUMED}\n  mCurrentFocus=Window{2 u0 com.google.android.inputmethod.latin/x.Ime}`, PKG).state).toBe('front');
+    expect(inFrontState(`${RUN_RESUMED}\n  mCurrentFocus=Window{2 u0 com.android.systemui/x.Dialog}`, PKG).state).toBe('front');
+    expect(inFrontState(RUN_RESUMED, PKG).state).toBe('front');
+    expect(inFrontState(`${LAUNCHER_RESUMED}\n${LAUNCHER_FOCUS}`, PKG).state).toBe('background');
+    expect(inFrontState('', PKG).state).toBe('unknown');
+  });
+  it('the probe asks for the resumed AND the focus lines in one shell call', () => {
+    expect(IN_FRONT_PROBE).toContain('topResumedActivity');
+    expect(IN_FRONT_PROBE).toContain('mCurrentFocus|mFocusedApp');
+  });
+});
+
+/** A fake phone for waitInFront: `focusFixedBy` = how the launcher's focus is cleared ('intent' = the launcher intent alone, 'home' = only HOME then the intent, 'never'). */
+function fakePhone(focusFixedBy: 'intent' | 'home' | 'never') {
+  let focus = LAUNCHER_FOCUS;
+  let homePressed = false;
+  const events: string[] = [];
+  return {
+    events,
+    probe: () => {
+      events.push('probe');
+      return `${RUN_RESUMED}\n${focus}`;
+    },
+    run: (cmd: string) => {
+      events.push(cmd.startsWith('input keyevent') ? 'home' : 'bring');
+      if (cmd.startsWith('input keyevent KEYCODE_HOME')) homePressed = true;
+      else if (focusFixedBy === 'intent' || (focusFixedBy === 'home' && homePressed)) focus = APP_FOCUS;
+    },
+    tap: () => {
+      events.push(focus === APP_FOCUS ? 'tap reached the app' : 'tap LOST on the launcher');
+    },
+  };
+}
+
+describe('waitInFront: the focus is fixed before the first tap (command #68b)', () => {
+  it('the run: app resumed + launcher focused -> brought to the front, waited on, then the first tap reaches the app; one EVIDENCE line', async () => {
+    const phone = fakePhone('intent');
+    const logs: string[] = [];
+    const out = await waitInFront({ probe: phone.probe, run: phone.run, pkg: PKG, why: 'the slice start', log: (m: string) => void logs.push(m), sleep: async () => {} });
+    phone.tap();
+    expect(out.ok).toBe(true);
+    expect(out.fixes).toBe(1);
+    expect(phone.events).toEqual(['probe', 'bring', 'probe', 'tap reached the app']);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('EVIDENCE in front before the slice start: yes');
+    expect(logs[0]).toContain('at first: com.google.android.apps.nexuslauncher holds the input focus while com.emchess.app is resumed');
+  });
+  it('a launcher intent that leaves the focus where it was is followed by HOME + the intent (a real switch)', async () => {
+    const phone = fakePhone('home');
+    const out = await waitInFront({ probe: phone.probe, run: phone.run, pkg: PKG, why: 'x', sleep: async () => {}, settleMs: 1000, pollMs: 500 });
+    expect(out).toMatchObject({ ok: true, fixes: 2 });
+    expect(phone.events.filter((e) => e !== 'probe')).toEqual(['bring', 'home', 'bring']);
+  });
+  it('bounded: a focus that never comes back ends after `tries` with ok false and says NO (never an endless loop)', async () => {
+    const phone = fakePhone('never');
+    const logs: string[] = [];
+    const out = await waitInFront({ probe: phone.probe, run: phone.run, pkg: PKG, why: 'x', log: (m: string) => void logs.push(m), sleep: async () => {}, tries: 3, settleMs: 1000, pollMs: 500 });
+    expect(out).toMatchObject({ ok: false, fixes: 3 });
+    expect(phone.events.filter((e) => e === 'bring')).toHaveLength(3);
+    expect(logs[0]).toContain(': NO (');
+  });
+  it('already in front: nothing is run; the EVIDENCE line is printed only when asked (slice start / scenario), silent for a plain tap', async () => {
+    const logs: string[] = [];
+    const runs: string[] = [];
+    const quiet = await waitInFront({ probe: () => `${RUN_RESUMED}\n${APP_FOCUS}`, run: (c: string) => void runs.push(c), pkg: PKG, why: 'a tap', log: (m: string) => void logs.push(m), sleep: async () => {} });
+    expect(quiet).toMatchObject({ ok: true, fixes: 0 });
+    expect(logs).toEqual([]);
+    await waitInFront({ probe: () => `${RUN_RESUMED}\n${APP_FOCUS}`, run: (c: string) => void runs.push(c), pkg: PKG, why: 'scenario "x"', log: (m: string) => void logs.push(m), sleep: async () => {}, evidence: true });
+    expect(runs).toEqual([]);
+    expect(logs[0]).toContain('EVIDENCE in front before scenario "x": yes (resumed and focused');
+  });
+  it('a failing probe is "unknown": never acted on, never thrown', async () => {
+    const runs: string[] = [];
+    const out = await waitInFront({ probe: () => { throw new Error('adb gone'); }, run: (c: string) => void runs.push(c), pkg: PKG, why: 'x', sleep: async () => {} });
+    expect(out).toMatchObject({ ok: true, fixes: 0 });
+    expect(runs).toEqual([]);
   });
 });
 
@@ -184,6 +289,17 @@ describe('wiring (source scans)', () => {
   it('toHome passes the foreground check to goHome; navigation taps go through tapApp', () => {
     expect(e2e).toMatch(/ensureApp: \(\) => dev\.ensureForeground\('toHome'\)/);
     expect(device).toMatch(/tap: \(x, y\) => this\.tapApp\(x, y,/);
+  });
+  it('(command #68b) the check before every app tap is the focus-aware one; the slice start and every scenario wait on it; touch evidence prints the focus', () => {
+    expect(device).toMatch(/async tapApp\(x, y, why = [^\n]*\) \{\n {4}await this\.ensureForeground\(why\);\n {4}this\.tap\(x, y\);/);
+    expect(device).toMatch(/const out = await this\.waitInFront\(why, \{ evidence: false \}\);/);
+    expect(device).toMatch(/probe: \(\) => this\.sh\(IN_FRONT_PROBE/);
+    expect(device).not.toMatch(/foregroundState\(/);
+    expect(e2e).toMatch(/await dev\.waitHome\(300_000\);\n {4}await dev\.waitInFront\('the slice start'\);/);
+    expect(e2e).toMatch(/dev\.anyWindow = false;\n {4}await dev\.waitInFront\(`scenario "\$\{name\}"`\);/);
+    expect(e2e).toMatch(/EVIDENCE touch: 2-player board: after the touches: \$\{focusNow\(dev\)\}/);
+    expect(e2e).toMatch(/EVIDENCE \$\{name\}: after the drawings: \$\{focusNow\(dev\)\}/);
+    expect(e2e).toMatch(/EVIDENCE \$\{name\}: focus: /);
   });
   it('the screen check never judges a finished game and reads a live-bots tree once per try', () => {
     // (command #67e) a game judged at its start (`verdict.early`) was judged before it could end; any other screen still never judges a finished game

@@ -40,10 +40,12 @@ import {
   type FourGameOverPayload,
   type FourMatchFoundPayload,
   type FourRejoinAck,
+  type FourRoomPayload,
   type FourSeatUpdatePayload,
   type FourSpectateState,
   type FourStatePayload,
 } from './fourPlayerWire';
+import { SEAT_TAKEN_OVER_MESSAGE, isSeatTakeoverFor } from './seatTakeover';
 
 /** How long the server gets to answer a move / rejoin / spectate request (the 2-player screen's number). */
 export const FOUR_ACK_TIMEOUT_MS = 8000;
@@ -87,6 +89,9 @@ export interface FourSessionState {
   chatUnread: number;
   /** Bumped when the position may have changed under the board's selection (a rollback, a rejoin): the screen re-keys the board with it. */
   boardKey: number;
+  /** `four_seat_taken_over` (seatTakeover.ts): the same account rejoined this seat on another tab / device. No view, `problem` says why, and
+   * this session never rejoins again; the screen leaves WITHOUT clearing the shared rejoin record. */
+  seatTakenOver: boolean;
 }
 
 export function initialSessionState(role: FourOnlineRole, now: number): FourSessionState {
@@ -98,6 +103,7 @@ export function initialSessionState(role: FourOnlineRole, now: number): FourSess
     chat: [],
     chatUnread: 0,
     boardKey: 0,
+    seatTakenOver: false,
   };
 }
 
@@ -141,6 +147,7 @@ export class FourOnlineSession {
     listen('four_seat_update', (payload: FourSeatUpdatePayload) => this.onSeatUpdate(payload));
     listen('four_game_over', (payload: FourGameOverPayload) => this.onGameOver(payload));
     listen('four_chat_message', (payload: FourChatMessagePayload) => this.onChat(payload));
+    listen('four_seat_taken_over', (payload: FourRoomPayload) => this.onSeatTakenOver(payload));
     listen('disconnect', () => this.onDisconnect());
     this.reconnectHandler = () => this.guard('reconnect', () => this.onReconnect());
     this.socket.io.on('reconnect', this.reconnectHandler);
@@ -229,13 +236,24 @@ export class FourOnlineSession {
     this.patch({ chat: appendChat(this.current.chat, { fromSeat, name: payload.name, text: payload.text, mine: false }), chatUnread: this.current.chatUnread + 1 });
   }
 
+  /** Another connection of this account rejoined the seat (seatTakeover.ts): drop the game, say why, and stay out of it. A finished game keeps
+   * its result on screen (nothing left to own). */
+  private onSeatTakenOver(payload: FourRoomPayload): void {
+    if (this.role.kind !== 'player' || this.current.seatTakenOver || !isSeatTakeoverFor(payload, this.roomId)) return;
+    if (this.current.view?.gameOver) return;
+    this.effects.log(`[FourPlayerOnline] seat taken over by another connection of this account (room ${this.roomId})`);
+    this.patch({ view: null, connection: 'unavailable', problem: SEAT_TAKEN_OVER_MESSAGE, seatTakenOver: true });
+  }
+
   private onDisconnect(): void {
+    if (this.current.seatTakenOver) return;
     if (this.current.view?.gameOver) return;
     this.effects.log(`[FourPlayerOnline] own connection dropped (room ${this.roomId})`);
     this.patch({ connection: 'reconnecting' });
   }
 
   private onReconnect(): void {
+    if (this.current.seatTakenOver) return; // the seat is another connection's now: rejoining would steal it back
     // The result is already on screen: nothing to rejoin, and nothing the server says may disturb it.
     if (this.current.view?.gameOver) {
       this.patch({ connection: 'connected' });

@@ -50,6 +50,8 @@ import { getRatings, recordRatedGame } from '../logic/ratingStorage';
 import { categoryForInitialSeconds } from '../logic/timeControls';
 import { THREE_CHECK_TARGET, getThreeCheckCounts } from '../logic/threeCheck';
 import { isUnlimitedClock, playerClockText } from '../logic/time';
+import { reattachTournamentParticipant } from '../logic/tournamentReattach';
+import { SEAT_TAKEN_OVER_EVENT, SEAT_TAKEN_OVER_MESSAGE, type SeatTakenOverPayload, isSeatTakeoverFor } from '../logic/seatTakeover';
 import { useE2eNoticeReport } from '../logic/useE2eNoticeReport';
 import { useTransientNotice } from '../logic/useTransientNotice';
 import type { Move, PieceColor } from '../types/chess';
@@ -67,7 +69,8 @@ import type {
 interface OnlineGameScreenProps {
   authToken: string;
   match: MatchFoundPayload;
-  onExit: () => void;
+  /** `reason` 'seatTakenOver': the same account took this seat on another tab / device (seatTakeover.ts) - the app must keep the shared rejoin record. */
+  onExit: (reason?: 'seatTakenOver') => void;
   onAnalyze: (params: AnalyzeParams) => void;
   /** Set when this game was entered from a tournament (see TournamentStandingsScreen) — exiting
    * goes back to that tournament's live standings, which needs the same socket connection to
@@ -80,6 +83,9 @@ interface OnlineGameScreenProps {
   /** The game is over for this player (a live game_over, a result found on rejoin, or a game the server no longer has): the app forgets the
    * remembered rejoin token. */
   onGameEnded?: () => void;
+  /** The tournament this game belongs to (App's `returnToTournamentId`): after every successful rejoin the new socket re-registers as its
+   * participant (`rejoin_tournament`, tournamentReattach.ts). */
+  tournamentId?: string;
 }
 
 // Extends the shared GameHistoryEntry shape (move/fenBefore/fenAfter — what analysis/summary
@@ -94,7 +100,7 @@ interface ChatEntry {
   text: string;
 }
 
-export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, keepSocketAlive, resume, onGameEnded }: OnlineGameScreenProps) {
+export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, keepSocketAlive, resume, onGameEnded, tournamentId }: OnlineGameScreenProps) {
   const colors = useAppColors();
   const styles = createStyles(colors);
   const myColor = match.color;
@@ -182,9 +188,14 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   // `gameOver` and every other piece of state here it belongs to ONE match, and App mounts this screen fresh for each (every route into
   // 'onlineGame' comes from a different screen).
   const gameOverHandledRef = useRef(false);
+  // Set by `seat_taken_over` (seatTakeover.ts): the ref stops every later rejoin, the state swaps the game for a message.
+  const seatTakenOverRef = useRef(false);
+  const [seatTakenOver, setSeatTakenOver] = useState(false);
   const resumeRef = useRef(resume === true);
   const onGameEndedRef = useRef(onGameEnded);
   onGameEndedRef.current = onGameEnded;
+  const tournamentIdRef = useRef(tournamentId);
+  tournamentIdRef.current = tournamentId;
   // Fog of War only — the server always redacts `fen` for this recipient already (see
   // MatchFoundPayload.visibleSquares), but ChessBoard still needs this explicit set to tell a
   // genuinely-empty-and-visible square apart from a fogged one (see ChessBoard's own doc comment
@@ -423,8 +434,18 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     };
 
     const handleDisconnect = () => {
+      if (seatTakenOverRef.current) return;
       logDiagnostic(`[Multiplayer] own connection dropped (room ${match.roomId})`);
       setConnectionState('reconnecting');
+    };
+
+    // The same account rejoined this game from another tab / device (seatTakeover.ts): this screen no longer owns the seat. Leave the game view
+    // with a message, and never rejoin from here again (that would steal the seat back).
+    const handleSeatTakenOver = (payload: SeatTakenOverPayload) => {
+      if (!isSeatTakeoverFor(payload, match.roomId) || gameOverHandledRef.current) return;
+      logDiagnostic(`[Multiplayer] seat taken over by another connection of this account (room ${match.roomId})`);
+      seatTakenOverRef.current = true;
+      setSeatTakenOver(true);
     };
 
     // The rejoin handshake, shared by a restored connection and by a screen reopened after a page reload / app restart (`resume`).
@@ -435,6 +456,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         setConnectionState('connected');
         return;
       }
+      if (seatTakenOverRef.current) return; // the seat is another connection's now: never take it back from here
       logDiagnostic(`[Multiplayer] own connection restored, rejoining (room ${match.roomId})`);
       socket.emit(
         'rejoin_game',
@@ -446,6 +468,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
               outcome.kind === 'state' ? 'succeeded' : outcome.kind === 'finished' ? `found the game already ended (${outcome.gameOver.reason})` : `failed: ${outcome.error}`
             } (room ${match.roomId})`
           );
+          // A tournament game on a NEW socket (a restart, a reload, a restored connection): register that socket as the participant again, so the
+          // standings pushes reach it (tournamentReattach.ts). Also when the game ended meanwhile: the standings are what comes next.
+          if (tournamentIdRef.current && (outcome.kind === 'state' || outcome.kind === 'finished')) reattachTournamentParticipant(socket, tournamentIdRef.current, logDiagnostic);
           // A live game_over landed while this request was in flight: the result is already shown, and none of the answers below may touch it.
           if (gameOverHandledRef.current) {
             setConnectionState('connected');
@@ -590,6 +615,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     socket.on('draw_offered', handleDrawOffered);
     socket.on('draw_declined', handleDrawDeclined);
     socket.on('chat_message', handleChatMessage);
+    socket.on(SEAT_TAKEN_OVER_EVENT, handleSeatTakenOver);
 
     // Reopened for a game in progress: this is the first connection of a brand-new process, so nothing will ever fire 'reconnect' - ask now.
     if (resumeRef.current) {
@@ -609,6 +635,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
       socket.off('draw_offered', handleDrawOffered);
       socket.off('draw_declined', handleDrawDeclined);
       socket.off('chat_message', handleChatMessage);
+      socket.off(SEAT_TAKEN_OVER_EVENT, handleSeatTakenOver);
     };
   }, [authToken, match.roomId, match.playerToken, opponentColor]);
 
@@ -800,9 +827,9 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turn, premove]);
 
-  const handleExit = () => {
+  const handleExit = (reason?: 'seatTakenOver') => {
     if (!keepSocketAlive) disconnectSocket();
-    onExit();
+    onExit(reason);
   };
 
   const handleResign = () => {
@@ -939,6 +966,20 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
   const summaryTitle = !gameOver ? '' : gameOver.winner === null ? 'Draw' : gameOver.winner === myColor ? 'You Won' : 'You Lost';
   const summarySubtitle = gameOver ? describeEndReason(gameOver.reason) : '';
 
+  // Another tab / device of this account holds the seat now: no board, no controls - just why, and the way out. The exit keeps the shared
+  // rejoin record (it is the other tab's now; seatTakeover.ts).
+  if (seatTakenOver) {
+    return (
+      <View style={styles.container} testID="online-seat-taken-over">
+        <ScreenHeader title="Online Game" onBack={() => handleExit('seatTakenOver')} backLabel="‹ Menu" />
+        <Text style={styles.errorBanner}>{SEAT_TAKEN_OVER_MESSAGE}</Text>
+        <Pressable style={styles.takenOverButton} onPress={() => handleExit('seatTakenOver')} testID="online-seat-taken-over-exit">
+          <Text style={styles.takenOverButtonText}>Back to menu</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <ScreenHeader
@@ -976,7 +1017,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
                                   ? 'From Position'
                                   : undefined
         }
-        onBack={handleExit}
+        onBack={() => handleExit()}
         backLabel="‹ Menu"
       />
       <MoveListStrip
@@ -1170,7 +1211,7 @@ export default function OnlineGameScreen({ authToken, match, onExit, onAnalyze, 
         history={moveList}
         players={[{ label: 'You', color: myColor }]}
         onGameReview={() => onAnalyze({ initialFen: match.fen, chess960: match.isChess960, fogOfWar: match.isFogOfWar, history: moveList })}
-        onNewGame={handleExit}
+        onNewGame={() => handleExit()}
       />
     </View>
   );
@@ -1197,6 +1238,19 @@ function createStyles(colors: AppColors) {
     color: colors.danger,
     textAlign: 'center',
     maxWidth: 320,
+  },
+  takenOverButton: {
+    alignSelf: 'center',
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    backgroundColor: colors.mode === 'dark' ? '#3a3120' : '#f0d9b5',
+  },
+  takenOverButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
   },
   status: {
     fontSize: 16,
