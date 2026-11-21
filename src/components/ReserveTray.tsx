@@ -8,8 +8,10 @@ import { PIECE_CHIP_BACKGROUND, PIECE_CHIP_BORDER, pieceInk } from './pieceArt';
 import PieceIcon from './PieceIcon';
 
 /** The tray's fixed height. The row never wraps and never changes height, so the layout around the board is deterministic —
- * GameScreenBody's `compact` spacing is sized against exactly this much extra chrome (same reasoning as the Spell Chess row). */
-export const RESERVE_TRAY_HEIGHT = 32;
+ * GameScreenBody's `compact` spacing is sized against exactly this much extra chrome (same reasoning as the Spell Chess row).
+ * It is 44 dp (command #64): a chip is a real button, and AppPressable's 44 dp floor made a "32 dp" chip 44 dp tall anyway (poking out of the row),
+ * with a width of only ~39 dp - the row is given the room instead, so the chip is a 44 x 44 target that fits it. */
+export const RESERVE_TRAY_HEIGHT = 44;
 export const RESERVE_TRAY_MARGIN_TOP = 8;
 /** The smallest the row is scaled to when both reserves are full (a chip is then ~21 px wide: small, but this is the extreme of five piece types held by BOTH sides). */
 export const MIN_SCALE = 0.6;
@@ -109,7 +111,7 @@ const styles = StyleSheet.create({
   },
   chip: {
     height: RESERVE_TRAY_HEIGHT,
-    minWidth: 30,
+    minWidth: 44,
     paddingHorizontal: 4,
     flexDirection: 'row',
     alignItems: 'center',

@@ -18,6 +18,10 @@ export const SCREENS = [
   // The move list above the board (command #32): three moves are played by clicking the board (`board` steps), then the strip's numbers and moves must share one line (the `movelist` check).
   // Web only: the phone's run reads the strip from its accessibility tree in the 2-player touch check instead (scripts/android/e2e.mjs).
   { id: 'game-2p-moves', title: 'Game: 2-player with a move list (number and move on one line)', steps: [PLAY, { text: 'Classic', nth: 1 }, { text: '5 min' }, { board: 'e2' }, { board: 'e4' }, { board: 'e7' }, { board: 'e5' }, { board: 'g1' }, { board: 'f3' }], boardKind: 'twoPlayer', moveList: true, webOnly: true },
+  // Command #64: the Crazyhouse pocket chips (ReserveTray, 32 dp rows) and the Spell Chess Freeze/Jump row (32 dp) must not overflow, wrap or cover the board. Crazyhouse: e4 d5 exd5 puts a pawn in
+  // White's pocket, so a chip exists to be judged. (Spell Chess shows its row from the first move, no capture is needed.)
+  { id: 'game-crazyhouse-pocket', title: 'Game: Crazyhouse with a pocket chip', steps: [PLAY, { text: 'Crazyhouse', nth: 1 }, { text: '5 min' }, { board: 'e2' }, { board: 'e4' }, { board: 'd7' }, { board: 'd5' }, { board: 'e4' }, { board: 'd5' }], boardKind: 'twoPlayer', webOnly: true },
+  { id: 'game-spell-bar', title: 'Game: Spell Chess with the Freeze/Jump row', steps: [PLAY, { text: 'Spell\nChess', nth: 1 }, { text: '5 min' }], boardKind: 'twoPlayer', webOnly: true },
   { id: 'game-2p-options', title: 'Game: 2-player, Options menu', steps: [PLAY, { text: 'Classic', nth: 1 }, { text: '5 min' }, { text: 'Options' }] },
   { id: 'bot-select', title: 'Setup: 2-player vs a bot', steps: [PLAY, { text: 'Classic', nth: 0 }] },
   { id: 'setup-chess', title: 'Setup: Setup Chess (Local)', steps: [PLAY, { text: 'Setup Chess', nth: 1 }] },

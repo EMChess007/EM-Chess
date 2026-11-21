@@ -8,6 +8,8 @@ import EvalBar from '../components/EvalBar';
 import MoveQualityBadge from '../components/MoveQualityBadge';
 import ScreenHeader from '../components/ScreenHeader';
 import type { AnalysisResult } from '../engine/ChessEngine';
+import EngineErrorRow from '../components/EngineErrorRow';
+import { useEngineRetry } from '../logic/useEngineRetry';
 import { getEngineRuntime } from '../engine/engineRegistry';
 import StockfishBridge, { type StockfishBridgeHandle } from '../engine/StockfishBridge';
 import {
@@ -83,7 +85,8 @@ export default function AnalysisScreen({ initialFen, chess960, fogOfWar, history
   );
   const [analyzedCount, setAnalyzedCount] = useState(0);
   const [analyzing, setAnalyzing] = useState(true);
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const engineRetry = useEngineRetry();
+  const analysisError = engineRetry.engineError;
 
   const bridgeRef = useRef<StockfishBridgeHandle>(null);
   // Memoized so React doesn't treat this as a "new" ref callback on every re-render — a
@@ -105,7 +108,7 @@ export default function AnalysisScreen({ initialFen, chess960, fogOfWar, history
 
     (async () => {
       setAnalyzing(true);
-      setAnalysisError(null);
+      engineRetry.clearError();
       try {
         await engineRuntime.engine.initEngine();
         const results: (AnalysisResult | null)[] = new Array(positions.length).fill(null);
@@ -136,9 +139,8 @@ export default function AnalysisScreen({ initialFen, chess960, fogOfWar, history
         }
       } catch (err) {
         if (!cancelled) {
-          const message = err instanceof Error ? err.message : String(err);
-          console.log('[Analysis] engine error:', message);
-          setAnalysisError(message);
+          console.log('[Analysis] engine error:', err instanceof Error ? err.message : String(err));
+          engineRetry.fail(err, 'Analysis');
         }
       } finally {
         if (!cancelled) setAnalyzing(false);
@@ -151,7 +153,7 @@ export default function AnalysisScreen({ initialFen, chess960, fogOfWar, history
     // Re-runs whenever the game itself changes (shouldn't happen mid-screen) or the player
     // switches the analysis engine via the toggle below — both cases should restart analysis
     // from scratch with whichever engine is now current.
-  }, [positions, engineRuntime, chess960, initialFen, fogOfWar]);
+  }, [positions, engineRuntime, chess960, initialFen, fogOfWar, engineRetry.retryNonce]);
 
   useEffect(() => {
     setPreviewLineIndex(null);
@@ -233,7 +235,7 @@ export default function AnalysisScreen({ initialFen, chess960, fogOfWar, history
 
   return (
     <View style={styles.container}>
-      <StockfishBridge ref={handleBridgeRef} onLine={handleEngineLine} html={engineRuntime.buildHtml()} />
+      <StockfishBridge key={engineRetry.bridgeKey} ref={handleBridgeRef} onLine={handleEngineLine} html={engineRuntime.buildHtml()} />
       <ScreenHeader title="Game Analysis" onBack={onExit} backLabel="‹ Menu" />
       <View style={styles.body}>
       <View style={styles.engineToggleRow}>
@@ -262,7 +264,7 @@ export default function AnalysisScreen({ initialFen, chess960, fogOfWar, history
           </Text>
         </View>
       )}
-      {analysisError && <Text style={styles.errorText}>Engine error: {analysisError}</Text>}
+      {analysisError && <EngineErrorRow message={analysisError} onRetry={engineRetry.retry} testIDPrefix="analysis-engine" />}
 
       <View style={styles.moveInfo}>
         {currentPlyAnalysis ? (
