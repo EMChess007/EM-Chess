@@ -143,8 +143,9 @@ describe('Horde wiring (no React Native renderer available)', () => {
     expect(play).toContain('onPress={onBotHorde}');
     expect(play).toContain('onPress={onLocalHorde}');
     const bots = read('screens/BotSelectScreen.tsx');
-    expect(bots).toContain("horde ? 'Horde bot'");
-    expect(bots).toContain('customEngines.length > 0 && !engineLabel && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse && ('); // !engineLabel: 4 Player Chess; !horde, !crazyhouse: the two heuristic-free variants
+    // Label + hidden custom engines come from the shared heuristic-bot table (heuristicBots.ts, command #68).
+    expect(read('logic/heuristicBots.ts')).toContain("horde: 'Horde bot'");
+    expect(bots).toContain('customEngines.length > 0 && !engineLabel && !heuristicLabel && (');
     const app = readFileSync(join(SRC, '../App.tsx'), 'utf8').split(/\r?\n/).join(' ');
     expect(app).toContain("mode.kind !== 'engineVsEngine' && mode.horde");
     // Not an Engine-vs-Engine mode either: those need UCI engines.

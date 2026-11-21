@@ -255,7 +255,8 @@ describe('the wiring', () => {
     expect(app).toContain('void clearActiveGame();\n          setBughouseResume(null);');
     expect(app).toContain('setBughouseResume(resumable ? { token, match, timeControl } : null);');
     expect(app).toContain('bughouseResume && authSession?.token === bughouseResume.token');
-    expect(app).toContain("void clearActiveGame(); // leaving is a decision: the seat is not kept");
+    // leaving is a decision: the seat is not kept - except a seat taken over by another tab / device (command #68, seatTakeover.ts)
+    expect(app).toContain("if (reason !== 'seatTakenOver') void clearActiveGame();");
     expect(app).toContain('if (!resumable) void clearActiveGame();');
     expect(app).toContain('void clearActiveGame();\n          setFourResume(null);');
     expect(app).toContain('const handleLogout = () => {\n    void clearActiveGame();');

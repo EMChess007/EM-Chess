@@ -126,9 +126,9 @@ const viewOf = (h: Harness) => {
 };
 
 describe('lifecycle', () => {
-  it('registers the five socket events plus reconnect, and stop() removes every one; nothing changes after stop', () => {
+  it('registers the six socket events plus reconnect, and stop() removes every one; nothing changes after stop', () => {
     const h = player();
-    expect(h.socket.listenerCount()).toBe(6);
+    expect(h.socket.listenerCount()).toBe(7); // four_state, four_seat_update, four_game_over, four_chat_message, four_seat_taken_over, disconnect + io reconnect
     const before = stateOf(h);
     h.session.stop();
     expect(h.socket.listenerCount()).toBe(0);
@@ -788,5 +788,45 @@ describe('GUARD DEFECT - a throwing logger must neither escape nor skip the reco
     expect(() => socket.reply('four_rejoin', { ok: true, state: { ...sim.room(), seat: 0 } })).not.toThrow();
     expect(session.state.view?.resyncing, 'the recovery ran even though every log call throws').toBe(false);
     expect(session.state.connection).toBe('connected');
+  });
+});
+
+// Command #68: the same account rejoined this seat on another tab / device (backend fourPlayerRooms.ts, test-rejoin-persist.mjs 7b).
+describe('four_seat_taken_over: another connection of this account took the seat', () => {
+  const MESSAGE = 'This game was opened on another tab or device signed in to your account. It continues there.';
+
+  it('drops the game, says why, and never rejoins afterwards (that would steal the seat back)', () => {
+    const h = player(0);
+    expect(viewOf(h).gameOver).toBeNull();
+    h.socket.serverEmit('four_seat_taken_over', { roomId: ROOM });
+    expect(stateOf(h).view).toBeNull();
+    expect(stateOf(h).problem).toBe(MESSAGE);
+    expect(stateOf(h).connection).toBe('unavailable');
+    expect(stateOf(h).seatTakenOver).toBe(true);
+    expect(h.logs.some((l) => l.includes('seat taken over'))).toBe(true);
+    h.socket.serverEmit('disconnect', undefined);
+    h.socket.ioEmit('reconnect');
+    expect(h.socket.requests('four_rejoin')).toHaveLength(0);
+    expect(stateOf(h).connection).toBe('unavailable');
+    // later room traffic finds no view and changes nothing
+    h.socket.serverEmit('four_state', h.sim.play(mv(h.sim.state, 'e2', 'e4')));
+    expect(stateOf(h).view).toBeNull();
+  });
+
+  it('a takeover for another room, or junk, is ignored', () => {
+    const h = player(0);
+    for (const payload of [{ roomId: OTHER_ROOM }, undefined, null, 'x', {}, { roomId: 5 }]) h.socket.serverEmit('four_seat_taken_over', payload);
+    expect(stateOf(h).seatTakenOver).toBe(false);
+    expect(viewOf(h).gameOver).toBeNull();
+  });
+
+  it('a spectator is never "taken over"', () => {
+    const h = spectator();
+    h.socket.serverEmit('four_seat_taken_over', { roomId: ROOM });
+    expect(stateOf(h).seatTakenOver).toBe(false);
+  });
+
+  it('a seat starts not taken over', () => {
+    expect(stateOf(player(0)).seatTakenOver).toBe(false);
   });
 });

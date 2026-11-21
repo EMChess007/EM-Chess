@@ -674,10 +674,12 @@ export default function App() {
         authToken={token}
         match={screen.match}
         keepSocketAlive={!!returnToTournamentId}
+        tournamentId={returnToTournamentId}
         resume={screen.resume}
         onGameEnded={() => void clearActiveGame()}
-        onExit={() => {
-          void clearActiveGame(); // leaving is a decision: the seat is not kept
+        onExit={(reason) => {
+          // leaving is a decision: the seat is not kept - unless another tab / device of this account took it (its record now; seatTakeover.ts)
+          if (reason !== 'seatTakenOver') void clearActiveGame();
           setScreen(returnToTournamentId ? { name: 'tournamentStandings', token, tournamentId: returnToTournamentId } : { name: 'main' });
         }}
         onAnalyze={(params) => setScreen({ name: 'analysis', params })}
@@ -1176,8 +1178,8 @@ export default function App() {
         match={match}
         resume={resume}
         onGameEnded={() => void clearActiveGame()}
-        onExit={(resumable) => {
-          if (!resumable) void clearActiveGame();
+        onExit={(resumable, reason) => {
+          if (!resumable && reason !== 'seatTakenOver') void clearActiveGame(); // a taken-over seat's record belongs to the other tab now
           setFourResume(resumable ? { token, match, timeControl } : null);
           setScreen({ name: 'playModeSelect' });
         }}

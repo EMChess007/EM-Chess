@@ -44,7 +44,7 @@ interface FourPlayerOnlineGameScreenProps {
   /** The screen was reopened for a game already in progress ("Return to your game"): rejoin straight away. */
   resume: boolean;
   /** Back to the menu. `resumable` = the player still holds a live seat, so the menu may offer "Return to your game". */
-  onExit: (resumable: boolean) => void;
+  onExit: (resumable: boolean, reason?: 'seatTakenOver') => void;
   onPlayAgain: () => void;
   /** The game is over for this player (or the server no longer has it): the app forgets the remembered rejoin token. */
   onGameEnded?: () => void;
@@ -61,7 +61,7 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
   const colors = useAppColors();
   const styles = createStyles(colors);
   const game = useFourPlayerOnlineGame(authToken, { kind: 'player', match, resume });
-  const { view, connection, problem, chat, chatUnread, boardKey, now, sendMove, resign, sendChat, markChatRead, leave } = game;
+  const { view, connection, problem, chat, chatUnread, boardKey, now, sendMove, resign, sendChat, markChatRead, leave, seatTakenOver } = game;
 
   const ended = !!view && (!!view.gameOver || !!view.state.result);
   useEffect(() => {
@@ -105,7 +105,9 @@ export default function FourPlayerOnlineGameScreen({ authToken, match, resume, o
 
   const leaveNow = (resumable: boolean) => {
     leave();
-    onExit(resumable);
+    // Taken over by another tab / device of this account (seatTakeover.ts): not resumable here, and the shared rejoin record is theirs now.
+    if (seatTakenOver) onExit(resumable, 'seatTakenOver');
+    else onExit(resumable);
   };
   const handleBack = () => {
     // Nothing to protect when there is no live seat: no view, the game is over, or the server says the game no longer exists.

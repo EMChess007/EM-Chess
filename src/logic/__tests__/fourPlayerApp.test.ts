@@ -98,8 +98,8 @@ describe('the bot roster is the app\'s ONE roster (not a copy)', () => {
   it('BotSelectScreen only gained optional props: its engine labels and custom-engine section are unchanged unless engineLabel is given', () => {
     const screen = read('screens/BotSelectScreen.tsx');
     expect(screen).toContain('subtitle={subtitle ?? variantName}');
-    expect(screen).toContain('{engineLabel ?? (atomic ?');
-    expect(screen).toContain('{customEngines.length > 0 && !engineLabel && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse && ('); // the heuristic-free variants add their own terms
+    expect(screen).toContain('{engineLabel ?? heuristicLabel ?? ');
+    expect(screen).toContain('{customEngines.length > 0 && !engineLabel && !heuristicLabel && ('); // heuristic-bot variants: heuristicBots.ts
     expect(screen).toContain('BOT_CATEGORIES.map(');
   });
 });

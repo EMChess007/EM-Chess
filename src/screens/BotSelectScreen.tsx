@@ -5,6 +5,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import { BOT_CATEGORIES, getBotsByCategory } from '../logic/bots';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import { AVAILABLE_ENGINES, getEngineIdForElo, getEngineName } from '../logic/engines';
+import { heuristicBotLabel } from '../logic/heuristicBots';
 import type { BotPersonality } from '../types/bot';
 
 interface BotSelectScreenProps {
@@ -68,6 +69,8 @@ export default function BotSelectScreen({
   const colors = useAppColors();
   const styles = createStyles(colors);
   const customEngines = AVAILABLE_ENGINES.filter((engine) => engine.isCustom);
+  // One shared table (heuristicBots.ts): the bot card label AND whether "My Engines" is offered. Undefined = a UCI-engine variant.
+  const heuristicLabel = heuristicBotLabel({ giveaway, atomic, duckChess, horde, racingKings, torpedo, knightmate, crazyhouse });
   const variantName = chess960
     ? 'Chess960'
     : kingOfTheHill
@@ -115,9 +118,9 @@ export default function BotSelectScreen({
                     {/* Which engine plays this bot is decided automatically from its ELO — see
                         getEngineIdForElo in src/logic/engines.ts — shown here only for
                         transparency, not as something to pick. */}
-                    {/* Atomic bots never use a UCI engine (see chooseAtomicBotMove), so naming one here
-                        would be wrong. */}
-                    <Text style={styles.cardEngine}>{engineLabel ?? (atomic ? 'Atomic search bot' : duckChess ? 'Duck Chess bot' : horde ? 'Horde bot' : racingKings ? 'Racing Kings bot' : torpedo ? 'Torpedo bot' : knightmate ? 'Knightmate bot' : crazyhouse ? 'Crazyhouse bot' : getEngineName(getEngineIdForElo(bot.elo)))}</Text>
+                    {/* Variants whose bot never uses a UCI engine (heuristicBots.ts) show their own bot's
+                        name: naming Stockfish there would be wrong. */}
+                    <Text style={styles.cardEngine}>{engineLabel ?? heuristicLabel ?? getEngineName(getEngineIdForElo(bot.elo))}</Text>
                   </View>
                 </Pressable>
               ))}
@@ -125,7 +128,7 @@ export default function BotSelectScreen({
           </View>
         ))}
 
-        {customEngines.length > 0 && !engineLabel && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse && (
+        {customEngines.length > 0 && !engineLabel && !heuristicLabel && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>My Engines</Text>
             <View style={styles.cardList}>

@@ -198,8 +198,9 @@ describe('Crazyhouse wiring (no React Native renderer available)', () => {
     expect(play).toContain('onPress={onBotCrazyhouse}');
     expect(play).toContain('onPress={onLocalCrazyhouse}');
     const bots = read('screens/BotSelectScreen.tsx');
-    expect(bots).toContain("crazyhouse ? 'Crazyhouse bot'");
-    expect(bots).toContain('customEngines.length > 0 && !engineLabel && !horde && !racingKings && !torpedo && !knightmate && !crazyhouse && ('); // !engineLabel: 4 Player Chess; the other two: the heuristic-free variants
+    // Label + hidden custom engines come from the shared heuristic-bot table (heuristicBots.ts, command #68).
+    expect(read('logic/heuristicBots.ts')).toContain("crazyhouse: 'Crazyhouse bot'");
+    expect(bots).toContain('customEngines.length > 0 && !engineLabel && !heuristicLabel && (');
     const app = readFileSync(join(SRC, '../App.tsx'), 'utf8').split(/\r?\n/).join(' ');
     expect(app).toContain("mode.kind !== 'engineVsEngine' && mode.crazyhouse");
     expect(app).not.toMatch(/kind: 'engineVsEngine'[^}]*crazyhouse/);
