@@ -23,6 +23,14 @@ export function graceSecondsLeft(seat: BugSeatInfo, seatsAt: number, now: number
   return Math.max(0, Math.ceil((seat.graceMsLeft - Math.max(0, now - seatsAt)) / 1000));
 }
 
+/**
+ * Whether the screen needs its once-a-second re-render (command #66, item 1): only `seatDisplayName`'s "offline · 32s" reads the coarse clock, so it ticks only while a human seat is offline
+ * with a grace countdown. It used to tick for the whole game: the two-board screen re-rendered every second while nobody moved (`bughouseIdle.dom.test.tsx`).
+ */
+export function hasGraceCountdown(seats: readonly BugSeatInfo[]): boolean {
+  return seats.some((s) => s.kind === 'human' && !s.connected && s.graceMsLeft !== undefined);
+}
+
 /** What a seat is called on screen: the server's name, "(you)" for mine, "bot playing" for a seat a bot took over, "offline · 32s" for a human inside the grace period. */
 export function seatDisplayName(view: Pick<BughouseOnlineView, 'seats' | 'seatsAt' | 'mySeat' | 'spectator'>, seat: BughouseSeat, now: number): string {
   const info = view.seats[seat];
