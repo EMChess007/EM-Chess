@@ -8,6 +8,8 @@ import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { connectSocket, disconnectSocket } from '../api/socket';
 import { emitWithin } from '../api/socketAck';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import { variantDisplayName, variantFromWireFlags } from '../logic/onlineVariants';
+import { tournamentMatchToGame } from '../logic/tournamentMatch';
 import type { AuthUser } from '../types/auth';
 import type { Ack, MatchFoundPayload, TournamentMatchReadyPayload, TournamentStandingsPayload } from '../types/multiplayer';
 
@@ -39,30 +41,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
 
     const handleStandingsUpdate = (payload: TournamentStandingsPayload) => setStandings(payload);
     const handleMatchReady = (payload: TournamentMatchReadyPayload) => {
-      onEnterGame({
-        roomId: payload.roomId,
-        color: payload.color,
-        playerToken: payload.playerToken,
-        opponent: { userId: payload.opponent.userId },
-        timeControl: payload.timeControl,
-        isChess960: payload.isChess960,
-        isKingOfTheHill: payload.isKingOfTheHill,
-        isThreeCheck: payload.isThreeCheck,
-        isRacingKings: payload.isRacingKings,
-        isTorpedo: payload.isTorpedo,
-        isKnightmate: payload.isKnightmate,
-        isSetupChess: false, // Tournaments don't support Setup Chess yet
-        isFogOfWar: false, // Tournaments don't support Fog of War either
-        isGiveaway: false, // ...nor Giveaway
-        isAtomic: false, // ...nor Atomic
-        isDuckChess: false, // ...nor Duck Chess
-        isSpellChess: false, // ...nor Spell Chess
-        isHorde: false, // ...nor Horde
-        isCrazyhouse: false, // ...nor Crazyhouse
-        fen: payload.fen,
-        whiteMs: payload.whiteMs,
-        blackMs: payload.blackMs,
-      });
+      onEnterGame(tournamentMatchToGame(payload, { userId: payload.opponent.userId }));
     };
 
     socket.on('tournament_standings_update', handleStandingsUpdate);
@@ -96,30 +75,20 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
   const handlePlayNow = () => {
     const match = standings?.yourNextMatch;
     if (!match || match.status !== 'active' || !match.roomId || !match.playerToken || !match.color || !match.fen) return;
-    onEnterGame({
-      roomId: match.roomId,
-      color: match.color,
-      playerToken: match.playerToken,
-      opponent: { userId: null },
-      timeControl: match.timeControl,
-      isChess960: match.isChess960,
-      isKingOfTheHill: match.isKingOfTheHill,
-      isThreeCheck: match.isThreeCheck,
-      isRacingKings: match.isRacingKings,
-      isTorpedo: match.isTorpedo,
-      isKnightmate: match.isKnightmate,
-      isSetupChess: false, // Tournaments don't support Setup Chess yet
-      isFogOfWar: false, // Tournaments don't support Fog of War either
-        isGiveaway: false, // ...nor Giveaway
-        isAtomic: false, // ...nor Atomic
-        isDuckChess: false, // ...nor Duck Chess
-        isSpellChess: false, // ...nor Spell Chess
-        isHorde: false, // ...nor Horde
-        isCrazyhouse: false, // ...nor Crazyhouse
-      fen: match.fen,
-      whiteMs: match.whiteMs ?? 0,
-      blackMs: match.blackMs ?? 0,
-    });
+    onEnterGame(
+      tournamentMatchToGame(
+        {
+          ...match,
+          roomId: match.roomId,
+          color: match.color,
+          playerToken: match.playerToken,
+          fen: match.fen,
+          whiteMs: match.whiteMs ?? 0,
+          blackMs: match.blackMs ?? 0,
+        },
+        { userId: null }
+      )
+    );
   };
 
   const handleExit = () => {
@@ -149,6 +118,7 @@ export default function TournamentStandingsScreen({ authToken, authUser, tournam
 
       {!loading && standings && (
         <View style={styles.body}>
+          <Text style={styles.variantName}>{variantDisplayName(variantFromWireFlags(standings))}</Text>
           {standings.status === 'finished' && <Text style={styles.finishedBanner}>Tournament finished!</Text>}
 
           {standings.yourNextMatch && standings.status !== 'finished' && (
@@ -211,6 +181,12 @@ function createStyles(colors: AppColors) {
       flex: 1,
       paddingHorizontal: 20,
       gap: 12,
+    },
+    variantName: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.textSecondary,
+      textAlign: 'center',
     },
     finishedBanner: {
       fontSize: 18,

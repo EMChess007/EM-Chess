@@ -120,9 +120,9 @@ describe('Online wiring (no React Native renderer available)', () => {
     expect(read('screens/OnlineTimeControlSelectScreen.tsx')).toContain('onSelect(tc, variant)');
   });
 
-  it('tournaments never carry Giveaway, and spectators render it', () => {
-    expect(read('screens/TournamentStandingsScreen.tsx').match(/isGiveaway: false/g)?.length).toBe(2);
-    expect(read('screens/TournamentScreen.tsx')).toContain("'giveaway'");
+  it('tournaments carry Giveaway through the shared mapping, and spectators render it', () => {
+    expect(read('screens/TournamentStandingsScreen.tsx')).not.toContain('isGiveaway: false');
+    expect(read('screens/TournamentScreen.tsx')).not.toContain("'giveaway'");
     expect(read('screens/SpectatorGameScreen.tsx')).toContain('giveaway={state.isGiveaway}');
   });
 });

@@ -54,6 +54,10 @@ was called "done" — don't repeat that on anything else.
 - Explicit mutual-exclusivity declaration with every other variant. Every variant-wide statement or list
   names ALL of them, the 4-seat games included (4 Player Chess, 4 Player Giveaway, Chaturaji): menu card,
   setup, queue (the queue key is `timeControl|variant`), Spectate list section, rejoin, resume link, result.
+- Tournaments (command #65): a new 2-player variant is a tournament variant automatically. App: the flag lives in `OnlineVariantFlags` /
+  `variantWireFlags` / `variantFromWireFlags` / `variantTitlePrefix` (logic/onlineVariants.ts) and nowhere else in the tournament screens; backend: one
+  entry in `VARIANT_FLAGS` + `NAMES` (src/game/variantFlags.ts) and a case in `scripts/test-tournament.mjs` (`VARIANT_TOURNAMENT_CASES`).
+  Only a variant that cannot be room-based (Setup Chess) is added to `TOURNAMENT_EXCLUDED_VARIANTS` / `tournamentUnsupportedError`, with the reason.
 - Fits the existing pattern: VariantSelector entry, screen prop threading (fogOfWar/chess960/
   setupChess-style), gameResult.ts priority slot.
 - Board annotations (arrows/highlights) follow the app-wide invariant in
