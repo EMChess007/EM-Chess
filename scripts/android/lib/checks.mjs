@@ -207,6 +207,26 @@ export function darkSquareMeasure(png, dark = CLASSIC_DARK, tolerance = 2) {
 }
 
 /**
+ * The tree shows a FINISHED game: the Bughouse result card (testID `game-over`, its `bughouse-rematch` button) or a "Rematch" / "Play again" button (command #67b: PR #51 small-screens-2 judged
+ * "bughouse-game-single" 196 s into a 3-minute game; the screen had scrolled to the result card and the white pieces of rank 1 were read through it as rgb(26,27,33)). A finished game is never a
+ * piece check. A missing or unreadable tree (null, []) is not a finished game.
+ */
+export function gameOverShown(nodes) {
+  if (!Array.isArray(nodes)) return false;
+  return nodes.some((n) => n.id === 'game-over' || n.id === 'bughouse-rematch' || n.text === 'Rematch' || n.text === 'Play again');
+}
+
+/**
+ * How old a game is, in whole seconds, measured from the TAP that started it (the time-control tap; command #67c). PR #51 small-screens-1 said "13 s after the game started" when 195 s had
+ * passed since "3 min" was tapped: the clock was started after `runSteps` returned, and the last step's own wait for a settled tree (a screen whose bots keep playing is never idle) took 182 s.
+ * `tappedAt` null (no tap recorded) falls back to `fallbackAt`.
+ */
+export function gameAgeS({ tappedAt, fallbackAt, now }) {
+  const from = typeof tappedAt === 'number' && Number.isFinite(tappedAt) ? tappedAt : fallbackAt;
+  return Math.max(0, Math.round((now - from) / 1000));
+}
+
+/**
  * The cells that were the SAME before and after a photograph (command #56). On a screen where bots keep playing, the position the app reports (the beacon) and the photograph are
  * taken at different moments: a bot's capture in between puts a white pawn where the position says "black pawn" (the Android run reported "br on a8: drawn rgb(255,255,255)" and "bp on a7: 18.4 %
  * of the piece is light" - an emptied or recaptured square, not a wrong colour). A cell is judged only if the same marker stood on the same square, in the same rectangle, in BOTH reports.

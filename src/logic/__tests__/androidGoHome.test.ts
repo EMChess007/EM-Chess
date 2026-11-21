@@ -86,7 +86,7 @@ describe('readUntil', () => {
 describe('goHome: a scenario starts only from a verified Home (command #66b)', () => {
   it('already Home: no touch at all', async () => {
     const p = phone('home');
-    expect(await goHome(p.verbs)).toEqual({ how: 'already', tabTaps: 0, backTaps: 0 });
+    expect(await goHome(p.verbs)).toEqual({ how: 'already', tabTaps: 0, backTaps: 0, broughtBack: 0 });
     expect(p.tapped).toEqual([]);
   });
 
@@ -94,7 +94,7 @@ describe('goHome: a scenario starts only from a verified Home (command #66b)', (
     const p = phone('more', { lose: [1] });
     const lost: number[] = [];
     const out = await goHome({ ...p.verbs, onTabLost: ({ node: n }) => void lost.push(n.bounds.cx) });
-    expect(out).toEqual({ how: 'tab', tabTaps: 2, backTaps: 0 });
+    expect(out).toEqual({ how: 'tab', tabTaps: 2, backTaps: 0, broughtBack: 0 });
     expect(p.screen).toBe('home');
     expect(lost).toEqual([90]); // the evidence hook ran once, for the lost tap
     expect(p.relaunches).toBe(0);
@@ -104,7 +104,7 @@ describe('goHome: a scenario starts only from a verified Home (command #66b)', (
     const p = phone('diagnostics', { lose: [2] });
     const out = await goHome(p.verbs);
     expect(p.tapped).toEqual(['‹ Back', 'Home', 'Home']);
-    expect(out).toEqual({ how: 'tab', tabTaps: 2, backTaps: 1 });
+    expect(out).toEqual({ how: 'tab', tabTaps: 2, backTaps: 1, broughtBack: 0 });
     expect(p.screen).toBe('home');
     // what the next scenario's first step looks for is on the screen
     expect(isHome(await p.verbs.read())).toBe(true);
@@ -113,7 +113,7 @@ describe('goHome: a scenario starts only from a verified Home (command #66b)', (
   it('Analysis with every tab tap lost (PR #50, more-diagnostics): three tab taps, then the app is started afresh and Home is waited for', async () => {
     const p = phone('analysis', { lose: [1, 2, 3] });
     const out = await goHome(p.verbs);
-    expect(out).toEqual({ how: 'relaunch', tabTaps: 3, backTaps: 0 });
+    expect(out).toEqual({ how: 'relaunch', tabTaps: 3, backTaps: 0, broughtBack: 0 });
     expect(p.relaunches).toBe(1);
     expect(p.screen).toBe('home');
   });
@@ -133,7 +133,7 @@ describe('goHome: a scenario starts only from a verified Home (command #66b)', (
 
   it('a stack screen goes back with its own link (Play menu -> Home)', async () => {
     const p = phone('playMenu');
-    expect(await goHome(p.verbs)).toEqual({ how: 'back', tabTaps: 0, backTaps: 1 });
+    expect(await goHome(p.verbs)).toEqual({ how: 'back', tabTaps: 0, backTaps: 1, broughtBack: 0 });
   });
 });
 

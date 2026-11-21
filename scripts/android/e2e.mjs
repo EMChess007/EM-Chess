@@ -30,13 +30,16 @@ import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from
 import { byClass, findNodes, scrollUntilVisible, visibleWords } from './lib/hierarchy.mjs';
 import { FROM_POSITION_ROW, isLowRow, playRow } from './lib/playMenu.mjs';
 import { checkEditorGrid, editorSquares } from './lib/editorGrid.mjs';
-import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, stableCells, textIssues, cornerColour } from './lib/checks.mjs';
+import { boardFromScreenshot, darkSquareMeasure, gameAgeS, gameOverShown,startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, stableCells, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { diagnosticTail, engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
 import { FAILURE_DIAGNOSTIC_MAX, FAILURE_LOGCAT_MAX, classifyEvidence, filterFailureLogcat, parsePid, pidChange } from './lib/failureEvidence.mjs';
-import { goHome, onTabs } from './lib/goHome.mjs';
+import { goHome, homeTab, onTabs } from './lib/goHome.mjs';
+import { ensureSignedIn, retrySetup } from './lib/onlineSession.mjs';
 import { jsThreadAtTap } from './lib/settledTap.mjs';
+import { fillForm } from './lib/keyboardForm.mjs';
+import { JUDGED_BUGHOUSE_SCREENS, bughouseStartVerdict } from './lib/bughouseJudge.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -93,6 +96,8 @@ async function scenario(dev, name, body) {
   sliceStartPid ??= pidAtStart;
   const firstLostTap = dev.tapsLost?.length ?? 0;
   try {
+    // (command #67d) the online slice's invariant: every online scenario starts signed in - a lost session is signed in again first, or the scenario fails with "harness could not sign in"
+    if (onlineAccount && name.startsWith('online: ')) await ensureOnlineSession(dev, name);
     await body();
     await failureEvidence(dev, name, firstResult, firstLostTap);
   } catch (e) {
@@ -113,6 +118,8 @@ async function scenario(dev, name, body) {
 // --- evidence on EVERY failure (command #59) ------------------------------------------------------------------------------------------------------------------------------------------
 let sliceStartPid = null;
 let evidenceRuns = 0;
+/** The online slice's signed-in account while its scenarios run (command #67d: `scenario` verifies the session before each "online: " one; toHome's afresh start signs in), else null. */
+let onlineAccount = null;
 const EVIDENCE_MAX_RUNS = 6; // bounded: each run reads logcat and the Diagnostics screen
 /** The app's pid (number), null when there is no process or the phone cannot be asked. */
 function appPid(dev) {
@@ -322,6 +329,7 @@ let relaunches = 0;
  * (a screen whose tree cannot be read - a game that keeps repainting - is left by starting the app afresh)
  */
 async function toHome(dev) {
+  dev.anyWindow = false; // every scenario after the launcher-icon one is about the app again
   let perfBefore = null;
   const out = await goHome({
     current: () => dev.current(),
@@ -331,8 +339,14 @@ async function toHome(dev) {
       dev.tap(x, y);
     },
     onTabLost: ({ node, tapAt }) => lostTapEvidence(dev, { step: { text: 'Home', via: 'toHome' }, node, tapAt, perfBefore }),
+    ensureApp: () => dev.ensureForeground('toHome'), // (command #67b: the launcher had the focus and three Home tab taps went to it)
     relaunch: async () => {
       relaunches++;
+      // (command #67d) in the online slice "starting the app afresh" is the SIGNED-IN fresh start (it ends on Home): a plain start would reopen the saved match, and a cleared one is signed out
+      if (onlineAccount) {
+        if (!(await freshSignedIn(dev, onlineAccount, 'for toHome', { endOnHome: true }))) throw new Error('harness could not sign in (the signed-in fresh start of toHome failed every try)');
+        return;
+      }
       await dev.relaunch();
     },
     waitHome: () => dev.waitHome(120_000),
@@ -463,6 +477,11 @@ async function judgeGamePieces(dev, screen) {
     const grid = boardFromScreenshot(png);
     if (grid) for (const [square, marker] of Object.entries(startPositionMarkers())) cells.push({ marker, rect: squareRect(grid, 'w', square), where: `${marker} on ${square} (board read from the photograph)` });
   }
+  return { ...judgeCells(png, cells, screen), gameOver: gameOverShown(nodes) };
+}
+
+/** The colour verdict on `cells` of the photograph `png` (shared by the tree / beacon judge above and the Bughouse start judge below). */
+function judgeCells(png, cells, screen) {
   const issues = [];
   if (cells.length === 0) issues.push('no piece found on the screen at all');
   const seen = new Set(cells.map((c) => c.marker));
@@ -478,18 +497,71 @@ async function judgeGamePieces(dev, screen) {
   return { issues, count: cells.length };
 }
 
+/**
+ * THE JUDGED BUGHOUSE GAMES START AND ARE JUDGED AT ONCE (command #67e, lib/bughouseJudge.mjs). The time-control tap is made without the settled-tree wait (a screen whose bots keep
+ * playing is never idle: that wait took 51 s and board B's bots mated meanwhile); the boards are read from the APP (the beacon) as soon as board A reports and its rectangle has stood
+ * still, and the photograph is taken then. Returns the moment of the tap.
+ */
+async function startJudgedBughouse(dev, step) {
+  const node = await dev.find(phoneStep(step));
+  dev.beacon.forgetAll(); // the boards' first reports from here on are this game's
+  await dev.tapApp(node.bounds.cx, node.bounds.cy, `the tap ${JSON.stringify(step)}`);
+  log(`  tap ${JSON.stringify(step)} -> ${node.cls.split('.').pop()} "${(node.text || node.desc || node.id).slice(0, 30)}" at ${node.bounds.cx},${node.bounds.cy} (the game's start: judged from the app's first reports, no wait for a settled tree)`);
+  const reported = (st) => Boolean(st.rect) && typeof st.fen === 'string';
+  const a = await dev.beacon.waitFor('state-board-A', reported, 45_000);
+  if (!a) throw new Error('the game did not start: board A reported nothing within 45 s of the time-control tap');
+  await dev.beacon.waitFor('state-board-B', reported, 6_000);
+  // the board's layout may still be settling (its rectangle is re-measured every 1.5 s and sent when it changes): board A is quiet once it stands where it is drawn
+  await dev.beacon.settled(['state-board-A'], 2_000, 10_000);
+}
+
+/** The pieces of a judged Bughouse game, right after `startJudgedBughouse`: the start check of the boards that wait for the harness, then the colours of the cells that stood still. */
+async function judgeBughouseStart(dev, screen) {
+  const fens = { A: dev.beacon.get('state-board-A')?.fen ?? null, B: dev.beacon.get('state-board-B')?.fen ?? null };
+  const verdict = bughouseStartVerdict({ screenId: screen.id, fens });
+  const before = cellsFromBeacon(dev);
+  const png = dev.screenshot();
+  await sleep(BEACON_SETTLE_MS);
+  const cells = stableCells(before, cellsFromBeacon(dev));
+  const judged = judgeCells(png, cells, screen);
+  return { issues: [...verdict.issues, ...judged.issues], count: judged.count, gameOver: false, early: true, notes: verdict.notes };
+}
+
 async function screens(dev) {
   for (const s of phoneScreens()) {
     await scenario(dev, `screen ${s.id}`, async () => {
       await toHome(dev);
       dev.beacon.forgetAll(); // what the boards report from here on is this screen's
-      await dev.runSteps(s.steps.map(phoneStep));
-      await sleep(600);
+      dev.lastAppTapAt = null;
+      const judgedBughouse = Boolean(JUDGED_BUGHOUSE_SCREENS[s.id]) && s.pieces?.mode === 'bw';
+      if (judgedBughouse) {
+        // (command #67e) every step but the time-control tap as usual; that tap starts the game and the pieces are judged from the app's first reports (startJudgedBughouse)
+        await dev.runSteps(s.steps.slice(0, -1).map(phoneStep));
+        await startJudgedBughouse(dev, s.steps[s.steps.length - 1]);
+      } else await dev.runSteps(s.steps.map(phoneStep));
+      // (command #67c) the game's age counts from the TAP that started it (the last step, the time-control tap), not from the end of runSteps: that step's wait for a settled tree took 182 s
+      // on a live-bots screen and the message said "13 s" when 195 s had passed
+      const tappedAt = dev.lastAppTapAt;
+      const stepsDoneAt = Date.now();
+      if (!judgedBughouse) await sleep(600);
+      // (command #67c) a game screen's pieces are judged FIRST, before the text checks read and scroll the tree: the photograph must not wait behind them
+      let verdict = null;
+      let judgedAt = null;
+      if (s.pieces && s.pieces.mode === 'bw') {
+        verdict = judgedBughouse ? await judgeBughouseStart(dev, s) : await judgeGamePieces(dev, s);
+        judgedAt = Date.now();
+      }
       // A screen where bots keep playing never gives uiautomator an idle UI ("could not get idle state"): its tree cannot be read, and the check says so instead of failing for it - the pieces are judged
       // from the app's own position (the beacon), the text by the on-device text-fit probe and the web matrix.
+      // (command #67b, PR #51 small-screens-2: the photograph of "bughouse-game-single" came 196 s after "3 min" was tapped - the human seat never moves, so its clock ran out at 180 s, the game
+      // was FINISHED and its screen scrolled to the result card: the cells of the tree were photographed through the card. On a live-bots screen the tree is read ONCE per try (a not-idle
+      // screen is not waited for three times), and a screen that shows the result card is never judged as a piece check.)
+      const live = s.pieces?.liveBots === true;
+      if (live) dev.dumpAttempts = 1;
+      try {
       let treeNote = '';
       const nodes = await dev.dump().catch((e) => {
-        if (!s.pieces?.liveBots) throw e;
+        if (!live) throw e;
         treeNote = ' | tree not readable while bots keep playing (' + String(e.message).slice(0, 60) + ')';
         return [];
       });
@@ -503,15 +575,27 @@ async function screens(dev) {
         const said = await dev.find({ startsWith: s.expectText }).then(() => true, () => false);
         if (!said) issues.push(`the screen does not say "${s.expectText}"`);
       }
-      if (s.pieces && s.pieces.mode === 'bw') {
-        const verdict = await judgeGamePieces(dev, s);
-        issues.push(...verdict.issues);
-        note += `, ${verdict.count} pieces judged`;
+      if (verdict) {
+        const ageS = gameAgeS({ tappedAt, fallbackAt: stepsDoneAt, now: judgedAt });
+        note += ` | pieces read ${ageS} s after the game started (its time-control tap)`;
+        for (const n of verdict.notes ?? []) note += ` | ${n}`;
+        // (command #67e) a game judged at its start was judged before it could end: a result card in the LATER tree (bots on board B) does not undo that verdict, it is only noted
+        if (verdict.early && gameOverShown(nodes)) note += ' | the game had ended by the time of the text checks (after its pieces were judged)';
+        if (verdict.gameOver || (!verdict.early && gameOverShown(nodes))) {
+          // a FINISHED game is not what the scenario checks: its colours are not judged, and the run says why (never a colour failure)
+          issues.push(`the game had ended before its pieces could be judged (result card on the screen, ${ageS} s after the game started): the check came too late, the pieces were not judged`);
+        } else {
+          issues.push(...verdict.issues);
+          note += `, ${verdict.count} pieces judged`;
+        }
       }
       await dev.snapshot(`screen-${s.id}`);
       // a failed screen is also PRINTED (a third of its size, base64: `base64 -d` makes a PNG) - the log is the one place every reader of a run can reach
       if (issues.length > 0) log(`PNG64 screen-${s.id} ${encodePng(shrink(dev.screenshot(), 3)).toString('base64')}`);
       record(`screen ${s.id}`, issues, note);
+      } finally {
+        if (live) dev.dumpAttempts = undefined;
+      }
     });
   }
 }
@@ -546,6 +630,7 @@ async function textFit(dev) {
  */
 async function launcherIcon(dev) {
   await scenario(dev, 'launcher icon', async () => {
+    dev.anyWindow = true; // this scenario works ON the launcher: no "bring the app to the front" here (command #67b); the next toHome turns it back off
     dev.stop();
     await sleep(500);
     dev.key(3); // HOME
@@ -1508,20 +1593,33 @@ async function register() {
   return account;
 }
 
-async function login(dev, account) {
+async function login(dev, account, { launchTimeoutMs } = {}) {
   await dev.clearData();
-  dev.launch();
+  // (command #67d) logcat of job 136866180504: `pm clear` returned, the launch started a process 0.6 s later and the clear's own "remove task" killed it 0.4 s after that; `am start -W` then
+  // waited for an activity that never drew until adb's limit. A short pause lets the clear finish its task removal first (a mitigation; the bounded retry in freshSignedIn is the fix).
+  await sleep(1500);
+  dev.launch(launchTimeoutMs ? { timeoutMs: launchTimeoutMs } : undefined);
   await dev.waitHome(180_000);
   await dev.runSteps([{ text: 'More' }, { text: 'Log in / Sign up' }]);
-  const nodes = await dev.waitFor('the login form', (list) => byClass(list, 'EditText').length >= 2, 20_000);
-  const [email, password] = byClass(nodes, 'EditText');
-  dev.tap(email.bounds.cx, email.bounds.cy);
-  await sleep(300);
-  dev.type(account.email);
-  dev.tap(password.bounds.cx, password.bounds.cy);
-  await sleep(300);
-  dev.type(account.password);
-  await sleep(300);
+  await dev.waitFor('the login form', (list) => byClass(list, 'EditText').length >= 2, 20_000);
+  // (command #67e) each field is typed and the tree read again until it holds the WHOLE value before the next field is touched (lib/keyboardForm.mjs): job 136874638637 typed the password
+  // while the email was still arriving and both went into the email field. Every keyboard sign-in (the scenario, toHome's fresh start, the re-sign-in before a scenario) comes through here.
+  await fillForm({
+    fields: [
+      { name: 'email', value: account.email },
+      { name: 'password', value: account.password, secret: true },
+    ],
+    read: async () => byClass(await dev.dump(), 'EditText'),
+    focus: async (i, fieldNodes) => {
+      const field = fieldNodes[i];
+      if (!field?.bounds) throw new Error(`the login form has no field ${i + 1}`);
+      dev.tap(field.bounds.cx, field.bounds.cy);
+    },
+    clear: () => dev.clearFocused(),
+    type: (text) => dev.type(text),
+    log,
+    sleep,
+  });
   // The soft keyboard may cover the button, and the Back key would leave the app (it did, in the first run that reached this point): the form scrolls, so the button is scrolled up
   // above the keyboard (the top 55 % of the window) and tapped there. The lowest "Log In" is the button, the other is the title.
   let button = null;
@@ -1545,7 +1643,16 @@ async function online(dev) {
     record('online: sign in through the keyboard', []);
   });
   if (!account) return null;
+  onlineAccount = account; // (command #67d) from here on every online scenario starts signed in, and toHome's afresh start signs in (cleared again when online() ends)
+  try {
+    return await onlineSignedIn(dev, account);
+  } finally {
+    onlineAccount = null;
+  }
+}
 
+/** The online scenarios after the sign-in (each one starts signed in: `scenario` checks the session first while `onlineAccount` is set). */
+async function onlineSignedIn(dev, account) {
   // The two first buddies play a game of their own (backend.sh): it is in the Spectate list under "Bughouse"; the phone watches it, can touch nothing, and leaves.
   await scenario(dev, 'online: spectate a Bughouse game', async () => {
     // (the buddies' game is random play between bots: it can END between the list and the tap - the screen then says "The game was not found or has already ended" (a run of command #33 saw it):
@@ -1632,13 +1739,46 @@ async function online(dev) {
   return account;
 }
 
-async function freshSignedIn(dev, account, when) {
-  try {
-    dev.stop();
-    await login(dev, account);
-  } catch (e) {
-    log(`  a fresh signed-in app ${when} could not be made: ${e.message}`);
-  }
+/**
+ * A fresh, signed-in app (force-stop, `pm clear`, launch, the keyboard sign-in) as a SETUP step retried up to SIGN_IN_TRIES times (command #67d: one `am start -W` that hung to adb's limit left
+ * the app cleared and signed out, and two scenarios failed on "Login required"). Every failed try is an EVIDENCE line (`retrySetup`). `endOnHome`: tap the Home tab afterwards and wait for
+ * Home (toHome's afresh start). Returns whether it worked; the next online scenario's session check catches a failure either way.
+ */
+async function freshSignedIn(dev, account, when, { endOnHome = false } = {}) {
+  const out = await retrySetup({
+    what: `a fresh signed-in app ${when}`,
+    attempt: async () => {
+      dev.stop();
+      await login(dev, account, { launchTimeoutMs: 60_000 });
+      if (endOnHome) {
+        const home = homeTab(await dev.dump());
+        if (!home) throw new Error('signed in, but no Home tab to go back to');
+        dev.tap(home.bounds.cx, home.bounds.cy);
+        await dev.waitHome(30_000);
+      }
+    },
+    log,
+    sleep,
+  });
+  return out.ok;
+}
+
+/** Reads the session on the More screen (from a verified Home) and signs in again when it is lost (`ensureSignedIn`; command #67d). The scenario's own toHome follows. */
+async function ensureOnlineSession(dev, name) {
+  await ensureSignedIn({
+    name,
+    readSession: async () => {
+      await toHome(dev);
+      await dev.runSteps([{ text: 'More' }]);
+      return dev.waitFor('the More screen\'s account row', (list) => onTabs(list) && ['Log out', 'Log Out', 'Logout', 'Log in / Sign up'].some((text) => findNodes(list, { text }).length > 0), 20_000);
+    },
+    signIn: async () => {
+      dev.stop();
+      await login(dev, onlineAccount, { launchTimeoutMs: 60_000 });
+    },
+    log,
+    sleep,
+  });
 }
 
 /**

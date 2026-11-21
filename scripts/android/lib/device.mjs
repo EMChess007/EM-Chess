@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { decodePng } from './png.mjs';
 import { extractXml, findNodes, findOne, fingerprint, locateBelow, parseHierarchy, visibleWords } from './hierarchy.mjs';
 import { gearIssues, PACKAGE } from './checks.mjs';
+import { bringToFrontCommand, foregroundState } from './foreground.mjs';
 import { tapAndVerify, waitBudgets, waitSettled } from './settledTap.mjs';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -81,8 +82,9 @@ export class Device {
     this.sh(`pm clear ${PACKAGE}`);
   }
 
-  launch() {
-    this.sh(`am start -W -n ${PACKAGE}/.MainActivity`, { timeout: 90_000 });
+  /** `timeoutMs`: the adb limit of `am start -W` (a retried setup step passes a shorter one: command #67d's hung launch of a cleared app waited the whole 90 s). */
+  launch({ timeoutMs = 90_000 } = {}) {
+    this.sh(`am start -W -n ${PACKAGE}/.MainActivity`, { timeout: timeoutMs });
     // every process the HARNESS starts is remembered, so the failure evidence never calls it "the app restarted or crashed" (command #62c: freshSignedIn's pm clear + launch did)
     try {
       const pid = Number(/\d+/.exec(String(this.sh(`pidof ${PACKAGE} || echo none`, { timeout: 10_000 })))?.[0]);
@@ -221,6 +223,39 @@ export class Device {
   }
 
   /**
+   * Is the app the RESUMED activity? If another app is (the launcher, a browser), its existing task is brought to the front and EVIDENCE "app was in the background" is printed (command #67b,
+   * lib/foreground.mjs). Returns true when it had to bring the app back. Never throws (a failed read is 'unknown' and changes nothing). `anyWindow` (a scenario that works on the launcher
+   * itself) turns it off.
+   */
+  async ensureForeground(why) {
+    if (this.anyWindow) return false;
+    let verdict;
+    try {
+      verdict = foregroundState(this.sh('dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity|ResumedActivity" | head -4', { timeout: 20_000 }), PACKAGE);
+    } catch {
+      return false;
+    }
+    if (verdict.state !== 'background') return false;
+    this.backgroundEvents = (this.backgroundEvents ?? 0) + 1;
+    this.log(`  EVIDENCE app was in the background before ${why}: the resumed activity was ${verdict.resumed}; bringing the app's own task to the front (no restart)`);
+    try {
+      this.sh(bringToFrontCommand(PACKAGE), { timeout: 60_000 });
+    } catch (e) {
+      this.log(`  EVIDENCE could not bring the app to the front (${String(e.message).slice(0, 120)})`);
+    }
+    this.fresh = false;
+    await sleep(1200);
+    return true;
+  }
+
+  /** A touch meant for the APP (a navigation step, a tab, a back link): the app is brought to the front first if it is not there (`ensureForeground`). Board touches use `tap` (no dumpsys between two fingers). */
+  async tapApp(x, y, why = `a tap at ${Math.round(x)},${Math.round(y)}`) {
+    await this.ensureForeground(why);
+    this.tap(x, y);
+    this.lastAppTapAt = Date.now(); // (command #67c) when the last navigation tap went in: a game's age is measured from its time-control tap, not from the end of runSteps
+  }
+
+  /**
    * A touch that LASTS: down, hold, up at the same point (`input swipe x y x y <ms>`). `input tap` sends the up event in the same millisecond as the down; a finger never does (about 50 - 150 ms).
    * The 2-player board is read with both (command #30), because the first run found that it took no `input tap`.
    */
@@ -261,7 +296,15 @@ export class Device {
   /** Types text into the focused field. Letters, digits and @ . _ - only: nothing the shell or `input` would reinterpret. */
   type(text) {
     if (!/^[A-Za-z0-9@._-]+$/.test(text)) throw new Error('type() takes letters, digits and @ . _ - only');
+    this.fresh = false;
     this.sh(`input text ${text}`);
+  }
+
+  /** Empties the focused field: its text is selected (Ctrl+A, `input keycombination`, Android 12+) and deleted (command #67e: a field the keyboard filled wrongly is typed again). */
+  clearFocused() {
+    this.fresh = false;
+    this.sh('input keycombination 113 29');
+    this.sh('input keyevent 67');
   }
 
   /** Replaces the text of the focused field with a FEN (From Position, command #53). A FEN has spaces and slashes, which `type` refuses: here letters, digits, "/", "-" and SINGLE spaces
@@ -404,7 +447,7 @@ export class Device {
       node,
       settled: waited.settled,
       before: waited.nodes ?? this.last.nodes,
-      tap: (x, y) => this.tap(x, y),
+      tap: (x, y) => this.tapApp(x, y, `the tap ${JSON.stringify(step)}`),
       dump: () => this.dump(),
       changeMs: budgets.changeMs,
       settleMs,

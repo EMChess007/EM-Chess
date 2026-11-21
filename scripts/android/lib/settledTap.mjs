@@ -106,7 +106,7 @@ export async function tapAndVerify({ node, settled, before, tap, dump, changeMs,
   const beforeText = screenText(before);
   /** 'changed' | 'unchanged' (a tree was read and it is the same) | 'unreadable' (no tree could be read after the tap: nothing is known about the screen). */
   const attempt = async () => {
-    tap(node.bounds.cx, node.bounds.cy);
+    await tap(node.bounds.cx, node.bounds.cy); // (may be async: the driver first brings a backgrounded app to the front, command #67b)
     await sleep(settleMs);
     const t0 = now();
     let nudged = false;
