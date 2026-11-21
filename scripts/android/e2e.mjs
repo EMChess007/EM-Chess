@@ -35,7 +35,8 @@ import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { diagnosticTail, engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
 import { FAILURE_DIAGNOSTIC_MAX, FAILURE_LOGCAT_MAX, classifyEvidence, filterFailureLogcat, parsePid, pidChange } from './lib/failureEvidence.mjs';
-import { goHome, onTabs } from './lib/goHome.mjs';
+import { goHome, homeTab, onTabs } from './lib/goHome.mjs';
+import { ensureSignedIn, retrySetup } from './lib/onlineSession.mjs';
 import { jsThreadAtTap } from './lib/settledTap.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -93,6 +94,8 @@ async function scenario(dev, name, body) {
   sliceStartPid ??= pidAtStart;
   const firstLostTap = dev.tapsLost?.length ?? 0;
   try {
+    // (command #67d) the online slice's invariant: every online scenario starts signed in - a lost session is signed in again first, or the scenario fails with "harness could not sign in"
+    if (onlineAccount && name.startsWith('online: ')) await ensureOnlineSession(dev, name);
     await body();
     await failureEvidence(dev, name, firstResult, firstLostTap);
   } catch (e) {
@@ -113,6 +116,8 @@ async function scenario(dev, name, body) {
 // --- evidence on EVERY failure (command #59) ------------------------------------------------------------------------------------------------------------------------------------------
 let sliceStartPid = null;
 let evidenceRuns = 0;
+/** The online slice's signed-in account while its scenarios run (command #67d: `scenario` verifies the session before each "online: " one; toHome's afresh start signs in), else null. */
+let onlineAccount = null;
 const EVIDENCE_MAX_RUNS = 6; // bounded: each run reads logcat and the Diagnostics screen
 /** The app's pid (number), null when there is no process or the phone cannot be asked. */
 function appPid(dev) {
@@ -335,6 +340,11 @@ async function toHome(dev) {
     ensureApp: () => dev.ensureForeground('toHome'), // (command #67b: the launcher had the focus and three Home tab taps went to it)
     relaunch: async () => {
       relaunches++;
+      // (command #67d) in the online slice "starting the app afresh" is the SIGNED-IN fresh start (it ends on Home): a plain start would reopen the saved match, and a cleared one is signed out
+      if (onlineAccount) {
+        if (!(await freshSignedIn(dev, onlineAccount, 'for toHome', { endOnHome: true }))) throw new Error('harness could not sign in (the signed-in fresh start of toHome failed every try)');
+        return;
+      }
       await dev.relaunch();
     },
     waitHome: () => dev.waitHome(120_000),
@@ -1538,9 +1548,12 @@ async function register() {
   return account;
 }
 
-async function login(dev, account) {
+async function login(dev, account, { launchTimeoutMs } = {}) {
   await dev.clearData();
-  dev.launch();
+  // (command #67d) logcat of job 136866180504: `pm clear` returned, the launch started a process 0.6 s later and the clear's own "remove task" killed it 0.4 s after that; `am start -W` then
+  // waited for an activity that never drew until adb's limit. A short pause lets the clear finish its task removal first (a mitigation; the bounded retry in freshSignedIn is the fix).
+  await sleep(1500);
+  dev.launch(launchTimeoutMs ? { timeoutMs: launchTimeoutMs } : undefined);
   await dev.waitHome(180_000);
   await dev.runSteps([{ text: 'More' }, { text: 'Log in / Sign up' }]);
   const nodes = await dev.waitFor('the login form', (list) => byClass(list, 'EditText').length >= 2, 20_000);
@@ -1575,7 +1588,16 @@ async function online(dev) {
     record('online: sign in through the keyboard', []);
   });
   if (!account) return null;
+  onlineAccount = account; // (command #67d) from here on every online scenario starts signed in, and toHome's afresh start signs in (cleared again when online() ends)
+  try {
+    return await onlineSignedIn(dev, account);
+  } finally {
+    onlineAccount = null;
+  }
+}
 
+/** The online scenarios after the sign-in (each one starts signed in: `scenario` checks the session first while `onlineAccount` is set). */
+async function onlineSignedIn(dev, account) {
   // The two first buddies play a game of their own (backend.sh): it is in the Spectate list under "Bughouse"; the phone watches it, can touch nothing, and leaves.
   await scenario(dev, 'online: spectate a Bughouse game', async () => {
     // (the buddies' game is random play between bots: it can END between the list and the tap - the screen then says "The game was not found or has already ended" (a run of command #33 saw it):
@@ -1662,13 +1684,46 @@ async function online(dev) {
   return account;
 }
 
-async function freshSignedIn(dev, account, when) {
-  try {
-    dev.stop();
-    await login(dev, account);
-  } catch (e) {
-    log(`  a fresh signed-in app ${when} could not be made: ${e.message}`);
-  }
+/**
+ * A fresh, signed-in app (force-stop, `pm clear`, launch, the keyboard sign-in) as a SETUP step retried up to SIGN_IN_TRIES times (command #67d: one `am start -W` that hung to adb's limit left
+ * the app cleared and signed out, and two scenarios failed on "Login required"). Every failed try is an EVIDENCE line (`retrySetup`). `endOnHome`: tap the Home tab afterwards and wait for
+ * Home (toHome's afresh start). Returns whether it worked; the next online scenario's session check catches a failure either way.
+ */
+async function freshSignedIn(dev, account, when, { endOnHome = false } = {}) {
+  const out = await retrySetup({
+    what: `a fresh signed-in app ${when}`,
+    attempt: async () => {
+      dev.stop();
+      await login(dev, account, { launchTimeoutMs: 60_000 });
+      if (endOnHome) {
+        const home = homeTab(await dev.dump());
+        if (!home) throw new Error('signed in, but no Home tab to go back to');
+        dev.tap(home.bounds.cx, home.bounds.cy);
+        await dev.waitHome(30_000);
+      }
+    },
+    log,
+    sleep,
+  });
+  return out.ok;
+}
+
+/** Reads the session on the More screen (from a verified Home) and signs in again when it is lost (`ensureSignedIn`; command #67d). The scenario's own toHome follows. */
+async function ensureOnlineSession(dev, name) {
+  await ensureSignedIn({
+    name,
+    readSession: async () => {
+      await toHome(dev);
+      await dev.runSteps([{ text: 'More' }]);
+      return dev.waitFor('the More screen\'s account row', (list) => onTabs(list) && ['Log out', 'Log Out', 'Logout', 'Log in / Sign up'].some((text) => findNodes(list, { text }).length > 0), 20_000);
+    },
+    signIn: async () => {
+      dev.stop();
+      await login(dev, onlineAccount, { launchTimeoutMs: 60_000 });
+    },
+    log,
+    sleep,
+  });
 }
 
 /**

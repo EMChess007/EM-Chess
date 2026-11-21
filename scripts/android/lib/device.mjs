@@ -82,8 +82,9 @@ export class Device {
     this.sh(`pm clear ${PACKAGE}`);
   }
 
-  launch() {
-    this.sh(`am start -W -n ${PACKAGE}/.MainActivity`, { timeout: 90_000 });
+  /** `timeoutMs`: the adb limit of `am start -W` (a retried setup step passes a shorter one: command #67d's hung launch of a cleared app waited the whole 90 s). */
+  launch({ timeoutMs = 90_000 } = {}) {
+    this.sh(`am start -W -n ${PACKAGE}/.MainActivity`, { timeout: timeoutMs });
     // every process the HARNESS starts is remembered, so the failure evidence never calls it "the app restarted or crashed" (command #62c: freshSignedIn's pm clear + launch did)
     try {
       const pid = Number(/\d+/.exec(String(this.sh(`pidof ${PACKAGE} || echo none`, { timeout: 10_000 })))?.[0]);
