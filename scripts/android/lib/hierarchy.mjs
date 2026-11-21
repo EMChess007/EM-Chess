@@ -53,6 +53,9 @@ export function parseHierarchy(xml) {
       enabled: a.enabled !== 'false',
       scrollable: a.scrollable === 'true',
       password: a.password === 'true',
+      // a chip / preset that is chosen (accessibilityState.selected or checked): a tap that only CHOOSES changes no words, and the settled-tap judge reads this (command #62)
+      selected: a.selected === 'true',
+      checked: a.checked === 'true',
     };
     nodes.push(node);
     if (!selfClosing) stack.push(node.index);

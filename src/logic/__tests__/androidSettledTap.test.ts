@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { appPidsIn, classifyEvidence, filterFailureLogcat } from '../../../scripts/android/lib/failureEvidence.mjs';
-import { locate, sameAround, screenText, tapAndVerify, waitBudgets, waitSettled } from '../../../scripts/android/lib/settledTap.mjs';
+import { locate, nodeAt, sameAround, screenText, tapAndVerify, waitBudgets, waitSettled } from '../../../scripts/android/lib/settledTap.mjs';
 
 /** Command #61: settled taps and the app-pid evidence, driven with fake dumps and a fake logcat (no phone). */
 type Box = [number, number, number, number];
@@ -119,7 +119,7 @@ describe('tapAndVerify', () => {
     const { result, taps, logs } = run({ settled: false, afterTaps: () => list(100) });
     expect(await result).toEqual({ changed: false, lost: true, retapped: false });
     expect(taps).toHaveLength(1);
-    expect(logs).toEqual(['  EVIDENCE: tap lost (settled before tap: no)']);
+    expect(logs).toEqual(['  EVIDENCE: tap lost (settled before tap: no)', '  EVIDENCE: on top at the tap point 200,220: TextView "Classic" 400x80 at 0,180']);
   });
   it('a screen whose bounds move but whose words stay the same is a lost tap, not a change', async () => {
     const { result } = run({ settled: false, afterTaps: () => list(140) });
@@ -143,6 +143,87 @@ describe('tapAndVerify', () => {
 describe('screenText', () => {
   it('is the words only, no bounds', () => {
     expect(screenText(list(100))).toBe(screenText(list(500)));
+  });
+});
+
+/**
+ * Command #62: PR #47's "tap lost" lines that were NOT lost taps (all from the job logs of run 44811511453):
+ * - online: `tap {"label":"Chaturaji"}` -> "tap lost (settled before tap: yes)", and then "four friend buddy: joined the chaturaji room": the chip was chosen, no word changed;
+ * - small-screens-1 / -2, large-screens-2: three "[dump failed] ERROR: could not get idle state." lines, then "tap lost", then "PASS screen bughouse-game-single (... 32 pieces judged)";
+ * - small-screens-2 / large-screens-2: `tap {"id":"preset-solo"}` lost - "You + 3 bots" is the setup's default preset, choosing it again changes nothing.
+ */
+describe('nodeAt: what is on top at the tap point (command #62, hypothesis a)', () => {
+  it('the last node in document order that holds the point; an overlay drawn later covers the target', () => {
+    const overlay = { ...node('', [0, 0, 1080, 2400]), cls: 'android.view.ViewGroup', id: 'sheet-backdrop' };
+    expect(nodeAt(list(100), 200, 220)?.text).toBe('Classic');
+    expect(nodeAt([...list(100), overlay], 200, 220)?.id).toBe('sheet-backdrop');
+    expect(nodeAt(list(100), 500, 50)).toBeNull();
+  });
+});
+
+describe('tapAndVerify: taps that are NOT lost (command #62)', () => {
+  const chip = (label: string, selected: boolean, x = 0) => ({ ...node('', [x, 1100, x + 200, 1220]), desc: label, cls: 'android.view.ViewGroup', selected });
+  const createChallenge = (chosen: string) => [node('Create Challenge', [0, 0, 400, 60]), chip('Classic', chosen === 'Classic', 0), chip('Chaturaji', chosen === 'Chaturaji', 220), node('Blitz 5 min', [0, 1300, 400, 1400])];
+
+  it('a chip that becomes chosen is a change (its words are the same): one tap, no repeat', async () => {
+    const c = clock();
+    let taps = 0;
+    const logs: string[] = [];
+    const r = await tapAndVerify({ node: createChallenge('Classic')[2], settled: true, before: createChallenge('Classic'), tap: () => void taps++, dump: async () => createChallenge('Chaturaji'), changeMs: 3000, log: (m: string) => void logs.push(m), ...c });
+    expect(r).toEqual({ changed: true, lost: false, retapped: false });
+    expect(taps).toBe(1);
+    expect(logs).toEqual([]);
+  });
+  it('the chosen state is part of the screen text', () => {
+    expect(screenText(createChallenge('Classic'))).not.toBe(screenText(createChallenge('Chaturaji')));
+  });
+  it('no tree can be read after the tap (a game that never idles): unverified, NOT lost, never repeated', async () => {
+    const c = clock();
+    let taps = 0;
+    const logs: string[] = [];
+    const r = await tapAndVerify({
+      node: list(100)[1],
+      settled: true,
+      before: list(100),
+      tap: () => void taps++,
+      dump: async () => {
+        throw new Error('ERROR: could not get idle state.');
+      },
+      changeMs: 3000,
+      log: (m: string) => void logs.push(m),
+      ...c,
+    });
+    expect(r).toEqual({ changed: false, lost: false, unverified: true, retapped: false });
+    expect(taps).toBe(1);
+    expect(logs).toEqual(['  EVIDENCE: tap unverified (no tree could be read after the tap: the screen it opened never stands still)']);
+  });
+  it('one readable tree that is the same is still a lost tap (a failed dump among them does not hide it)', async () => {
+    const c = clock();
+    let calls = 0;
+    const r = await tapAndVerify({
+      node: list(100)[1],
+      settled: false,
+      before: list(100),
+      tap: () => {},
+      dump: async () => {
+        calls++;
+        if (calls % 2 === 0) throw new Error('ERROR: could not get idle state.');
+        return list(100);
+      },
+      changeMs: 3000,
+      ...c,
+    });
+    expect(r).toEqual({ changed: false, lost: true, retapped: false });
+  });
+  it('a target that was ALREADY chosen (the default preset): a no-op by design, not lost, not repeated', async () => {
+    const c = clock();
+    let taps = 0;
+    const logs: string[] = [];
+    const before = createChallenge('Chaturaji');
+    const r = await tapAndVerify({ node: before[2], settled: true, before, tap: () => void taps++, dump: async () => createChallenge('Chaturaji'), changeMs: 3000, log: (m: string) => void logs.push(m), ...c });
+    expect(r).toEqual({ changed: false, lost: false, noop: true, retapped: false });
+    expect(taps).toBe(1);
+    expect(logs).toEqual(['  (the target was already chosen: the tap changes nothing, by design)']);
   });
 });
 
