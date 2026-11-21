@@ -186,7 +186,8 @@ describe('wiring (source scans)', () => {
     expect(device).toMatch(/tap: \(x, y\) => this\.tapApp\(x, y,/);
   });
   it('the screen check never judges a finished game and reads a live-bots tree once per try', () => {
-    expect(e2e).toMatch(/if \(gameOverShown\(nodes\) \|\| verdict\.gameOver\)/);
+    // (command #67e) a game judged at its start (`verdict.early`) was judged before it could end; any other screen still never judges a finished game
+    expect(e2e).toMatch(/if \(verdict\.gameOver \|\| \(!verdict\.early && gameOverShown\(nodes\)\)\)/);
     expect(e2e).toMatch(/if \(live\) dev\.dumpAttempts = 1;/);
   });
 });

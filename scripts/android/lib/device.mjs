@@ -296,7 +296,15 @@ export class Device {
   /** Types text into the focused field. Letters, digits and @ . _ - only: nothing the shell or `input` would reinterpret. */
   type(text) {
     if (!/^[A-Za-z0-9@._-]+$/.test(text)) throw new Error('type() takes letters, digits and @ . _ - only');
+    this.fresh = false;
     this.sh(`input text ${text}`);
+  }
+
+  /** Empties the focused field: its text is selected (Ctrl+A, `input keycombination`, Android 12+) and deleted (command #67e: a field the keyboard filled wrongly is typed again). */
+  clearFocused() {
+    this.fresh = false;
+    this.sh('input keycombination 113 29');
+    this.sh('input keyevent 67');
   }
 
   /** Replaces the text of the focused field with a FEN (From Position, command #53). A FEN has spaces and slashes, which `type` refuses: here letters, digits, "/", "-" and SINGLE spaces

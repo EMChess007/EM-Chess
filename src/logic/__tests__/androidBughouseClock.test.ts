@@ -37,7 +37,7 @@ describe('the judged Bughouse games never race their clock', () => {
     expect(screens).toContain('dev.lastAppTapAt = null;');
     expect(screens).toContain('const tappedAt = dev.lastAppTapAt;');
     expect(screens).toContain('gameAgeS({ tappedAt, fallbackAt: stepsDoneAt, now: judgedAt })');
-    const judge = screens.indexOf('verdict = await judgeGamePieces(dev, s);');
+    const judge = screens.indexOf('verdict = judgedBughouse ? await judgeBughouseStart(dev, s) : await judgeGamePieces(dev, s);');
     const dump = screens.indexOf('await dev.dump()');
     expect(judge).toBeGreaterThan(0);
     expect(dump).toBeGreaterThan(judge);

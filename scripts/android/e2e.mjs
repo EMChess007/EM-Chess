@@ -38,6 +38,8 @@ import { FAILURE_DIAGNOSTIC_MAX, FAILURE_LOGCAT_MAX, classifyEvidence, filterFai
 import { goHome, homeTab, onTabs } from './lib/goHome.mjs';
 import { ensureSignedIn, retrySetup } from './lib/onlineSession.mjs';
 import { jsThreadAtTap } from './lib/settledTap.mjs';
+import { fillForm } from './lib/keyboardForm.mjs';
+import { JUDGED_BUGHOUSE_SCREENS, bughouseStartVerdict } from './lib/bughouseJudge.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -475,6 +477,11 @@ async function judgeGamePieces(dev, screen) {
     const grid = boardFromScreenshot(png);
     if (grid) for (const [square, marker] of Object.entries(startPositionMarkers())) cells.push({ marker, rect: squareRect(grid, 'w', square), where: `${marker} on ${square} (board read from the photograph)` });
   }
+  return { ...judgeCells(png, cells, screen), gameOver: gameOverShown(nodes) };
+}
+
+/** The colour verdict on `cells` of the photograph `png` (shared by the tree / beacon judge above and the Bughouse start judge below). */
+function judgeCells(png, cells, screen) {
   const issues = [];
   if (cells.length === 0) issues.push('no piece found on the screen at all');
   const seen = new Set(cells.map((c) => c.marker));
@@ -487,7 +494,37 @@ async function judgeGamePieces(dev, screen) {
     // a bot may have moved a piece between the tree and the photograph: an empty cell is inconclusive on a screen with live bots, a wrong colour never is
     if (problem && !(screen.pieces.liveBots && problem.includes('no piece found'))) issues.push(`${c.where}: ${problem}`);
   }
-  return { issues, count: cells.length, gameOver: gameOverShown(nodes) };
+  return { issues, count: cells.length };
+}
+
+/**
+ * THE JUDGED BUGHOUSE GAMES START AND ARE JUDGED AT ONCE (command #67e, lib/bughouseJudge.mjs). The time-control tap is made without the settled-tree wait (a screen whose bots keep
+ * playing is never idle: that wait took 51 s and board B's bots mated meanwhile); the boards are read from the APP (the beacon) as soon as board A reports and its rectangle has stood
+ * still, and the photograph is taken then. Returns the moment of the tap.
+ */
+async function startJudgedBughouse(dev, step) {
+  const node = await dev.find(phoneStep(step));
+  dev.beacon.forgetAll(); // the boards' first reports from here on are this game's
+  await dev.tapApp(node.bounds.cx, node.bounds.cy, `the tap ${JSON.stringify(step)}`);
+  log(`  tap ${JSON.stringify(step)} -> ${node.cls.split('.').pop()} "${(node.text || node.desc || node.id).slice(0, 30)}" at ${node.bounds.cx},${node.bounds.cy} (the game's start: judged from the app's first reports, no wait for a settled tree)`);
+  const reported = (st) => Boolean(st.rect) && typeof st.fen === 'string';
+  const a = await dev.beacon.waitFor('state-board-A', reported, 45_000);
+  if (!a) throw new Error('the game did not start: board A reported nothing within 45 s of the time-control tap');
+  await dev.beacon.waitFor('state-board-B', reported, 6_000);
+  // the board's layout may still be settling (its rectangle is re-measured every 1.5 s and sent when it changes): board A is quiet once it stands where it is drawn
+  await dev.beacon.settled(['state-board-A'], 2_000, 10_000);
+}
+
+/** The pieces of a judged Bughouse game, right after `startJudgedBughouse`: the start check of the boards that wait for the harness, then the colours of the cells that stood still. */
+async function judgeBughouseStart(dev, screen) {
+  const fens = { A: dev.beacon.get('state-board-A')?.fen ?? null, B: dev.beacon.get('state-board-B')?.fen ?? null };
+  const verdict = bughouseStartVerdict({ screenId: screen.id, fens });
+  const before = cellsFromBeacon(dev);
+  const png = dev.screenshot();
+  await sleep(BEACON_SETTLE_MS);
+  const cells = stableCells(before, cellsFromBeacon(dev));
+  const judged = judgeCells(png, cells, screen);
+  return { issues: [...verdict.issues, ...judged.issues], count: judged.count, gameOver: false, early: true, notes: verdict.notes };
 }
 
 async function screens(dev) {
@@ -496,17 +533,22 @@ async function screens(dev) {
       await toHome(dev);
       dev.beacon.forgetAll(); // what the boards report from here on is this screen's
       dev.lastAppTapAt = null;
-      await dev.runSteps(s.steps.map(phoneStep));
+      const judgedBughouse = Boolean(JUDGED_BUGHOUSE_SCREENS[s.id]) && s.pieces?.mode === 'bw';
+      if (judgedBughouse) {
+        // (command #67e) every step but the time-control tap as usual; that tap starts the game and the pieces are judged from the app's first reports (startJudgedBughouse)
+        await dev.runSteps(s.steps.slice(0, -1).map(phoneStep));
+        await startJudgedBughouse(dev, s.steps[s.steps.length - 1]);
+      } else await dev.runSteps(s.steps.map(phoneStep));
       // (command #67c) the game's age counts from the TAP that started it (the last step, the time-control tap), not from the end of runSteps: that step's wait for a settled tree took 182 s
       // on a live-bots screen and the message said "13 s" when 195 s had passed
       const tappedAt = dev.lastAppTapAt;
       const stepsDoneAt = Date.now();
-      await sleep(600);
+      if (!judgedBughouse) await sleep(600);
       // (command #67c) a game screen's pieces are judged FIRST, before the text checks read and scroll the tree: the photograph must not wait behind them
       let verdict = null;
       let judgedAt = null;
       if (s.pieces && s.pieces.mode === 'bw') {
-        verdict = await judgeGamePieces(dev, s);
+        verdict = judgedBughouse ? await judgeBughouseStart(dev, s) : await judgeGamePieces(dev, s);
         judgedAt = Date.now();
       }
       // A screen where bots keep playing never gives uiautomator an idle UI ("could not get idle state"): its tree cannot be read, and the check says so instead of failing for it - the pieces are judged
@@ -536,7 +578,10 @@ async function screens(dev) {
       if (verdict) {
         const ageS = gameAgeS({ tappedAt, fallbackAt: stepsDoneAt, now: judgedAt });
         note += ` | pieces read ${ageS} s after the game started (its time-control tap)`;
-        if (gameOverShown(nodes) || verdict.gameOver) {
+        for (const n of verdict.notes ?? []) note += ` | ${n}`;
+        // (command #67e) a game judged at its start was judged before it could end: a result card in the LATER tree (bots on board B) does not undo that verdict, it is only noted
+        if (verdict.early && gameOverShown(nodes)) note += ' | the game had ended by the time of the text checks (after its pieces were judged)';
+        if (verdict.gameOver || (!verdict.early && gameOverShown(nodes))) {
           // a FINISHED game is not what the scenario checks: its colours are not judged, and the run says why (never a colour failure)
           issues.push(`the game had ended before its pieces could be judged (result card on the screen, ${ageS} s after the game started): the check came too late, the pieces were not judged`);
         } else {
@@ -1556,15 +1601,25 @@ async function login(dev, account, { launchTimeoutMs } = {}) {
   dev.launch(launchTimeoutMs ? { timeoutMs: launchTimeoutMs } : undefined);
   await dev.waitHome(180_000);
   await dev.runSteps([{ text: 'More' }, { text: 'Log in / Sign up' }]);
-  const nodes = await dev.waitFor('the login form', (list) => byClass(list, 'EditText').length >= 2, 20_000);
-  const [email, password] = byClass(nodes, 'EditText');
-  dev.tap(email.bounds.cx, email.bounds.cy);
-  await sleep(300);
-  dev.type(account.email);
-  dev.tap(password.bounds.cx, password.bounds.cy);
-  await sleep(300);
-  dev.type(account.password);
-  await sleep(300);
+  await dev.waitFor('the login form', (list) => byClass(list, 'EditText').length >= 2, 20_000);
+  // (command #67e) each field is typed and the tree read again until it holds the WHOLE value before the next field is touched (lib/keyboardForm.mjs): job 136874638637 typed the password
+  // while the email was still arriving and both went into the email field. Every keyboard sign-in (the scenario, toHome's fresh start, the re-sign-in before a scenario) comes through here.
+  await fillForm({
+    fields: [
+      { name: 'email', value: account.email },
+      { name: 'password', value: account.password, secret: true },
+    ],
+    read: async () => byClass(await dev.dump(), 'EditText'),
+    focus: async (i, fieldNodes) => {
+      const field = fieldNodes[i];
+      if (!field?.bounds) throw new Error(`the login form has no field ${i + 1}`);
+      dev.tap(field.bounds.cx, field.bounds.cy);
+    },
+    clear: () => dev.clearFocused(),
+    type: (text) => dev.type(text),
+    log,
+    sleep,
+  });
   // The soft keyboard may cover the button, and the Back key would leave the app (it did, in the first run that reached this point): the form scrolls, so the button is scrolled up
   // above the keyboard (the top 55 % of the window) and tapped there. The lowest "Log In" is the button, the other is the title.
   let button = null;
