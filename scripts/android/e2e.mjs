@@ -30,7 +30,7 @@ import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from
 import { byClass, findNodes, scrollUntilVisible, visibleWords } from './lib/hierarchy.mjs';
 import { FROM_POSITION_ROW, isLowRow, playRow } from './lib/playMenu.mjs';
 import { checkEditorGrid, editorSquares } from './lib/editorGrid.mjs';
-import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, stableCells, textIssues, cornerColour } from './lib/checks.mjs';
+import { boardFromScreenshot, darkSquareMeasure, gameOverShown, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, stableCells, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { diagnosticTail, engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
@@ -322,6 +322,7 @@ let relaunches = 0;
  * (a screen whose tree cannot be read - a game that keeps repainting - is left by starting the app afresh)
  */
 async function toHome(dev) {
+  dev.anyWindow = false; // every scenario after the launcher-icon one is about the app again
   let perfBefore = null;
   const out = await goHome({
     current: () => dev.current(),
@@ -331,6 +332,7 @@ async function toHome(dev) {
       dev.tap(x, y);
     },
     onTabLost: ({ node, tapAt }) => lostTapEvidence(dev, { step: { text: 'Home', via: 'toHome' }, node, tapAt, perfBefore }),
+    ensureApp: () => dev.ensureForeground('toHome'), // (command #67b: the launcher had the focus and three Home tab taps went to it)
     relaunch: async () => {
       relaunches++;
       await dev.relaunch();
@@ -475,7 +477,7 @@ async function judgeGamePieces(dev, screen) {
     // a bot may have moved a piece between the tree and the photograph: an empty cell is inconclusive on a screen with live bots, a wrong colour never is
     if (problem && !(screen.pieces.liveBots && problem.includes('no piece found'))) issues.push(`${c.where}: ${problem}`);
   }
-  return { issues, count: cells.length };
+  return { issues, count: cells.length, gameOver: gameOverShown(nodes) };
 }
 
 async function screens(dev) {
@@ -484,12 +486,19 @@ async function screens(dev) {
       await toHome(dev);
       dev.beacon.forgetAll(); // what the boards report from here on is this screen's
       await dev.runSteps(s.steps.map(phoneStep));
+      const startedAt = Date.now(); // the last step started the game (a timed one: "3 min")
       await sleep(600);
       // A screen where bots keep playing never gives uiautomator an idle UI ("could not get idle state"): its tree cannot be read, and the check says so instead of failing for it - the pieces are judged
       // from the app's own position (the beacon), the text by the on-device text-fit probe and the web matrix.
+      // (command #67b, PR #51 small-screens-2: the photograph of "bughouse-game-single" came 196 s after "3 min" was tapped - the human seat never moves, so its clock ran out at 180 s, the game
+      // was FINISHED and its screen scrolled to the result card: the cells of the tree were photographed through the card. On a live-bots screen the tree is read ONCE per try (a not-idle
+      // screen is not waited for three times), and a screen that shows the result card is never judged as a piece check.)
+      const live = s.pieces?.liveBots === true;
+      if (live) dev.dumpAttempts = 1;
+      try {
       let treeNote = '';
       const nodes = await dev.dump().catch((e) => {
-        if (!s.pieces?.liveBots) throw e;
+        if (!live) throw e;
         treeNote = ' | tree not readable while bots keep playing (' + String(e.message).slice(0, 60) + ')';
         return [];
       });
@@ -505,13 +514,23 @@ async function screens(dev) {
       }
       if (s.pieces && s.pieces.mode === 'bw') {
         const verdict = await judgeGamePieces(dev, s);
-        issues.push(...verdict.issues);
-        note += `, ${verdict.count} pieces judged`;
+        const ageS = Math.round((Date.now() - startedAt) / 1000);
+        note += ` | pieces read ${ageS} s after the game started`;
+        if (gameOverShown(nodes) || verdict.gameOver) {
+          // a FINISHED game is not what the scenario checks: its colours are not judged, and the run says why (never a colour failure)
+          issues.push(`the game had ended before its pieces could be judged (result card on the screen, ${ageS} s after the game started): the check came too late, the pieces were not judged`);
+        } else {
+          issues.push(...verdict.issues);
+          note += `, ${verdict.count} pieces judged`;
+        }
       }
       await dev.snapshot(`screen-${s.id}`);
       // a failed screen is also PRINTED (a third of its size, base64: `base64 -d` makes a PNG) - the log is the one place every reader of a run can reach
       if (issues.length > 0) log(`PNG64 screen-${s.id} ${encodePng(shrink(dev.screenshot(), 3)).toString('base64')}`);
       record(`screen ${s.id}`, issues, note);
+      } finally {
+        if (live) dev.dumpAttempts = undefined;
+      }
     });
   }
 }
@@ -546,6 +565,7 @@ async function textFit(dev) {
  */
 async function launcherIcon(dev) {
   await scenario(dev, 'launcher icon', async () => {
+    dev.anyWindow = true; // this scenario works ON the launcher: no "bring the app to the front" here (command #67b); the next toHome turns it back off
     dev.stop();
     await sleep(500);
     dev.key(3); // HOME

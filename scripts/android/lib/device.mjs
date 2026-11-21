@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { decodePng } from './png.mjs';
 import { extractXml, findNodes, findOne, fingerprint, locateBelow, parseHierarchy, visibleWords } from './hierarchy.mjs';
 import { gearIssues, PACKAGE } from './checks.mjs';
+import { bringToFrontCommand, foregroundState } from './foreground.mjs';
 import { tapAndVerify, waitBudgets, waitSettled } from './settledTap.mjs';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -221,6 +222,38 @@ export class Device {
   }
 
   /**
+   * Is the app the RESUMED activity? If another app is (the launcher, a browser), its existing task is brought to the front and EVIDENCE "app was in the background" is printed (command #67b,
+   * lib/foreground.mjs). Returns true when it had to bring the app back. Never throws (a failed read is 'unknown' and changes nothing). `anyWindow` (a scenario that works on the launcher
+   * itself) turns it off.
+   */
+  async ensureForeground(why) {
+    if (this.anyWindow) return false;
+    let verdict;
+    try {
+      verdict = foregroundState(this.sh('dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity|ResumedActivity" | head -4', { timeout: 20_000 }), PACKAGE);
+    } catch {
+      return false;
+    }
+    if (verdict.state !== 'background') return false;
+    this.backgroundEvents = (this.backgroundEvents ?? 0) + 1;
+    this.log(`  EVIDENCE app was in the background before ${why}: the resumed activity was ${verdict.resumed}; bringing the app's own task to the front (no restart)`);
+    try {
+      this.sh(bringToFrontCommand(PACKAGE), { timeout: 60_000 });
+    } catch (e) {
+      this.log(`  EVIDENCE could not bring the app to the front (${String(e.message).slice(0, 120)})`);
+    }
+    this.fresh = false;
+    await sleep(1200);
+    return true;
+  }
+
+  /** A touch meant for the APP (a navigation step, a tab, a back link): the app is brought to the front first if it is not there (`ensureForeground`). Board touches use `tap` (no dumpsys between two fingers). */
+  async tapApp(x, y, why = `a tap at ${Math.round(x)},${Math.round(y)}`) {
+    await this.ensureForeground(why);
+    this.tap(x, y);
+  }
+
+  /**
    * A touch that LASTS: down, hold, up at the same point (`input swipe x y x y <ms>`). `input tap` sends the up event in the same millisecond as the down; a finger never does (about 50 - 150 ms).
    * The 2-player board is read with both (command #30), because the first run found that it took no `input tap`.
    */
@@ -404,7 +437,7 @@ export class Device {
       node,
       settled: waited.settled,
       before: waited.nodes ?? this.last.nodes,
-      tap: (x, y) => this.tap(x, y),
+      tap: (x, y) => this.tapApp(x, y, `the tap ${JSON.stringify(step)}`),
       dump: () => this.dump(),
       changeMs: budgets.changeMs,
       settleMs,
