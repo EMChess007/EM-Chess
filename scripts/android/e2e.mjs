@@ -36,6 +36,7 @@ import { diagnosticTail, engineDiagnosticLines, filterEngineLogcat } from './lib
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
 import { FAILURE_DIAGNOSTIC_MAX, FAILURE_LOGCAT_MAX, classifyEvidence, filterFailureLogcat, parsePid, pidChange } from './lib/failureEvidence.mjs';
 import { goHome, homeTab, onTabs } from './lib/goHome.mjs';
+import { IN_FRONT_PROBE, focusedPackage, inFrontState } from './lib/foreground.mjs';
 import { ensureSignedIn, retrySetup } from './lib/onlineSession.mjs';
 import { jsThreadAtTap } from './lib/settledTap.mjs';
 import { fillForm } from './lib/keyboardForm.mjs';
@@ -96,6 +97,10 @@ async function scenario(dev, name, body) {
   sliceStartPid ??= pidAtStart;
   const firstLostTap = dev.tapsLost?.length ?? 0;
   try {
+    // (command #68b) every scenario starts with the app RESUMED and holding the INPUT FOCUS (large-touch lost its first tap with the app resumed and the launcher focused): waited on
+    // (bring-to-front if needed) with one EVIDENCE line. A scenario that works on the launcher turns `anyWindow` on inside its own body.
+    dev.anyWindow = false;
+    await dev.waitInFront(`scenario "${name}"`);
     // (command #67d) the online slice's invariant: every online scenario starts signed in - a lost session is signed in again first, or the scenario fails with "harness could not sign in"
     if (onlineAccount && name.startsWith('online: ')) await ensureOnlineSession(dev, name);
     await body();
@@ -159,6 +164,13 @@ async function failureEvidence(dev, name, firstResult, firstLostTap = 0) {
       log(`  EVIDENCE ${name}: resumed: ${String(resumed).trim().replace(/\s+/g, ' ').slice(0, 260)}`);
     } catch (e) {
       log(`  EVIDENCE ${name}: could not read the resumed activity (${String(e.message).slice(0, 120)})`);
+    }
+    try {
+      // (command #68b) WHO HOLDS THE INPUT FOCUS: resumed is not enough (large-touch: the app resumed, the launcher focused, the board touches unexplained)
+      const focus = dev.sh('dumpsys window | grep -E "mCurrentFocus|mFocusedApp" | head -4', { timeout: 20_000 });
+      log(`  EVIDENCE ${name}: focus: ${String(focus).trim().replace(/\s+/g, ' ').slice(0, 300) || '(nothing)'} -> focused package ${focusedPackage(focus) ?? '?'}`);
+    } catch (e) {
+      log(`  EVIDENCE ${name}: could not read the input focus (${String(e.message).slice(0, 120)})`);
     }
     try {
       // only the APP's lines (its pids: the slice start, now, and those the log names); the harness's uiautomator / shell AndroidRuntime lines are dropped (command #61)
@@ -232,6 +244,15 @@ async function lostTapEvidence(dev, { step, node, tapAt, perfBefore }) {
  * board). Prints the resumed activity, whether the app's process is alive and the app's own log lines (the crash, the ANR), once per run, so the next red names its cause.
  */
 const whereReported = new Set();
+/** (command #68b) Who holds the input focus right now, as one short text for a touch scenario's evidence ("focus com.emchess.app (resumed com.emchess.app)"). Never throws. */
+function focusNow(dev) {
+  try {
+    const verdict = inFrontState(dev.sh(IN_FRONT_PROBE, { timeout: 20_000 }), 'com.emchess.app');
+    return `focus ${verdict.focused ?? '?'} (resumed ${verdict.resumed ?? '?'}: ${verdict.state === 'front' ? 'in front' : `NOT in front, ${verdict.why}`})`;
+  } catch (e) {
+    return `focus unreadable (${String(e.message).slice(0, 80)})`;
+  }
+}
 async function whereIsTheApp(dev, when) {
   const key = when.split(',')[0];
   if (whereReported.has(key)) return;
@@ -239,7 +260,7 @@ async function whereIsTheApp(dev, when) {
   try {
     const resumed = dev.sh('dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity" | head -3', { timeout: 20_000 });
     const alive = dev.sh('pidof com.emchess.app || echo "no process"', { timeout: 10_000 });
-    log(`  where: (${when}) resumed: ${String(resumed).trim().replace(/\s+/g, ' ').slice(0, 260)} | pid: ${String(alive).trim()}`);
+    log(`  where: (${when}) resumed: ${String(resumed).trim().replace(/\s+/g, ' ').slice(0, 260)} | pid: ${String(alive).trim()} | ${focusNow(dev)}`);
     // (the lines of the whole log buffer that name a death of the app: a crash, a native signal, the low-memory killer, an ANR - `logcat -t 60` showed only the last lines of the buffer, none of them)
     const deaths = dev.sh('logcat -d -t 6000 | grep -E "FATAL EXCEPTION|AndroidRuntime|com.emchess.app.*(died|killed|crash)|Process com.emchess.app|lmkd|SIGSEGV|signal 11|signal 6|Fatal signal|ANR in|Out of memory|OutOfMemory|am_proc_died|am_kill|am_crash" | tail -30', { timeout: 30_000 });
     log(`  where: the death lines of the log:\n${String(deaths).split('\n').filter(Boolean).slice(-30).map((l) => `    ${l.slice(0, 240)}`).join('\n') || '    (none)'}`);
@@ -903,6 +924,7 @@ async function touches2p(dev) {
     await dev.snapshot('touch-2p');
     // the finding about the tap, kept in the log whatever the verdict
     log(`2-player board touches: ${JSON.stringify(verdicts)} (tap = input tap worked, press = only the 90 ms touch worked, neither = not selected at all)`);
+    log(`  EVIDENCE touch: 2-player board: after the touches: ${focusNow(dev)}`);
     for (const n of notes) log(`  ${n}`);
     record('touch: 2-player board', issues, `board ${board.w}x${board.h} px at ${board.x1},${board.y1} (from the ${source}${rectNote});${JSON.stringify(verdicts)}${destinationMissing ? ' - emulator rendering note: the destination highlight was not drawn (the phone draws both)' : ''}${verdicts.press > 0 ? ' - input tap alone was not understood' : ''}`);
   });
@@ -1294,6 +1316,7 @@ async function arrows2p(dev) {
       if (!cleared) issues.push(`after the move e7-e5 the arrows were not cleared (arrows ${dev.beacon.get('state-board-2p')?.arrows}, position "${dev.beacon.get('state-board-2p')?.fen}")`);
     }
     await dev.snapshot('touch-2p-arrows');
+    log(`  EVIDENCE ${name}: after the drawings: ${focusNow(dev)}`);
     record(name, issues, `arrows ${after?.arrows ?? 'none'} after two drawings, cleared by a move: ${issues.length === 0}`);
   });
 }
@@ -2351,6 +2374,7 @@ try {
     dev.clearData();
     dev.launch();
     await dev.waitHome(300_000);
+    await dev.waitInFront('the slice start'); // (command #68b) resumed AND focused before the first tap of the slice
     if (PARTS.has('screens')) await screens(dev);
     if (PARTS.has('textfit')) await textFit(dev);
     // the gallery's pixels do not depend on the window: the cramped phone runs it, the large phone's budget goes to the screens

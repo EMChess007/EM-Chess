@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { decodePng } from './png.mjs';
 import { extractXml, findNodes, findOne, fingerprint, locateBelow, parseHierarchy, visibleWords } from './hierarchy.mjs';
 import { gearIssues, PACKAGE } from './checks.mjs';
-import { bringToFrontCommand, foregroundState } from './foreground.mjs';
+import { IN_FRONT_PROBE, waitInFront } from './foreground.mjs';
 import { tapAndVerify, waitBudgets, waitSettled } from './settledTap.mjs';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -229,23 +229,31 @@ export class Device {
    */
   async ensureForeground(why) {
     if (this.anyWindow) return false;
-    let verdict;
-    try {
-      verdict = foregroundState(this.sh('dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity|ResumedActivity" | head -4', { timeout: 20_000 }), PACKAGE);
-    } catch {
-      return false;
+    // (command #68b) "in front" = RESUMED and holding the INPUT FOCUS (inFrontState): the large-touch run lost its first tap with the app resumed and the launcher focused
+    const out = await this.waitInFront(why, { evidence: false });
+    return out.fixes > 0;
+  }
+
+  /**
+   * Waits until the app is resumed AND holds the input focus, bringing its existing task to the front when it is not (lib/foreground.mjs `waitInFront`). `evidence` prints the EVIDENCE
+   * line even when nothing needed fixing (slice start, before each scenario). Never throws.
+   */
+  async waitInFront(why, { evidence = true } = {}) {
+    const out = await waitInFront({
+      probe: () => this.sh(IN_FRONT_PROBE, { timeout: 20_000 }),
+      run: (cmd) => this.sh(cmd, { timeout: 60_000 }),
+      pkg: PACKAGE,
+      why,
+      log: (m) => this.log(m),
+      sleep,
+      evidence,
+    });
+    if (out.fixes > 0) {
+      this.backgroundEvents = (this.backgroundEvents ?? 0) + 1;
+      this.log(`  EVIDENCE app was in the background before ${why} (${out.verdict.state === 'front' ? 'fixed' : 'NOT fixed'}): brought the app's own task to the front (no restart)`);
+      this.fresh = false;
     }
-    if (verdict.state !== 'background') return false;
-    this.backgroundEvents = (this.backgroundEvents ?? 0) + 1;
-    this.log(`  EVIDENCE app was in the background before ${why}: the resumed activity was ${verdict.resumed}; bringing the app's own task to the front (no restart)`);
-    try {
-      this.sh(bringToFrontCommand(PACKAGE), { timeout: 60_000 });
-    } catch (e) {
-      this.log(`  EVIDENCE could not bring the app to the front (${String(e.message).slice(0, 120)})`);
-    }
-    this.fresh = false;
-    await sleep(1200);
-    return true;
+    return out;
   }
 
   /** A touch meant for the APP (a navigation step, a tab, a back link): the app is brought to the front first if it is not there (`ensureForeground`). Board touches use `tap` (no dumpsys between two fingers). */
