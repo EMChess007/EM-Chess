@@ -44,6 +44,31 @@ const describeTop = (nodes, x, y) => {
   return n ? `${n.cls.split('.').pop()} "${(n.text || n.desc || n.id).slice(0, 30)}" ${n.bounds.w}x${n.bounds.h} at ${n.bounds.x1},${n.bounds.y1}` : 'nothing';
 };
 
+/**
+ * WAS THE APP'S JAVASCRIPT THREAD BUSY WHEN A TAP WAS LOST? (command #66b, PR #50 small-screens-2: the tab bar's "More" was lost twice on the Analysis screen, the runner was healthy and the
+ * screen had nothing over the label). The e2e build's perf monitor (`src/dev/e2ePerf.ts`, beacon channel `perf`) reports every 500 ms: the cumulative lateness of a 20 ms interval (`lateMs`,
+ * the thread's busy time), the last stalls of >= 50 ms with their wall-clock instant, and `now`. `before` is the last report before the tap, `after` the newest one; entries are the beacon's
+ * `{ state, at }` (`at` = when the driver received it). Verdict: NO REPORTS (the monitor is not there), JS SILENT (no report for 2 s: the thread is blocked or the app is gone), JS BUSY (more than
+ * half of the span late, or a stall of 1 s or more since the tap) or JS FREE (the touch was not lost because the thread was busy: look at the windows / the input lines).
+ */
+export function jsThreadAtTap({ before, after, tapAt, nowMs }) {
+  if (!after?.state) return { verdict: 'NO REPORTS', text: 'the app sent no perf report (no e2e perf monitor in this build)' };
+  const ageMs = Math.round(nowMs - after.at);
+  const s = after.state;
+  const stalls = (Array.isArray(s.stalls) ? s.stalls : []).filter(([t]) => t >= tapAt - 1000);
+  const longest = stalls.reduce((m, [, gap]) => Math.max(m, gap), 0);
+  let busyShare = null;
+  let spanMs = null;
+  if (before?.state && typeof before.state.lateMs === 'number' && typeof s.lateMs === 'number' && s.now > before.state.now) {
+    spanMs = s.now - before.state.now;
+    busyShare = Math.max(0, s.lateMs - before.state.lateMs) / spanMs;
+  }
+  const verdict = ageMs > 2000 ? 'JS SILENT' : (busyShare !== null && busyShare > 0.5) || longest >= 1000 ? 'JS BUSY' : 'JS FREE';
+  const share = busyShare === null ? 'busy share unknown (no report before the tap)' : `busy ${Math.round(busyShare * 100)}% of the ${spanMs} ms around the tap`;
+  const list = stalls.length ? stalls.slice(-8).map(([t, gap]) => `${gap} ms at ${t - tapAt >= 0 ? '+' : ''}${t - tapAt} ms`).join(', ') : 'none';
+  return { verdict, text: `${verdict}: last perf report ${ageMs} ms ago, ${share}, stalls >= 50 ms since the tap: ${list}` };
+}
+
 /** The waits, scaled by the runner's own dump time (a slow runner takes seconds for one dump): { settleMs, changeMs }. An unknown or failed measurement counts as the health limit. */
 export function waitBudgets(dumpMs) {
   const dump = typeof dumpMs === 'number' && dumpMs > 0 ? dumpMs : 12_000;

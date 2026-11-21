@@ -35,6 +35,8 @@ import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { diagnosticTail, engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
 import { FAILURE_DIAGNOSTIC_MAX, FAILURE_LOGCAT_MAX, classifyEvidence, filterFailureLogcat, parsePid, pidChange } from './lib/failureEvidence.mjs';
+import { goHome, onTabs } from './lib/goHome.mjs';
+import { jsThreadAtTap } from './lib/settledTap.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -103,6 +105,8 @@ async function scenario(dev, name, body) {
     await dev.snapshot(`FAILED-${name.replace(/[^\w.-]+/g, '_')}`).catch(() => {});
     await failureEvidence(dev, name, firstResult, firstLostTap);
   }
+  // A failed scenario (and its evidence, which opens More -> Diagnostics) leaves the app wherever it stopped: back to a VERIFIED Home before the next one (command #66b).
+  if (results.slice(firstResult).some((r) => !r.ok)) await backHomeAfterFailure(dev, name);
   log(`  (${name}:${Math.round((Date.now() - t0) / 1000)} s)`);
 }
 
@@ -186,6 +190,37 @@ async function failureEvidence(dev, name, firstResult, firstLostTap = 0) {
 }
 
 /**
+ * A LOST TAP (command #66b, PR #50 small-screens-2: the tab bar's "More" on the Analysis screen took neither touch, runner healthy, no crash, nothing over the label in the tree; the toHome
+ * "Home" tab taps from More were lost the same way while swipes of the More list worked). Printed for at most LOST_TAP_EVIDENCE_MAX lost taps, so the next one names its side:
+ *  - the APP: was its JavaScript thread busy around the touch (the perf beacon: `jsThreadAtTap`)? A busy or silent thread = APP;
+ *  - the SYSTEM: which window has the focus and the window stack top to bottom (a transient navigation bar, a toast, a system dialog over the app), and the input lines of the log
+ *    (InputDispatcher drops, untrusted-touch occlusion, the launcher's gesture monitor taking the pointer) since the touch.
+ * Never throws.
+ */
+const LOST_TAP_EVIDENCE_MAX = 6;
+let lostTapEvidenceRuns = 0;
+async function lostTapEvidence(dev, { step, node, tapAt, perfBefore }) {
+  if (lostTapEvidenceRuns >= LOST_TAP_EVIDENCE_MAX) return;
+  lostTapEvidenceRuns++;
+  const what = `lost tap ${JSON.stringify(step)} at ${node?.bounds?.cx},${node?.bounds?.cy}`;
+  try {
+    log(`  EVIDENCE ${what}: ${jsThreadAtTap({ before: perfBefore, after: dev.beacon?.channels?.get('perf') ?? null, tapAt, nowMs: Date.now() }).text}`);
+  } catch (e) {
+    log(`  EVIDENCE ${what}: could not judge the JS thread (${String(e.message).slice(0, 120)})`);
+  }
+  try {
+    const focus = dev.sh('dumpsys window | grep -E "mCurrentFocus|mFocusedApp|mTopFullscreenOpaqueWindowState|ransient" | head -10', { timeout: 20_000 });
+    log(`  EVIDENCE ${what}: focus: ${String(focus).trim().replace(/\s+/g, ' ').slice(0, 400) || '(nothing)'}`);
+    const stack = dev.sh('dumpsys window windows | grep -E "^  Window #" | head -12', { timeout: 20_000 });
+    log(`  EVIDENCE ${what}: windows, top first:\n${String(stack).split('\n').filter(Boolean).map((l) => `    ${l.trim().slice(0, 160)}`).join('\n') || '    (none)'}`);
+    const input = dev.sh('logcat -d -t 2000 | grep -E "InputDispatcher|Untrusted touch|obscur|Dropping event|pilfer|TouchInteractionService|EdgeBackGesture|ImmersiveMode" | tail -15', { timeout: 30_000 });
+    log(`  EVIDENCE ${what}: input lines of the log:\n${String(input).split('\n').filter(Boolean).map((l) => `    ${l.slice(0, 220)}`).join('\n') || '    (none)'}`);
+  } catch (e) {
+    log(`  EVIDENCE ${what}: could not ask the system (${String(e.message).slice(0, 120)})`);
+  }
+}
+
+/**
  * WHERE IS THE APP when a touch on a board selected nothing (command #35b: two runs showed the Android LAUNCHER in the photograph taken right after, with the app's beacon still reporting the
  * board). Prints the resumed activity, whether the app's process is alive and the app's own log lines (the crash, the ANR), once per run, so the next red names its cause.
  */
@@ -237,6 +272,7 @@ async function botSilenceEvidence(dev, when) {
   } catch (e) {
     log(`  bot silence (${when}): could not read the Diagnostics log (${String(e.message).slice(0, 120)})`);
   }
+  await backHomeAfterFailure(dev, `bot silence (${when})`);
 }
 
 /**
@@ -274,33 +310,47 @@ async function diagnosticsCheckEvidence(dev, what) {
   } catch (e) {
     log(`  ${what}: could not read the Diagnostics log (${String(e.message).slice(0, 120)})`);
   }
+  await backHomeAfterFailure(dev, what);
 }
 
 // --- navigation ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-const TABS = ['Home', 'Puzzles', 'Analysis', 'More'];
-const onTabs = (nodes) => TABS.every((t) => findNodes(nodes, { text: t }).length > 0);
 let relaunches = 0;
 
-/** Back to the Home tab: the app has no Android back handling, so use its own "‹ Back" / "‹ Menu" links; a dialog or a game in progress is cleared by starting the app afresh. */
+/**
+ * Back to a VERIFIED Home tab (command #66b, `lib/goHome.mjs`): the app has no Android back handling, so its own "‹ Back" / "‹ Menu" links are used; a dialog, a game in progress or a tab tap
+ * that never took is cleared by starting the app afresh. It returns only when a tree read after the last touch shows Home (else it throws: a scenario never runs on the wrong screen).
+ * (a screen whose tree cannot be read - a game that keeps repainting - is left by starting the app afresh)
+ */
 async function toHome(dev) {
-  for (let i = 0; i < 6; i++) {
-    // (a screen whose tree cannot be read - a game that keeps repainting - is left by starting the app afresh)
-    const nodes = await dev.current().catch(() => null);
-    if (nodes === null) break;
-    if (onTabs(nodes) && findNodes(nodes, { id: 'button1' }).length === 0) {
-      const home = findNodes(nodes, { text: 'Home' }).sort((a, b) => b.bounds.y1 - a.bounds.y1)[0];
-      dev.tap(home.bounds.cx, home.bounds.cy);
-      await sleep(700);
-      return;
-    }
-    const back = nodes.filter((n) => n.text.startsWith('‹') && n.bounds).sort((a, b) => a.bounds.y1 - b.bounds.y1)[0];
-    if (!back || i >= 3) break;
-    dev.tap(back.bounds.cx, back.bounds.cy);
-    await sleep(800);
+  let perfBefore = null;
+  const out = await goHome({
+    current: () => dev.current(),
+    read: () => dev.dump(),
+    tap: (x, y) => {
+      perfBefore = dev.beacon?.channels?.get('perf') ?? null;
+      dev.tap(x, y);
+    },
+    onTabLost: ({ node, tapAt }) => lostTapEvidence(dev, { step: { text: 'Home', via: 'toHome' }, node, tapAt, perfBefore }),
+    relaunch: async () => {
+      relaunches++;
+      await dev.relaunch();
+    },
+    waitHome: () => dev.waitHome(120_000),
+    sleep,
+    log,
+  });
+  if (out.tabTaps > 1) log(`  toHome: Home reached after ${out.tabTaps} tab taps (a lost tab tap, see the evidence above)`);
+  return out;
+}
+
+/** After a failure: back to a verified Home so ONE failing scenario never fails the next one (command #66b). Never throws (the next scenario's own toHome says what is wrong). */
+async function backHomeAfterFailure(dev, name) {
+  try {
+    const out = await toHome(dev);
+    log(`  (${name}: the app is back on Home: ${out.how})`);
+  } catch (e) {
+    log(`  (${name}: could not return to Home: ${String(e.message).slice(0, 120)})`);
   }
-  relaunches++;
-  await dev.relaunch();
-  await dev.waitHome(120_000);
 }
 
 // --- the screens ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -2147,6 +2197,7 @@ async function offline(dev) {
 const dev = new Device({ outDir: OUT, log });
 // the app's own account of its boards (src/dev/e2eBeacon.ts): the screens whose accessibility tree cannot be trusted are read from it
 dev.beacon = await new Beacon().start();
+dev.onLostTap = (lost) => lostTapEvidence(dev, lost);
 const started = Date.now();
 const health = { start: null, end: null };
 try {
