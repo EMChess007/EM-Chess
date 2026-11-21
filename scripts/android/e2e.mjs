@@ -27,7 +27,8 @@ import { Chess } from 'chess.js';
 import { Beacon } from './lib/beacon.mjs';
 import { PHONE_BUDGET, judgePerf, latenciesOf, scaledBudget, summarize, windowStats } from './lib/perf.mjs';
 import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
-import { byClass, findNodes, rowAfterScroll, scrollUntilVisible, visibleWords } from './lib/hierarchy.mjs';
+import { byClass, findNodes, scrollUntilVisible, visibleWords } from './lib/hierarchy.mjs';
+import { FROM_POSITION_ROW, isLowRow, playRow } from './lib/playMenu.mjs';
 import { checkEditorGrid, editorSquares } from './lib/editorGrid.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, stableCells, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
@@ -657,7 +658,7 @@ async function touches2p(dev) {
   await scenario(dev, 'touch: 2-player board', async () => {
     await toHome(dev);
     dev.beacon.forget('state-board-2p');
-    await dev.runSteps([{ text: 'Play' }, { text: 'Classic', below: 'Local' }, { text: '5 min' }]);
+    await dev.runSteps([{ text: 'Play' }, playRow('local', 'classic'), { text: '5 min' }]); // by testID: the heading "Local" can scroll away (command #66)
     const issues = [];
     let state = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50, 40_000);
     let board = null;
@@ -781,10 +782,24 @@ async function touches2p(dev) {
  * The move: e2 -> g3 (the white knight of the start position, a legal move that gives no check); then the position has the knight on g3, Black to move, last move [e2, g3].
  */
 /**
- * The Local row that `dev.find(row)` already returned, tapped where it IS (command #62b): re-running the `below: 'Local'` step would look for the heading again, and the find that brought the
- * row in may have swiped "Local" off the window (run 44871547772: "cannot find {"text":"Knightmate","below":"Local"}" with Knightmate on screen). Shared by Racing Kings, Torpedo, Knightmate.
+ * Home's Play -> the Local card's row of `variant` -> Select Time Control -> "5 min" (command #66, item 0). The row is found by its testID (`play-local-<variant>`, lib/playMenu.mjs): a lookup
+ * "under the heading Local" failed whenever the find's own scrolling pushed the heading off the window (PR #49 run 44883195830 attempt 2: "cannot find {"text":"Knightmate","below":"Local"}"
+ * with "‹ Menu | Play | Knightmate | 4 Player Variations" on screen; #62b had only fixed the extra swipe AFTER the find). A row in the bottom quarter of the window is scrolled one more swipe and
+ * RE-FOUND BY ITS TESTID. Shared by Racing Kings, Torpedo, Knightmate.
  */
-async function openFoundRow(dev, found) {
+async function openLocalRow(dev, variant, what) {
+  const row = playRow('local', variant);
+  await dev.runSteps([{ text: 'Play' }]);
+  let found = await dev.find(row);
+  if (isLowRow(found, dev.display.h)) {
+    log(`  the ${what} row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
+    dev.scrollDown();
+    await sleep(700);
+    const after = await dev.stable();
+    found = findNodes(after, row)[0];
+    if (!found) throw new Error(`the ${what} row (${row.id}) is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
+    log(`  the ${what} row is now at y ${found.bounds.cy}`);
+  }
   dev.tap(found.bounds.cx, found.bounds.cy);
   await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
   await dev.runSteps([{ text: '5 min' }]);
@@ -795,26 +810,7 @@ async function racingKings2p(dev) {
   await scenario(dev, name, async () => {
     await toHome(dev);
     dev.beacon.forget('state-board-2p');
-    const row = { text: 'Racing Kings', below: 'Local' };
-    await dev.runSteps([{ text: 'Play' }]);
-    const found = await dev.find(row);
-    if (found.bounds.cy > dev.display.h * 0.75) {
-      // The row was resolved BEFORE the swipe (it is the one under the heading "Local"); after the swipe the heading is off the screen (command #45: the run of #31 died with
-      // 'cannot find {"text":"Local"}'), so the row is re-found by its own text and its shift, never by the heading again.
-      log(`  the Racing Kings row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
-      const before = await dev.stable();
-      dev.scrollDown();
-      await sleep(700);
-      const after = await dev.stable();
-      const moved = rowAfterScroll(before, after, found, row);
-      if (!moved) throw new Error(`the Racing Kings row is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
-      log(`  the Racing Kings row is now at y ${moved.bounds.cy}`);
-      dev.tap(moved.bounds.cx, moved.bounds.cy);
-      await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
-      await dev.runSteps([{ text: '5 min' }]);
-    } else {
-      await openFoundRow(dev, found);
-    }
+    await openLocalRow(dev, 'racingKings', 'Racing Kings');
     const issues = [];
     const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
     let state = await dev.beacon.waitFor('state-board-2p', boardReported, 15_000);
@@ -871,24 +867,7 @@ async function torpedo2p(dev) {
   await scenario(dev, name, async () => {
     await toHome(dev);
     dev.beacon.forget('state-board-2p');
-    const row = { text: 'Torpedo', below: 'Local' };
-    await dev.runSteps([{ text: 'Play' }]);
-    const found = await dev.find(row);
-    if (found.bounds.cy > dev.display.h * 0.75) {
-      log(`  the Torpedo row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
-      const before = await dev.stable();
-      dev.scrollDown();
-      await sleep(700);
-      const after = await dev.stable();
-      const moved = rowAfterScroll(before, after, found, row);
-      if (!moved) throw new Error(`the Torpedo row is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
-      log(`  the Torpedo row is now at y ${moved.bounds.cy}`);
-      dev.tap(moved.bounds.cx, moved.bounds.cy);
-      await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
-      await dev.runSteps([{ text: '5 min' }]);
-    } else {
-      await openFoundRow(dev, found);
-    }
+    await openLocalRow(dev, 'torpedo', 'Torpedo');
     const issues = [];
     const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
     let state = await dev.beacon.waitFor('state-board-2p', boardReported, 15_000);
@@ -957,24 +936,7 @@ async function knightmate2p(dev) {
   await scenario(dev, name, async () => {
     await toHome(dev);
     dev.beacon.forget('state-board-2p');
-    const row = { text: 'Knightmate', below: 'Local' };
-    await dev.runSteps([{ text: 'Play' }]);
-    const found = await dev.find(row);
-    if (found.bounds.cy > dev.display.h * 0.75) {
-      log(`  the Knightmate row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
-      const before = await dev.stable();
-      dev.scrollDown();
-      await sleep(700);
-      const after = await dev.stable();
-      const moved = rowAfterScroll(before, after, found, row);
-      if (!moved) throw new Error(`the Knightmate row is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
-      log(`  the Knightmate row is now at y ${moved.bounds.cy}`);
-      dev.tap(moved.bounds.cx, moved.bounds.cy);
-      await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
-      await dev.runSteps([{ text: '5 min' }]);
-    } else {
-      await openFoundRow(dev, found);
-    }
+    await openLocalRow(dev, 'knightmate', 'Knightmate');
     const issues = [];
     const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
     let state = await dev.beacon.waitFor('state-board-2p', boardReported, 15_000);
@@ -1056,7 +1018,7 @@ async function enterFromPosition(dev, fen) {
   await toHome(dev);
   dev.beacon.forget('state-board-2p');
   await dev.runSteps([{ text: 'Play' }]);
-  await tapReachable(dev, { text: 'From Position' }, 'the From Position entry of the Play menu');
+  await tapReachable(dev, FROM_POSITION_ROW, 'the From Position entry of the Play menu');
   await dev.waitFor('the Board Editor', (list) => findNodes(list, { text: 'Starting Position' }).length > 0, 30_000);
   const fenField = (list) => findNodes(list, { id: 'fen-input' })[0] ?? byClass(list, 'EditText')[0];
   const field = await scrollUntilVisible(dev, 'the FEN field (fen-input)', fenField, { log, sleep });
@@ -1151,7 +1113,7 @@ async function boardEditorGrid(dev) {
   await scenario(dev, name, async () => {
     await toHome(dev);
     await dev.runSteps([{ text: 'Play' }]);
-    await tapReachable(dev, { text: 'From Position' }, 'the From Position entry of the Play menu');
+    await tapReachable(dev, FROM_POSITION_ROW, 'the From Position entry of the Play menu');
     await dev.waitFor('the Board Editor', (list) => findNodes(list, { text: 'Starting Position' }).length > 0, 30_000);
     const nodes = await dev.dump();
     const issues = checkEditorGrid(nodes);
@@ -1342,7 +1304,7 @@ async function perf(dev) {
       await toHome(dev);
       dev.beacon.forget('state-board-2p');
       dev.beacon.forget('perf');
-      await dev.runSteps([{ text: 'Play' }, { text: 'Classic', nth: 0 }, { text: 'Kiddo' }, { text: 'White' }, { text: '3 min' }]);
+      await dev.runSteps([{ text: 'Play' }, playRow('bots', 'classic'), { text: 'Kiddo' }, { text: 'White' }, { text: '3 min' }]); // the Bots card's Classic by testID (command #66)
       const first = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50, 40_000);
       if (!first) throw new Error('the 2-player board against the bot reported no state');
       await dev.beacon.settled(['state-board-2p'], 3000, 20_000);

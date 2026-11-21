@@ -4,6 +4,8 @@ import { Pressable } from '../components/AppPressable';
 import { Text } from '../components/AppText';
 import { appAlert } from '../components/AppAlert';
 import ModeButtonLabel from '../components/ModeButtonLabel';
+import PlayVariantButton from '../components/PlayVariantButton';
+import { FROM_POSITION_TEST_ID } from '../logic/playMenuIds';
 import ScreenHeader from '../components/ScreenHeader';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
 import type { FourVariant } from '../logic/fourPlayer';
@@ -177,59 +179,29 @@ export default function PlayModeSelectScreen({
           <Text style={styles.categoryTitle}>Bots</Text>
           <Text style={styles.categorySubtitle}>Play against the computer</Text>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotClassic}>
-              <ModeButtonLabel label="Classic" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotChess960}>
-              <ModeButtonLabel label="Chess960" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotKingOfTheHill}>
-              <ModeButtonLabel label="King of the Hill" style={styles.subButtonText} />
-            </Pressable>
+            <PlayVariantButton card="bots" variant="classic" label="Classic" onPress={onBotClassic} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="bots" variant="chess960" label="Chess960" onPress={onBotChess960} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="bots" variant="kingOfTheHill" label="King of the Hill" onPress={onBotKingOfTheHill} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
           </View>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotThreeCheck}>
-              <ModeButtonLabel label="Three-Check" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotSetupChess}>
-              <ModeButtonLabel label="Setup Chess" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotFogOfWar}>
-              <ModeButtonLabel label="Fog of War" style={styles.subButtonText} />
-            </Pressable>
+            <PlayVariantButton card="bots" variant="threeCheck" label="Three-Check" onPress={onBotThreeCheck} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="bots" variant="setupChess" label="Setup Chess" onPress={onBotSetupChess} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="bots" variant="fogOfWar" label="Fog of War" onPress={onBotFogOfWar} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
           </View>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotGiveaway}>
-              <ModeButtonLabel label="Giveaway" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotAtomic}>
-              <ModeButtonLabel label="Atomic" style={styles.subButtonText} />
-            </Pressable>
+            <PlayVariantButton card="bots" variant="giveaway" label="Giveaway" onPress={onBotGiveaway} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="bots" variant="atomic" label="Atomic" onPress={onBotAtomic} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
           </View>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotDuckChess}>
-              <ModeButtonLabel label="Duck Chess" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotSpellChess}>
-              <ModeButtonLabel label="Spell Chess" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotHorde}>
-              <ModeButtonLabel label="Horde" style={styles.subButtonText} />
-            </Pressable>
+            <PlayVariantButton card="bots" variant="duckChess" label="Duck Chess" onPress={onBotDuckChess} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="bots" variant="spellChess" label="Spell Chess" onPress={onBotSpellChess} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="bots" variant="horde" label="Horde" onPress={onBotHorde} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
           </View>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotCrazyhouse}>
-              <ModeButtonLabel label="Crazyhouse" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotRacingKings}>
-              <ModeButtonLabel label="Racing Kings" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotTorpedo}>
-              <ModeButtonLabel label="Torpedo" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.botSubButton]} onPress={onBotKnightmate}>
-              <ModeButtonLabel label="Knightmate" style={styles.subButtonText} />
-            </Pressable>
+            <PlayVariantButton card="bots" variant="crazyhouse" label="Crazyhouse" onPress={onBotCrazyhouse} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="bots" variant="racingKings" label="Racing Kings" onPress={onBotRacingKings} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="bots" variant="torpedo" label="Torpedo" onPress={onBotTorpedo} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="bots" variant="knightmate" label="Knightmate" onPress={onBotKnightmate} style={[styles.subButton, styles.botSubButton]} textStyle={styles.subButtonText} />
           </View>
         </View>
 
@@ -237,59 +209,29 @@ export default function PlayModeSelectScreen({
           <Text style={styles.categoryTitle}>Local</Text>
           <Text style={styles.categorySubtitle}>Two players on the same device</Text>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalClassic}>
-              <ModeButtonLabel label="Classic" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalChess960}>
-              <ModeButtonLabel label="Chess960" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalKingOfTheHill}>
-              <ModeButtonLabel label="King of the Hill" style={styles.subButtonText} />
-            </Pressable>
+            <PlayVariantButton card="local" variant="classic" label="Classic" onPress={onLocalClassic} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="local" variant="chess960" label="Chess960" onPress={onLocalChess960} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="local" variant="kingOfTheHill" label="King of the Hill" onPress={onLocalKingOfTheHill} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
           </View>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalThreeCheck}>
-              <ModeButtonLabel label="Three-Check" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalSetupChess}>
-              <ModeButtonLabel label="Setup Chess" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalFogOfWar}>
-              <ModeButtonLabel label="Fog of War" style={styles.subButtonText} />
-            </Pressable>
+            <PlayVariantButton card="local" variant="threeCheck" label="Three-Check" onPress={onLocalThreeCheck} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="local" variant="setupChess" label="Setup Chess" onPress={onLocalSetupChess} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="local" variant="fogOfWar" label="Fog of War" onPress={onLocalFogOfWar} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
           </View>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalGiveaway}>
-              <ModeButtonLabel label="Giveaway" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalAtomic}>
-              <ModeButtonLabel label="Atomic" style={styles.subButtonText} />
-            </Pressable>
+            <PlayVariantButton card="local" variant="giveaway" label="Giveaway" onPress={onLocalGiveaway} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="local" variant="atomic" label="Atomic" onPress={onLocalAtomic} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
           </View>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalDuckChess}>
-              <ModeButtonLabel label="Duck Chess" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalSpellChess}>
-              <ModeButtonLabel label="Spell Chess" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalHorde}>
-              <ModeButtonLabel label="Horde" style={styles.subButtonText} />
-            </Pressable>
+            <PlayVariantButton card="local" variant="duckChess" label="Duck Chess" onPress={onLocalDuckChess} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="local" variant="spellChess" label="Spell Chess" onPress={onLocalSpellChess} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="local" variant="horde" label="Horde" onPress={onLocalHorde} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
           </View>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalCrazyhouse}>
-              <ModeButtonLabel label="Crazyhouse" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalRacingKings}>
-              <ModeButtonLabel label="Racing Kings" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalTorpedo}>
-              <ModeButtonLabel label="Torpedo" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.localSubButton]} onPress={onLocalKnightmate}>
-              <ModeButtonLabel label="Knightmate" style={styles.subButtonText} />
-            </Pressable>
+            <PlayVariantButton card="local" variant="crazyhouse" label="Crazyhouse" onPress={onLocalCrazyhouse} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="local" variant="racingKings" label="Racing Kings" onPress={onLocalRacingKings} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="local" variant="torpedo" label="Torpedo" onPress={onLocalTorpedo} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="local" variant="knightmate" label="Knightmate" onPress={onLocalKnightmate} style={[styles.subButton, styles.localSubButton]} textStyle={styles.subButtonText} />
           </View>
         </View>
 
@@ -328,18 +270,10 @@ export default function PlayModeSelectScreen({
           <Text style={styles.categoryTitle}>Engine vs Engine</Text>
           <Text style={styles.categorySubtitle}>Watch two engines play each other automatically</Text>
           <View style={styles.subButtonRow}>
-            <Pressable style={[styles.subButton, styles.engineSubButton]} onPress={onEngineVsEngineClassic}>
-              <ModeButtonLabel label="Classic" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.engineSubButton]} onPress={onEngineVsEngineChess960}>
-              <ModeButtonLabel label="Chess960" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.engineSubButton]} onPress={onEngineVsEngineKingOfTheHill}>
-              <ModeButtonLabel label="King of the Hill" style={styles.subButtonText} />
-            </Pressable>
-            <Pressable style={[styles.subButton, styles.engineSubButton]} onPress={onEngineVsEngineThreeCheck}>
-              <ModeButtonLabel label="Three-Check" style={styles.subButtonText} />
-            </Pressable>
+            <PlayVariantButton card="engine" variant="classic" label="Classic" onPress={onEngineVsEngineClassic} style={[styles.subButton, styles.engineSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="engine" variant="chess960" label="Chess960" onPress={onEngineVsEngineChess960} style={[styles.subButton, styles.engineSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="engine" variant="kingOfTheHill" label="King of the Hill" onPress={onEngineVsEngineKingOfTheHill} style={[styles.subButton, styles.engineSubButton]} textStyle={styles.subButtonText} />
+            <PlayVariantButton card="engine" variant="threeCheck" label="Three-Check" onPress={onEngineVsEngineThreeCheck} style={[styles.subButton, styles.engineSubButton]} textStyle={styles.subButtonText} />
           </View>
         </View>
 
@@ -348,7 +282,7 @@ export default function PlayModeSelectScreen({
           <Text style={styles.categorySubtitle}>Set up a custom position, then analyze it or play it</Text>
           <View style={styles.subButtonRow}>
             {onFromPosition && (
-              <Pressable style={[styles.subButton, styles.editorSubButton]} onPress={onFromPosition}>
+              <Pressable testID={FROM_POSITION_TEST_ID} style={[styles.subButton, styles.editorSubButton]} onPress={onFromPosition}>
                 <ModeButtonLabel label="From Position" style={styles.subButtonText} />
               </Pressable>
             )}
