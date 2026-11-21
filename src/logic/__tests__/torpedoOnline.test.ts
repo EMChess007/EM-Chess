@@ -45,15 +45,15 @@ describe('Torpedo online wiring (source scan; the rendered screens need no RN re
     expect(spectator).toContain('torpedo={state.isTorpedo === true}');
   });
 
-  it('Tournaments offer Torpedo (the other special variants stay excluded) and carry the flag to the server', () => {
+  it('Tournaments offer Torpedo (only Setup Chess is excluded) and carry the flag to the server through the shared mapping', () => {
     const screen = read('screens/TournamentScreen.tsx');
-    expect(screen).toContain("'spellChess', 'horde', 'crazyhouse']");
-    expect(screen).not.toContain("'torpedo', 'crazyhouse']");
-    expect(screen).toContain("const isTorpedo = variant === 'torpedo'");
-    expect(screen).toContain('lobby.isTorpedo ?');
+    expect(screen).toContain('excludeVariants={TOURNAMENT_EXCLUDED_VARIANTS}');
+    expect(screen).not.toContain("'torpedo'");
+    expect(screen).toContain('variantWireFlags(variant)');
+    expect(screen).toContain('variantFromWireFlags(lobby)');
     const standings = read('screens/TournamentStandingsScreen.tsx');
-    expect(standings).toContain('isTorpedo: payload.isTorpedo');
-    expect(standings).toContain('isTorpedo: match.isTorpedo');
+    expect(standings).toContain('tournamentMatchToGame(');
+    expect(standings).not.toContain('isTorpedo');
   });
 
   it('the variant picker lists Torpedo for Quick Match, Challenge a Friend and Tournaments', () => {

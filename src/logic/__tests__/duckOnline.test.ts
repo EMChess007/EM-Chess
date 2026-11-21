@@ -132,19 +132,18 @@ describe('Online wiring (no React Native renderer available)', () => {
     expect(online.match(/duckChess=\{duckChess\}/g)?.length).toBe(2); // ChessBoard + PostGameSummaryModal
   });
 
-  it('spectators render the duck and its notation; tournaments never carry Duck Chess', () => {
+  it('spectators render the duck and its notation; tournament matches carry no hard-coded Duck Chess false', () => {
     const spectator = read('screens/SpectatorGameScreen.tsx');
     expect(spectator).toContain('duckChess={state.isDuckChess}');
     expect(spectator).toContain('duckSquare={state.duckSquare ?? null}');
     expect(spectator).toContain('duckMoveNotation(');
-    expect(read('screens/TournamentStandingsScreen.tsx').match(/isDuckChess: false/g)?.length).toBe(2);
-    expect(read('screens/TournamentScreen.tsx')).toContain("'duckChess'");
+    expect(read('screens/TournamentStandingsScreen.tsx')).not.toContain('isDuckChess: false');
   });
 
-  it('the Online and Challenge pickers offer Duck Chess (no exclusion); Tournaments still never do', () => {
+  it('the Online, Challenge and Tournament pickers all offer Duck Chess (Tournaments exclude only Setup Chess)', () => {
     expect(read('screens/OnlineTimeControlSelectScreen.tsx')).not.toContain('excludeVariants');
     expect(read('screens/ChallengeScreen.tsx')).not.toContain('excludeVariants');
-    expect(read('screens/TournamentScreen.tsx')).toContain("'duckChess'");
-    expect(read('screens/TournamentScreen.tsx')).toContain('excludeVariants={');
+    expect(read('screens/TournamentScreen.tsx')).not.toContain("'duckChess'");
+    expect(read('screens/TournamentScreen.tsx')).toContain('excludeVariants={TOURNAMENT_EXCLUDED_VARIANTS}');
   });
 });

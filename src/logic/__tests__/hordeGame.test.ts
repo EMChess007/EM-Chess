@@ -151,9 +151,10 @@ describe('Horde wiring (no React Native renderer available)', () => {
     expect(app).not.toMatch(/kind: 'engineVsEngine'[^}]*horde/);
   });
 
-  it('Horde is excluded from Tournaments (a tournament never creates a Horde room)', () => {
-    expect(read('screens/TournamentScreen.tsx')).toContain("'spellChess', 'horde', 'crazyhouse']");
-    expect(read('screens/TournamentStandingsScreen.tsx').match(/isHorde: false/g)?.length).toBe(2);
+  it('Horde is offered in Tournaments (no per-variant exclusion; a match enters through the shared flag mapping)', () => {
+    expect(read('screens/TournamentScreen.tsx')).toContain('excludeVariants={TOURNAMENT_EXCLUDED_VARIANTS}');
+    expect(read('screens/TournamentScreen.tsx')).not.toContain("'horde'");
+    expect(read('screens/TournamentStandingsScreen.tsx')).not.toContain('isHorde: false');
   });
 
   it('chessops (GPL, dev-only) is imported by tests alone — never by anything that ships', () => {

@@ -80,15 +80,16 @@ describe('Knightmate online wiring (source scan; the rendered screen is in knigh
     expect(spectator).toContain('knightmate={state.isKnightmate === true}');
   });
 
-  it('Tournaments offer Knightmate (the other special variants stay excluded) and carry the flag to the server', () => {
+  it('Tournaments offer Knightmate (only Setup Chess is excluded) and carry the flag to the server through the shared mapping', () => {
     const screen = read('screens/TournamentScreen.tsx');
-    expect(screen).toContain("'spellChess', 'horde', 'crazyhouse']");
-    expect(screen).not.toContain("'knightmate', 'crazyhouse']");
-    expect(screen).toContain("const isKnightmate = variant === 'knightmate'");
-    expect(screen).toContain('lobby.isKnightmate ?');
+    expect(screen).toContain('excludeVariants={TOURNAMENT_EXCLUDED_VARIANTS}');
+    expect(screen).not.toContain("'knightmate'");
+    expect(screen).toContain('variantWireFlags(variant)');
+    expect(screen).toContain('variantFromWireFlags(lobby)');
     const standings = read('screens/TournamentStandingsScreen.tsx');
-    expect(standings).toContain('isKnightmate: payload.isKnightmate');
-    expect(standings).toContain('isKnightmate: match.isKnightmate');
+    expect(standings).toContain('tournamentMatchToGame(payload');
+    expect(standings).toContain('tournamentMatchToGame(');
+    expect(standings).not.toContain('isKnightmate');
   });
 
   it('the variant picker lists Knightmate for Quick Match, Challenge a Friend and Tournaments', () => {
@@ -109,6 +110,6 @@ describe('Knightmate online wiring (source scan; the rendered screen is in knigh
   it('the wire types carry the Commoner promotion "m" (make_move and opponent_move) and the flag on every payload', () => {
     const types = read('types/multiplayer.ts');
     expect(types.match(/promotion\?: 'n' \| 'b' \| 'r' \| 'q' \| 'k' \| 'm';/g)?.length).toBe(2);
-    expect(types.match(/isKnightmate\??: boolean;/g)?.length).toBe(8); // queue, match_found, rejoin, challenge, tournament create / lobby / next match / match ready
+    expect(types.match(/isKnightmate\??: boolean;/g)?.length).toBe(4); // queue, match_found, rejoin, challenge (the tournament payloads extend OnlineVariantFlags)
   });
 });

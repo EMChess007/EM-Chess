@@ -313,11 +313,12 @@ describe('wiring (no RN renderer available)', () => {
     });
   }
 
-  it('Giveaway is online for 1v1 (quick match + challenges) but still excluded from tournaments', () => {
-    // See giveawayOnline.test.ts for the online wiring; the Online pickers no longer exclude it.
+  it('Giveaway is online for 1v1 (quick match + challenges) and in tournaments', () => {
+    // See giveawayOnline.test.ts for the online wiring; no picker excludes it (Tournaments exclude only Setup Chess, command #65).
     expect(read('screens/ChallengeScreen.tsx')).not.toContain('excludeVariants');
     expect(read('screens/OnlineTimeControlSelectScreen.tsx')).not.toContain('excludeVariants');
-    expect(read('screens/TournamentScreen.tsx')).toContain("'giveaway'");
+    expect(read('screens/TournamentScreen.tsx')).not.toContain("'giveaway'");
+    expect(read('screens/TournamentScreen.tsx')).toContain('excludeVariants={TOURNAMENT_EXCLUDED_VARIANTS}');
   });
 
   it('the bot never asks Stockfish for a Giveaway move', () => {

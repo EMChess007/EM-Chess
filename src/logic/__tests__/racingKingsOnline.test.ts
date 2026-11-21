@@ -47,18 +47,18 @@ describe('Racing Kings online wiring (source scan; the rendered screens need no 
     expect(spectator).toContain('racingKings={state.isRacingKings === true}');
   });
 
-  it('Tournaments offer Racing Kings (the other special variants stay excluded) and carry the flag to the server', () => {
+  it('Tournaments offer Racing Kings (only Setup Chess is excluded) and carry the flag to the server through the shared mapping', () => {
     const screen = read('screens/TournamentScreen.tsx');
-    expect(screen).toContain("'spellChess', 'horde', 'crazyhouse']");
-    expect(screen).not.toContain("'racingKings', 'crazyhouse']");
-    expect(screen).toContain("const isRacingKings = variant === 'racingKings'");
+    expect(screen).toContain('excludeVariants={TOURNAMENT_EXCLUDED_VARIANTS}');
+    expect(screen).not.toContain("'racingKings'");
+    expect(screen).toContain('variantWireFlags(variant)');
   });
 
   // The backend is a separate repository: it is cloned at ./backend in the cloud sessions, but the app's CI checks out the app alone. Its own scripts (test-racing-kings.mjs) cover it there.
   it.skipIf(!hasBackend)('Tournaments carry the Racing Kings flag to the server rooms', () => {
     const server = readFileSync(join(SRC, '../backend/src/game/tournaments.ts'), 'utf8');
-    expect(server).toContain('racingKings: tournament.racingKings,');
-    expect(server).toContain('isRacingKings: tournament.racingKings,');
+    expect(server).toContain('...roomFlagsFrom(tournament.variant),');
+    expect(server).toContain('...tournament.variant,');
   });
 
   it.skipIf(!hasBackend)('the rooms, the queue and the wire types carry the flag on the server', () => {

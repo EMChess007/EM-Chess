@@ -1,6 +1,7 @@
 import type { PieceColor, SpellCast } from './chess';
 import type { CrazyhouseState, ReservePieceType } from '../logic/crazyhouse';
 import type { SpellChessState } from '../logic/spellChess';
+import type { OnlineVariantFlags } from '../logic/onlineVariants';
 
 // Mirrors backend/src/game/types.ts by hand — the mobile app and backend are separate npm
 // projects with no shared module boundary, so this is a deliberate duplicate of the wire
@@ -297,16 +298,14 @@ export type Ack<T extends object = object> = ({ ok: true } & T) | { ok: false; e
 
 export type TournamentStatus = 'lobby' | 'active' | 'finished';
 
-export interface CreateTournamentPayload {
+/** Every 2-player variant flag a tournament carries (the same set as the queue / challenge: logic/onlineVariants.ts). Setup Chess is
+ * refused by the server; From Position is a challenge only (`initialFen` is never sent). */
+export type TournamentVariantFlags = OnlineVariantFlags;
+
+export interface CreateTournamentPayload extends Partial<TournamentVariantFlags> {
   name: string;
   timeControl: OnlineTimeControl;
   timeControlLabel?: string;
-  isChess960?: boolean;
-  isKingOfTheHill?: boolean;
-  isThreeCheck?: boolean;
-  isRacingKings?: boolean;
-  isTorpedo?: boolean;
-  isKnightmate?: boolean;
 }
 
 export interface JoinTournamentPayload {
@@ -322,17 +321,11 @@ export interface TournamentParticipantSummary {
   username: string;
 }
 
-export interface TournamentLobbyState {
+export interface TournamentLobbyState extends Partial<TournamentVariantFlags> {
   id: string;
   code: string;
   name: string;
   timeControl: OnlineTimeControl;
-  isChess960: boolean;
-  isKingOfTheHill: boolean;
-  isThreeCheck: boolean;
-  isRacingKings: boolean;
-  isTorpedo?: boolean;
-  isKnightmate?: boolean;
   status: TournamentStatus;
   creatorUserId: string;
   participants: TournamentParticipantSummary[];
@@ -345,25 +338,21 @@ export interface TournamentStandingRow {
   played: number;
 }
 
-export interface TournamentNextMatch {
+export interface TournamentNextMatch extends Partial<TournamentVariantFlags> {
   status: 'pending' | 'active';
   opponentUsername: string;
   timeControl: OnlineTimeControl;
-  isChess960: boolean;
-  isKingOfTheHill: boolean;
-  isThreeCheck: boolean;
-  isRacingKings: boolean;
-  isTorpedo?: boolean;
-  isKnightmate?: boolean;
   roomId: string | null;
   playerToken: string | null;
   color: PieceColor | null;
   fen: string | null;
   whiteMs: number | null;
   blackMs: number | null;
+  /** Fog of War only: this player's own visible squares at the start. */
+  visibleSquares?: string[];
 }
 
-export interface TournamentStandingsPayload {
+export interface TournamentStandingsPayload extends Partial<TournamentVariantFlags> {
   standings: TournamentStandingRow[];
   status: TournamentStatus;
   yourNextMatch: TournamentNextMatch | null;
@@ -371,19 +360,15 @@ export interface TournamentStandingsPayload {
 
 /** Same shape as MatchFoundPayload — a tournament match is an ordinary game room in every
  * respect once it starts, so the client reuses OnlineGameScreen unchanged for it. */
-export interface TournamentMatchReadyPayload {
+export interface TournamentMatchReadyPayload extends Partial<TournamentVariantFlags> {
   roomId: string;
   color: PieceColor;
   playerToken: string;
   opponent: { userId: string; username: string };
   timeControl: OnlineTimeControl;
-  isChess960: boolean;
-  isKingOfTheHill: boolean;
-  isThreeCheck: boolean;
-  isRacingKings: boolean;
-  isTorpedo?: boolean;
-  isKnightmate?: boolean;
   fen: string;
   whiteMs: number;
   blackMs: number;
+  /** Fog of War only: this recipient's own visible squares (`fen` is their redacted view). */
+  visibleSquares?: string[];
 }

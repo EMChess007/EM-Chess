@@ -468,11 +468,12 @@ describe('isolation and wiring (no React Native renderer available)', () => {
     });
   }
 
-  it('Atomic is online for 1v1 (quick match + challenges, see atomicOnline.test.ts) but excluded from tournaments', () => {
-    // The Online pickers exclude no variant (Duck Chess went online last); only tournaments are restricted.
+  it('Atomic is online for 1v1 (quick match + challenges, see atomicOnline.test.ts) and in tournaments (only Setup Chess is excluded there)', () => {
+    // The Online pickers exclude no variant; the tournament picker excludes only TOURNAMENT_EXCLUDED_VARIANTS (command #65).
     expect(read('screens/ChallengeScreen.tsx')).not.toContain('excludeVariants');
     expect(read('screens/OnlineTimeControlSelectScreen.tsx')).not.toContain('excludeVariants');
-    expect(read('screens/TournamentScreen.tsx')).toContain("'atomic'");
+    expect(read('screens/TournamentScreen.tsx')).toContain('excludeVariants={TOURNAMENT_EXCLUDED_VARIANTS}');
+    expect(read('screens/TournamentScreen.tsx')).not.toContain("'atomic'");
   });
 
   it('the bot never asks Stockfish for an Atomic move, and Atomic has no premoves or rating changes', () => {

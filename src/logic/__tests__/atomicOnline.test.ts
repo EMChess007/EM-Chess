@@ -97,9 +97,10 @@ describe('Online wiring (no React Native renderer available)', () => {
     expect(online.match(/atomic=\{atomic\}/g)?.length).toBe(2);
   });
 
-  it('tournaments never carry Atomic, and spectators render it', () => {
-    expect(read('screens/TournamentStandingsScreen.tsx').match(/isAtomic: false/g)?.length).toBe(2);
-    expect(read('screens/TournamentScreen.tsx')).toContain("'atomic'");
+  it('tournaments carry the Atomic flag through the shared mapping, and spectators render it', () => {
+    expect(read('screens/TournamentStandingsScreen.tsx')).not.toContain('isAtomic: false');
+    expect(read('logic/tournamentMatch.ts')).toContain('completeVariantFlags(source)');
+    expect(read('screens/TournamentScreen.tsx')).toContain('variantWireFlags(variant)');
     expect(read('screens/SpectatorGameScreen.tsx')).toContain('atomic={state.isAtomic}');
   });
 });

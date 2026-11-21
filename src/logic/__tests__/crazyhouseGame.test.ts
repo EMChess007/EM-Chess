@@ -206,9 +206,10 @@ describe('Crazyhouse wiring (no React Native renderer available)', () => {
     expect(read('components/VariantSelector.tsx')).toContain("value: 'crazyhouse'");
   });
 
-  it('Crazyhouse is excluded from Tournaments (a tournament never creates a Crazyhouse room)', () => {
-    expect(read('screens/TournamentScreen.tsx')).toContain("'horde', 'crazyhouse']");
-    expect(read('screens/TournamentStandingsScreen.tsx').match(/isCrazyhouse: false/g)?.length).toBe(2);
+  it('Crazyhouse is offered in Tournaments (no per-variant exclusion; a match enters through the shared flag mapping)', () => {
+    expect(read('screens/TournamentScreen.tsx')).toContain('excludeVariants={TOURNAMENT_EXCLUDED_VARIANTS}');
+    expect(read('screens/TournamentScreen.tsx')).not.toContain("'crazyhouse'");
+    expect(read('screens/TournamentStandingsScreen.tsx')).not.toContain('isCrazyhouse: false');
   });
 
   it('is mutually exclusive with every other variant: the picker offers one variant at a time and the Online wire flags are one-hot', () => {

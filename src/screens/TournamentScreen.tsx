@@ -9,6 +9,7 @@ import { connectSocket, disconnectSocket, getSocket } from '../api/socket';
 import { emitWithin } from '../api/socketAck';
 import { SERVER_UNREACHABLE_MESSAGE } from '../logic/loadError';
 import { type AppColors, useAppColors } from '../logic/colorSchemeHooks';
+import { TOURNAMENT_EXCLUDED_VARIANTS, variantDisplayName, variantFromWireFlags, variantWireFlags } from '../logic/onlineVariants';
 import { ONLINE_DAILY_NOTE } from '../logic/timeControls';
 import type { AuthUser } from '../types/auth';
 import type { Ack, TournamentLobbyState } from '../types/multiplayer';
@@ -64,12 +65,8 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
       return;
     }
     setError(null);
-    const isChess960 = variant === 'chess960';
-    const isKingOfTheHill = variant === 'kingOfTheHill';
-    const isThreeCheck = variant === 'threeCheck';
-    const isRacingKings = variant === 'racingKings';
-    const isTorpedo = variant === 'torpedo';
-    const isKnightmate = variant === 'knightmate';
+    // The same flag mapping Quick Match and Challenge use - one flag record, no per-variant booleans.
+    const flags = variantWireFlags(variant);
     const socket = connectSocket(authToken);
     emitWithin<Ack<{ code: string; tournamentId: string }>>(
       socket,
@@ -78,12 +75,7 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
         name: trimmedName,
         timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
         timeControlLabel: timeControl.label,
-        isChess960,
-        isKingOfTheHill,
-        isThreeCheck,
-        isRacingKings,
-        isTorpedo,
-        isKnightmate,
+        ...flags,
       },
       (result) => {
         if (result.unreachable) {
@@ -100,12 +92,7 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
           code: ack.code,
           name: trimmedName,
           timeControl: { initialSeconds: timeControl.initialSeconds, incrementSeconds: timeControl.incrementSeconds },
-          isChess960,
-          isKingOfTheHill,
-          isThreeCheck,
-          isRacingKings,
-          isTorpedo,
-          isKnightmate,
+          ...flags,
           status: 'lobby',
           creatorUserId: authUser.id,
           participants: [{ userId: authUser.id, username: authUser.username }],
@@ -206,10 +193,9 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
               maxLength={60}
             />
             <Text style={styles.sectionTitle}>Variant</Text>
-            {/* Setup Chess needs a per-match blind-setup phase that hasn't been designed for
-                round-robin pairing yet (one army for the whole tournament vs. a new one per match)
-                — excluded here until that's settled, unlike the 1v1 Online/Challenge flows. */}
-            <VariantSelector value={variant} onChange={setVariant} excludeVariants={['setupChess', 'fogOfWar', 'giveaway', 'atomic', 'duckChess', 'spellChess', 'horde', 'crazyhouse']} />
+            {/* Every 2-player variant the online picker offers except Setup Chess (TOURNAMENT_EXCLUDED_VARIANTS): its blind-army
+                phase has no room yet, and a tournament match is room-based. From Position is challenge-only and not in this list. */}
+            <VariantSelector value={variant} onChange={setVariant} excludeVariants={TOURNAMENT_EXCLUDED_VARIANTS} />
             {error && <Text style={styles.errorText}>{error}</Text>}
             <TimeControlSections onSelect={handleCreate} dailyNote={ONLINE_DAILY_NOTE} />
           </ScrollView>
@@ -239,7 +225,7 @@ export default function TournamentScreen({ authToken, authUser, onEnterStandings
         <View style={styles.lobbyContainer}>
           <Text style={styles.lobbyName}>{lobby.name}</Text>
           <Text style={styles.lobbySubtitle}>
-            {lobby.isKingOfTheHill ? 'King of the Hill' : lobby.isThreeCheck ? 'Three-Check' : lobby.isRacingKings ? 'Racing Kings' : lobby.isTorpedo ? 'Torpedo' : lobby.isKnightmate ? 'Knightmate' : lobby.isChess960 ? 'Chess960' : 'Classic'}
+            {variantDisplayName(variantFromWireFlags(lobby))}
           </Text>
           <Pressable style={styles.codeBox} onPress={handleShareCode}>
             <Text style={styles.codeText}>{lobby.code}</Text>

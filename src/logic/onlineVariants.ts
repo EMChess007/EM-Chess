@@ -40,6 +40,41 @@ export function variantWireFlags(variant: GameVariant): OnlineVariantFlags {
   };
 }
 
+/** The 2-player variants a Tournament cannot run. Setup Chess: no start position exists until both players have built a blind army
+ * (a pairing phase with no room yet), and a tournament match is room-based end to end. From Position is not a GameVariant (challenge only). */
+export const TOURNAMENT_EXCLUDED_VARIANTS: GameVariant[] = ['setupChess'];
+
+/** Wire flags -> the single-select variant (the reverse of variantWireFlags); 'classic' when none is set. Accepts the partial flag
+ * records old servers send (a missing flag is false). */
+export function variantFromWireFlags(flags: Partial<OnlineVariantFlags>): GameVariant {
+  if (flags.isChess960) return 'chess960';
+  if (flags.isKingOfTheHill) return 'kingOfTheHill';
+  if (flags.isThreeCheck) return 'threeCheck';
+  if (flags.isSetupChess) return 'setupChess';
+  if (flags.isFogOfWar) return 'fogOfWar';
+  if (flags.isGiveaway) return 'giveaway';
+  if (flags.isAtomic) return 'atomic';
+  if (flags.isDuckChess) return 'duckChess';
+  if (flags.isSpellChess) return 'spellChess';
+  if (flags.isHorde) return 'horde';
+  if (flags.isRacingKings) return 'racingKings';
+  if (flags.isTorpedo) return 'torpedo';
+  if (flags.isKnightmate) return 'knightmate';
+  if (flags.isCrazyhouse) return 'crazyhouse';
+  return 'classic';
+}
+
+/** The variant's display name ("Classic", "Fog of War", ...), for a lobby / standings subtitle. */
+export function variantDisplayName(variant: GameVariant): string {
+  const prefix = variantTitlePrefix(variant).replace(' · ', '');
+  return prefix === '' ? 'Classic' : prefix;
+}
+
+/** Complete wire flags from a possibly partial record (every missing flag false) - one place for the tournament payloads. */
+export function completeVariantFlags(flags: Partial<OnlineVariantFlags>): OnlineVariantFlags {
+  return variantWireFlags(variantFromWireFlags(flags));
+}
+
 /** Short title used on the matchmaking screen, e.g. "Giveaway · "; empty for the classic game. */
 export function variantTitlePrefix(variant: GameVariant): string {
   switch (variant) {
