@@ -20,7 +20,7 @@ import {
   stableCells,
   textIssues,
 } from '../../../scripts/android/lib/checks.mjs';
-import { byClass, extractXml, findNodes, findOne, parseBounds, parseHierarchy, rowAfterScroll, scrollUntilVisible, stoodStill, tappableNow } from '../../../scripts/android/lib/hierarchy.mjs';
+import { byClass, extractXml, findNodes, findOne, locateBelow, parseBounds, parseHierarchy, rowAfterScroll, scrollUntilVisible, stoodStill, tappableNow } from '../../../scripts/android/lib/hierarchy.mjs';
 import { crop, decodePng, encodePng, solid } from '../../../scripts/android/lib/png.mjs';
 import { PROFILES } from '../../../scripts/android/lib/device.mjs';
 
@@ -354,6 +354,33 @@ describe('profiles, workflow and the test-only switch', () => {
     expect(workflow).toMatch(/name: android-e2e/);
     expect(workflow).toMatch(/paired\/bughouse/);
     for (const name of ['AUTH_RATE_LIMIT_TEST_OVERRIDE', 'FOUR_TEST_SETUP_ENDPOINT', 'FOUR_TEST_SEED']) expect(workflow).not.toContain(name);
+  });
+});
+
+describe('locateBelow (command #62b: a `below` step after the swipe that took the heading off the screen)', () => {
+  const label = (text: string, cy: number) => node({ text, bounds: box(100, cy - 40, 900, cy + 40) });
+  const step = { text: 'Knightmate', below: 'Local' };
+  // the Play menu with "Local" on screen and its last row, Knightmate, under the fold; a Bots-card Knightmate row above the heading
+  const before = [label('Play', 200), label('Knightmate', 500), label('Local', 900), label('Classic', 1000), label('Torpedo', 2200), label('4 Player Variations', 2350)];
+
+  it('run 44871547772 (large-touch): "‹ Menu | Play | Knightmate | 4 Player Variations" - the Local row is found though "Local" has left the window', () => {
+    // swiped by 1900 px: the heading is above the window, the Local card's Knightmate row is at the top
+    const after = [label('Torpedo', 300), label('Knightmate', 400), label('4 Player Variations', 450), label('Chaturaji', 900)];
+    expect(findOne(after, { text: 'Local' })).toBeNull();
+    expect(locateBelow(after, step, null)).toBeNull(); // the old rule: no heading, no row (the failure)
+    expect(locateBelow(after, step, before)?.bounds.cy).toBe(400);
+  });
+  it('never takes a row ABOVE where the heading now is (the Bots card has a Knightmate row too)', () => {
+    // swiped by 300 px: the Bots-card row is still on screen, the heading is too, the Local row is not yet
+    const after = [label('Knightmate', 200), label('Local', 600), label('Classic', 700)];
+    expect(locateBelow(after, step, before)).toBeNull();
+    // heading gone, but only the Bots-card row is on screen: it stands above the heading's computed place, so it is not the answer
+    const bots = [label('Play', -500), label('Knightmate', -200), label('Classic', 300), label('Torpedo', 1500)];
+    expect(locateBelow(bots, step, before)).toBeNull();
+  });
+  it('with the heading on screen it is the plain rule; with nothing in common to measure the shift it is null', () => {
+    expect(locateBelow(before, { text: 'Classic', below: 'Local' }, null)?.bounds.cy).toBe(1000);
+    expect(locateBelow([label('Settings', 100), label('Knightmate', 300)], step, before)).toBeNull();
   });
 });
 

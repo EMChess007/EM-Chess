@@ -16,8 +16,11 @@ const MESSAGE_WANTED = /Failed to find ColorBuffer|Failed to bind to texture/;
 // com.android.commands.uiautomator.Launcher" and "Shutting down VM" on EVERY dump: PR #46 printed 64 of them as "crash" evidence while the app's pid never changed.
 const SHELL_NOISE = /RuntimeInit uid \d+|Calling main entry com\.android\.commands|Shutting down VM/;
 const PID_TAG_RE = /^\S+\s+\S+\s+(\d+)\s+\d+\s+[VDIWEF]\s+(\S+?)\s*:/;
-const APP_PID_IN_LOG = [/Process: com\.emchess\.app, PID: (\d+)/g, /Start proc (\d+):com\.emchess\.app/g, /Process com\.emchess\.app \(pid (\d+)\)/g];
-const APP_DIED_LINE = /Process com\.emchess\.app .*has died/;
+const APP_PID_IN_LOG = [/Process: com\.emchess\.app, PID: (\d+)/g, /Start proc (\d+):com\.emchess\.app/g, /Process com\.emchess\.app \(pid (\d+)\)/g, /Killing (\d+):com\.emchess\.app/g];
+// (command #62c) every ActivityManager / lmkd line about the app's process: its death and the reason (killed, force-stopped by the harness, low memory), and each new start - so the PREVIOUS
+// pid's end is in the evidence too (PR #47 run 44871547772, online: pid 4547 -> 11091 with no line saying why; it was the harness's own `am force-stop` + `pm clear` in freshSignedIn)
+const APP_DIED_LINE = /(Process com\.emchess\.app .*has died|Killing \d+:com\.emchess\.app|Force stopping com\.emchess\.app|Start proc \d+:com\.emchess\.app|lowmemorykiller.*com\.emchess\.app|com\.emchess\.app.*(low ?memory|lmk))/i;
+const AM_TAGS = /^(ActivityManager|lmkd|lowmemorykiller)$/;
 // these tags can come from the app's helper processes (the engine WebView's renderer): kept whatever their pid
 const TAG_ANY_PID = /^(chromium|cr_[\w.]*|WebView[\w.]*)$/;
 
@@ -40,7 +43,7 @@ export function filterFailureLogcat(logcat, max = FAILURE_LOGCAT_MAX, appPids = 
     const m = PID_TAG_RE.exec(line);
     const tag = m?.[2] ?? TAG_RE.exec(line)?.[1];
     const pid = m ? Number(m[1]) : null;
-    const anr = tag === 'ActivityManager' && (ANR_LINE.test(line) || APP_DIED_LINE.test(line));
+    const anr = tag !== undefined && AM_TAGS.test(tag) && (ANR_LINE.test(line) || APP_DIED_LINE.test(line));
     const own = tag !== undefined && TAG_WANTED.test(tag) && !TAG_ANY_PID.test(tag) && (pids.size > 0 ? pid !== null && pids.has(pid) : !SHELL_NOISE.test(line));
     const anyPid = tag !== undefined && TAG_ANY_PID.test(tag);
     if (own || anyPid || anr || MESSAGE_WANTED.test(line)) kept.push(line.trimEnd().slice(0, 300));
@@ -68,12 +71,22 @@ export const EVIDENCE_UNKNOWN = 'unknown';
  * "crash" needs the app's own FATAL EXCEPTION / Fatal signal / SIGSEGV line or the process gone: a bare AndroidRuntime line is not one (uiautomator logs them on every dump).
  * Anything the evidence does not show is "unknown".
  */
-/** @param {{ startPid?: number | null, pid?: number | null, logcat?: string[], issues?: string[], diagnosticLines?: string[], tapsLost?: unknown[] }} [input] */
-export function classifyEvidence({ startPid = null, pid = null, logcat = [], issues = [], diagnosticLines = [], tapsLost = [] } = {}) {
+/**
+ * What a pid that is not the slice's first one means (command #62c). `harnessPids`: the pids of the processes the HARNESS started (`am start` after its own force-stop / pm clear: a fresh
+ * signed-in app between online scenarios, a relaunch). Returns 'same' | 'harness' (the harness restarted the app on purpose: not a crash) | 'changed' (nobody in the harness did it).
+ * @param {{ startPid?: number | null, pid?: number | null, harnessPids?: Iterable<number> }} input
+ */
+export function pidChange({ startPid = null, pid = null, harnessPids = [] }) {
+  if (startPid === null || pid === null || pid === startPid) return 'same';
+  return new Set(harnessPids).has(pid) ? 'harness' : 'changed';
+}
+
+/** @param {{ startPid?: number | null, pid?: number | null, harnessPids?: Iterable<number>, logcat?: string[], issues?: string[], diagnosticLines?: string[], tapsLost?: unknown[] }} [input] */
+export function classifyEvidence({ startPid = null, pid = null, harnessPids = [], logcat = [], issues = [], diagnosticLines = [], tapsLost = [] } = {}) {
   const log = logcat.join('\n');
   if (/FATAL EXCEPTION|Fatal signal|SIGSEGV/.test(log) || (startPid !== null && pid === null)) return EVIDENCE_CRASH;
   if (ANR_LINE.test(log)) return EVIDENCE_ANR;
-  if (startPid !== null && pid !== null && pid !== startPid) return EVIDENCE_RESTARTED;
+  if (pidChange({ startPid, pid, harnessPids }) === 'changed') return EVIDENCE_RESTARTED;
   if (tapsLost.length > 0) return EVIDENCE_TAP_LOST;
   const text = issues.join(' | ');
   if (/text-fit probe|piece gallery|gallery pixels|0 of \d+ cells|probe/i.test(text) && diagnosticLines.length === 0) return EVIDENCE_PROBE;

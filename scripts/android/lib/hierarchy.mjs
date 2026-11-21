@@ -129,6 +129,33 @@ export function rowAfterScroll(before, after, row, step) {
 }
 
 /**
+ * A `below` step (`{ text: 'Knightmate', below: 'Local' }`) in `after`, the tree after a swipe, when `before` was the tree before it (command #62b). The heading is read in `after` when it is
+ * there; when the swipe moved it ABOVE the window, where it stands now is computed from `before` and the list's shift (the median shift of the words on screen once in both trees, as in
+ * `rowAfterScroll`), and the first node with the step's text below that line is the answer. PR #47 run 44871547772, large-touch: "cannot find {"text":"Knightmate","below":"Local"}" with
+ * "‹ Menu | Play | Knightmate | 4 Player Variations" on screen - the last Local row at the top, the heading just gone. Null when neither tree places the heading, or nothing matches.
+ * @param {any[]} after
+ * @param {{ text: string, below: string }} step
+ * @param {any[] | null} [before]
+ */
+export function locateBelow(after, step, before = null) {
+  const below = (nodes, y2) => findNodes(nodes, { text: step.text }).find((n) => n.bounds.y1 >= y2 - 2) ?? null;
+  const heading = findOne(after, { text: step.below });
+  if (heading) return below(after, heading.bounds.y2);
+  const was = before ? findOne(before, { text: step.below }) : null;
+  if (!was) return null;
+  const once = (nodes) => {
+    const counts = new Map();
+    for (const n of nodes) if (n.bounds && sized(n) && n.text) counts.set(n.text, [...(counts.get(n.text) ?? []), n]);
+    return new Map([...counts].filter(([, list]) => list.length === 1).map(([word, list]) => [word, list[0]]));
+  };
+  const now = once(after);
+  const shifts = [...once(before)].filter(([word]) => word !== step.below && word !== step.text && now.has(word)).map(([word, n]) => n.bounds.cy - now.get(word).bounds.cy);
+  if (shifts.length === 0) return null;
+  shifts.sort((a, b) => a - b);
+  return below(after, was.bounds.y2 - shifts[Math.floor(shifts.length / 2)]);
+}
+
+/**
  * Whether a control may be tapped now (command #54). The usual rule: it stands in the upper `upper` (0.7) of the window, above a soft keyboard. A control in the LAST card of a menu can
  * never get there (the list ends, so it stays in the lower part of the window: the run on 654c650 listed "From Position" on the screen and still died with "not reachable"), so with
  * `atEnd` (the caller saw that a swipe moved the entry by nothing: the list is at its end) it may stand anywhere above the lowest 3 % of the window (the gesture navigation bar; run

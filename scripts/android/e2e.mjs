@@ -33,7 +33,7 @@ import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssu
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { diagnosticTail, engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
-import { FAILURE_DIAGNOSTIC_MAX, FAILURE_LOGCAT_MAX, classifyEvidence, filterFailureLogcat, parsePid } from './lib/failureEvidence.mjs';
+import { FAILURE_DIAGNOSTIC_MAX, FAILURE_LOGCAT_MAX, classifyEvidence, filterFailureLogcat, parsePid, pidChange } from './lib/failureEvidence.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -137,7 +137,11 @@ async function failureEvidence(dev, name, firstResult, firstLostTap = 0) {
       log(`  EVIDENCE ${name}: could not read the screen (${String(e.message).slice(0, 120)})`);
     }
     pid = appPid(dev);
-    log(`  EVIDENCE ${name}: app pid ${pid ?? 'none'}, at the start of the slice ${sliceStartPid ?? 'none'} -> ${pid !== null && sliceStartPid !== null && pid !== sliceStartPid ? 'CHANGED (the app restarted or crashed)' : 'same'}; relaunches by the harness so far: ${relaunches}`);
+    const change = pidChange({ startPid: sliceStartPid, pid, harnessPids: dev.harnessPids ?? [] });
+    const changeText = { same: 'same', harness: 'restarted BY THE HARNESS (its own am start: not a crash)', changed: 'CHANGED (not started by the harness: the app crashed or was killed)' }[change];
+    log(`  EVIDENCE ${name}: app pid ${pid ?? 'none'}, at the start of the slice ${sliceStartPid ?? 'none'} -> ${changeText}; pids the harness started: ${(dev.harnessPids ?? []).join(', ') || 'none'}; relaunches by the harness so far: ${relaunches}`);
+    // the last state each board channel reported to the beacon, and how old it is (command #62c: the premove scenario waited 60 s on a start position while the screen showed 1. d4)
+    for (const [channel, entry] of dev.beacon?.channels ?? []) log(`  EVIDENCE ${name}: beacon ${channel}: fen ${entry.state?.fen ?? '-'}, reported ${Math.round((Date.now() - entry.at) / 1000)} s ago (report #${entry.seq})`);
     try {
       const resumed = dev.sh('dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity" | head -3', { timeout: 20_000 });
       log(`  EVIDENCE ${name}: resumed: ${String(resumed).trim().replace(/\s+/g, ' ').slice(0, 260)}`);
@@ -146,7 +150,7 @@ async function failureEvidence(dev, name, firstResult, firstLostTap = 0) {
     }
     try {
       // only the APP's lines (its pids: the slice start, now, and those the log names); the harness's uiautomator / shell AndroidRuntime lines are dropped (command #61)
-      logcat = filterFailureLogcat(dev.adb(['logcat', '-d', '-t', '6000'], { timeout: 30_000 }), FAILURE_LOGCAT_MAX, [sliceStartPid, pid]);
+      logcat = filterFailureLogcat(dev.adb(['logcat', '-d', '-t', '6000'], { timeout: 30_000 }), FAILURE_LOGCAT_MAX, [sliceStartPid, pid, ...(dev.harnessPids ?? [])]);
       log(`  EVIDENCE ${name}: logcat tail of the app's pids (${logcat.length} lines of ReactNativeJS / AndroidRuntime / chromium / WebView / ANR / process death):\n${logcat.map((l) => `    ${l}`).join('\n') || '    (none)'}`);
     } catch (e) {
       log(`  EVIDENCE ${name}: could not read logcat (${String(e.message).slice(0, 120)})`);
@@ -175,7 +179,7 @@ async function failureEvidence(dev, name, firstResult, firstLostTap = 0) {
   }
   const tapsLost = (dev.tapsLost ?? []).slice(firstLostTap);
   for (const t of tapsLost) log(`  EVIDENCE ${name}: tap lost ${t.step} (settled before tap: ${t.settled ? 'yes' : 'no'}, repeated: ${t.retapped ? 'yes' : 'no'})`);
-  const cause = classifyEvidence({ startPid: sliceStartPid, pid, logcat, issues, diagnosticLines, tapsLost });
+  const cause = classifyEvidence({ startPid: sliceStartPid, pid, harnessPids: dev.harnessPids ?? [], logcat, issues, diagnosticLines, tapsLost });
   for (const r of failedHere) r.evidence = cause;
   log(`  EVIDENCE: ${cause} (${name})`);
 }
@@ -776,6 +780,16 @@ async function touches2p(dev) {
  * and when it stands in the bottom quarter of the window the menu is scrolled one more swipe so the touch does not land in the zone of the floating gear button.
  * The move: e2 -> g3 (the white knight of the start position, a legal move that gives no check); then the position has the knight on g3, Black to move, last move [e2, g3].
  */
+/**
+ * The Local row that `dev.find(row)` already returned, tapped where it IS (command #62b): re-running the `below: 'Local'` step would look for the heading again, and the find that brought the
+ * row in may have swiped "Local" off the window (run 44871547772: "cannot find {"text":"Knightmate","below":"Local"}" with Knightmate on screen). Shared by Racing Kings, Torpedo, Knightmate.
+ */
+async function openFoundRow(dev, found) {
+  dev.tap(found.bounds.cx, found.bounds.cy);
+  await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
+  await dev.runSteps([{ text: '5 min' }]);
+}
+
 async function racingKings2p(dev) {
   const name = 'touch: Racing Kings board (Local)';
   await scenario(dev, name, async () => {
@@ -799,7 +813,7 @@ async function racingKings2p(dev) {
       await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
       await dev.runSteps([{ text: '5 min' }]);
     } else {
-      await dev.runSteps([row, { text: '5 min' }]);
+      await openFoundRow(dev, found);
     }
     const issues = [];
     const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
@@ -873,7 +887,7 @@ async function torpedo2p(dev) {
       await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
       await dev.runSteps([{ text: '5 min' }]);
     } else {
-      await dev.runSteps([row, { text: '5 min' }]);
+      await openFoundRow(dev, found);
     }
     const issues = [];
     const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
@@ -959,7 +973,7 @@ async function knightmate2p(dev) {
       await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
       await dev.runSteps([{ text: '5 min' }]);
     } else {
-      await dev.runSteps([row, { text: '5 min' }]);
+      await openFoundRow(dev, found);
     }
     const issues = [];
     const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';

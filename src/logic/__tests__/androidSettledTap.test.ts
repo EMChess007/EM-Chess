@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appPidsIn, classifyEvidence, filterFailureLogcat } from '../../../scripts/android/lib/failureEvidence.mjs';
+import { appPidsIn, classifyEvidence, filterFailureLogcat, pidChange } from '../../../scripts/android/lib/failureEvidence.mjs';
 import { locate, nodeAt, sameAround, screenText, tapAndVerify, waitBudgets, waitSettled } from '../../../scripts/android/lib/settledTap.mjs';
 
 /** Command #61: settled taps and the app-pid evidence, driven with fake dumps and a fake logcat (no phone). */
@@ -287,5 +287,33 @@ describe('classifyEvidence: PR #46 (uiautomator noise, app pid unchanged, a lost
   });
   it('a crash still beats a lost tap', () => {
     expect(classifyEvidence({ startPid: APP, pid: null, tapsLost: [{}] })).toBe('crash');
+  });
+  // PR #47 run 44871547772, online "premove notice": "app pid 11091, at the start of the slice 4547 -> CHANGED", relaunches 0 - the process was the harness's own freshSignedIn
+  // (am force-stop + pm clear + am start at 05:56:28, then "Log in / Sign up" and "[authStorage] Saved session" at 05:56:49)
+  it('a pid the HARNESS started is not "app restarted" (command #62c); one nobody started still is', () => {
+    expect(pidChange({ startPid: 4547, pid: 11091, harnessPids: [4547, 9120, 11091] })).toBe('harness');
+    expect(pidChange({ startPid: 4547, pid: 11091, harnessPids: [9120] })).toBe('changed');
+    expect(pidChange({ startPid: 4547, pid: 4547 })).toBe('same');
+    expect(pidChange({ startPid: null, pid: 11091 })).toBe('same');
+    expect(classifyEvidence({ startPid: 4547, pid: 11091, harnessPids: [11091], issues: ['the scripted opponent\'s opening never arrived'] })).toBe('unknown');
+    expect(classifyEvidence({ startPid: 4547, pid: 11091, harnessPids: [9120] })).toBe('app restarted');
+  });
+  it('keeps the PREVIOUS pid\'s lines and every ActivityManager line about its end and the next start (command #62c)', () => {
+    const lines = [
+      T(4547, 'ReactNativeJS', '[Multiplayer] own connection dropped'),
+      T(1000, 'ActivityManager', 'Force stopping com.emchess.app appid=10190 user=0: from pid 9001'),
+      T(1000, 'ActivityManager', 'Killing 4547:com.emchess.app/u0a190 (adj 0): stop com.emchess.app due to from pid 9001'),
+      T(1000, 'ActivityManager', 'Start proc 11091:com.emchess.app/u0a190 for next-top-activity {com.emchess.app/com.emchess.app.MainActivity}'),
+      T(1000, 'ActivityManager', 'Killing 777:com.other/u0a1 (adj 900): lowmemory'),
+      T(11091, 'ReactNativeJS', '[App] Startup session check: no session found'),
+    ];
+    const kept = filterFailureLogcat(lines.join('\n'), 80, [11091]);
+    expect(kept.map((l) => /: (.*)$/.exec(l)?.[1])).toEqual([
+      '[Multiplayer] own connection dropped',
+      'Force stopping com.emchess.app appid=10190 user=0: from pid 9001',
+      'Killing 4547:com.emchess.app/u0a190 (adj 0): stop com.emchess.app due to from pid 9001',
+      'Start proc 11091:com.emchess.app/u0a190 for next-top-activity {com.emchess.app/com.emchess.app.MainActivity}',
+      '[App] Startup session check: no session found',
+    ]);
   });
 });

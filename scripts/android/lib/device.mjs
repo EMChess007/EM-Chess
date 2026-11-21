@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { decodePng } from './png.mjs';
-import { extractXml, findNodes, findOne, fingerprint, parseHierarchy, visibleWords } from './hierarchy.mjs';
+import { extractXml, findNodes, findOne, fingerprint, locateBelow, parseHierarchy, visibleWords } from './hierarchy.mjs';
 import { gearIssues, PACKAGE } from './checks.mjs';
 import { tapAndVerify, waitBudgets, waitSettled } from './settledTap.mjs';
 
@@ -83,6 +83,13 @@ export class Device {
 
   launch() {
     this.sh(`am start -W -n ${PACKAGE}/.MainActivity`, { timeout: 90_000 });
+    // every process the HARNESS starts is remembered, so the failure evidence never calls it "the app restarted or crashed" (command #62c: freshSignedIn's pm clear + launch did)
+    try {
+      const pid = Number(/\d+/.exec(String(this.sh(`pidof ${PACKAGE} || echo none`, { timeout: 10_000 })))?.[0]);
+      if (Number.isFinite(pid)) (this.harnessPids ??= []).push(pid);
+    } catch {
+      /* the evidence then says "changed", as before */
+    }
   }
 
   /**
@@ -316,12 +323,14 @@ export class Device {
   async find(step, { scrolls = 14 } = {}) {
     if (step.below !== undefined) {
       await this.find({ text: step.below }, { scrolls });
+      // the heading may leave the window on the swipe that brings the row in (command #62b): `locateBelow` carries the heading's place over from the tree before the swipe
+      let previous = null;
       for (let i = 0; i <= scrolls; i++) {
         const nodes = await this.stable();
-        const heading = findOne(nodes, { text: step.below });
-        const hit = heading ? findNodes(nodes, { text: step.text }).find((n) => n.bounds.y1 >= heading.bounds.y2 - 2) : null;
+        const hit = locateBelow(nodes, step, previous);
         if (hit) return hit;
         if (i === scrolls) throw new Error(`cannot find ${JSON.stringify(step)}; on screen: ${visibleWords(nodes, 40).join(' | ')}`);
+        if (findOne(nodes, { text: step.below })) previous = nodes;
         this.scrollDown();
         await sleep(700);
       }
