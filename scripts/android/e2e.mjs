@@ -27,13 +27,16 @@ import { Chess } from 'chess.js';
 import { Beacon } from './lib/beacon.mjs';
 import { PHONE_BUDGET, judgePerf, latenciesOf, scaledBudget, summarize, windowStats } from './lib/perf.mjs';
 import { exitStatus, judgeHealth, labelAttempt, measureDump, measureInput } from './lib/health.mjs';
-import { byClass, findNodes, rowAfterScroll, scrollUntilVisible, visibleWords } from './lib/hierarchy.mjs';
+import { byClass, findNodes, scrollUntilVisible, visibleWords } from './lib/hierarchy.mjs';
+import { FROM_POSITION_ROW, isLowRow, playRow } from './lib/playMenu.mjs';
 import { checkEditorGrid, editorSquares } from './lib/editorGrid.mjs';
 import { boardFromScreenshot, darkSquareMeasure, startPositionMarkers, crashIssues, judgePieceCell, judgeSelection, LIGHT_SHARE_BY_THEME, lightShareOfCell, markerFromWords, narrowestLabel, orientationFromA1, parseGalleryLabel, parseTextFit, selectedSquares, squareRect, stableCells, textIssues, cornerColour } from './lib/checks.mjs';
 import { crop, decodePng, encodePng, shrink } from './lib/png.mjs';
 import { diagnosticTail, engineDiagnosticLines, filterEngineLogcat } from './lib/engineEvidence.mjs';
 import { judgeLauncherIcon, measureIcon } from './lib/launcher.mjs';
 import { FAILURE_DIAGNOSTIC_MAX, FAILURE_LOGCAT_MAX, classifyEvidence, filterFailureLogcat, parsePid, pidChange } from './lib/failureEvidence.mjs';
+import { goHome, onTabs } from './lib/goHome.mjs';
+import { jsThreadAtTap } from './lib/settledTap.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -102,6 +105,8 @@ async function scenario(dev, name, body) {
     await dev.snapshot(`FAILED-${name.replace(/[^\w.-]+/g, '_')}`).catch(() => {});
     await failureEvidence(dev, name, firstResult, firstLostTap);
   }
+  // A failed scenario (and its evidence, which opens More -> Diagnostics) leaves the app wherever it stopped: back to a VERIFIED Home before the next one (command #66b).
+  if (results.slice(firstResult).some((r) => !r.ok)) await backHomeAfterFailure(dev, name);
   log(`  (${name}:${Math.round((Date.now() - t0) / 1000)} s)`);
 }
 
@@ -185,6 +190,37 @@ async function failureEvidence(dev, name, firstResult, firstLostTap = 0) {
 }
 
 /**
+ * A LOST TAP (command #66b, PR #50 small-screens-2: the tab bar's "More" on the Analysis screen took neither touch, runner healthy, no crash, nothing over the label in the tree; the toHome
+ * "Home" tab taps from More were lost the same way while swipes of the More list worked). Printed for at most LOST_TAP_EVIDENCE_MAX lost taps, so the next one names its side:
+ *  - the APP: was its JavaScript thread busy around the touch (the perf beacon: `jsThreadAtTap`)? A busy or silent thread = APP;
+ *  - the SYSTEM: which window has the focus and the window stack top to bottom (a transient navigation bar, a toast, a system dialog over the app), and the input lines of the log
+ *    (InputDispatcher drops, untrusted-touch occlusion, the launcher's gesture monitor taking the pointer) since the touch.
+ * Never throws.
+ */
+const LOST_TAP_EVIDENCE_MAX = 6;
+let lostTapEvidenceRuns = 0;
+async function lostTapEvidence(dev, { step, node, tapAt, perfBefore }) {
+  if (lostTapEvidenceRuns >= LOST_TAP_EVIDENCE_MAX) return;
+  lostTapEvidenceRuns++;
+  const what = `lost tap ${JSON.stringify(step)} at ${node?.bounds?.cx},${node?.bounds?.cy}`;
+  try {
+    log(`  EVIDENCE ${what}: ${jsThreadAtTap({ before: perfBefore, after: dev.beacon?.channels?.get('perf') ?? null, tapAt, nowMs: Date.now() }).text}`);
+  } catch (e) {
+    log(`  EVIDENCE ${what}: could not judge the JS thread (${String(e.message).slice(0, 120)})`);
+  }
+  try {
+    const focus = dev.sh('dumpsys window | grep -E "mCurrentFocus|mFocusedApp|mTopFullscreenOpaqueWindowState|ransient" | head -10', { timeout: 20_000 });
+    log(`  EVIDENCE ${what}: focus: ${String(focus).trim().replace(/\s+/g, ' ').slice(0, 400) || '(nothing)'}`);
+    const stack = dev.sh('dumpsys window windows | grep -E "^  Window #" | head -12', { timeout: 20_000 });
+    log(`  EVIDENCE ${what}: windows, top first:\n${String(stack).split('\n').filter(Boolean).map((l) => `    ${l.trim().slice(0, 160)}`).join('\n') || '    (none)'}`);
+    const input = dev.sh('logcat -d -t 2000 | grep -E "InputDispatcher|Untrusted touch|obscur|Dropping event|pilfer|TouchInteractionService|EdgeBackGesture|ImmersiveMode" | tail -15', { timeout: 30_000 });
+    log(`  EVIDENCE ${what}: input lines of the log:\n${String(input).split('\n').filter(Boolean).map((l) => `    ${l.slice(0, 220)}`).join('\n') || '    (none)'}`);
+  } catch (e) {
+    log(`  EVIDENCE ${what}: could not ask the system (${String(e.message).slice(0, 120)})`);
+  }
+}
+
+/**
  * WHERE IS THE APP when a touch on a board selected nothing (command #35b: two runs showed the Android LAUNCHER in the photograph taken right after, with the app's beacon still reporting the
  * board). Prints the resumed activity, whether the app's process is alive and the app's own log lines (the crash, the ANR), once per run, so the next red names its cause.
  */
@@ -236,6 +272,7 @@ async function botSilenceEvidence(dev, when) {
   } catch (e) {
     log(`  bot silence (${when}): could not read the Diagnostics log (${String(e.message).slice(0, 120)})`);
   }
+  await backHomeAfterFailure(dev, `bot silence (${when})`);
 }
 
 /**
@@ -273,33 +310,47 @@ async function diagnosticsCheckEvidence(dev, what) {
   } catch (e) {
     log(`  ${what}: could not read the Diagnostics log (${String(e.message).slice(0, 120)})`);
   }
+  await backHomeAfterFailure(dev, what);
 }
 
 // --- navigation ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-const TABS = ['Home', 'Puzzles', 'Analysis', 'More'];
-const onTabs = (nodes) => TABS.every((t) => findNodes(nodes, { text: t }).length > 0);
 let relaunches = 0;
 
-/** Back to the Home tab: the app has no Android back handling, so use its own "‹ Back" / "‹ Menu" links; a dialog or a game in progress is cleared by starting the app afresh. */
+/**
+ * Back to a VERIFIED Home tab (command #66b, `lib/goHome.mjs`): the app has no Android back handling, so its own "‹ Back" / "‹ Menu" links are used; a dialog, a game in progress or a tab tap
+ * that never took is cleared by starting the app afresh. It returns only when a tree read after the last touch shows Home (else it throws: a scenario never runs on the wrong screen).
+ * (a screen whose tree cannot be read - a game that keeps repainting - is left by starting the app afresh)
+ */
 async function toHome(dev) {
-  for (let i = 0; i < 6; i++) {
-    // (a screen whose tree cannot be read - a game that keeps repainting - is left by starting the app afresh)
-    const nodes = await dev.current().catch(() => null);
-    if (nodes === null) break;
-    if (onTabs(nodes) && findNodes(nodes, { id: 'button1' }).length === 0) {
-      const home = findNodes(nodes, { text: 'Home' }).sort((a, b) => b.bounds.y1 - a.bounds.y1)[0];
-      dev.tap(home.bounds.cx, home.bounds.cy);
-      await sleep(700);
-      return;
-    }
-    const back = nodes.filter((n) => n.text.startsWith('‹') && n.bounds).sort((a, b) => a.bounds.y1 - b.bounds.y1)[0];
-    if (!back || i >= 3) break;
-    dev.tap(back.bounds.cx, back.bounds.cy);
-    await sleep(800);
+  let perfBefore = null;
+  const out = await goHome({
+    current: () => dev.current(),
+    read: () => dev.dump(),
+    tap: (x, y) => {
+      perfBefore = dev.beacon?.channels?.get('perf') ?? null;
+      dev.tap(x, y);
+    },
+    onTabLost: ({ node, tapAt }) => lostTapEvidence(dev, { step: { text: 'Home', via: 'toHome' }, node, tapAt, perfBefore }),
+    relaunch: async () => {
+      relaunches++;
+      await dev.relaunch();
+    },
+    waitHome: () => dev.waitHome(120_000),
+    sleep,
+    log,
+  });
+  if (out.tabTaps > 1) log(`  toHome: Home reached after ${out.tabTaps} tab taps (a lost tab tap, see the evidence above)`);
+  return out;
+}
+
+/** After a failure: back to a verified Home so ONE failing scenario never fails the next one (command #66b). Never throws (the next scenario's own toHome says what is wrong). */
+async function backHomeAfterFailure(dev, name) {
+  try {
+    const out = await toHome(dev);
+    log(`  (${name}: the app is back on Home: ${out.how})`);
+  } catch (e) {
+    log(`  (${name}: could not return to Home: ${String(e.message).slice(0, 120)})`);
   }
-  relaunches++;
-  await dev.relaunch();
-  await dev.waitHome(120_000);
 }
 
 // --- the screens ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -657,7 +708,7 @@ async function touches2p(dev) {
   await scenario(dev, 'touch: 2-player board', async () => {
     await toHome(dev);
     dev.beacon.forget('state-board-2p');
-    await dev.runSteps([{ text: 'Play' }, { text: 'Classic', below: 'Local' }, { text: '5 min' }]);
+    await dev.runSteps([{ text: 'Play' }, playRow('local', 'classic'), { text: '5 min' }]); // by testID: the heading "Local" can scroll away (command #66)
     const issues = [];
     let state = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50, 40_000);
     let board = null;
@@ -781,10 +832,24 @@ async function touches2p(dev) {
  * The move: e2 -> g3 (the white knight of the start position, a legal move that gives no check); then the position has the knight on g3, Black to move, last move [e2, g3].
  */
 /**
- * The Local row that `dev.find(row)` already returned, tapped where it IS (command #62b): re-running the `below: 'Local'` step would look for the heading again, and the find that brought the
- * row in may have swiped "Local" off the window (run 44871547772: "cannot find {"text":"Knightmate","below":"Local"}" with Knightmate on screen). Shared by Racing Kings, Torpedo, Knightmate.
+ * Home's Play -> the Local card's row of `variant` -> Select Time Control -> "5 min" (command #66, item 0). The row is found by its testID (`play-local-<variant>`, lib/playMenu.mjs): a lookup
+ * "under the heading Local" failed whenever the find's own scrolling pushed the heading off the window (PR #49 run 44883195830 attempt 2: "cannot find {"text":"Knightmate","below":"Local"}"
+ * with "‹ Menu | Play | Knightmate | 4 Player Variations" on screen; #62b had only fixed the extra swipe AFTER the find). A row in the bottom quarter of the window is scrolled one more swipe and
+ * RE-FOUND BY ITS TESTID. Shared by Racing Kings, Torpedo, Knightmate.
  */
-async function openFoundRow(dev, found) {
+async function openLocalRow(dev, variant, what) {
+  const row = playRow('local', variant);
+  await dev.runSteps([{ text: 'Play' }]);
+  let found = await dev.find(row);
+  if (isLowRow(found, dev.display.h)) {
+    log(`  the ${what} row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
+    dev.scrollDown();
+    await sleep(700);
+    const after = await dev.stable();
+    found = findNodes(after, row)[0];
+    if (!found) throw new Error(`the ${what} row (${row.id}) is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
+    log(`  the ${what} row is now at y ${found.bounds.cy}`);
+  }
   dev.tap(found.bounds.cx, found.bounds.cy);
   await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
   await dev.runSteps([{ text: '5 min' }]);
@@ -795,26 +860,7 @@ async function racingKings2p(dev) {
   await scenario(dev, name, async () => {
     await toHome(dev);
     dev.beacon.forget('state-board-2p');
-    const row = { text: 'Racing Kings', below: 'Local' };
-    await dev.runSteps([{ text: 'Play' }]);
-    const found = await dev.find(row);
-    if (found.bounds.cy > dev.display.h * 0.75) {
-      // The row was resolved BEFORE the swipe (it is the one under the heading "Local"); after the swipe the heading is off the screen (command #45: the run of #31 died with
-      // 'cannot find {"text":"Local"}'), so the row is re-found by its own text and its shift, never by the heading again.
-      log(`  the Racing Kings row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
-      const before = await dev.stable();
-      dev.scrollDown();
-      await sleep(700);
-      const after = await dev.stable();
-      const moved = rowAfterScroll(before, after, found, row);
-      if (!moved) throw new Error(`the Racing Kings row is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
-      log(`  the Racing Kings row is now at y ${moved.bounds.cy}`);
-      dev.tap(moved.bounds.cx, moved.bounds.cy);
-      await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
-      await dev.runSteps([{ text: '5 min' }]);
-    } else {
-      await openFoundRow(dev, found);
-    }
+    await openLocalRow(dev, 'racingKings', 'Racing Kings');
     const issues = [];
     const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
     let state = await dev.beacon.waitFor('state-board-2p', boardReported, 15_000);
@@ -871,24 +917,7 @@ async function torpedo2p(dev) {
   await scenario(dev, name, async () => {
     await toHome(dev);
     dev.beacon.forget('state-board-2p');
-    const row = { text: 'Torpedo', below: 'Local' };
-    await dev.runSteps([{ text: 'Play' }]);
-    const found = await dev.find(row);
-    if (found.bounds.cy > dev.display.h * 0.75) {
-      log(`  the Torpedo row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
-      const before = await dev.stable();
-      dev.scrollDown();
-      await sleep(700);
-      const after = await dev.stable();
-      const moved = rowAfterScroll(before, after, found, row);
-      if (!moved) throw new Error(`the Torpedo row is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
-      log(`  the Torpedo row is now at y ${moved.bounds.cy}`);
-      dev.tap(moved.bounds.cx, moved.bounds.cy);
-      await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
-      await dev.runSteps([{ text: '5 min' }]);
-    } else {
-      await openFoundRow(dev, found);
-    }
+    await openLocalRow(dev, 'torpedo', 'Torpedo');
     const issues = [];
     const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
     let state = await dev.beacon.waitFor('state-board-2p', boardReported, 15_000);
@@ -957,24 +986,7 @@ async function knightmate2p(dev) {
   await scenario(dev, name, async () => {
     await toHome(dev);
     dev.beacon.forget('state-board-2p');
-    const row = { text: 'Knightmate', below: 'Local' };
-    await dev.runSteps([{ text: 'Play' }]);
-    const found = await dev.find(row);
-    if (found.bounds.cy > dev.display.h * 0.75) {
-      log(`  the Knightmate row is at y ${found.bounds.cy} of ${dev.display.h}: scrolling the Play menu one more swipe`);
-      const before = await dev.stable();
-      dev.scrollDown();
-      await sleep(700);
-      const after = await dev.stable();
-      const moved = rowAfterScroll(before, after, found, row);
-      if (!moved) throw new Error(`the Knightmate row is not on the screen after the swipe; on screen: ${visibleWords(after, 40).join(' | ')}`);
-      log(`  the Knightmate row is now at y ${moved.bounds.cy}`);
-      dev.tap(moved.bounds.cx, moved.bounds.cy);
-      await dev.waitFor('the Select Time Control screen', (list) => findNodes(list, { text: 'Select Time Control' }).length > 0, 20_000);
-      await dev.runSteps([{ text: '5 min' }]);
-    } else {
-      await openFoundRow(dev, found);
-    }
+    await openLocalRow(dev, 'knightmate', 'Knightmate');
     const issues = [];
     const boardReported = (s) => s.rect && s.rect.w > 50 && s.turn === 'w';
     let state = await dev.beacon.waitFor('state-board-2p', boardReported, 15_000);
@@ -1056,7 +1068,7 @@ async function enterFromPosition(dev, fen) {
   await toHome(dev);
   dev.beacon.forget('state-board-2p');
   await dev.runSteps([{ text: 'Play' }]);
-  await tapReachable(dev, { text: 'From Position' }, 'the From Position entry of the Play menu');
+  await tapReachable(dev, FROM_POSITION_ROW, 'the From Position entry of the Play menu');
   await dev.waitFor('the Board Editor', (list) => findNodes(list, { text: 'Starting Position' }).length > 0, 30_000);
   const fenField = (list) => findNodes(list, { id: 'fen-input' })[0] ?? byClass(list, 'EditText')[0];
   const field = await scrollUntilVisible(dev, 'the FEN field (fen-input)', fenField, { log, sleep });
@@ -1151,7 +1163,7 @@ async function boardEditorGrid(dev) {
   await scenario(dev, name, async () => {
     await toHome(dev);
     await dev.runSteps([{ text: 'Play' }]);
-    await tapReachable(dev, { text: 'From Position' }, 'the From Position entry of the Play menu');
+    await tapReachable(dev, FROM_POSITION_ROW, 'the From Position entry of the Play menu');
     await dev.waitFor('the Board Editor', (list) => findNodes(list, { text: 'Starting Position' }).length > 0, 30_000);
     const nodes = await dev.dump();
     const issues = checkEditorGrid(nodes);
@@ -1342,7 +1354,7 @@ async function perf(dev) {
       await toHome(dev);
       dev.beacon.forget('state-board-2p');
       dev.beacon.forget('perf');
-      await dev.runSteps([{ text: 'Play' }, { text: 'Classic', nth: 0 }, { text: 'Kiddo' }, { text: 'White' }, { text: '3 min' }]);
+      await dev.runSteps([{ text: 'Play' }, playRow('bots', 'classic'), { text: 'Kiddo' }, { text: 'White' }, { text: '3 min' }]); // the Bots card's Classic by testID (command #66)
       const first = await dev.beacon.waitFor('state-board-2p', (s) => s.rect && s.rect.w > 50, 40_000);
       if (!first) throw new Error('the 2-player board against the bot reported no state');
       await dev.beacon.settled(['state-board-2p'], 3000, 20_000);
@@ -2185,6 +2197,7 @@ async function offline(dev) {
 const dev = new Device({ outDir: OUT, log });
 // the app's own account of its boards (src/dev/e2eBeacon.ts): the screens whose accessibility tree cannot be trusted are read from it
 dev.beacon = await new Beacon().start();
+dev.onLostTap = (lost) => lostTapEvidence(dev, lost);
 const started = Date.now();
 const health = { start: null, end: null };
 try {

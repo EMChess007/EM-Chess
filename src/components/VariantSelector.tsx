@@ -54,6 +54,9 @@ const OPTIONS: { value: GameVariant; label: string }[] = [
   { value: 'crazyhouse', label: 'Crazyhouse' },
 ];
 
+/** Every 2-player variant id, in the selector's order: what `playMenuIds.dom.test.tsx` walks so a new variant cannot reach the selector without a Play-menu row and its testID (command #66). */
+export const TWO_PLAYER_VARIANT_IDS: readonly GameVariant[] = OPTIONS.map((o) => o.value);
+
 /** Mutually-exclusive Classic / Chess960 / King of the Hill / Three-Check / Setup Chess picker —
  * shared by every online setup screen that used to be a plain Chess960 checkbox
  * (OnlineTimeControlSelectScreen, ChallengeScreen, TournamentScreen), since a game is exactly one

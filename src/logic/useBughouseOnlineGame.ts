@@ -4,6 +4,7 @@ import { createNowStore } from '../components/NowClock';
 import { logDiagnostic } from './diagnosticLog';
 import { BughouseOnlineSession, initialSessionState, type SendOutcome, type BugSocket, type BughouseOnlineRole, type BughouseSessionEffects, type BughouseSessionState } from './bughouseOnlineSession';
 import type { BughouseOnlineAction } from './bughouseOnline';
+import { hasGraceCountdown } from './bughouseOnlineUi';
 import { triggerGameEndHaptics, triggerMoveHaptics } from './haptics';
 import { playMoveSound } from './moveSounds';
 
@@ -49,19 +50,23 @@ export function useBughouseOnlineGame(authToken: string | null, role: BughouseOn
 
   const live = state.view !== null && state.view.match.result === null && state.view.gameOver === null;
   // Two rates (command #33, the lag): the CLOCKS tick at TICK_MS into a store that only the clock texts subscribe to (no render of the screen); the coarse `now` the screen reads (a seat's
-  // offline countdown, in whole seconds) moves once a second.
+  // offline countdown, in whole seconds) moves once a second - and ONLY while a seat has such a countdown (command #66, item 1: it ticked for the whole game and re-rendered the two-board
+  // screen every second with nobody moving; `bughouseIdle.dom.test.tsx` counts the renders).
   const [nowSource] = useState(() => createNowStore(Date.now()));
   useEffect(() => {
     if (!live) return;
     setNow(Date.now());
     nowSource.set(Date.now());
     const timer = setInterval(() => nowSource.set(Date.now()), TICK_MS);
-    const coarse = setInterval(() => setNow(Date.now()), COARSE_TICK_MS);
-    return () => {
-      clearInterval(timer);
-      clearInterval(coarse);
-    };
+    return () => clearInterval(timer);
   }, [live, nowSource]);
+  const countingDown = live && state.view !== null && hasGraceCountdown(state.view.seats);
+  useEffect(() => {
+    if (!countingDown) return;
+    setNow(Date.now());
+    const coarse = setInterval(() => setNow(Date.now()), COARSE_TICK_MS);
+    return () => clearInterval(coarse);
+  }, [countingDown]);
 
   const sendAction = useCallback((action: BughouseOnlineAction) => sessionRef.current?.sendAction(action), []);
   const resign = useCallback((onError: (message: string) => void) => sessionRef.current?.resign(onError), []);

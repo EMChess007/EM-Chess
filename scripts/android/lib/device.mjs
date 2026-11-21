@@ -398,6 +398,8 @@ export class Device {
     // A development build fetches a screen's code from Metro the first time it is opened (lazy bundling), which can take many seconds: the next step must not look at the OLD screen (the first
     // run took the time-control screen for the game it was starting). Wait until the screen's words are not the ones the tap was made on; a tap that changed nothing is LOST.
     // (a touch on the status bar, which does nothing, is tried once after 2.5 s: some screens leave uiautomator with the PREVIOUS screen's tree until the app sends new accessibility events)
+    const tapAt = Date.now();
+    const perfBefore = this.beacon?.channels?.get('perf') ?? null; // the app's last JS-thread report before the touch (command #66b: was the thread busy when a tap was lost?)
     const result = await tapAndVerify({
       node,
       settled: waited.settled,
@@ -414,6 +416,8 @@ export class Device {
     if (result.lost) {
       this.tapsLost = this.tapsLost ?? [];
       this.tapsLost.push({ step: JSON.stringify(step), settled: waited.settled, retapped: result.retapped });
+      // what the app's JS thread and the system's windows did around the lost touch (the driver sets `onLostTap`; it never throws)
+      if (this.onLostTap) await Promise.resolve(this.onLostTap({ step, node, tapAt, perfBefore })).catch(() => {});
     }
   }
 
