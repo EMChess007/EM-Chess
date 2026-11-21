@@ -48,6 +48,7 @@ export default function BughouseSetupScreen({ seats, onChange, onPickBot, onCont
               accessibilityRole="button"
               accessibilityLabel={`Preset: ${preset.label}`}
               testID={`preset-${preset.id}`}
+              aria-selected={activePreset === preset.id}
               style={[styles.preset, activePreset === preset.id && styles.presetActive]}
               onPress={() => onChange(presetSeatConfig(preset.id, DEFAULT_BOT_ELO))}
             >

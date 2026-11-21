@@ -68,7 +68,8 @@ export default function VariantSelector<T extends GameVariant | FourSeatGame = G
       {options.map((option) => {
         const selected = value === option.value;
         return (
-          <Pressable key={option.value} accessibilityLabel={option.label.replaceAll('\n', ' ')} style={[styles.chip, selected && styles.chipSelected]} onPress={() => onChange(option.value as T)}>
+          // aria-selected: the chosen chip is announced (TalkBack) and is `selected` in the Android tree, which is how the e2e harness sees that a tap on a chip landed (command #62)
+          <Pressable key={option.value} accessibilityLabel={option.label.replaceAll('\n', ' ')} aria-selected={selected} style={[styles.chip, selected && styles.chipSelected]} onPress={() => onChange(option.value as T)}>
             <Text style={[styles.chipText, selected && styles.chipTextSelected]} numberOfLines={2}>
               {option.label}
             </Text>

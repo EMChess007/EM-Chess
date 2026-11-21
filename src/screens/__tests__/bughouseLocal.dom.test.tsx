@@ -93,6 +93,14 @@ describe('the setup screen', () => {
     expect(disabled()).toBe(false);
   });
 
+  it('the chosen preset is SELECTED for accessibility, and a tap on another moves it (command #62: the Android tree must see that a preset tap landed)', () => {
+    render(<Harness />);
+    const chosen = () => ['solo', 'opponents', 'teammates', 'four'].filter((id) => screen.getByTestId(`preset-${id}`).getAttribute('aria-selected') === 'true');
+    expect(chosen()).toEqual(['solo']);
+    fireEvent.click(screen.getByTestId('preset-four'));
+    expect(chosen()).toEqual(['four']);
+  });
+
   it('a preset fills the four rows; a row can be switched by hand', () => {
     render(<Harness />);
     fireEvent.click(screen.getByTestId('preset-opponents'));
